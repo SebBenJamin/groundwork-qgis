@@ -105,6 +105,30 @@ def cell_path_groups(mesh: SectionMesh, scale: ColorScale) -> list[tuple[np.ndar
     return [(c, g.reshape(-1)) for c, g in zip(rgba_u, np.split(elems, splits))]
 
 
+def matching_profiles(profiles: list[Profile], xy: np.ndarray,
+                      tol: float = 1.0) -> list[tuple[float, Profile, bool]]:
+    """``[(error, profile, reversed), ...]``, best first, of the profiles whose end points
+    and length match the polyline ``xy`` within ``tol`` (either direction)."""
+    xy = np.asarray(xy, dtype=float)[:, :2]
+    if len(xy) < 2:
+        return []
+    length = _polyline_length(xy)
+    out = []
+    for p in profiles:
+        pxy = np.asarray(p.xy, dtype=float)
+        if len(pxy) < 2 or abs(_polyline_length(pxy) - length) > tol:
+            continue
+        best = None
+        for rev, (a, b) in ((False, (pxy[0], pxy[-1])), (True, (pxy[-1], pxy[0]))):
+            err = max(np.hypot(*(xy[0] - a)), np.hypot(*(xy[-1] - b)))
+            if err <= tol and (best is None or err < best[0]):
+                best = (float(err), p, rev)
+        if best is not None:
+            out.append(best)
+    out.sort(key=lambda m: m[0])                # stable: (name, id) order on ties
+    return out
+
+
 def station_labels(numbers: np.ndarray) -> list[str]:
     """Label the first station and every station whose number is a multiple of 10."""
     numbers = np.asarray(numbers, dtype=int)
@@ -118,6 +142,9 @@ class SectionDataProvider:
     def __init__(self, store: ProjectStore):
         self.store = store
         self.on_change: list[Callable[[], None]] = []
+        #: profile shown in the section panel; wins when several profiles share a curve.
+        #: Set and read on the main thread only (snapshots stay plain data).
+        self.active_profile_id: str | None = None
         self._styles: dict[str, LayerStyle] = {}
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
 
@@ -127,21 +154,15 @@ class SectionDataProvider:
 
     # -- profiles --------------------------------------------------------------------------
     def match_curve(self, xy: np.ndarray, tol: float = 1.0) -> tuple[Profile, bool] | None:
-        """(profile, reversed) whose end points and length match ``xy`` within ``tol``."""
-        xy = np.asarray(xy, dtype=float)[:, :2]
-        if len(xy) < 2:
+        """(profile, reversed) whose end points and length match ``xy`` within ``tol``.
+        When several profiles match (e.g. two profiles on the same line), the active
+        profile wins; otherwise the closest match."""
+        matches = matching_profiles(self.store.profiles(), xy, tol)
+        if not matches:
             return None
-        length = _polyline_length(xy)
-        best = None
-        for p in self.store.profiles():
-            pxy = np.asarray(p.xy, dtype=float)
-            if len(pxy) < 2 or abs(_polyline_length(pxy) - length) > tol:
-                continue
-            for rev, (a, b) in ((False, (pxy[0], pxy[-1])), (True, (pxy[-1], pxy[0]))):
-                err = max(np.hypot(*(xy[0] - a)), np.hypot(*(xy[-1] - b)))
-                if err <= tol and (best is None or err < best[0]):
-                    best = (err, p, rev)
-        return None if best is None else (best[1], best[2])
+        active = [m for m in matches if m[1].id == self.active_profile_id]
+        _err, profile, rev = (active or matches)[0]
+        return profile, rev
 
     def profile_for_curve(self, xy: np.ndarray, tol: float = 1.0) -> Profile | None:
         match = self.match_curve(xy, tol)

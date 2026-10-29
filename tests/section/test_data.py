@@ -280,3 +280,21 @@ def test_model_on_stations_numbered_against_profile(tmp_path):
     [layer] = SectionDataProvider(st).layers(p.id)
     s0, s1 = layer.mesh.bounds()[:2]
     assert (s0, s1) == pytest.approx((50 - raw[1], 50 - raw[0]))
+
+
+def test_active_profile_wins_on_identical_geometry(store_with_model):
+    """Two profiles on the same line: the curve resolves to the profile the dock opened."""
+    from geophysics_workbench.core.model import Profile
+
+    st, p, _ = store_with_model
+    twin = Profile("twin", "A twin", p.xy.copy(), p.crs_authid)         # sorts before P1
+    st.save_profile(twin)
+    prov = SectionDataProvider(st)
+    for active in (p.id, twin.id):
+        prov.active_profile_id = active
+        assert prov.match_curve(p.xy)[0].id == active
+        assert prov.match_curve(p.xy[::-1])[0].id == active
+    prov.active_profile_id = None
+    assert prov.match_curve(p.xy)[0].id in (p.id, twin.id)
+    prov.active_profile_id = "elsewhere"                     # active but not on this curve
+    assert prov.match_curve(p.xy)[0].id in (p.id, twin.id)

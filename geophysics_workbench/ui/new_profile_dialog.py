@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 import numpy as np
-from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry,
+from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry,
                        QgsProject, QgsVectorLayer, QgsWkbTypes)
 from qgis.gui import QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
@@ -19,6 +19,8 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSp
 
 from ..core.model import profile_from_line, profile_from_stations
 from ..readers.textcols import read_columns
+from ..section.data import matching_profiles
+from ..section.profile_source import CURVE_TOLERANCE
 from .project_actions import add_profile
 
 TAB_FILE, TAB_LINE, TAB_POINTS = 0, 1, 2
@@ -74,6 +76,7 @@ class NewProfileDialog(QDialog):
         self.project = project if project is not None else QgsProject.instance()
         self.profile = None
         self.last_error = None
+        self.last_warning = None
         self._columns = None                # (header, array) of the station file
         self.pick_tool = None
         self._picked = []
@@ -335,12 +338,28 @@ class NewProfileDialog(QDialog):
     def accept(self) -> None:
         try:
             profile, station_set = self.build()
+            twins = matching_profiles(self.store.profiles(), profile.xy, CURVE_TOLERANCE)
             add_profile(self.store, profile, station_set, self.project, self.provider)
         except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
             self._error(str(exc))
             return
         self.profile = profile
+        self.last_warning = None
+        if twins:
+            self._warn_duplicate(profile, [p for _err, p, _rev in twins])
         super().accept()
+
+    def _warn_duplicate(self, profile, twins) -> None:
+        """Non-blocking: the profile is saved, but the map and section cannot tell the
+        twins apart by their line (the section panel shows the profile it opened)."""
+        names = ", ".join(f"“{p.name or p.id}”" for p in twins)
+        self.last_warning = (f"Profile “{profile.name}” lies on the same line as {names}. "
+                             "Pick profile on map and QGIS's own elevation profile tool "
+                             "cannot tell them apart; choose it in the section panel's "
+                             "Profile list.")
+        bar = self.iface.messageBar() if hasattr(self.iface, "messageBar") else None
+        if bar is not None:
+            bar.pushMessage("New profile", self.last_warning, Qgis.MessageLevel.Warning, 15)
 
     def _error(self, message: str) -> None:
         self.last_error = message

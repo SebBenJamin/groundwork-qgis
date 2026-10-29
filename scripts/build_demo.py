@@ -5,16 +5,15 @@ Reads demo/context/powerline.geojson (fetch_demo_context.py) and writes, under d
   ert/P2/P2_model.dat       ZondRes2D model, depth header
   ert/P2/P2_model_it2.dat   second "iteration" of P2 (other noise seed, sharper lens)
   ert/P3/f001_res.vtk       legacy ASCII VTK quads
-  stations/P{1,2,3}_electrodes.csv   number,x,y,z
+  stations/P{1,2,3,4}_electrodes.csv number,x,y,z (P4: station file only, see demo_extra.py)
 and, under demo/ (with the plugin's own code, so it needs QGIS's Python):
   demo_workbench.gpkg       workbench store: P1-P3, station sets, one model each; model
                             source paths are relative to the store's folder
   demo_project.qgz          QGIS project (EPSG:25832): OSM tiles, powerline, workbench group;
                             every path relative, so the demo works wherever it is unpacked
 
-Structured as small functions (geometry, topography, model, writers, main) so later
-milestones can import and extend it. Re-running reproduces byte-identical text files (the
-.gpkg / .qgz binaries carry fresh ids and timestamps).
+Small functions (geometry, topography, model, writers, main) that later milestones can extend.
+Re-running reproduces byte-identical text files (.gpkg / .qgz carry fresh ids and timestamps).
 """
 from __future__ import annotations
 
@@ -26,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+import demo_extra
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "demo"
@@ -370,7 +371,8 @@ def build_qgis_project(demo_dir: Path = DEMO) -> Path:
 def build_all(data_dir: Path = DATA) -> dict:
     profiles = {p.name: p for p in make_profiles()}
     p1, p2, p3 = profiles["P1"], profiles["P2"], profiles["P3"]
-    for a, b in ((p1, p3), (p2, p3)):
+    profiles["P4"] = p4 = demo_extra.make_p4(p1, p3)     # station file only (walkthrough)
+    for a, b in ((p1, p3), (p2, p3), (p1, p4), (p2, p4)):
         if intersection(a, b) is None:
             raise RuntimeError(f"{a.name} and {b.name} do not cross")
     write_r2(data_dir / "ert/P1/f001_res.dat", p1, build_model(p1))
@@ -388,7 +390,7 @@ def main() -> int:
     for p in profiles.values():
         print(p.name, f"start=({p.x0:.2f}, {p.y0:.2f}) azimuth={math.degrees(p.azimuth):.1f} deg "
                       f"length={p.length:.0f} m electrodes={p.n_electrodes}")
-    for a, b in (("P1", "P3"), ("P2", "P3")):
+    for a, b in (("P1", "P3"), ("P2", "P3"), ("P1", "P4"), ("P2", "P4")):
         print(f"{a}x{b}: s=", intersection(profiles[a], profiles[b]))
     print("wrote", build_workbench().relative_to(ROOT).as_posix())
     print("wrote", build_qgis_project().relative_to(ROOT).as_posix())

@@ -329,3 +329,25 @@ def test_set_store_none_tears_down(qgis_app, store_with_model, fake_iface):
         assert plugin.dock.canvas.sources() == [] and plugin.dock.current_profile_id() is None
     finally:
         plugin.unload()
+
+
+def test_open_profile_makes_it_active_for_the_source(qgis_app, store_with_model, make_dock):
+    """Identical geometry: the canvas draws the opened profile's data, not its twin's."""
+    from qgis.core import QgsCoordinateReferenceSystem, QgsProfileRequest, QgsLineString, QgsPoint
+
+    from geophysics_workbench.core.model import Profile
+
+    st, p, _ = store_with_model
+    twin = Profile("twin", "A twin", p.xy.copy(), p.crs_authid)
+    st.save_profile(twin)
+    dock = make_dock(st)
+    source = dock._source
+    req = QgsProfileRequest(QgsLineString([QgsPoint(float(x), float(y)) for x, y in p.xy]))
+    req.setCrs(QgsCoordinateReferenceSystem(st.crs_authid))
+    for pid in (p.id, twin.id, p.id):
+        dock.open_profile(pid)
+        assert dock.provider.active_profile_id == pid
+        gen = source.createProfileGenerator(req)
+        assert gen._snapshot.profile_id == pid
+    dock.set_provider(None)
+    assert source.provider.active_profile_id is None

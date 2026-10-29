@@ -133,8 +133,10 @@ class SectionDock(QDockWidget):
         """Show ``provider``'s profiles (``None`` clears the panel). ``source`` is the
         registered profile source for it; when omitted the registry is searched. The old
         source is detached from the canvas first, so it can be unregistered afterwards."""
-        if self.provider is not None and self._on_provider_changed in self.provider.on_change:
-            self.provider.on_change.remove(self._on_provider_changed)
+        if self.provider is not None:
+            self.provider.active_profile_id = None
+            if self._on_provider_changed in self.provider.on_change:
+                self.provider.on_change.remove(self._on_provider_changed)
         self.canvas.setSources([])
         self._refresh_timer.stop()
         self.provider = provider
@@ -204,6 +206,7 @@ class SectionDock(QDockWidget):
             raise RuntimeError("no project is open")
         profile = self.provider.store.profile(profile_id)
         self._profile = profile
+        self.provider.active_profile_id = profile.id    # wins over profiles on the same line
         self._layers = None
         self._fill_combo()
         self.canvas.setCrs(QgsCoordinateReferenceSystem(self.provider.store.crs_authid))
@@ -223,6 +226,8 @@ class SectionDock(QDockWidget):
 
     def _close_profile(self) -> None:
         self._profile = None
+        if self.provider is not None:
+            self.provider.active_profile_id = None
         self._layers = self._topo = None
         self.fit.reset()
         self.canvas.clear()
