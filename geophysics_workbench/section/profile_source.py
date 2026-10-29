@@ -301,7 +301,10 @@ def register_source(provider: SectionDataProvider) -> WorkbenchProfileSource:
 def unregister_source(source: WorkbenchProfileSource) -> None:
     """Remove ``source`` from the registry, which **destroys** it; no-op if it is not
     the registered workbench source (e.g. already replaced). Callers must first detach it
-    from every canvas (``canvas.setSources([])``) and layout elevation-profile item."""
+    from the canvases they own (``canvas.setSources([])``) and from layout elevation-profile
+    items. Canvases the plugin does not own, such as QGIS's own Elevation Profile tool,
+    add registered sources and drop unregistered ones themselves in QGIS 4.2
+    (tests/section/test_registry_canvases.py)."""
     registry = QgsApplication.profileSourceRegistry()
     if registry.findSourceById(SOURCE_ID) is source:
         registry.unregisterProfileSource(SOURCE_ID)
