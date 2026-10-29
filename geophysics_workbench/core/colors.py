@@ -1,0 +1,63 @@
+"""Colour scales for section rendering (no QGIS/Qt; matplotlib.colormaps only)."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+from matplotlib import colormaps
+
+COLORMAPS: list[str] = ["Spectral_r", "turbo", "jet", "viridis", "RdYlBu_r", "gray"]
+
+
+@dataclass
+class ColorScale:
+    cmap: str = "Spectral_r"
+    vmin: float = 1.0
+    vmax: float = 1000.0
+    log: bool = True
+
+    def __post_init__(self):
+        if self.cmap not in COLORMAPS:
+            raise ValueError(f"Unknown colormap {self.cmap!r}; choose one of {COLORMAPS}")
+
+    def rgba(self, values) -> np.ndarray:
+        """Map values to an (n, 4) uint8 array. Out-of-range values clip to the end
+        colours; nan (and non-positive values on a log scale) get alpha 0."""
+        v = np.asarray(values, dtype=float).ravel()
+        valid = np.isfinite(v)
+        if self.log:
+            valid &= v > 0
+        with np.errstate(invalid="ignore", divide="ignore"):
+            if self.log:
+                t = (np.log10(v) - np.log10(self.vmin)) / (np.log10(self.vmax) - np.log10(self.vmin))
+            else:
+                t = (v - self.vmin) / (self.vmax - self.vmin)
+        t = np.clip(np.where(valid, t, 0.0), 0.0, 1.0)
+        out = np.rint(colormaps[self.cmap](t) * 255).astype(np.uint8)
+        out[~valid, :] = 0
+        return out
+
+    @classmethod
+    def auto(cls, values, log: bool = True, percentiles=(2, 98), cmap: str = "Spectral_r") -> "ColorScale":
+        v = np.asarray(values, dtype=float).ravel()
+        v = v[np.isfinite(v)]
+        if log:
+            v = v[v > 0]
+        if v.size == 0:
+            raise ValueError("No usable values to derive a colour scale from")
+        lo, hi = (float(p) for p in np.percentile(v, percentiles))
+        if lo == hi:
+            if log:
+                lo, hi = lo / 1.1, hi * 1.1
+            elif lo == 0:
+                lo, hi = -1.0, 1.0
+            else:
+                lo, hi = lo - 0.1 * abs(lo), hi + 0.1 * abs(hi)
+        return cls(cmap, lo, hi, log)
+
+    def to_dict(self) -> dict:
+        return {"cmap": self.cmap, "vmin": float(self.vmin), "vmax": float(self.vmax), "log": bool(self.log)}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ColorScale":
+        return cls(str(d["cmap"]), float(d["vmin"]), float(d["vmax"]), bool(d["log"]))
