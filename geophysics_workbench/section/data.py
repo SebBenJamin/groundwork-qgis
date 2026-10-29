@@ -254,4 +254,7 @@ class SectionDataProvider:
         return SectionSnapshot(profile_id, layers, topo, stations)
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
+        """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and
+        elevation ``z``. The profile source's ``results.identify`` takes *canvas*
+        distance instead, which is mirrored (length - s) for a reversed curve."""
         return identify_layers(self.layers(profile_id), s, z)

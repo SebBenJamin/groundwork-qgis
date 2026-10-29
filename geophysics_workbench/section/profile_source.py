@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import math
 import struct
-from collections import deque
 
 import numpy as np
 from qgis.core import (Qgis, QgsAbstractProfileGenerator, QgsAbstractProfileResults,
@@ -29,6 +28,14 @@ RESULTS_TYPE = "geophysics_workbench_section"
 CURVE_TOLERANCE = 1.0          # metres: end points and length of canvas curve vs profile
 _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z ranges
 _MM = Qgis.RenderUnit.Millimeters
+
+
+def _log_failure(what: str, exc: BaseException) -> None:
+    """Log instead of raising: these callbacks are invoked from C++ (generateProfile on
+    worker threads), where a Python exception would reach sys.excepthook / abort painting.
+    QgsMessageLog.logMessage is safe to call from any thread."""
+    QgsMessageLog.logMessage(f"Section {what} failed: {type(exc).__name__}: {exc}",
+                             SOURCE_NAME, Qgis.MessageLevel.Critical)
 
 
 def _path_from_elements(elems: np.ndarray) -> QPainterPath:
@@ -75,16 +82,30 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         return []
 
     def identify(self, *args):
+        """Values under a *canvas* point: ``point.distance()`` is distance along the
+        requested curve, i.e. mirrored profile chainage when the curve runs end-to-start
+        (the snapshot is already mirrored). ``SectionDataProvider.identify`` instead takes
+        forward profile chainage."""
         # overloads: (QgsProfilePoint, context) and (distance range, elevation range, context)
         if self.snapshot is None or len(args) != 2:
             return []
-        point = args[0]
-        hits = identify_layers(self.snapshot.layers, point.distance(), point.elevation())
-        return [QgsProfileIdentifyResults(None, [hit]) for hit in hits]
+        try:
+            point = args[0]
+            hits = identify_layers(self.snapshot.layers, point.distance(), point.elevation())
+            return [QgsProfileIdentifyResults(None, [hit]) for hit in hits]
+        except Exception as exc:              # called from C++: never raise
+            _log_failure("identify", exc)
+            return []
 
     # -- drawing ---------------------------------------------------------------------------
     def renderResults(self, context):
         self.render_count += 1
+        try:
+            self._render(context)
+        except Exception as exc:              # called from C++ paint code: never raise
+            _log_failure("drawing", exc)
+
+    def _render(self, context):
         rc = context.renderContext()
         painter = rc.painter()
         if painter is None or self.snapshot is None:
@@ -93,10 +114,12 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         painter.save()
         try:
             painter.save()
-            painter.setTransform(wt, True)          # draw in (chainage, elevation) space
-            self._draw_cells(painter)
-            self._draw_topography(painter, rc)
-            painter.restore()
+            try:
+                painter.setTransform(wt, True)      # draw in (chainage, elevation) space
+                self._draw_cells(painter)
+                self._draw_topography(painter, rc)
+            finally:
+                painter.restore()
             self._draw_stations(painter, rc, wt)
         finally:
             painter.restore()
@@ -175,7 +198,16 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
         return self._feedback
 
     def generateProfile(self, context=None):
-        # worker thread: touch only the snapshot (plain data) and value-type Qt classes
+        # worker thread (canvas) or main thread (layout export): never raise into C++
+        try:
+            return self._generate()
+        except Exception as exc:
+            _log_failure("generation", exc)
+            self._results = None
+            return False
+
+    def _generate(self) -> bool:
+        # touch only the snapshot (plain data) and value-type Qt classes
         snap = self._snapshot
         layers, zs, tops = [], [], []
         station_z = None
@@ -204,7 +236,7 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
     def takeResults(self):
         results, self._results = self._results, None
         if results is not None:
-            self._owner.last_results = results
+            self._owner.last_results = results     # test/debug hook only
         return results
 
 
@@ -212,8 +244,10 @@ class WorkbenchProfileSource(QgsAbstractProfileSource):
     def __init__(self, provider: SectionDataProvider):
         super().__init__()
         self.provider = provider
+        # Test/debug hook: the most recent results handed to QGIS. C++ owns generators
+        # and results (and deletes them); this is not a keep-alive and may point at a
+        # deleted wrapper once QGIS discards those results.
         self.last_results = None
-        self._recent = deque(maxlen=8)       # keep Python generator wrappers alive
 
     def profileSourceId(self):
         return SOURCE_ID
@@ -243,16 +277,18 @@ class WorkbenchProfileSource(QgsAbstractProfileSource):
                 profile, reverse = match
                 snapshot = self.provider.snapshot(profile.id, reverse=reverse)
         except Exception as exc:              # never raise into QGIS' C++ caller
-            QgsMessageLog.logMessage(f"Section profile failed: {type(exc).__name__}: {exc}",
-                                     SOURCE_NAME, Qgis.MessageLevel.Warning)
+            _log_failure("profile lookup", exc)
             snapshot = None
-        generator = WorkbenchProfileGenerator(snapshot, self)
-        self._recent.append(generator)
-        return generator
+        return WorkbenchProfileGenerator(snapshot, self)
 
 
 def register_source(provider: SectionDataProvider) -> WorkbenchProfileSource:
-    """Register a source for ``provider`` (replacing any registered workbench source)."""
+    """Register a source for ``provider``, replacing any registered workbench source.
+
+    The registry owns the source. Replacing it **destroys the previous source**, so
+    callers must first detach that source everywhere it is used (``canvas.setSources([])``
+    on every elevation-profile canvas, and clear the sources of any layout elevation-profile
+    items); canvases and layout items hold raw pointers to it."""
     registry = QgsApplication.profileSourceRegistry()
     if registry.findSourceById(SOURCE_ID) is not None:
         registry.unregisterProfileSource(SOURCE_ID)
@@ -263,8 +299,9 @@ def register_source(provider: SectionDataProvider) -> WorkbenchProfileSource:
 
 
 def unregister_source(source: WorkbenchProfileSource) -> None:
-    """Remove ``source`` from the registry (destroys it); no-op if it is not registered.
-    Detach it from any canvas (``setSources``) first."""
+    """Remove ``source`` from the registry, which **destroys** it; no-op if it is not
+    the registered workbench source (e.g. already replaced). Callers must first detach it
+    from every canvas (``canvas.setSources([])``) and layout elevation-profile item."""
     registry = QgsApplication.profileSourceRegistry()
     if registry.findSourceById(SOURCE_ID) is source:
         registry.unregisterProfileSource(SOURCE_ID)

@@ -208,3 +208,62 @@ def test_station_ticks_follow_topography_or_mesh_top(qgis_app, store_with_model,
     no_topo = _generate(WorkbenchProfileSource(SectionDataProvider(st2)), p2.xy, st2.crs_authid)
     assert no_topo._station_z == pytest.approx([-0.5, -0.5])            # top of the mesh
     assert no_topo.zRange().lower() == pytest.approx(-5) and no_topo.zRange().upper() == pytest.approx(-0.5)
+
+
+class _LogCatcher:
+    # QGIS 4.2: logMessage() emits messageReceivedWithFormat; the old messageReceived
+    # signal did not fire for it in this environment (measured).
+    def __init__(self):
+        from qgis.core import QgsApplication
+        self.messages = []
+        self._sig = QgsApplication.messageLog().messageReceivedWithFormat
+        self._sig.connect(self._on)
+
+    def _on(self, message, tag, level, fmt=None):
+        self.messages.append((message, tag, level))
+
+    def close(self):
+        self._sig.disconnect(self._on)
+
+
+def test_callback_failures_are_logged_not_raised(qgis_app, store_with_model, monkeypatch):
+    from qgis.core import (Qgis, QgsProfileIdentifyContext, QgsProfilePoint,
+                           QgsProfileRenderContext, QgsRenderContext)
+    from qgis.PyQt.QtGui import QImage, QPainter
+
+    from geophysics_workbench.section import profile_source as ps
+    from geophysics_workbench.section.data import SectionDataProvider
+
+    st, p, _ = store_with_model
+    source = ps.WorkbenchProfileSource(SectionDataProvider(st))
+    good = _generate(source, p.xy, st.crs_authid)
+    log = _LogCatcher()
+    try:
+        def boom(*a, **k):
+            raise MemoryError("simulated")
+
+        # generateProfile (worker thread in the canvas) returns False instead of raising
+        monkeypatch.setattr(ps, "cell_path_groups", boom)
+        gen = source.createProfileGenerator(_request(p.xy, st.crs_authid))
+        assert gen.generateProfile() is False
+        assert gen.takeResults() is None
+
+        # renderResults and identify are called from C++ paint / identify paths
+        monkeypatch.setattr(ps, "identify_layers", boom)
+        assert good.identify(QgsProfilePoint(5.0, -2.0), QgsProfileIdentifyContext()) == []
+        good._layers = [(1.0, [("not a colour", None)])]
+        img = QImage(200, 100, QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(0)
+        painter = QPainter(img)
+        try:
+            good.renderResults(QgsProfileRenderContext(QgsRenderContext.fromQPainter(painter)))
+            assert painter.isActive()
+        finally:
+            painter.end()
+    finally:
+        log.close()
+    mine = [(m, lvl) for m, tag, lvl in log.messages if tag == "Geophysics Workbench"]
+    assert [m.split(" failed")[0] for m, _ in mine] == [
+        "Section generation", "Section identify", "Section drawing"]
+    assert all(lvl == Qgis.MessageLevel.Critical for _, lvl in mine)
+    assert "MemoryError: simulated" in mine[0][0]

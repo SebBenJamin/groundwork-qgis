@@ -197,3 +197,50 @@ def test_cell_path_groups_vectorised():
     # each cell = moveTo + 4 lineTo (closed; triangles repeat the first vertex)
     assert elems0["t"].tolist() == [0, 1, 1, 1, 1]
     assert elems1["x"].tolist() == [1, 2, 1, 1, 1] and elems1["y"].tolist() == [0, 0, 1, 0, 0]
+
+
+def test_reader_options_change_invalidates_cache(store_with_model):
+    st, p, _ = store_with_model
+    prov = SectionDataProvider(st)
+    m1 = prov.layers(p.id)[0].mesh
+    d = st.datasets(p.id)[0]
+    d.reader_options = {"z_kind": "elevation", "chainage_offset": 5.0}
+    st.save_dataset(d)
+    m2 = prov.layers(p.id)[0].mesh
+    assert not np.shares_memory(m1.cells, m2.cells)                 # re-read
+    assert m2.bounds()[:2] == pytest.approx((m1.bounds()[0] + 5, m1.bounds()[1] + 5))
+
+
+def test_user_style_survives_file_reload(store_with_model):
+    st, p, src = store_with_model
+    prov = SectionDataProvider(st)
+    custom = LayerStyle(visible=True, opacity=0.7, scale=ColorScale("viridis", 50, 400, True))
+    prov.set_style("d1", custom)
+    m1 = prov.layers(p.id)[0].mesh
+    st_ = os.stat(src)
+    os.utime(src, (st_.st_atime, st_.st_mtime + 10))
+    [layer] = prov.layers(p.id)
+    assert not np.shares_memory(m1.cells, layer.mesh.cells)         # reloaded ...
+    assert layer.style is custom and layer.style.scale.to_dict() == {   # ... style kept
+        "cmap": "viridis", "vmin": 50.0, "vmax": 400.0, "log": True}
+
+
+def test_identify_skips_error_layers_and_nan_cells(store_with_model, tmp_path):
+    from geophysics_workbench.core.section_mesh import SectionMesh
+    from geophysics_workbench.section.data import SectionLayer, identify_layers
+
+    st, p, _ = store_with_model
+    s = st.station_sets(p.id)[0]
+    st.save_dataset(Dataset("d2", p.id, s.id, "ert_model", str(tmp_path / "f009_res.dat"), 0.0,
+                            "", "r2_res_dat", {}, {}, name="top"))   # drawn on top, missing
+    prov = SectionDataProvider(st)
+    layers = prov.layers(p.id)
+    assert layers[1].error.startswith("source missing")
+    assert [h["name"] for h in prov.identify(p.id, 5.0, -2.0)] == ["P1 model"]
+
+    verts = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=float)
+    nan_mesh = SectionMesh(verts, np.array([[0, 1, 2, -1], [0, 2, 3, -1]]),
+                           np.array([np.nan, 42.0]))
+    nan_layer = SectionLayer(layers[0].dataset, nan_mesh, LayerStyle(), None)
+    assert identify_layers([nan_layer], 0.8, 0.2) == []             # nan cell omitted
+    assert identify_layers([nan_layer], 0.2, 0.8)[0]["value"] == 42.0
