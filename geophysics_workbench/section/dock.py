@@ -1,0 +1,405 @@
+"""Section panel: a native elevation-profile canvas fed by the workbench profile source,
+with a profile chooser, layer list, vertical exaggeration and a cursor readout.
+
+Coordinates: ``open_profile`` always sets the canvas curve in the profile's own direction,
+so canvas distance == forward profile chainage (what ``cursor_moved``, ``show_cursor`` and
+``SectionDataProvider.identify`` use). Keep it that way, or convert (length - s) here.
+"""
+from __future__ import annotations
+
+import numpy as np
+from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsLineString, QgsPoint,
+                       QgsProfilePoint, QgsProject)
+from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
+from qgis.PyQt import sip
+from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QPen
+from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
+                                 QHBoxLayout, QLabel, QSplitter, QToolButton, QVBoxLayout,
+                                 QWidget)
+
+from .data import identify_layers, layer_name
+from .layer_list import LayerList
+from .profile_source import SOURCE_ID
+from .readout import format_readout
+
+OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
+DEFAULT_VE = 2.0
+PAD = 0.06                      # fraction of the data extent added on each side by zoom_full
+HINT_NO_PROJECT = "No project open."
+HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
+HINT_HOVER = "Move the mouse over the section to read values."
+
+
+def _registered_source_for(provider):
+    source = QgsApplication.profileSourceRegistry().findSourceById(SOURCE_ID)
+    return source if getattr(source, "provider", None) is provider else None
+
+
+class SectionDock(QDockWidget):
+    cursor_moved = pyqtSignal(float, float)     # forward chainage, elevation
+    cursor_left = pyqtSignal()                  # the mouse left the section
+
+    def __init__(self, parent=None):
+        super().__init__("Geophysics section", parent)
+        self.setObjectName(OBJECT_NAME)
+        self.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea
+                             | Qt.DockWidgetArea.TopDockWidgetArea)
+        self.provider = None
+        self._source = None
+        self._profile = None
+        self._layers = None                     # cached provider.layers() of the open profile
+        self._topo = None
+        self._cursor_s = None
+        self._fit_pending = False               # re-fit the view until the user navigates
+        self._jobs = 0
+        self._fit_view = None                   # visible range set by the last zoom_full
+
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumWidth(180)
+        self.profile_combo.currentIndexChanged.connect(self._combo_changed)
+        self.ve_spin = QDoubleSpinBox()
+        self.ve_spin.setRange(1.0, 20.0)
+        self.ve_spin.setDecimals(1)
+        self.ve_spin.setSingleStep(0.5)
+        self.ve_spin.setValue(DEFAULT_VE)
+        self.ve_spin.setSuffix(" ×")
+        self.ve_spin.setToolTip("Vertical exaggeration")
+        self.ve_spin.valueChanged.connect(self._ve_changed)
+        zoom_button = QToolButton()
+        zoom_button.setText("Zoom full")
+        zoom_button.clicked.connect(self.zoom_full)
+
+        self.canvas = QgsElevationProfileCanvas()
+        self.canvas.setProject(QgsProject.instance())
+        self.canvas.setLockAxisScales(True)
+        self.canvas.setMinimumHeight(180)
+        # a plot tool must be installed or canvasPointHovered never fires (ADR 0001)
+        self._pan_tool = QgsPlotToolPan(self.canvas)
+        self.canvas.setTool(self._pan_tool)
+        self.canvas.canvasPointHovered.connect(self._hovered)
+        self.canvas.activeJobCountChanged.connect(self._jobs_changed)
+        self.canvas.plotAreaChanged.connect(self._update_guide)
+        self.canvas.scaleChanged.connect(self._update_guide)
+        self.canvas.installEventFilter(self)
+        self.canvas.viewport().installEventFilter(self)
+        self.guide_line = QGraphicsLineItem()
+        pen = QPen(QColor(200, 0, 0), 1.5, Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        self.guide_line.setPen(pen)
+        self.guide_line.setZValue(1000)
+        self.guide_line.hide()
+        self.canvas.scene().addItem(self.guide_line)
+
+        self.layer_list = LayerList()
+        self.readout = QLabel()
+        self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.readout.setMinimumHeight(self.readout.sizeHint().height())
+        self.errors = QLabel()
+        self.errors.setStyleSheet("color: #c00000;")
+        self.errors.setWordWrap(True)
+        self.errors.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.errors.hide()
+
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Profile"))
+        top.addWidget(self.profile_combo)
+        top.addStretch(1)
+        top.addWidget(QLabel("Vertical exaggeration"))
+        top.addWidget(self.ve_spin)
+        top.addWidget(zoom_button)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.canvas)
+        splitter.addWidget(self.layer_list)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setCollapsible(0, False)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.addLayout(top)
+        layout.addWidget(splitter, 1)
+        layout.addWidget(self.readout)
+        layout.addWidget(self.errors)
+        self.setWidget(body)
+
+        self._refresh_timer = QTimer(self)      # coalesces bursts of provider changes
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh_now)
+        self._refit_timer = QTimer(self)
+        self._refit_timer.setSingleShot(True)
+        self._refit_timer.timeout.connect(self._refit)
+        self._restore_timer = QTimer(self)
+        self._restore_timer.setSingleShot(True)
+        self._restore_timer.timeout.connect(self._restore_fit)
+        self._set_hint()
+
+    # -- provider ----------------------------------------------------------------------------
+    def set_provider(self, provider, source=None) -> None:
+        """Show ``provider``'s profiles (``None`` clears the panel). ``source`` is the
+        registered profile source for it; when omitted the registry is searched. The old
+        source is detached from the canvas first, so it can be unregistered afterwards."""
+        if self.provider is not None and self._on_provider_changed in self.provider.on_change:
+            self.provider.on_change.remove(self._on_provider_changed)
+        self.canvas.setSources([])
+        self._refresh_timer.stop()
+        self.provider = provider
+        self._source = None
+        self._close_profile()
+        if provider is not None:
+            self._source = source if source is not None else _registered_source_for(provider)
+            provider.on_change.append(self._on_provider_changed)
+            if self._source is not None:
+                self.canvas.setSources([self._source])
+        self._fill_combo()
+        self._set_hint()
+
+    def _on_provider_changed(self) -> None:
+        if not sip.isdeleted(self):
+            self._refresh_timer.start(0)
+
+    def _refresh_now(self) -> None:
+        if self.provider is None:
+            return
+        self._layers = None
+        self._fill_combo()
+        if self._profile is None:
+            return
+        try:
+            profile = self.provider.store.profile(self._profile.id)
+        except KeyError:                        # profile deleted from the project
+            self._close_profile()
+            self._set_hint()
+            return
+        if not np.array_equal(profile.xy, self._profile.xy):
+            self._profile = profile
+            self._set_curve(profile)
+        self._sync_layers()
+        self.canvas.refresh()
+
+    # -- profiles ----------------------------------------------------------------------------
+    def _fill_combo(self) -> None:
+        profiles = [] if self.provider is None else self.provider.store.profiles()
+        wanted = [(None, "Choose a profile…")] + [(p.id, p.name or p.id) for p in profiles]
+        have = [(self.profile_combo.itemData(i), self.profile_combo.itemText(i))
+                for i in range(self.profile_combo.count())]
+        self.profile_combo.blockSignals(True)
+        if wanted != have:
+            self.profile_combo.clear()
+            for pid, name in wanted:
+                self.profile_combo.addItem(name, pid)
+        index = self.profile_combo.findData(self.current_profile_id()) if self._profile else 0
+        self.profile_combo.setCurrentIndex(max(0, index))
+        self.profile_combo.blockSignals(False)
+
+    def _combo_changed(self, index: int) -> None:
+        pid = self.profile_combo.itemData(index)
+        if pid and pid != self.current_profile_id():
+            self.open_profile(pid)
+
+    def current_profile_id(self) -> str | None:
+        return None if self._profile is None else self._profile.id
+
+    def current_profile(self):
+        return self._profile
+
+    def open_profile(self, profile_id: str) -> None:
+        """Show ``profile_id``: curve in the profile's own direction, CRS of the project
+        store, zoomed to the full extent of the data and topography."""
+        if self.provider is None:
+            raise RuntimeError("no project is open")
+        profile = self.provider.store.profile(profile_id)
+        self._profile = profile
+        self._layers = None
+        self._fill_combo()
+        self.canvas.setCrs(QgsCoordinateReferenceSystem(self.provider.store.crs_authid))
+        self._set_curve(profile)
+        if self._source is not None and not self.canvas.sources():
+            self.canvas.setSources([self._source])
+        self._sync_layers()
+        self.canvas.refresh()
+        self.zoom_full()
+        self.show_cursor(None)
+        self._set_hint()
+
+    def _set_curve(self, profile) -> None:
+        self.canvas.setProfileCurve(QgsLineString([QgsPoint(float(x), float(y))
+                                                   for x, y in profile.xy]))
+
+    def _close_profile(self) -> None:
+        self._profile = None
+        self._layers = self._topo = None
+        self._fit_pending = False
+        self._fit_view = None
+        self.canvas.clear()
+        self.layer_list.set_layers(self.provider, [])
+        self._show_errors([])
+        self.show_cursor(None)
+
+    def _current_layers(self) -> list:
+        if self._layers is None:
+            if self.provider is None or self._profile is None:
+                return []
+            self._layers = self.provider.layers(self._profile.id)
+            self._topo = self.provider.topography(self._profile.id)
+        return self._layers
+
+    def _sync_layers(self) -> None:
+        layers = self._current_layers()
+        self.layer_list.set_layers(self.provider, layers)
+        self._show_errors([f"{layer_name(la.dataset)}: {la.error}"
+                           for la in layers if la.error is not None])
+
+    def _show_errors(self, lines: list[str]) -> None:
+        self.errors.setText("\n".join(lines))
+        self.errors.setVisible(bool(lines))
+
+    # -- view --------------------------------------------------------------------------------
+    def _data_extent(self) -> tuple[float, float, float, float]:
+        s = [0.0, self._profile.chainage.length]
+        z = []
+        for layer in self._current_layers():
+            if layer.mesh is not None:
+                s0, s1, z0, z1 = layer.mesh.bounds()
+                s += [s0, s1]
+                z += [z0, z1]
+        if self._topo is not None and len(self._topo[0]):
+            s += [float(self._topo[0].min()), float(self._topo[0].max())]
+            z += [float(self._topo[1].min()), float(self._topo[1].max())]
+        if not z:
+            z = [-10.0, 0.0]
+        zmin, zmax = min(z), max(z)
+        if zmax - zmin < 1.0:
+            zmin, zmax = zmin - 0.5, zmax + 0.5
+        return min(s), max(s), zmin, zmax
+
+    def zoom_full(self) -> None:
+        """Fit the data and topography at the current vertical exaggeration. The view keeps
+        being re-fitted (after generation, resize, exaggeration changes) until the user
+        presses, scrolls or types in the canvas."""
+        if self._profile is None:
+            return
+        self._fit_pending = True
+        s0, s1, z0, z1 = self._data_extent()
+        ds, dz = (s1 - s0) * (1 + 2 * PAD), (z1 - z0) * (1 + 2 * PAD)
+        sc, zc = (s0 + s1) / 2, (z0 + z1) / 2
+        ve = self.ve_spin.value()
+        self.canvas.setLockAxisScales(False)
+        for _ in range(2):                      # the plot area depends on the axis labels
+            area = self.canvas.plotArea()
+            w, h = area.width(), area.height()
+            if w < 20 or h < 20:
+                w, h = max(self.canvas.width() - 80.0, 200.0), max(self.canvas.height() - 40.0, 100.0)
+            epp = max(dz / h, ds / (w * ve))    # elevation per pixel; distance per pixel = ve * epp
+            dpp = ve * epp
+            self.canvas.setVisiblePlotRange(sc - dpp * w / 2, sc + dpp * w / 2,
+                                            zc - epp * h / 2, zc + epp * h / 2)
+        self.canvas.setAxisScaleRatio(ve)
+        self.canvas.setLockAxisScales(True)
+        self._fit_view = self._view()
+        self._update_guide()
+
+    def _view(self) -> tuple[float, float, float, float]:
+        d, e = self.canvas.visibleDistanceRange(), self.canvas.visibleElevationRange()
+        return d.lower(), d.upper(), e.lower(), e.upper()
+
+    def _ve_changed(self, value: float) -> None:
+        if self._fit_pending:
+            self.zoom_full()                    # untouched view: keep showing everything
+        else:
+            self.canvas.setAxisScaleRatio(value)
+            self._update_guide()
+
+    def _refit(self) -> None:
+        if self._profile is not None:
+            self._ve_changed(self.ve_spin.value())
+
+    def _jobs_changed(self, count: int) -> None:
+        self._jobs = count
+        if count == 0 and self._fit_pending and self._profile is not None:
+            self._restore_timer.start(0)
+
+    def _restore_fit(self) -> None:
+        # The canvas zooms itself to its own full extent after its first generation
+        # (cropped at the locked ratio): put our fit back. Only when the view moved, since
+        # every zoom starts a follow-up job and an unconditional refit would loop.
+        if not self._fit_pending or self._profile is None or self._fit_view is None:
+            return
+        view = self._view()
+        tol = 1e-6 * max(1.0, *(abs(v) for v in view))
+        if any(abs(a - b) > tol for a, b in zip(view, self._fit_view)):
+            self.zoom_full()
+
+    def is_busy(self) -> bool:
+        """True while the canvas is generating the section."""
+        return self._jobs > 0
+
+    def eventFilter(self, obj, event):
+        etype = event.type()
+        if obj is self.canvas.viewport():
+            if etype == QEvent.Type.Leave:
+                self.cursor_left.emit()
+            elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
+                self._fit_pending = False       # the user navigates: keep their view
+        elif obj is self.canvas:
+            if etype == QEvent.Type.KeyPress:
+                self._fit_pending = False
+            elif etype == QEvent.Type.Resize and self._profile is not None:
+                self._refit_timer.start(0)
+        return super().eventFilter(obj, event)
+
+    # -- cursor ------------------------------------------------------------------------------
+    def _hovered(self, _canvas_point, plot_point) -> None:
+        # the arguments are const references: copy the values now (ADR 0001)
+        if plot_point.isEmpty() or self._profile is None:
+            self.cursor_left.emit()
+            return
+        s, z = float(plot_point.distance()), float(plot_point.elevation())
+        self.cursor_moved.emit(s, z)            # canvas distance == forward chainage (M1)
+        self._show_readout(s, z)
+
+    def _show_readout(self, s: float, z: float | None = None) -> None:
+        profile = self._profile
+        inside = 0.0 <= s <= profile.chainage.length
+        xy = tuple(float(v) for v in profile.chainage.to_xy(s)) if inside else None
+        layers = self._current_layers()
+        depth, hits = None, []
+        if z is not None:
+            topo = self._topo
+            if topo is not None and len(topo[0]) > 1 and topo[0][0] <= s <= topo[0][-1]:
+                depth = float(np.interp(s, *topo)) - z
+            hits = identify_layers(layers, s, z)
+        self.readout.setText(format_readout(s, z, depth, xy, hits))
+
+    def show_cursor(self, s: float | None) -> None:
+        """Vertical guide at forward chainage ``s``; ``None`` hides it."""
+        self._cursor_s = None if s is None or self._profile is None else float(s)
+        self._update_guide()
+        if self._cursor_s is not None:
+            self._show_readout(self._cursor_s)
+
+    def cursor_chainage(self) -> float | None:
+        return self._cursor_s
+
+    def _update_guide(self, *_) -> None:
+        s = self._cursor_s
+        d = self.canvas.visibleDistanceRange()
+        if s is None or not d.lower() <= s <= d.upper():
+            self.guide_line.hide()
+            return
+        area = self.canvas.plotArea()
+        e = self.canvas.visibleElevationRange()
+        # a point outside the visible range maps to (0, 0): use the middle elevation
+        x = self.canvas.plotPointToCanvasPoint(
+            QgsProfilePoint(s, (e.lower() + e.upper()) / 2)).x()
+        self.guide_line.setLine(QLineF(x, area.top(), x, area.bottom()))
+        self.guide_line.show()
+
+    def _set_hint(self) -> None:
+        if self.provider is None:
+            text = HINT_NO_PROJECT
+        elif self._profile is None:
+            text = HINT_NO_PROFILE
+        else:
+            text = HINT_HOVER
+        self.readout.setText(text)
