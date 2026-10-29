@@ -4,15 +4,16 @@ Layout verified against ResIPy source (gitlab.com/hkex/resipy, src/resipy/meshTo
 Mesh.writeAttr): for 2D meshes, tab-separated, no header, one row per element centroid:
 ``x  z  value  log10(value)`` (z = elevation); 3D meshes write ``x y z value log10`` (five
 columns), which this reader rejects. File name pattern ``f\\d{3}_res.dat`` (R2 iteration
-output), N gives the iteration / file index.
+output), N gives the iteration / file index. A renamed file is recognised by content:
+four columns where column 3 is log10 of column 2.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-from .base import Reader, ReaderResult, mesh_from_resistivity_points
-from .textcols import read_columns
+from .base import Reader, ReaderResult, is_log10_pair, mesh_from_resistivity_points
+from .textcols import read_columns, sniff_columns
 
 _NAME = re.compile(r"f(\d{3})_res\.dat", re.IGNORECASE)
 
@@ -22,7 +23,10 @@ class R2ResReader(Reader):
     label = "R2 / ResIPy resistivity (f00N_res.dat)"
 
     def sniff(self, path: Path) -> bool:
-        return _NAME.fullmatch(Path(path).name) is not None
+        if _NAME.fullmatch(Path(path).name) is not None:
+            return True
+        probe = sniff_columns(path)
+        return probe is not None and probe[1].shape[1] == 4 and is_log10_pair(probe[1], 2, 3)
 
     def read(self, path: Path, **options) -> ReaderResult:
         path = Path(path)

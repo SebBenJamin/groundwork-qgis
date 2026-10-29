@@ -2,17 +2,16 @@
 
 Layout (from a real user file): header ``#X<TAB>Z<TAB>log_Rho<TAB>Rho<TAB>X,m<TAB>Y,m``;
 column 0 = profile x, 1 = Z, 3 = resistivity (ohm.m; column 2 is its log10). Further
-columns (world X/Y in metres) are ignored but flagged in the provenance.
+columns (world X/Y in metres) are ignored but flagged in the provenance. Detected by
+content: column 2 is log10 of column 3 (R2 files have it the other way round).
 Could not verify against Zond software documentation; based on the sample header only.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from .base import Reader, ReaderResult, mesh_from_resistivity_points
+from .base import Reader, ReaderResult, is_log10_pair, mesh_from_resistivity_points
 from .textcols import read_columns, sniff_columns
-
-_TEXT_SUFFIXES = {".dat", ".txt", ".xyz"}
 
 
 class ZondResReader(Reader):
@@ -23,12 +22,8 @@ class ZondResReader(Reader):
         probe = sniff_columns(path)
         if probe is None:
             return False
-        header, arr = probe
-        if arr.shape[1] < 4:
-            return False
-        if header is not None and header[0].lstrip("#").strip().upper() == "X":
-            return True
-        return Path(path).suffix.lower() in _TEXT_SUFFIXES
+        _header, arr = probe
+        return arr.shape[1] >= 4 and is_log10_pair(arr, 3, 2)
 
     def read(self, path: Path, **options) -> ReaderResult:
         path = Path(path)

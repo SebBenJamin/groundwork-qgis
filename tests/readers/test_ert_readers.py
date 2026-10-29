@@ -131,3 +131,23 @@ def test_zond_nan_token_is_masked(tmp_path):
     p = tmp_path / "nan.dat"; p.write_text("\n".join(lines) + "\n")
     r = readers.read(p)
     assert r.provenance["n_masked"] == 1 and (r.mesh.values > 0).all()
+
+
+@pytest.mark.parametrize("name", ["P1_res.dat", "P1_iter7.txt", "model.xyz"])
+def test_renamed_r2_file_is_detected_by_content(tmp_path, name):
+    """R2 rows are x z rho log10(rho); a renamed copy must not be read as ZondRes2D,
+    which would take the log10 column as resistivity."""
+    import shutil
+    p = tmp_path / name
+    shutil.copy(F / "f001_res.dat", p)
+    found = readers.detect(p)
+    assert found and found[0] == "r2_res_dat" and "zondres_xyz" not in found
+    r = readers.read(p)
+    assert r.provenance["reader"] == "r2_res_dat" and r.mesh.values.min() >= 70
+
+
+def test_zond_detection_checks_the_log_column(tmp_path):
+    assert readers.detect(F / "zond_model_depth.dat") == ["zondres_xyz"]
+    p = tmp_path / "four_cols.dat"                  # 4+ columns but no log10 pair
+    p.write_text("1 2 3 4\n5 6 7 8\n9 10 11 12\n")
+    assert readers.detect(p) == []

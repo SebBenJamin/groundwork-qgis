@@ -47,6 +47,20 @@ def fill_mask(v) -> np.ndarray:
     return ~np.isfinite(v) | (v <= FILL_VALUE + 1e-6)
 
 
+def is_log10_pair(arr: np.ndarray, value_col: int, log_col: int, tol: float = 0.02) -> bool:
+    """True when column ``log_col`` is log10 of column ``value_col`` in every row with a
+    usable (positive, non-fill) value, and there is at least one such row. Used to tell
+    R2 (x z rho log10) from ZondRes2D (x z log10 rho) text by content."""
+    a = np.asarray(arr, dtype=float)
+    if a.ndim != 2 or a.shape[1] <= max(value_col, log_col):
+        return False
+    v, lg = a[:, value_col], a[:, log_col]
+    ok = ~fill_mask(v) & (v > 0) & np.isfinite(lg)
+    if not ok.any():
+        return False
+    return bool(np.all(np.abs(np.log10(v[ok]) - lg[ok]) <= tol))
+
+
 def mesh_from_resistivity_points(x, z, v, name: str) -> tuple[SectionMesh, int]:
     """Drop fill/NaN points, check positivity, triangulate. Returns (mesh, n_masked).
     ValueErrors name the file."""
