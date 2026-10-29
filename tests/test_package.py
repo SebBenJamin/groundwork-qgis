@@ -1,15 +1,20 @@
 def test_package_imports_without_qgis_side_effects():
+    import subprocess
     import sys
-    import geophysics_workbench
-    assert hasattr(geophysics_workbench, "classFactory")
-    assert "geophysics_workbench.plugin" not in sys.modules
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    code = ("import sys, geophysics_workbench; "
+            "assert hasattr(geophysics_workbench, 'classFactory'); "
+            "assert 'geophysics_workbench.plugin' not in sys.modules")
+    r = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 def test_metadata_targets_qgis4():
     from configparser import ConfigParser
     from pathlib import Path
     cp = ConfigParser()
-    cp.read(Path("geophysics_workbench/metadata.txt"), encoding="utf-8")
+    cp.read(Path(__file__).resolve().parent.parent / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
     g = cp["general"]
     assert g["name"] == "Geophysics Workbench"
     assert g["qgisMinimumVersion"] == "4.2"

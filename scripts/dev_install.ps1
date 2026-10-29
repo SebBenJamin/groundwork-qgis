@@ -6,13 +6,18 @@ $pluginsDir = Join-Path $env:APPDATA "QGIS\QGIS4\profiles\default\python\plugins
 $link = Join-Path $pluginsDir "geophysics_workbench"
 
 New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
-if (Test-Path $link) {
+if (Get-Item $link -Force -ErrorAction SilentlyContinue) {
     $item = Get-Item $link -Force
     if ($item.LinkType -eq "Junction") {
-        Write-Host "Junction already exists: $link"
-        exit 0
+        if ($item.Target -contains $source -and (Test-Path $source)) {
+            Write-Host "Junction already exists: $link"
+            exit 0
+        }
+        Write-Host "Replacing stale junction (was -> $($item.Target))"
+        (Get-Item $link -Force).Delete()
+    } else {
+        throw "$link exists and is not a junction; remove it manually."
     }
-    throw "$link exists and is not a junction; remove it manually."
 }
 New-Item -ItemType Junction -Path $link -Target $source | Out-Null
 Write-Host "Created junction $link -> $source"

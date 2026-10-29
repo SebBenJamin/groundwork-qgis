@@ -6,7 +6,9 @@ $env:QT_QPA_PLATFORM = "offscreen"
 $env:PYTHONNOUSERSITE = "1"
 $repo = Split-Path -Parent $PSScriptRoot
 $env:GW_TESTLIBS = Join-Path $repo ".testlibs"
-$runner = "import os, sys; sys.path.insert(0, os.environ['GW_TESTLIBS']); import pytest; sys.exit(pytest.main(sys.argv[1:]))"
+# os._exit: QGIS/Qt teardown at interpreter shutdown crashes (access violation 0xC0000005) even when
+# all tests pass, which would mask pytest's exit code. Flush, then exit with pytest's code directly.
+$runner = "import os, sys; sys.path.insert(0, os.environ['GW_TESTLIBS']); import pytest; rc = int(pytest.main(sys.argv[1:])); sys.stdout.flush(); sys.stderr.flush(); os._exit(rc)"
 Push-Location $repo
 try {
     & "C:\Program Files\QGIS 4.2.3\bin\python-qgis.bat" -c $runner @args
