@@ -27,6 +27,12 @@ def _scale_text(layer: SectionLayer) -> str:
     return f"{format_value(scale.vmin)}–{format_value(scale.vmax)}{log}"
 
 
+def _exec_once(menu: QMenu, pos) -> None:
+    """Show a context menu, then free it (it is parented to the list and would pile up)."""
+    menu.exec(pos)
+    menu.deleteLater()
+
+
 class _LayerRow(QWidget):
     def __init__(self, layer: SectionLayer, owner: "LayerList"):
         super().__init__()
@@ -49,7 +55,7 @@ class _LayerRow(QWidget):
         self.scale_button.clicked.connect(lambda: owner.edit_scale(self.dataset_id))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(
-            lambda pos: owner.row_menu(self.dataset_id).exec(self.mapToGlobal(pos)))
+            lambda pos: _exec_once(owner.row_menu(self.dataset_id), self.mapToGlobal(pos)))
         for child in (self.check, self.opacity, self.scale_button):     # menu on the controls too
             child.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         row = QHBoxLayout(self)
