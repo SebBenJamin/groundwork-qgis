@@ -59,7 +59,11 @@ def load_powerline_frame(path: Path = POWERLINE):
     """Point on the powerline nearest ANCHOR plus the unit tangent there (local direction)."""
     gj = json.loads(Path(path).read_text(encoding="utf-8"))
     pts = np.array([c[:2] for f in gj["features"] for c in f["geometry"]["coordinates"]], float)
-    i = int(np.argmin(np.hypot(pts[:, 0] - ANCHOR[0], pts[:, 1] - ANCHOR[1])))
+    dist = np.hypot(pts[:, 0] - ANCHOR[0], pts[:, 1] - ANCHOR[1])
+    i = int(np.argmin(dist))
+    if dist[i] > 50.0:
+        raise ValueError(f"ANCHOR is {dist[i]:.0f} m from the nearest powerline vertex in {path} "
+                         "(max 50 m); the powerline was probably re-fetched - update ANCHOR in build_demo.py")
     a, b = pts[max(i - 1, 0)], pts[min(i + 1, len(pts) - 1)]
     d = (b - a) / np.hypot(*(b - a))
     return pts[i], d

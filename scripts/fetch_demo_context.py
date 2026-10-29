@@ -60,22 +60,22 @@ def main() -> int:
     ways.sort(key=length, reverse=True)
     best = ways[0]
     feats, allpts = [], []
-    for w in [best]:
-        coords = [[round(x, 2), round(y, 2)] for x, y in
-                  (tr.transform(p["lon"], p["lat"]) for p in w["geometry"])]
-        allpts += coords
-        tags = w.get("tags", {})
-        props = {"osm_id": w["id"], "voltage": tags.get("voltage")}
-        for k in ("name", "operator"):
-            if k in tags:
-                props[k] = tags[k]
-        feats.append({"type": "Feature", "properties": props,
-                      "geometry": {"type": "LineString", "coordinates": coords}})
+    w = best
+    coords = [[round(x, 2), round(y, 2)] for x, y in
+              (tr.transform(p["lon"], p["lat"]) for p in w["geometry"])]
+    allpts += coords
+    tags = w.get("tags", {})
+    props = {"osm_id": w["id"], "voltage": tags.get("voltage")}
+    for k in ("name", "operator"):
+        if k in tags:
+            props[k] = tags[k]
+    feats.append({"type": "Feature", "properties": props,
+                  "geometry": {"type": "LineString", "coordinates": coords}})
     gj = {"type": "FeatureCollection",
           "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::25832"}},
           "features": feats}
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(gj, indent=1) + "\n", encoding="utf-8")
+    OUT.write_text(json.dumps(gj, indent=1) + "\n", encoding="utf-8", newline="\n")
     xs, ys = [p[0] for p in allpts], [p[1] for p in allpts]
     print("bbox (lat/lon S,W,N,E):", bbox)
     print("osm way:", best["id"], best.get("tags", {}).get("voltage"), f"length {length(best):.0f} m")
