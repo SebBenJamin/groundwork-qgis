@@ -265,8 +265,7 @@ def read_stations(path: Path):
 
 def _remove(path: Path) -> None:
     for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
-        if p.exists():
-            p.unlink()
+        p.unlink(missing_ok=True)
 
 
 def build_workbench(demo_dir: Path = DEMO) -> Path:
@@ -334,12 +333,12 @@ def build_qgis_project(demo_dir: Path = DEMO) -> Path:
     from geophysics_workbench.ui.project_actions import use_store
 
     path = demo_dir / PROJECT_NAME
-    if path.exists():
-        path.unlink()
+    path.unlink(missing_ok=True)
     project = QgsProject()
     try:
         project.setFileName(str(path))           # before use_store: store path goes relative
         project.setTitle("Geophysics Workbench demo")
+        demo_extra.set_author(project)            # not the account running the build
         crs = QgsCoordinateReferenceSystem(CRS)
         project.setCrs(crs)
         project.writeEntryBool("Paths", "/Absolute", False)
@@ -359,6 +358,7 @@ def build_qgis_project(demo_dir: Path = DEMO) -> Path:
             QgsReferencedRectangle(QgsRectangle(x0, y0, x1, y1), crs))
         if not project.write():
             raise RuntimeError(f"cannot write {path}: {project.error()}")
+        demo_extra.strip_save_user(path)          # QGIS writes the OS account and full name
     finally:
         project.clear()
         del project

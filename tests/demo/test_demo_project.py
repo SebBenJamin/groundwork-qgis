@@ -76,3 +76,19 @@ def test_demo_store_datasets_use_relative_paths(qgis_app):
     assert got == {"P1": ("data/ert/P1/f001_res.dat", "r2_res_dat", "elevation"),
                    "P2": ("data/ert/P2/P2_model.dat", "zondres_xyz", "depth"),
                    "P3": ("data/ert/P3/f001_res.vtk", "vtk_legacy", "elevation")}
+
+
+def test_demo_project_carries_no_personal_data():
+    """No account or full name of whoever built the demo: saveUser/saveUserFull are blank
+    and the metadata author is the plugin author."""
+    import re
+    import zipfile
+    from configparser import ConfigParser
+
+    with zipfile.ZipFile(DEMO / "demo_project.qgz") as zf:
+        [qgs] = [n for n in zf.namelist() if n.endswith(".qgs")]
+        text = zf.read(qgs).decode("utf-8")
+    assert re.findall(r'saveUser(?:Full)?="([^"]*)"', text) in ([], ["", ""])
+    cp = ConfigParser()
+    cp.read(DEMO.parent / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
+    assert re.findall(r"<author>([^<]*)</author>", text) == [cp["general"]["author"]]
