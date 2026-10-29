@@ -259,3 +259,24 @@ def test_relative_source_path_resolves_against_store_folder(store_with_model, tm
     [layer] = prov.layers(p.id)
     assert layer.error is None and layer.mesh is not None
     assert prov.source_path(d) == str(tmp_path / "models" / "f001_res.dat")
+
+
+def test_model_on_stations_numbered_against_profile(tmp_path):
+    """Station 1 at the far end: data metres run against chainage (mesh mirrored)."""
+    from geophysics_workbench import readers
+    from geophysics_workbench.core.model import attach_station_set, profile_from_line
+
+    src = tmp_path / "f001_res.dat"
+    shutil.copy(os.path.join(FIXTURES, "f001_res.dat"), src)
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p, _ = profile_from_line("P", "EPSG:25832", np.array([[0, 0], [50, 0.0]]), spacing=5)
+    xyz = np.column_stack([np.arange(11) * 5.0, np.zeros(11), np.full(11, 100.0)])
+    s = attach_station_set(p, "e", "ert", xyz, numbers=np.arange(11, 0, -1))
+    st.save_profile(p); st.save_station_set(s)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("d", p.id, s.id, "ert_model", str(src), mt, sha, "r2_res_dat",
+                            {"z_kind": "elevation"}, {}))
+    raw = readers.read(src).mesh.bounds()
+    [layer] = SectionDataProvider(st).layers(p.id)
+    s0, s1 = layer.mesh.bounds()[:2]
+    assert (s0, s1) == pytest.approx((50 - raw[1], 50 - raw[0]))

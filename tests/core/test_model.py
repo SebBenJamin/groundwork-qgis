@@ -90,3 +90,62 @@ def test_file_fingerprint(tmp_path):
     mtime, sha = file_fingerprint(str(f))
     assert mtime == os.stat(f).st_mtime
     assert sha == hashlib.sha1(b"hello" * 100000).hexdigest()
+
+
+# -- numbering direction (stations numbered against the line direction) --------------------
+def _model_at(x_data, profile, st, offset=0.0):
+    """World (x, y) where data metre ``x_data`` of a model on ``st`` is drawn."""
+    ds = Dataset("d", profile.id, st.id, "ert_model", "m", 0, "", "r2_res_dat",
+                 {"chainage_offset": offset}, {})
+    return profile.chainage.to_xy(data_to_chainage(np.asarray(x_data, float), st, ds))
+
+
+def _station_xy(st, number):
+    return st.xyz[list(st.numbers).index(number), :2]
+
+
+def test_descending_station_file_puts_data_on_its_station():
+    xyz = np.column_stack([np.arange(10) * 5.0, np.zeros(10)])       # numbered 10..1 along +x
+    p, st = profile_from_stations("P", "EPSG:25832", xyz, numbers=np.arange(10, 0, -1))
+    assert p.chainage.length == pytest.approx(45)
+    # data x = 20 m is 4 spacings from station 1, i.e. station 5
+    assert _model_at([20.0], p, st)[0] == pytest.approx(_station_xy(st, 5))
+    assert _model_at([0.0], p, st)[0] == pytest.approx(_station_xy(st, 1))
+
+
+def test_unsorted_station_file_builds_a_straight_line():
+    rng = np.random.default_rng(1)
+    order = rng.permutation(10)
+    xyz = np.column_stack([np.arange(10) * 5.0, np.zeros(10)])[order]
+    p, st = profile_from_stations("P", "EPSG:25832", xyz, numbers=np.arange(1, 11)[order])
+    assert p.chainage.length == pytest.approx(45)                     # no zigzag
+    assert list(st.numbers) == list(range(1, 11))
+    assert _model_at([20.0, 45.0], p, st) == pytest.approx(
+        np.array([_station_xy(st, 5), _station_xy(st, 10)]))
+
+
+def test_reversed_profile_maps_data_against_chainage():
+    xyz = np.array([[0, 0], [5, 0], [10, 0]], float)
+    p, _ = profile_from_stations("P", "EPSG:25832", xyz)
+    rp = p.reversed()
+    st = attach_station_set(rp, "electrodes", "ert", xyz, numbers=np.array([1, 2, 3]))
+    assert st.direction == -1
+    assert _model_at([5.0], rp, st)[0] == pytest.approx(_station_xy(st, 2))
+    # the chainage offset shifts along the numbering too: x=3 + offset 2 -> station 2
+    assert _model_at([3.0], rp, st, offset=2.0)[0] == pytest.approx(_station_xy(st, 2))
+
+
+def test_line_profile_with_descending_numbers_attached():
+    p, _ = profile_from_line("P", "EPSG:25832", np.array([[0, 0], [20, 0.0]]), spacing=5)
+    xyz = np.column_stack([np.arange(5) * 5.0, np.zeros(5)])
+    st = attach_station_set(p, "e", "ert", xyz, numbers=np.array([5, 4, 3, 2, 1]))
+    assert st.metre0 == pytest.approx(20) and st.direction == -1
+    assert _model_at([5.0], p, st)[0] == pytest.approx(_station_xy(st, 2))
+
+
+def test_profile_from_line_numbered_from_end():
+    p, st = profile_from_line("P", "EPSG:25832", np.array([[0, 0], [12, 0.0]]), spacing=5,
+                              from_end=True)
+    assert p.xy[0] == pytest.approx([12, 0]) and p.xy[-1] == pytest.approx([0, 0])
+    assert st.xyz[:, :2] == pytest.approx(np.array([[12, 0], [7, 0], [2, 0.0]]))
+    assert list(st.numbers) == [1, 2, 3] and st.direction == 1

@@ -8,16 +8,6 @@ import pytest
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "ert"
 
 
-@pytest.fixture
-def project_store(qgis_app, tmp_path):
-    from qgis.core import QgsProject
-
-    from geophysics_workbench.ui.project_actions import new_store
-
-    prj = QgsProject()
-    return new_store(tmp_path / "w.gpkg", "EPSG:25832", prj), prj
-
-
 def _close(dialog, qgis_app):
     dialog.close()
     dialog.deleteLater()

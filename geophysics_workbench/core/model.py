@@ -45,6 +45,23 @@ class StationSet:
     metre0: float
     warnings: list[str] = field(default_factory=list)
 
+    @property
+    def direction(self) -> int:
+        """+1 when station numbers grow with chainage, -1 when they are numbered against
+        the profile direction (station 1 at the far end). Derived, not stored."""
+        return numbering_direction(self.numbers, self.chainage)
+
+
+def numbering_direction(numbers: np.ndarray, chainage: np.ndarray) -> int:
+    """Sign of chainage against station number (covariance); +1 when undetermined."""
+    n = np.asarray(numbers, dtype=float)
+    s = np.asarray(chainage, dtype=float)
+    ok = np.isfinite(n) & np.isfinite(s)
+    if ok.sum() < 2:
+        return 1
+    n, s = n[ok], s[ok]
+    return -1 if float(np.sum((n - n.mean()) * (s - s.mean()))) < 0 else 1
+
 
 @dataclass
 class Dataset:
@@ -66,9 +83,12 @@ class Dataset:
 
 
 def data_to_chainage(x_data: np.ndarray, station_set: StationSet, dataset: Dataset) -> np.ndarray:
-    """Map data-file metres to profile chainage."""
-    return (np.asarray(x_data, dtype=float) + station_set.metre0
-            + dataset.reader_options.get("chainage_offset", 0.0))
+    """Map data-file metres to profile chainage: ``metre0 + direction * (x + offset)``.
+    Data metres count from station 1 in the numbering direction, so a station set
+    numbered against the profile direction mirrors the model."""
+    offset = dataset.reader_options.get("chainage_offset", 0.0)
+    return (station_set.metre0
+            + station_set.direction * (np.asarray(x_data, dtype=float) + offset))
 
 
 def _as_xyz(xyz: np.ndarray) -> np.ndarray:
@@ -97,18 +117,29 @@ def attach_station_set(profile: Profile, name: str, method: str, xyz: np.ndarray
 def profile_from_stations(name: str, crs_authid: str, xyz: np.ndarray,
                           numbers: np.ndarray | None = None,
                           method: str = "ert") -> tuple[Profile, StationSet]:
-    """Profile whose geometry is the station polyline (in input order)."""
+    """Profile whose geometry is the station polyline, in station-number order when
+    ``numbers`` are given (input order otherwise)."""
     xyz = _as_xyz(xyz)
+    if numbers is not None:
+        numbers = np.asarray(numbers, dtype=int)
+        if len(numbers) != len(xyz):
+            raise ValueError("numbers and xyz differ in length")
+        order = np.argsort(numbers, kind="stable")
+        xyz, numbers = xyz[order], numbers[order]
     profile = Profile(_new_id(), name, xyz[:, :2].copy(), crs_authid)
     return profile, attach_station_set(profile, name, method, xyz, numbers)
 
 
 def profile_from_line(name: str, crs_authid: str, xy: np.ndarray, spacing: float,
-                      method: str = "ert", first_number: int = 1) -> tuple[Profile, StationSet]:
-    """Profile from a line with stations every ``spacing`` m from its start."""
+                      method: str = "ert", first_number: int = 1,
+                      from_end: bool = False) -> tuple[Profile, StationSet]:
+    """Profile from a line with stations every ``spacing`` m from its start. ``from_end``
+    numbers the stations from the line's last vertex: the profile is ``reversed()``."""
     if spacing <= 0:
         raise ValueError("spacing must be positive")
     profile = Profile(_new_id(), name, np.asarray(xy, dtype=float).copy(), crs_authid)
+    if from_end:
+        profile = profile.reversed()
     ch = profile.chainage
     s = np.arange(0.0, ch.length + 1e-9, spacing)
     pts = ch.to_xy(s)

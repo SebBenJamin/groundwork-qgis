@@ -214,6 +214,8 @@ class NewProfileDialog(QDialog):
             if not np.all(np.isfinite(numbers)) or np.any(numbers != np.round(numbers)):
                 raise ValueError("Electrode numbers must be whole numbers")
             numbers = numbers.astype(int)
+            order = np.argsort(numbers, kind="stable")      # the line follows the numbering
+            xyz, numbers = xyz[order], numbers[order]
         if len(xyz) < 2:
             raise ValueError("A profile needs at least 2 stations")
         return profile_from_stations(name, self.store.crs_authid, xyz, numbers, method=method)

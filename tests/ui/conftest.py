@@ -11,3 +11,14 @@ def warnings_shown(monkeypatch):
     monkeypatch.setattr(QMessageBox, "warning",
                         staticmethod(lambda parent, title, text, *a, **k: shown.append(text)))
     return shown
+
+
+@pytest.fixture
+def project_store(qgis_app, tmp_path):
+    """(new workbench store w.gpkg in EPSG:25832, the QgsProject showing it)."""
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.project_actions import new_store
+
+    prj = QgsProject()
+    return new_store(tmp_path / "w.gpkg", "EPSG:25832", prj), prj
