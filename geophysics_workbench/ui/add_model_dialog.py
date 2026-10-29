@@ -118,16 +118,16 @@ class AddModelDialog(QDialog):
             try:
                 self._result = readers.read(path, reader=reader)
             except FileNotFoundError:
+                self._key = None                    # failures are not cached: re-read next time
                 self._show_error(f"File not found: {path}")
                 return
             except (ValueError, OSError) as exc:
+                self._key = None
                 self._show_error(str(exc))
                 return
             self.z_combo.blockSignals(True)         # preset from the file; unknown -> choose
             self.z_combo.setCurrentIndex(max(0, self.z_combo.findData(self._result.z_kind)))
             self.z_combo.blockSignals(False)
-        if self._result is None:
-            return                                  # error already shown for this key
         self.preview.setStyleSheet("")
         self.preview.setText(describe(self._result, self.z_combo.currentData()))
 
@@ -152,7 +152,7 @@ class AddModelDialog(QDialog):
         except FileNotFoundError:
             self._error(f"File not found: {path}")
             return
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
             self._error(str(exc))
             return
         super().accept()

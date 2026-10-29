@@ -33,17 +33,25 @@ _HEADER_NAMES = {
 
 
 def guess_columns(header: list[str] | None, ncols: int) -> dict[str, int]:
-    """Column index per role (number, x, y, z) from header names, else by position."""
+    """Column index per role (number, x, y, z) from header names, else by position.
+    A positional guess never reuses a column that a header name claimed for another role."""
     if ncols >= 4:
         guess = {"number": 0, "x": 1, "y": 2, "z": 3}
     else:
         guess = {"number": NONE, "x": 0, "y": min(1, ncols - 1), "z": 2 if ncols == 3 else NONE}
     if header:
+        matched = {}
         for i, token in enumerate(header):
             word = re.sub(r"[^\wäöüß]", "", token.lower())
             for role, names in _HEADER_NAMES.items():
-                if word in names:
-                    guess[role] = i
+                if word in names and role not in matched:
+                    matched[role] = i
+        claimed = set(matched.values())
+        for role in guess:
+            if role in matched:
+                guess[role] = matched[role]
+            elif guess[role] in claimed:
+                guess[role] = NONE
     return guess
 
 
@@ -193,6 +201,11 @@ class NewProfileDialog(QDialog):
         cn, cz = self.col_number.currentData(), self.col_z.currentData()
         if cx is None or cy is None or cx == cy:
             raise ValueError("Choose two different columns for X and Y")
+        for label, col in (("electrode number", cn), ("Z", cz)):
+            if col not in (None, NONE) and col in (cx, cy):
+                raise ValueError(f"The {label} column cannot also be the X or Y column")
+        if cn not in (None, NONE) and cn == cz:
+            raise ValueError("The electrode number column cannot also be the Z column")
         z = arr[:, cz] if cz not in (None, NONE) else np.full(len(arr), np.nan)
         xyz = np.column_stack([arr[:, cx], arr[:, cy], z])
         numbers = None
@@ -321,7 +334,7 @@ class NewProfileDialog(QDialog):
         try:
             profile, station_set = self.build()
             add_profile(self.store, profile, station_set, self.project, self.provider)
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
             self._error(str(exc))
             return
         self.profile = profile

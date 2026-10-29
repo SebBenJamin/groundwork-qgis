@@ -137,7 +137,7 @@ def test_add_model_fills_defaults_and_notifies(qgis_app, tmp_path, store_with_mo
     sid = st.station_sets(p.id)[0].id
     d = add_model(st, p.id, sid, src, "r2_res_dat", {}, "", provider=prov)
     assert d.reader_options == {"z_kind": "elevation", "chainage_offset": 0.0}
-    assert d.name == "f002_res" and d.source_path == str(src)
+    assert d.name == "f002_res" and d.source_path == "models/f002_res.dat"   # under store dir
     assert d.source_sha1 and d.provenance["n_points"] > 0
     assert [x.id for x in st.datasets(p.id)][-1] == d.id
     assert calls == [1]
@@ -156,3 +156,17 @@ def test_add_model_requires_z_kind_when_unknown(qgis_app, tmp_path, store_with_m
                   {"chainage_offset": 2.0, "z_kind": "elevation"}, "z")
     assert d.reader_options == {"z_kind": "elevation", "chainage_offset": 2.0}
     assert len(st.datasets(p.id)) == 2
+
+
+def test_add_model_outside_store_folder_saves_absolute_path(qgis_app, tmp_path_factory,
+                                                           store_with_model):
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.ui.project_actions import add_model
+
+    st, p, _ = store_with_model
+    src = tmp_path_factory.mktemp("elsewhere") / "f003_res.dat"
+    shutil.copy(FIXTURES / "f001_res.dat", src)
+    d = add_model(st, p.id, st.station_sets(p.id)[0].id, src, "r2_res_dat", {}, "far")
+    assert Path(d.source_path).is_absolute()
+    assert Path(d.source_path) == src.resolve()
+    assert all(layer.error is None for layer in SectionDataProvider(st).layers(p.id))

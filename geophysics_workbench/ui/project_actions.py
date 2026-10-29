@@ -172,6 +172,16 @@ def add_profile(store: ProjectStore, profile: Profile, station_set: StationSet,
         provider.notify_changed()
 
 
+def model_source_path(store: ProjectStore, path: Path) -> str:
+    """``path`` as saved in the store: relative (POSIX) to the store's folder when the file
+    lies under it, so the folder can be moved as a whole; absolute otherwise."""
+    path = Path(path).resolve()
+    try:
+        return path.relative_to(Path(store.path).resolve().parent).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: Path,
               reader: str, options: dict, name: str, provider=None) -> Dataset:
     """Validate ``path`` by reading it once, then save it as a model dataset.
@@ -189,7 +199,8 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
         raise ValueError(f"Choose whether Z is elevation or depth for {path.name}")
     opts["z_kind"] = z_kind
     mtime, sha1 = file_fingerprint(str(path))
-    dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id, "ert_model", str(path),
+    dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id, "ert_model",
+                      model_source_path(store, path),
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
                       dict(result.provenance), name=name or path.stem)
     store.save_dataset(dataset)

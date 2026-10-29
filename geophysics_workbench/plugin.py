@@ -166,7 +166,8 @@ class WorkbenchPlugin:
     def new_workbench_project(self):
         window = self.iface.mainWindow()
         path, _ = QFileDialog.getSaveFileName(window, "New workbench project", "",
-                                              "GeoPackage (*.gpkg)")
+                                              "GeoPackage (*.gpkg)",
+                                              options=QFileDialog.Option.DontConfirmOverwrite)
         if not path:
             return
         if not path.lower().endswith(".gpkg"):
@@ -183,10 +184,10 @@ class WorkbenchPlugin:
             store = project_actions.new_store(Path(path), crs.authid(), project)
         except FileExistsError:
             QMessageBox.warning(window, "New workbench project",
-                                f"{path} already exists. Choose another name, or use "
-                                "“Open workbench project…”.")
+                                f"{Path(path).name} already exists. The workbench will not "
+                                "overwrite an existing project file; choose another name.")
             return
-        except ValueError as exc:
+        except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
             QMessageBox.warning(window, "New workbench project", str(exc))
             return
         if not project.crs().isValid():

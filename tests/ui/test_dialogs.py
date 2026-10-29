@@ -268,3 +268,141 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path):
     prj.read(str(tmp_path / "proj.qgz"))                       # unloaded: nothing happens
     assert plugin.provider is None
     prj.clear()
+
+
+# -- fix round 1 ---------------------------------------------------------------------------
+def _gdal_write_error(*_a, **_k):
+    raise RuntimeError("attempt to write a readonly database")
+
+
+def test_guess_columns_never_reuses_a_header_column():
+    from geophysics_workbench.ui.new_profile_dialog import NONE, guess_columns
+
+    assert guess_columns(["station", "x", "y"], 3) == {"number": 0, "x": 1, "y": 2, "z": NONE}
+    assert guess_columns(["Nr", "X", "Y"], 3) == {"number": 0, "x": 1, "y": 2, "z": NONE}
+    assert guess_columns(None, 3) == {"number": NONE, "x": 0, "y": 1, "z": 2}
+
+
+def test_new_profile_station_file_without_z_and_rejects_z_equal_y(
+        qgis_app, fake_iface, project_store, tmp_path, warnings_shown):
+    from geophysics_workbench.ui.new_profile_dialog import NONE, TAB_FILE, NewProfileDialog
+
+    st, prj = project_store
+    csv = tmp_path / "st.csv"
+    csv.write_text("station,x,y\n1,100.0,5800000.0\n2,105.0,5800000.0\n", encoding="utf-8")
+    dlg = NewProfileDialog(fake_iface, st, project=prj)
+    try:
+        dlg.tabs.setCurrentIndex(TAB_FILE)
+        dlg.set_station_file(csv)
+        assert dlg.col_z.currentData() == NONE
+        dlg.col_z.setCurrentIndex(dlg.col_z.findData(2))          # Z = the Y column
+        dlg.accept()
+        assert "z column" in warnings_shown[-1].lower() and st.profiles() == []
+        dlg.col_z.setCurrentIndex(dlg.col_z.findData(NONE))
+        dlg.accept()
+        [p] = st.profiles()
+        assert np.isnan(st.station_sets(p.id)[0].xyz[:, 2]).all()
+    finally:
+        _close(dlg, qgis_app)
+
+
+def test_new_profile_store_write_error_is_shown(qgis_app, fake_iface, project_store,
+                                                warnings_shown, monkeypatch):
+    from geophysics_workbench.ui.new_profile_dialog import TAB_POINTS, NewProfileDialog
+
+    st, prj = project_store
+    monkeypatch.setattr(st, "save_profile", _gdal_write_error)
+    dlg = NewProfileDialog(fake_iface, st, project=prj)
+    try:
+        dlg.tabs.setCurrentIndex(TAB_POINTS)
+        dlg.name_edit.setText("L")
+        dlg.x2.setValue(20.0)
+        dlg.accept()
+        assert "readonly" in warnings_shown[-1] and dlg.result() == 0
+    finally:
+        _close(dlg, qgis_app)
+
+
+def test_add_model_store_write_error_is_shown(qgis_app, fake_iface, store_with_model, tmp_path,
+                                              warnings_shown, monkeypatch):
+    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+
+    st, p, src = store_with_model
+    monkeypatch.setattr(st, "save_dataset", _gdal_write_error)
+    dlg = AddModelDialog(fake_iface, st, p.id)
+    try:
+        dlg.set_file(src)
+        dlg.accept()
+        assert "readonly" in warnings_shown[-1] and dlg.result() == 0
+    finally:
+        _close(dlg, qgis_app)
+
+
+def test_add_model_preview_rereads_a_fixed_file(qgis_app, fake_iface, store_with_model,
+                                                tmp_path):
+    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+
+    st, p, _ = store_with_model
+    f = tmp_path / "f004_res.dat"
+    f.write_text("not numbers\n")
+    dlg = AddModelDialog(fake_iface, st, p.id)
+    try:
+        dlg.set_file(f)
+        assert "f004_res.dat" in dlg.preview.text()
+        shutil.copy(FIXTURES / "f001_res.dat", f)                 # user fixes the file
+        dlg.set_file(f)
+        assert "ohm" in dlg.preview.text()
+    finally:
+        _close(dlg, qgis_app)
+
+
+def test_new_workbench_project_errors_are_shown(qgis_app, fake_iface, tmp_path, warnings_shown,
+                                                monkeypatch):
+    from qgis.core import QgsCoordinateReferenceSystem
+    from qgis.PyQt.QtWidgets import QDialog, QFileDialog
+
+    import geophysics_workbench.plugin as plugin_mod
+    from geophysics_workbench.plugin import WorkbenchPlugin
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+
+    class FakeCrsDialog:
+        def __init__(self, *_a):
+            pass
+
+        def setWindowTitle(self, _t):
+            pass
+
+        def setCrs(self, _c):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+        def crs(self):
+            return QgsCoordinateReferenceSystem("EPSG:25832")
+
+    seen = {}
+
+    def fake_save(*args, **kwargs):
+        seen["options"] = kwargs.get("options")
+        return str(target), ""
+
+    target = tmp_path / "w.gpkg"
+    monkeypatch.setattr(plugin_mod, "QgsProjectionSelectionDialog", FakeCrsDialog)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(fake_save))
+    real_create = ProjectStore.__dict__["create"]
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        monkeypatch.setattr(ProjectStore, "create", classmethod(
+            lambda cls, *a: _gdal_write_error()))
+        plugin.new_workbench_project()                       # unwritable folder
+        assert "readonly" in warnings_shown[-1] and plugin.provider is None
+        assert seen["options"] == QFileDialog.Option.DontConfirmOverwrite
+        monkeypatch.setattr(ProjectStore, "create", real_create)
+        target.write_bytes(b"")
+        plugin.new_workbench_project()                       # existing file is never replaced
+        assert "will not overwrite" in warnings_shown[-1] and "w.gpkg" in warnings_shown[-1]
+        assert plugin.provider is None and target.read_bytes() == b""
+    finally:
+        plugin.unload()
