@@ -6,14 +6,13 @@ itself while picking and comes back after the second click.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import numpy as np
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry,
                        QgsProject, QgsVectorLayer, QgsWkbTypes)
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
                                  QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                  QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
@@ -22,39 +21,11 @@ from ..readers.textcols import read_columns
 from ..section.data import matching_profiles
 from ..section.profile_source import CURVE_TOLERANCE
 from .project_actions import add_profile
+from .station_columns import NONE, guess_columns, stations_from_columns  # noqa: F401
 
 TAB_FILE, TAB_LINE, TAB_POINTS = 0, 1, 2
 METHODS = [("ERT", "ert")]
-NONE = -1                                   # "(none)" entry of the optional column combos
-_HEADER_NAMES = {
-    "number": {"nr", "no", "num", "number", "electrode", "elektrode", "station", "id"},
-    "x": {"x", "east", "easting", "rechts", "rechtswert", "e"},
-    "y": {"y", "north", "northing", "hoch", "hochwert", "n"},
-    "z": {"z", "elev", "elevation", "height", "höhe", "hoehe", "alt", "altitude", "h"},
-}
-
-
-def guess_columns(header: list[str] | None, ncols: int) -> dict[str, int]:
-    """Column index per role (number, x, y, z) from header names, else by position.
-    A positional guess never reuses a column that a header name claimed for another role."""
-    if ncols >= 4:
-        guess = {"number": 0, "x": 1, "y": 2, "z": 3}
-    else:
-        guess = {"number": NONE, "x": 0, "y": min(1, ncols - 1), "z": 2 if ncols == 3 else NONE}
-    if header:
-        matched = {}
-        for i, token in enumerate(header):
-            word = re.sub(r"[^\wäöüß]", "", token.lower())
-            for role, names in _HEADER_NAMES.items():
-                if word in names and role not in matched:
-                    matched[role] = i
-        claimed = set(matched.values())
-        for role in guess:
-            if role in matched:
-                guess[role] = matched[role]
-            elif guess[role] in claimed:
-                guess[role] = NONE
-    return guess
+FROM_END = "Number stations from the end"
 
 
 def _spin(lo: float, hi: float, value: float, decimals: int = 2, suffix: str = "") -> QDoubleSpinBox:
@@ -121,6 +92,7 @@ class NewProfileDialog(QDialog):
         self.file_info.setWordWrap(True)
         self.col_number, self.col_x, self.col_y, self.col_z = (QComboBox() for _ in range(4))
         form = QFormLayout(page)
+        form.addRow(QLabel(f"Coordinates must be in {self.store.crs_authid}"))
         form.addRow("File", row)
         form.addRow(self.file_info)
         form.addRow("Electrode number", self.col_number)
@@ -134,9 +106,11 @@ class NewProfileDialog(QDialog):
         self.line_info = QLabel()
         self.line_info.setWordWrap(True)
         self.line_spacing = _spin(0.0, 1e4, 5.0, suffix=" m")
+        self.line_from_end = QCheckBox(FROM_END)
         form = QFormLayout(page)
         form.addRow(self.line_info)
         form.addRow("Station spacing", self.line_spacing)
+        form.addRow("", self.line_from_end)
         return page
 
     def _points_tab(self) -> QWidget:
@@ -155,6 +129,8 @@ class NewProfileDialog(QDialog):
             form.addRow(label, row)
         form.addRow("", pick)
         form.addRow("Station spacing", self.points_spacing)
+        self.points_from_end = QCheckBox(FROM_END)
+        form.addRow("", self.points_from_end)
         return page
 
     # -- station file ------------------------------------------------------------------------
@@ -199,28 +175,9 @@ class NewProfileDialog(QDialog):
     def _from_file(self, name: str, method: str):
         if self._columns is None:
             raise ValueError("Choose a readable station file")
-        arr = self._columns[1]
-        cx, cy = self.col_x.currentData(), self.col_y.currentData()
-        cn, cz = self.col_number.currentData(), self.col_z.currentData()
-        if cx is None or cy is None or cx == cy:
-            raise ValueError("Choose two different columns for X and Y")
-        for label, col in (("electrode number", cn), ("Z", cz)):
-            if col not in (None, NONE) and col in (cx, cy):
-                raise ValueError(f"The {label} column cannot also be the X or Y column")
-        if cn not in (None, NONE) and cn == cz:
-            raise ValueError("The electrode number column cannot also be the Z column")
-        z = arr[:, cz] if cz not in (None, NONE) else np.full(len(arr), np.nan)
-        xyz = np.column_stack([arr[:, cx], arr[:, cy], z])
-        numbers = None
-        if cn not in (None, NONE):
-            numbers = arr[:, cn]
-            if not np.all(np.isfinite(numbers)) or np.any(numbers != np.round(numbers)):
-                raise ValueError("Electrode numbers must be whole numbers")
-            numbers = numbers.astype(int)
-            order = np.argsort(numbers, kind="stable")      # the line follows the numbering
-            xyz, numbers = xyz[order], numbers[order]
-        if len(xyz) < 2:
-            raise ValueError("A profile needs at least 2 stations")
+        xyz, numbers = stations_from_columns(
+            self._columns[1], self.col_x.currentData(), self.col_y.currentData(),
+            self.col_number.currentData(), self.col_z.currentData(), self.store.crs_authid)
         return profile_from_stations(name, self.store.crs_authid, xyz, numbers, method=method)
 
     # -- selected line -----------------------------------------------------------------------
@@ -237,7 +194,8 @@ class NewProfileDialog(QDialog):
             self.line_info.setText("Make a line layer active and select one line feature.")
         else:
             self.line_info.setText(f"Layer “{layer.name()}”: {layer.selectedFeatureCount()} "
-                                   "feature(s) selected. Stations start at the first vertex.")
+                                   "feature(s) selected. Stations start at the first vertex, or at "
+                                   "the last one when numbered from the end.")
 
     def _to_store(self, crs: QgsCoordinateReferenceSystem):
         dst = QgsCoordinateReferenceSystem(self.store.crs_authid)
@@ -264,7 +222,8 @@ class NewProfileDialog(QDialog):
         if len(xy) < 2:
             raise ValueError("The selected line needs at least 2 vertices")
         return profile_from_line(name, self.store.crs_authid, xy,
-                                 self._spacing(self.line_spacing), method=method)
+                                 self._spacing(self.line_spacing), method=method,
+                                 from_end=self.line_from_end.isChecked())
 
     # -- start / end points ------------------------------------------------------------------
     def _from_points(self, name: str, method: str):
@@ -272,7 +231,8 @@ class NewProfileDialog(QDialog):
         if np.hypot(*(xy[1] - xy[0])) == 0.0:
             raise ValueError("Start and end point must be different")
         return profile_from_line(name, self.store.crs_authid, xy,
-                                 self._spacing(self.points_spacing), method=method)
+                                 self._spacing(self.points_spacing), method=method,
+                                 from_end=self.points_from_end.isChecked())
 
     def start_pick(self) -> None:
         canvas = self.iface.mapCanvas()

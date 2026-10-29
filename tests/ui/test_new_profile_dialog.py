@@ -65,3 +65,83 @@ def test_new_profile_warns_when_geometry_duplicates_a_profile(qgis_app, fake_ifa
         assert fake_iface.messageBar().currentItem() is not None
     finally:
         _close(twin, qgis_app)
+
+
+def test_station_file_in_degrees_is_refused(qgis_app, fake_iface, project_store, tmp_path,
+                                            warnings_shown):
+    from qgis.PyQt.QtWidgets import QLabel
+
+    from geophysics_workbench.ui.new_profile_dialog import NONE, TAB_FILE, NewProfileDialog
+
+    st, prj = project_store
+    csv = tmp_path / "gps.csv"
+    csv.write_text("number,lon,lat\n1,9.8501,52.7501\n2,9.8502,52.7502\n3,9.8503,52.7503\n",
+                   encoding="utf-8")
+    dlg = NewProfileDialog(fake_iface, st, project=prj)
+    try:
+        labels = [w.text() for w in dlg.tabs.widget(TAB_FILE).findChildren(QLabel)]
+        assert "Coordinates must be in EPSG:25832" in labels
+        dlg.tabs.setCurrentIndex(TAB_FILE)
+        dlg.set_station_file(csv)
+        dlg.col_x.setCurrentIndex(dlg.col_x.findData(1))
+        dlg.col_y.setCurrentIndex(dlg.col_y.findData(2))
+        dlg.col_z.setCurrentIndex(dlg.col_z.findData(NONE))
+        dlg.accept()
+        assert dlg.result() == 0 and st.profiles() == []
+        assert "degrees" in warnings_shown[-1] and "EPSG:25832" in warnings_shown[-1]
+    finally:
+        _close(dlg, qgis_app)
+
+
+def test_looks_like_degrees_rule():
+    from geophysics_workbench.ui.station_columns import looks_like_degrees
+
+    assert looks_like_degrees(np.array([[9.85, 52.75], [9.86, 52.76]]))
+    assert not looks_like_degrees(np.array([[0.0, 0.0], [50.0, 0.0]]))       # local metres
+    assert not looks_like_degrees(np.array([[437731.3, 5850754.4], [437730.7, 5850759.4]]))
+    assert not looks_like_degrees(np.array([[10.0, 20.0], [10.5, 95.0]]))     # |y| > 90
+
+
+def test_line_profile_numbered_from_the_end(qgis_app, fake_iface, project_store,
+                                            warnings_shown):
+    from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer
+
+    from geophysics_workbench.ui.new_profile_dialog import TAB_LINE
+
+    st, prj = project_store
+    layer = QgsVectorLayer("LineString?crs=EPSG:25832", "lines", "memory")
+    f = QgsFeature()
+    f.setGeometry(QgsGeometry.fromWkt("LineString (0 0, 30 40, 60 40)"))
+    layer.dataProvider().addFeatures([f])
+    layer.selectAll()
+    fake_iface.setActiveLayer(layer)
+    dlg = _points_dialog(fake_iface, st, prj, "Back", [[0, 0], [0, 0]])
+    try:
+        dlg.tabs.setCurrentIndex(TAB_LINE)
+        dlg.line_spacing.setValue(10.0)
+        assert dlg.line_from_end.text() == "Number stations from the end"
+        dlg.line_from_end.setChecked(True)
+        dlg.accept()
+        assert dlg.result() == 1, warnings_shown
+        [p] = st.profiles()
+        assert np.allclose(p.xy, [[60, 40], [30, 40], [0, 0]])
+        [s] = st.station_sets(p.id)
+        assert np.allclose(s.xyz[0, :2], [60, 40]) and s.numbers[0] == 1
+    finally:
+        fake_iface.setActiveLayer(None)
+        _close(dlg, qgis_app)
+
+
+def test_points_profile_numbered_from_the_end(qgis_app, fake_iface, project_store):
+    st, prj = project_store
+    dlg = _points_dialog(fake_iface, st, prj, "Back", [[1000, 2000], [1000, 2012]])
+    try:
+        assert dlg.points_from_end.text() == "Number stations from the end"
+        dlg.points_from_end.setChecked(True)
+        dlg.accept()
+        [p] = st.profiles()
+        assert np.allclose(p.xy, [[1000, 2012], [1000, 2000]])
+        [s] = st.station_sets(p.id)
+        assert np.allclose(s.xyz[:, :2], [[1000, 2012], [1000, 2007], [1000, 2002]])
+    finally:
+        _close(dlg, qgis_app)
