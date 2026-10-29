@@ -22,10 +22,10 @@ from .data import identify_layers, layer_name
 from .layer_list import LayerList
 from .profile_source import SOURCE_ID
 from .readout import format_readout
+from .view_fit import ViewFitter
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
 DEFAULT_VE = 2.0
-PAD = 0.06                      # fraction of the data extent added on each side by zoom_full
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
 HINT_HOVER = "Move the mouse over the section to read values."
@@ -52,9 +52,6 @@ class SectionDock(QDockWidget):
         self._layers = None                     # cached provider.layers() of the open profile
         self._topo = None
         self._cursor_s = None
-        self._fit_pending = False               # re-fit the view until the user navigates
-        self._jobs = 0
-        self._fit_view = None                   # visible range set by the last zoom_full
 
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
@@ -79,6 +76,8 @@ class SectionDock(QDockWidget):
         self._pan_tool = QgsPlotToolPan(self.canvas)
         self.canvas.setTool(self._pan_tool)
         self.canvas.canvasPointHovered.connect(self._hovered)
+        self.fit = ViewFitter(self.canvas, self.ve_spin, self._fit_extent, self._update_guide,
+                              self)
         self.canvas.activeJobCountChanged.connect(self._jobs_changed)
         self.canvas.plotAreaChanged.connect(self._update_guide)
         self.canvas.scaleChanged.connect(self._update_guide)
@@ -127,12 +126,6 @@ class SectionDock(QDockWidget):
         self._refresh_timer = QTimer(self)      # coalesces bursts of provider changes
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._refresh_now)
-        self._refit_timer = QTimer(self)
-        self._refit_timer.setSingleShot(True)
-        self._refit_timer.timeout.connect(self._refit)
-        self._restore_timer = QTimer(self)
-        self._restore_timer.setSingleShot(True)
-        self._restore_timer.timeout.connect(self._restore_fit)
         self._set_hint()
 
     # -- provider ----------------------------------------------------------------------------
@@ -231,8 +224,7 @@ class SectionDock(QDockWidget):
     def _close_profile(self) -> None:
         self._profile = None
         self._layers = self._topo = None
-        self._fit_pending = False
-        self._fit_view = None
+        self.fit.reset()
         self.canvas.clear()
         self.layer_list.set_layers(self.provider, [])
         self._show_errors([])
@@ -276,66 +268,24 @@ class SectionDock(QDockWidget):
             zmin, zmax = zmin - 0.5, zmax + 0.5
         return min(s), max(s), zmin, zmax
 
+    def _fit_extent(self):
+        return None if self._profile is None else self._data_extent()
+
     def zoom_full(self) -> None:
         """Fit the data and topography at the current vertical exaggeration. The view keeps
         being re-fitted (after generation, resize, exaggeration changes) until the user
         presses, scrolls or types in the canvas."""
-        if self._profile is None:
-            return
-        self._fit_pending = True
-        s0, s1, z0, z1 = self._data_extent()
-        ds, dz = (s1 - s0) * (1 + 2 * PAD), (z1 - z0) * (1 + 2 * PAD)
-        sc, zc = (s0 + s1) / 2, (z0 + z1) / 2
-        ve = self.ve_spin.value()
-        self.canvas.setLockAxisScales(False)
-        for _ in range(2):                      # the plot area depends on the axis labels
-            area = self.canvas.plotArea()
-            w, h = area.width(), area.height()
-            if w < 20 or h < 20:
-                w, h = max(self.canvas.width() - 80.0, 200.0), max(self.canvas.height() - 40.0, 100.0)
-            epp = max(dz / h, ds / (w * ve))    # elevation per pixel; distance per pixel = ve * epp
-            dpp = ve * epp
-            self.canvas.setVisiblePlotRange(sc - dpp * w / 2, sc + dpp * w / 2,
-                                            zc - epp * h / 2, zc + epp * h / 2)
-        self.canvas.setAxisScaleRatio(ve)
-        self.canvas.setLockAxisScales(True)
-        self._fit_view = self._view()
-        self._update_guide()
-
-    def _view(self) -> tuple[float, float, float, float]:
-        d, e = self.canvas.visibleDistanceRange(), self.canvas.visibleElevationRange()
-        return d.lower(), d.upper(), e.lower(), e.upper()
+        self.fit.zoom_full()
 
     def _ve_changed(self, value: float) -> None:
-        if self._fit_pending:
-            self.zoom_full()                    # untouched view: keep showing everything
-        else:
-            self.canvas.setAxisScaleRatio(value)
-            self._update_guide()
-
-    def _refit(self) -> None:
-        if self._profile is not None:
-            self._ve_changed(self.ve_spin.value())
+        self.fit.ve_changed(value)
 
     def _jobs_changed(self, count: int) -> None:
-        self._jobs = count
-        if count == 0 and self._fit_pending and self._profile is not None:
-            self._restore_timer.start(0)
-
-    def _restore_fit(self) -> None:
-        # The canvas zooms itself to its own full extent after its first generation
-        # (cropped at the locked ratio): put our fit back. Only when the view moved, since
-        # every zoom starts a follow-up job and an unconditional refit would loop.
-        if not self._fit_pending or self._profile is None or self._fit_view is None:
-            return
-        view = self._view()
-        tol = 1e-6 * max(1.0, *(abs(v) for v in view))
-        if any(abs(a - b) > tol for a, b in zip(view, self._fit_view)):
-            self.zoom_full()
+        self.fit.jobs_changed(count)
 
     def is_busy(self) -> bool:
         """True while the canvas is generating the section."""
-        return self._jobs > 0
+        return self.fit.is_busy()
 
     def eventFilter(self, obj, event):
         etype = event.type()
@@ -343,12 +293,12 @@ class SectionDock(QDockWidget):
             if etype == QEvent.Type.Leave:
                 self.cursor_left.emit()
             elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
-                self._fit_pending = False       # the user navigates: keep their view
+                self.fit.user_navigated()       # the user navigates: keep their view
         elif obj is self.canvas:
             if etype == QEvent.Type.KeyPress:
-                self._fit_pending = False
+                self.fit.user_navigated()
             elif etype == QEvent.Type.Resize and self._profile is not None:
-                self._refit_timer.start(0)
+                self.fit.schedule_refit()
         return super().eventFilter(obj, event)
 
     # -- cursor ------------------------------------------------------------------------------
