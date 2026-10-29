@@ -170,3 +170,27 @@ def test_add_model_outside_store_folder_saves_absolute_path(qgis_app, tmp_path_f
     assert Path(d.source_path).is_absolute()
     assert Path(d.source_path) == src.resolve()
     assert all(layer.error is None for layer in SectionDataProvider(st).layers(p.id))
+
+
+# -- store layers are read-only ------------------------------------------------------------
+def test_store_layers_are_read_only(qgis_app, tmp_path):
+    """Profiles and stations are written by the workbench only (its rules: ids, station
+    sets, chainage), also after the QGIS project is saved and read again."""
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.project_actions import attach_store, new_store, store_layers
+
+    prj = QgsProject()
+    st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
+    layers = store_layers(st, prj)
+    assert sorted(layers) == ["profiles", "stations"]
+    for layer in layers.values():
+        assert layer.readOnly() and not layer.startEditing()
+    assert prj.write(str(tmp_path / "w.qgz"))
+    again = QgsProject()
+    assert again.read(str(tmp_path / "w.qgz"))
+    for layer in again.mapLayers().values():          # whatever the project file says ...
+        layer.setReadOnly(False)
+    attached = attach_store(again)                      # ... attaching protects them again
+    for layer in store_layers(attached, again).values():
+        assert layer.readOnly() and not layer.startEditing()

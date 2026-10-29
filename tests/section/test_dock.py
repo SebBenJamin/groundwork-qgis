@@ -351,3 +351,15 @@ def test_open_profile_makes_it_active_for_the_source(qgis_app, store_with_model,
         assert gen._snapshot.profile_id == pid
     dock.set_provider(None)
     assert source.provider.active_profile_id is None
+
+
+def test_open_missing_profile_shows_message_not_traceback(qgis_app, store_with_model, make_dock):
+    """E.g. a profile deleted from the GeoPackage behind the plugin's back."""
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    assert dock.open_profile("no-such-profile") is False
+    assert dock.current_profile_id() is None
+    assert "not found" in dock.readout.text()
+    assert dock.profile_combo.currentIndex() == 0
+    assert [dock.profile_combo.itemData(i) for i in range(dock.profile_combo.count())] == [None, p.id]
+    assert dock.open_profile(p.id) is True and dock.current_profile_id() == p.id

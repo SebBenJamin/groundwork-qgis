@@ -29,6 +29,7 @@ DEFAULT_VE = 2.0
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
 HINT_HOVER = "Move the mouse over the section to read values."
+MISSING_PROFILE = "Profile not found in the workbench project; it may have been deleted."
 
 
 def _registered_source_for(provider):
@@ -199,12 +200,19 @@ class SectionDock(QDockWidget):
     def current_profile(self):
         return self._profile
 
-    def open_profile(self, profile_id: str) -> None:
+    def open_profile(self, profile_id: str) -> bool:
         """Show ``profile_id``: curve in the profile's own direction, CRS of the project
-        store, zoomed to the full extent of the data and topography."""
+        store, zoomed to the full extent of the data and topography. A profile missing from
+        the store shows a message and refreshes the list instead (returns False)."""
         if self.provider is None:
             raise RuntimeError("no project is open")
-        profile = self.provider.store.profile(profile_id)
+        try:
+            profile = self.provider.store.profile(profile_id)
+        except KeyError:
+            self._close_profile()
+            self._fill_combo()
+            self.readout.setText(MISSING_PROFILE)
+            return False
         self._profile = profile
         self.provider.active_profile_id = profile.id    # wins over profiles on the same line
         self._layers = None
@@ -219,6 +227,7 @@ class SectionDock(QDockWidget):
         self.show_cursor(None)
         self._set_hint()
         self.profile_changed.emit(profile_id)
+        return True
 
     def _set_curve(self, profile) -> None:
         self.canvas.setProfileCurve(QgsLineString([QgsPoint(float(x), float(y))

@@ -3,7 +3,8 @@
 A workbench project is a GeoPackage (``ProjectStore``). The QGIS project remembers it in the
 entry ``geophysics_workbench/store_path``: relative to the project file's folder when the
 project has a file name and the store is on the same drive, absolute otherwise. Its
-``profiles`` and ``stations`` layers live in the layer-tree group "Geophysics Workbench".
+``profiles`` and ``stations`` layers live in the layer-tree group "Geophysics Workbench"
+and are read-only in QGIS: only the workbench writes them (ids, station sets, chainage).
 """
 from __future__ import annotations
 
@@ -68,7 +69,9 @@ def attach_store(project: QgsProject) -> ProjectStore | None:
     path = resolve_entry(entry, project)
     if not path.is_file():
         raise ValueError(f"Workbench project file not found: {path}")
-    return ProjectStore.open(path)
+    store = ProjectStore.open(path)
+    protect_layers(store, project)
+    return store
 
 
 # -- layers --------------------------------------------------------------------------------
@@ -87,6 +90,13 @@ def store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVecto
         if name in LAYER_NAMES and _same_file(parts.get("path", ""), store.path):
             out.setdefault(name, layer)
     return out
+
+
+def protect_layers(store: ProjectStore, project: QgsProject) -> None:
+    """Make the store's layers in ``project`` read-only, so QGIS editing cannot bypass the
+    store's rules."""
+    for layer in store_layers(store, project).values():
+        layer.setReadOnly(True)
 
 
 def _labels(field: str, size: float, enabled: bool, placement=None) -> tuple:
@@ -134,6 +144,7 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
         project.addMapLayer(layer, False)
         group.addLayer(layer)
         have[name] = layer
+    protect_layers(store, project)
     return have
 
 
