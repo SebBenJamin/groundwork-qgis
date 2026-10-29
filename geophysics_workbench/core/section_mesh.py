@@ -6,7 +6,28 @@ from typing import Callable
 
 import numpy as np
 from matplotlib.path import Path
-from scipy.spatial import Delaunay, cKDTree
+from scipy.spatial import Delaunay
+
+
+def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
+    """Median length of the unique Delaunay edges incident to each vertex (vectorised)."""
+    n = len(pts)
+    e = np.sort(np.concatenate([simplices[:, [0, 1]], simplices[:, [1, 2]], simplices[:, [2, 0]]]).astype(np.int64), axis=1)
+    e = np.unique(e[:, 0] * n + e[:, 1])
+    a, b = e // n, e % n
+    length = np.linalg.norm(pts[a] - pts[b], axis=1)
+    vert = np.concatenate([a, b])
+    ln = np.concatenate([length, length])
+    order = np.lexsort((ln, vert))
+    vert, ln = vert[order], ln[order]
+    count = np.bincount(vert, minlength=n)
+    start = np.cumsum(count) - count
+    scale = np.full(n, np.inf)                       # vertices without edges are unused
+    has = count > 0
+    lo = start[has] + (count[has] - 1) // 2
+    hi = start[has] + count[has] // 2
+    scale[has] = 0.5 * (ln[lo] + ln[hi])
+    return scale
 
 
 @dataclass
@@ -32,8 +53,10 @@ class SectionMesh:
     # -- construction ---------------------------------------------------
     @classmethod
     def from_points(cls, x, z, v, max_edge: float | None = None, **kw) -> "SectionMesh":
-        """Delaunay mesh of scattered points; triangles with an edge longer than
-        max_edge (default 3 x median nearest-neighbour distance) are dropped."""
+        """Delaunay mesh of scattered points. With an explicit max_edge, triangles with
+        a longer edge are dropped. By default a local rule is used: a triangle is
+        dropped when its longest edge exceeds 3 x the largest per-vertex scale of its
+        corners (median length of the Delaunay edges at that vertex)."""
         x, z, v = (np.asarray(a, dtype=float).ravel() for a in (x, z, v))
         if not (x.size == z.size == v.size):
             raise ValueError("x, z and v must have the same length")
@@ -47,12 +70,18 @@ class SectionMesh:
             simplices = Delaunay(pts).simplices
         except Exception as exc:  # scipy QhullError for collinear/degenerate input
             raise ValueError("Points are collinear or degenerate; cannot triangulate") from exc
-        if max_edge is None:
-            d, _ = cKDTree(pts).query(pts, k=2)
-            max_edge = 3.0 * float(np.median(d[:, 1]))
         p = pts[simplices]                                           # (t, 3, 2)
         edges = np.linalg.norm(p - np.roll(p, 1, axis=1), axis=2)    # (t, 3)
-        simplices = simplices[edges.max(axis=1) <= max_edge]
+        longest = edges.max(axis=1)
+        if max_edge is None:
+            # local criterion: meshes that coarsen with depth keep their deep cells
+            scale = _vertex_edge_scale(pts, simplices)
+            keep = longest <= 3.0 * scale[simplices].max(axis=1)
+        else:
+            keep = longest <= max_edge
+        simplices = simplices[keep]
+        if len(simplices) == 0:
+            raise ValueError("All triangles were filtered out; increase max_edge or check the points")
         vv = v[simplices]
         vals = np.exp(np.log(vv).mean(axis=1)) if quantity == "resistivity" else vv.mean(axis=1)
         cells = np.column_stack([simplices, np.full(len(simplices), -1)])

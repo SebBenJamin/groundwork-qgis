@@ -46,3 +46,13 @@ def test_unknown_colormap_and_roundtrip():
     cs = ColorScale("turbo", 2.0, 50.0, False)
     assert ColorScale.from_dict(cs.to_dict()) == cs
     assert "viridis" in COLORMAPS
+
+
+def test_scale_validation():
+    with pytest.raises(ValueError):
+        ColorScale("gray", 5, 5)
+    with pytest.raises(ValueError):
+        ColorScale("gray", 10, 1)
+    with pytest.raises(ValueError):
+        ColorScale("gray", 0, 10, log=True)
+    ColorScale("gray", -5, 5, log=False)

@@ -19,6 +19,10 @@ class ColorScale:
     def __post_init__(self):
         if self.cmap not in COLORMAPS:
             raise ValueError(f"Unknown colormap {self.cmap!r}; choose one of {COLORMAPS}")
+        if not self.vmax > self.vmin:
+            raise ValueError(f"vmax ({self.vmax}) must be greater than vmin ({self.vmin})")
+        if self.log and not self.vmin > 0:
+            raise ValueError(f"vmin must be > 0 on a log scale, got {self.vmin}")
 
     def rgba(self, values) -> np.ndarray:
         """Map values to an (n, 4) uint8 array. Out-of-range values clip to the end

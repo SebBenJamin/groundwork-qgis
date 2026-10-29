@@ -83,3 +83,37 @@ def test_quad_cells_and_polygons():
     assert m.value_at(3, 0.2) == 7.0
     assert np.isnan(m.value_at(1, 1.5))
     assert m.bounds() == (0.0, 4.0, 0.0, 1.0)
+
+
+def test_default_keeps_graded_mesh():
+    thick = 0.5 * 1.4 ** np.arange(25)
+    depth = np.r_[0.0, np.cumsum(thick)]
+    xs, zs = np.meshgrid(np.arange(60) * 0.5, -depth)
+    m = SectionMesh.from_points(xs.ravel(), zs.ravel(), np.full(xs.size, 100.0))
+    assert len(m.cells) >= 0.99 * (59 * 25 * 2)
+    mid = -(depth[-1] + depth[-2]) / 2
+    assert m.value_at(10.1, mid) == pytest.approx(100.0)
+
+
+def test_default_removes_trapezoid_bridge():
+    # trapezoid outline (wide top, narrow bottom) with a deep notch cut into the middle
+    pts = []
+    for k in range(8):
+        half = 30 - 1.5 * k
+        xs = np.arange(-half, half + 1e-9, 1.0)
+        for x in xs:
+            if k >= 3 and abs(x) < 8:
+                continue
+            pts.append((x, -float(k)))
+    pts = np.array(pts)
+    m = SectionMesh.from_points(pts[:, 0], pts[:, 1], np.full(len(pts), 50.0))
+    assert np.isnan(m.value_at(0.0, -5.0))
+    assert m.value_at(20.0, -1.5) == pytest.approx(50.0)
+    # the old global rule (3 x median nearest-neighbour distance = 3) also removes the bridge
+    g = SectionMesh.from_points(pts[:, 0], pts[:, 1], np.full(len(pts), 50.0), max_edge=3.0)
+    assert np.isnan(g.value_at(0.0, -5.0))
+
+
+def test_all_filtered_raises():
+    with pytest.raises(ValueError, match="filtered"):
+        SectionMesh.from_points(np.array([0, 1, 0.0]), np.array([0, 0, -1.0]), np.ones(3), max_edge=0.1)
