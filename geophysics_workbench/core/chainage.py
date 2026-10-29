@@ -1,4 +1,4 @@
-﻿"""Chainage (distance along a polyline) for crooked profile lines. Pure NumPy."""
+"""Chainage (distance along a polyline) for crooked profile lines. Pure NumPy."""
 from __future__ import annotations
 
 import numpy as np

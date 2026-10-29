@@ -1,4 +1,4 @@
-﻿import numpy as np, pytest
+import numpy as np, pytest
 from geophysics_workbench.core.chainage import Chainage
 
 L = Chainage(np.array([[0, 0], [100, 0], [100, 50]], float))  # crooked, length 150

@@ -1,4 +1,4 @@
-﻿import numpy as np, pytest
+import numpy as np, pytest
 from geophysics_workbench.core.transform import fit_control_points, Transform2D
 
 def test_two_points_similarity_exact():

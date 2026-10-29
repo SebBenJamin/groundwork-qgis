@@ -1,4 +1,4 @@
-﻿"""Control-point transforms from local to real-world coordinates. Pure NumPy."""
+"""Control-point transforms from local to real-world coordinates. Pure NumPy."""
 from __future__ import annotations
 
 from dataclasses import dataclass
