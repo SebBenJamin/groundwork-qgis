@@ -1,41 +1,6 @@
-"""Section-panel test helpers: a minimal iface with a real QgsMapCanvas and dock factories
-that always detach and unregister the profile source on teardown."""
+"""Section-panel test helpers: dock factories that always detach and unregister the profile
+source on teardown (``fake_iface`` lives in tests/conftest.py)."""
 import pytest
-
-
-class FakeIface:
-    """Just enough of QgisInterface for the section dock, map link and plugin."""
-
-    def __init__(self):
-        from qgis.gui import QgsMapCanvas
-        from qgis.PyQt.QtWidgets import QMainWindow
-
-        self._window = QMainWindow()
-        self._window.resize(1200, 800)
-        self._canvas = QgsMapCanvas(self._window)
-        self._window.setCentralWidget(self._canvas)
-        self._window.show()
-
-    def mainWindow(self):
-        return self._window
-
-    def mapCanvas(self):
-        return self._canvas
-
-    def addDockWidget(self, area, dock):
-        self._window.addDockWidget(area, dock)
-
-    def removeDockWidget(self, dock):
-        self._window.removeDockWidget(dock)
-
-
-@pytest.fixture
-def fake_iface(qgis_app):
-    iface = FakeIface()
-    yield iface
-    iface.mainWindow().close()
-    iface.mainWindow().deleteLater()
-    qgis_app.processEvents()
 
 
 @pytest.fixture

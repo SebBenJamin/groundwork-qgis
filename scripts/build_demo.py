@@ -6,14 +6,21 @@ Reads demo/context/powerline.geojson (fetch_demo_context.py) and writes, under d
   ert/P2/P2_model_it2.dat   second "iteration" of P2 (other noise seed, sharper lens)
   ert/P3/f001_res.vtk       legacy ASCII VTK quads
   stations/P{1,2,3}_electrodes.csv   number,x,y,z
+and, under demo/ (with the plugin's own code, so it needs QGIS's Python):
+  demo_workbench.gpkg       workbench store: P1-P3, station sets, one model each; model
+                            source paths are relative to the store's folder
+  demo_project.qgz          QGIS project (EPSG:25832): OSM tiles, powerline, workbench group;
+                            every path relative, so the demo works wherever it is unpacked
 
 Structured as small functions (geometry, topography, model, writers, main) so later
-milestones can import and extend it. Re-running reproduces byte-identical files.
+milestones can import and extend it. Re-running reproduces byte-identical text files (the
+.gpkg / .qgz binaries carry fresh ids and timestamps).
 """
 from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,8 +28,18 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-POWERLINE = ROOT / "demo" / "context" / "powerline.geojson"
-DATA = ROOT / "demo" / "data"
+DEMO = ROOT / "demo"
+POWERLINE = DEMO / "context" / "powerline.geojson"
+DATA = DEMO / "data"
+CRS = "EPSG:25832"
+STORE_NAME, PROJECT_NAME = "demo_workbench.gpkg", "demo_project.qgz"
+#: profile -> (model path relative to demo/, reader, z_kind)
+DEMO_MODELS = {"P1": ("data/ert/P1/f001_res.dat", "r2_res_dat", "elevation"),
+               "P2": ("data/ert/P2/P2_model.dat", "zondres_xyz", "depth"),
+               "P3": ("data/ert/P3/f001_res.vtk", "vtk_legacy", "elevation")}
+OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
+VOLTAGE_LABEL = ("CASE WHEN to_int(\"voltage\") > 0 "
+                 "THEN format('%1 kV', to_int(\"voltage\") // 1000) END")
 SEED = 42
 SPACING = 5.0                        # electrode spacing (m)
 ANCHOR = (437791.67, 5850874.70)     # near a straight stretch of the fetched powerline (EPSG:25832)
@@ -238,6 +255,117 @@ def write_stations(path: Path, p: Profile) -> None:
     _write(path, "\n".join(rows) + "\n")
 
 
+# ---------------------------------------------------------------- workbench project
+def read_stations(path: Path):
+    """(numbers, xyz) from a station CSV written by write_stations."""
+    arr = np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2)
+    return arr[:, 0].astype(int), arr[:, 1:4]
+
+
+def _remove(path: Path) -> None:
+    for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        if p.exists():
+            p.unlink()
+
+
+def build_workbench(demo_dir: Path = DEMO) -> Path:
+    """demo_workbench.gpkg: one profile per station file, one model dataset per profile."""
+    sys.path.insert(0, str(ROOT))
+    from geophysics_workbench import readers
+    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+
+    path = demo_dir / STORE_NAME
+    _remove(path)
+    store = ProjectStore.create(path, CRS)
+    for name, (rel, reader, z_kind) in DEMO_MODELS.items():
+        numbers, xyz = read_stations(demo_dir / f"data/stations/{name}_electrodes.csv")
+        profile, stations = profile_from_stations(name, CRS, xyz, numbers)
+        store.save_profile(profile)
+        store.save_station_set(stations)
+        src = demo_dir / rel
+        result = readers.read(src, reader=reader)
+        mtime, sha1 = file_fingerprint(str(src))
+        store.save_dataset(Dataset(f"{name}_model", profile.id, stations.id, "ert_model", rel,
+                                   mtime, sha1, reader,
+                                   {"z_kind": z_kind, "chainage_offset": 0.0},
+                                   result.provenance, name=f"{name} {Path(rel).name}"))
+    return path
+
+
+def _powerline_layer(path: Path):
+    from qgis.core import (QgsLineSymbol, QgsPalLayerSettings, QgsSingleSymbolRenderer,
+                           QgsTextFormat, QgsVectorLayer, QgsVectorLayerSimpleLabeling)
+    from qgis.PyQt.QtGui import QColor
+
+    layer = QgsVectorLayer(str(path), "Powerline (OSM)", "ogr")
+    symbol = QgsLineSymbol.createSimple({"color": "220,0,0", "width": "0.7",
+                                         "line_style": "dash"})
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+    settings = QgsPalLayerSettings()
+    settings.isExpression = True
+    settings.fieldName = VOLTAGE_LABEL
+    settings.placement = QgsPalLayerSettings.Placement.Line
+    fmt = QgsTextFormat()
+    fmt.setSize(9.0)
+    fmt.setColor(QColor(180, 0, 0))
+    buffer = fmt.buffer()
+    buffer.setEnabled(True)
+    fmt.setBuffer(buffer)
+    settings.setFormat(fmt)
+    layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+    layer.setLabelsEnabled(True)
+    return layer
+
+
+def build_qgis_project(demo_dir: Path = DEMO) -> Path:
+    """demo_project.qgz next to the store; needs QGIS (creates a QgsApplication if none)."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    sys.path.insert(0, str(ROOT))
+    from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsProject,
+                           QgsRasterLayer, QgsRectangle, QgsReferencedRectangle)
+
+    app = None
+    if QgsApplication.instance() is None:
+        app = QgsApplication([], False)
+        app.initQgis()
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from geophysics_workbench.ui.project_actions import use_store
+
+    path = demo_dir / PROJECT_NAME
+    if path.exists():
+        path.unlink()
+    project = QgsProject()
+    try:
+        project.setFileName(str(path))           # before use_store: store path goes relative
+        project.setTitle("Geophysics Workbench demo")
+        crs = QgsCoordinateReferenceSystem(CRS)
+        project.setCrs(crs)
+        project.writeEntryBool("Paths", "/Absolute", False)
+        root = project.layerTreeRoot()
+        osm = QgsRasterLayer(OSM_URI, "OpenStreetMap", "wms")
+        powerline = _powerline_layer(demo_dir / "context" / "powerline.geojson")
+        for layer in (osm, powerline):
+            if not layer.isValid():
+                raise RuntimeError(f"demo layer {layer.name()} is not valid")
+            project.addMapLayer(layer, False)
+        root.addLayer(osm)                        # bottom
+        root.insertLayer(0, powerline)
+        store = use_store(ProjectStore.open(demo_dir / STORE_NAME), project)   # group on top
+        xy = np.vstack([p.xy for p in store.profiles()])
+        (x0, y0), (x1, y1) = xy.min(axis=0) - 120.0, xy.max(axis=0) + 120.0
+        project.viewSettings().setDefaultViewExtent(
+            QgsReferencedRectangle(QgsRectangle(x0, y0, x1, y1), crs))
+        if not project.write():
+            raise RuntimeError(f"cannot write {path}: {project.error()}")
+    finally:
+        project.clear()
+        del project
+        if app is not None:
+            app.exitQgis()
+    return path
+
+
 # ---------------------------------------------------------------- main
 def build_all(data_dir: Path = DATA) -> dict:
     profiles = {p.name: p for p in make_profiles()}
@@ -262,6 +390,8 @@ def main() -> int:
                       f"length={p.length:.0f} m electrodes={p.n_electrodes}")
     for a, b in (("P1", "P3"), ("P2", "P3")):
         print(f"{a}x{b}: s=", intersection(profiles[a], profiles[b]))
+    print("wrote", build_workbench().relative_to(ROOT).as_posix())
+    print("wrote", build_qgis_project().relative_to(ROOT).as_posix())
     return 0
 
 

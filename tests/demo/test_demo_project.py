@@ -1,0 +1,78 @@
+import shutil
+from pathlib import Path
+
+DEMO = Path(__file__).resolve().parent.parent.parent / "demo"
+
+
+# -- brief test ----------------------------------------------------------------------------
+def test_demo_project_opens_and_resolves_sources(qgis_app):
+    from qgis.core import QgsProject
+    from geophysics_workbench.ui.project_actions import attach_store
+    from geophysics_workbench.section.data import SectionDataProvider
+    prj = QgsProject(); assert prj.read("demo/demo_project.qgz")
+    st = attach_store(prj)
+    prov = SectionDataProvider(st)
+    profs = st.profiles()
+    assert len(profs) == 3
+    assert all(l.error is None for p in profs for l in prov.layers(p.id))
+
+
+# -- portability and content ---------------------------------------------------------------
+def test_demo_works_from_another_folder(qgis_app, tmp_path):
+    """Unpacked anywhere, the project finds the store, the store finds the model files and
+    every layer (including the powerline GeoJSON) loads from the new folder."""
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.ui.project_actions import attach_store
+
+    copy = tmp_path / "unpacked demo"
+    shutil.copytree(DEMO, copy)
+    prj = QgsProject()
+    assert prj.read(str(copy / "demo_project.qgz"))
+    st = attach_store(prj)
+    assert st.path.resolve() == (copy / "demo_workbench.gpkg").resolve()
+    prov = SectionDataProvider(st)
+    layers = [la for p in st.profiles() for la in prov.layers(p.id)]
+    assert len(layers) == 3 and all(la.error is None for la in layers)
+    for layer in prj.mapLayers().values():
+        assert layer.isValid(), layer.name()
+        if layer.providerType() == "ogr":
+            src = Path(layer.source().split("|")[0]).resolve()
+            assert src.is_relative_to(copy.resolve()), layer.source()
+
+
+def test_demo_project_content(qgis_app):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.project_actions import GROUP_NAME, SCOPE, STORE_KEY
+
+    prj = QgsProject()
+    assert prj.read(str(DEMO / "demo_project.qgz"))
+    assert prj.crs().authid() == "EPSG:25832"
+    assert prj.readEntry(SCOPE, STORE_KEY, "")[0] == "demo_workbench.gpkg"
+    names = {l.name(): l for l in prj.mapLayers().values()}
+    assert "OpenStreetMap" in names and names["OpenStreetMap"].providerType() == "wms"
+    powerline = [l for n, l in names.items() if n.lower().startswith("powerline")]
+    assert powerline and powerline[0].labelsEnabled()
+    group = prj.layerTreeRoot().findGroup(GROUP_NAME)
+    assert sorted(l.name() for l in group.findLayers()) == ["profiles", "stations"]
+    extent = prj.viewSettings().defaultViewExtent()
+    assert not extent.isNull() and extent.crs().authid() == "EPSG:25832"
+
+
+def test_demo_store_datasets_use_relative_paths(qgis_app):
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+
+    st = ProjectStore.open(DEMO / "demo_workbench.gpkg")
+    by_name = {p.name: p for p in st.profiles()}
+    assert sorted(by_name) == ["P1", "P2", "P3"]
+    got = {}
+    for name, p in by_name.items():
+        [d] = st.datasets(p.id)
+        assert not Path(d.source_path).is_absolute()
+        got[name] = (d.source_path, d.reader, d.reader_options["z_kind"])
+        assert len(st.station_sets(p.id)) == 1
+    assert got == {"P1": ("data/ert/P1/f001_res.dat", "r2_res_dat", "elevation"),
+                   "P2": ("data/ert/P2/P2_model.dat", "zondres_xyz", "depth"),
+                   "P3": ("data/ert/P3/f001_res.vtk", "vtk_legacy", "elevation")}

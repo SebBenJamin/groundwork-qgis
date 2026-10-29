@@ -244,3 +244,18 @@ def test_identify_skips_error_layers_and_nan_cells(store_with_model, tmp_path):
     nan_layer = SectionLayer(layers[0].dataset, nan_mesh, LayerStyle(), None)
     assert identify_layers([nan_layer], 0.8, 0.2) == []             # nan cell omitted
     assert identify_layers([nan_layer], 0.2, 0.8)[0]["value"] == 42.0
+
+
+def test_relative_source_path_resolves_against_store_folder(store_with_model, tmp_path):
+    st, p, src = store_with_model
+    [d] = st.datasets(p.id)
+    d.source_path = os.path.join("models", "f001_res.dat").replace(os.sep, "/")
+    st.save_dataset(d)
+    prov = SectionDataProvider(st)
+    [layer] = prov.layers(p.id)
+    assert layer.error.startswith("source missing") and "models" in layer.error
+    (tmp_path / "models").mkdir()
+    shutil.move(src, tmp_path / "models" / "f001_res.dat")
+    [layer] = prov.layers(p.id)
+    assert layer.error is None and layer.mesh is not None
+    assert prov.source_path(d) == str(tmp_path / "models" / "f001_res.dat")

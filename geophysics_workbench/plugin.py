@@ -1,15 +1,19 @@
 """Plugin object: owns the 'Geophysics Workbench' menu, the section panel, the map link
-and the registered profile source. Later tasks add actions via add_action."""
+and the registered profile source, and follows the QGIS project: the workbench project
+(GeoPackage) it refers to is attached on load and detached when the project is cleared."""
 from pathlib import Path
 
+from qgis.core import QgsCoordinateReferenceSystem, QgsProject
+from qgis.gui import QgsProjectionSelectionDialog
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QAction, QIcon
-from qgis.PyQt.QtWidgets import QMenu
+from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
 from .section.data import SectionDataProvider
 from .section.dock import SectionDock
 from .section.map_link import MapLink
 from .section.profile_source import register_source, unregister_source
+from .ui import project_actions
 
 MENU_TITLE = "Geophysics Workbench"
 _ICON_DIR = Path(__file__).parent / "icons"
@@ -25,6 +29,14 @@ class WorkbenchPlugin:
         self.dock: SectionDock | None = None
         self.map_link: MapLink | None = None
         self.pick_action = None
+        self.new_profile_action = None
+        self.add_model_action = None
+        self._profile_dialog = None
+        self._project_signals = []
+
+    @property
+    def store(self):
+        return None if self.provider is None else self.provider.store
 
     def initGui(self):
         main_window = self.iface.mainWindow()
@@ -36,14 +48,38 @@ class WorkbenchPlugin:
         self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         self.dock.hide()
         self.map_link = MapLink(self.iface, self.dock)
+        self.add_action("New workbench project…", self.new_workbench_project)
+        self.add_action("Open workbench project…", self.open_workbench_project)
+        self.menu.addSeparator()
+        self.new_profile_action = self.add_action("New profile…", self.new_profile)
+        self.add_model_action = self.add_action("Add ERT model…", self.add_model)
+        self.menu.addSeparator()
         self.add_action("Show section panel", self.show_section_panel)
         self.pick_action = self.add_action("Pick profile on map", self.toggle_pick_tool,
                                            checkable=True)
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
+        self.dock.profile_changed.connect(self._update_actions)
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
 
+        project = QgsProject.instance()
+        for signal, slot in ((project.readProject, self._project_read),
+                             (project.cleared, self._project_cleared),
+                             (project.fileNameChanged, self._project_renamed)):
+            signal.connect(slot)
+            self._project_signals.append((signal, slot))
+        if self.provider is None:
+            self._project_read()                         # plugin enabled with a project open
+        self._update_actions()
+
     def unload(self):
+        for signal, slot in self._project_signals:
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        self._project_signals.clear()
+        self._close_profile_dialog()
         if self.map_link is not None:
             self.map_link.unload()
             self.map_link = None
@@ -59,7 +95,7 @@ class WorkbenchPlugin:
             self.menu.deleteLater()
             self.menu = None
         self.actions.clear()
-        self.pick_action = None
+        self.pick_action = self.new_profile_action = self.add_model_action = None
 
     def add_action(self, text, callback, icon=None, checkable=False):
         """Add a menu action. `icon` is a file name inside the icons folder or an absolute path."""
@@ -79,21 +115,128 @@ class WorkbenchPlugin:
 
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
+        self._close_profile_dialog()
         if self.dock is not None:
             self.dock.set_provider(None)
         self._drop_source()
         self.provider = None
-        if store is None:
-            return
-        self.provider = SectionDataProvider(store)
-        self.source = register_source(self.provider)
-        if self.dock is not None:
-            self.dock.set_provider(self.provider, self.source)
+        if store is not None:
+            self.provider = SectionDataProvider(store)
+            self.source = register_source(self.provider)
+            if self.dock is not None:
+                self.dock.set_provider(self.provider, self.source)
+        self._update_actions()
 
     def _drop_source(self):
         if self.source is not None:
             unregister_source(self.source)
             self.source = None
+
+    # -- QGIS project --------------------------------------------------------------------------
+    def _project_read(self, *_):
+        try:
+            store = project_actions.attach_store(QgsProject.instance())
+        except ValueError as exc:
+            store = None
+            self._warn(str(exc))
+        self.set_store(store)
+
+    def _project_cleared(self):
+        self.set_store(None)
+
+    def _project_renamed(self):
+        """Saved under a new name: keep the store path relative to the new location."""
+        project = QgsProject.instance()
+        if self.store is not None and project.fileName():
+            project_actions.write_store_entry(project, self.store.path)
+
+    def _update_actions(self, *_):
+        if self.new_profile_action is not None:
+            self.new_profile_action.setEnabled(self.store is not None)
+        if self.add_model_action is not None:
+            self.add_model_action.setEnabled(
+                self.dock is not None and self.dock.current_profile_id() is not None)
+
+    def _warn(self, text: str):
+        bar = getattr(self.iface, "messageBar", None)
+        if bar is not None:
+            bar().pushWarning(MENU_TITLE, text)
+
+    # -- workbench projects ----------------------------------------------------------------------
+    def new_workbench_project(self):
+        window = self.iface.mainWindow()
+        path, _ = QFileDialog.getSaveFileName(window, "New workbench project", "",
+                                              "GeoPackage (*.gpkg)")
+        if not path:
+            return
+        if not path.lower().endswith(".gpkg"):
+            path += ".gpkg"
+        project = QgsProject.instance()
+        crs_dialog = QgsProjectionSelectionDialog(window)
+        crs_dialog.setWindowTitle("Projected CRS of the workbench project (metres)")
+        if project.crs().isValid():
+            crs_dialog.setCrs(project.crs())
+        if crs_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        crs = crs_dialog.crs()
+        try:
+            store = project_actions.new_store(Path(path), crs.authid(), project)
+        except FileExistsError:
+            QMessageBox.warning(window, "New workbench project",
+                                f"{path} already exists. Choose another name, or use "
+                                "“Open workbench project…”.")
+            return
+        except ValueError as exc:
+            QMessageBox.warning(window, "New workbench project", str(exc))
+            return
+        if not project.crs().isValid():
+            project.setCrs(QgsCoordinateReferenceSystem(crs.authid()))
+        self.set_store(store)
+
+    def open_workbench_project(self):
+        window = self.iface.mainWindow()
+        path, _ = QFileDialog.getOpenFileName(window, "Open workbench project", "",
+                                              "GeoPackage (*.gpkg)")
+        if not path:
+            return
+        try:
+            store = project_actions.open_store(Path(path), QgsProject.instance())
+        except ValueError as exc:
+            QMessageBox.warning(window, "Open workbench project", str(exc))
+            return
+        self.set_store(store)
+
+    def new_profile(self):
+        from .ui.new_profile_dialog import NewProfileDialog
+        if self.store is None:
+            return
+        self._close_profile_dialog()
+        dialog = NewProfileDialog(self.iface, self.store, provider=self.provider)
+        dialog.accepted.connect(lambda: self._profile_created(dialog))
+        self._profile_dialog = dialog
+        dialog.show()                                    # non-modal: "Pick on map" needs the map
+
+    def _profile_created(self, dialog):
+        if dialog.profile is not None and self.dock is not None and self.provider is not None:
+            self.show_section_panel()
+            self.dock.open_profile(dialog.profile.id)
+
+    def _close_profile_dialog(self):
+        dialog, self._profile_dialog = self._profile_dialog, None
+        if dialog is not None:
+            dialog.reject()
+            dialog.deleteLater()
+
+    def add_model(self):
+        from .ui.add_model_dialog import AddModelDialog
+        pid = None if self.dock is None else self.dock.current_profile_id()
+        if self.store is None or pid is None:
+            return
+        dialog = AddModelDialog(self.iface, self.store, pid, provider=self.provider)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     # -- actions -------------------------------------------------------------------------------
     def show_section_panel(self):

@@ -42,3 +42,49 @@ def qgis_app():
     app.initQgis()
     yield app
     app.exitQgis()
+
+
+class FakeIface:
+    """Just enough of QgisInterface for the section dock, map link, dialogs and plugin."""
+
+    def __init__(self):
+        from qgis.gui import QgsMapCanvas, QgsMessageBar
+        from qgis.PyQt.QtWidgets import QMainWindow
+
+        self._window = QMainWindow()
+        self._window.resize(1200, 800)
+        self._canvas = QgsMapCanvas(self._window)
+        self._window.setCentralWidget(self._canvas)
+        self._bar = QgsMessageBar(self._window)
+        self._active_layer = None
+        self._window.show()
+
+    def mainWindow(self):
+        return self._window
+
+    def mapCanvas(self):
+        return self._canvas
+
+    def messageBar(self):
+        return self._bar
+
+    def activeLayer(self):
+        return self._active_layer
+
+    def setActiveLayer(self, layer):
+        self._active_layer = layer
+
+    def addDockWidget(self, area, dock):
+        self._window.addDockWidget(area, dock)
+
+    def removeDockWidget(self, dock):
+        self._window.removeDockWidget(dock)
+
+
+@pytest.fixture
+def fake_iface(qgis_app):
+    iface = FakeIface()
+    yield iface
+    iface.mainWindow().close()
+    iface.mainWindow().deleteLater()
+    qgis_app.processEvents()

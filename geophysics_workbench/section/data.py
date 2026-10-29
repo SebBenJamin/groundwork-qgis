@@ -176,10 +176,17 @@ class SectionDataProvider:
         return self._topography_of(self.store.station_sets(profile_id))
 
     # -- layers ----------------------------------------------------------------------------
+    def source_path(self, d: Dataset) -> str:
+        """Absolute path of ``d``'s model file; a relative ``source_path`` is resolved
+        against the store's folder, so a project folder can be moved as a whole."""
+        if os.path.isabs(d.source_path):
+            return d.source_path
+        return os.path.normpath(os.path.join(str(self.store.path.parent), d.source_path))
+
     def _read(self, d: Dataset) -> readers.ReaderResult:
         """Reader result in data coordinates, cached per dataset until the file or the
         options change. Raises FileNotFoundError / ValueError / OSError."""
-        path = d.source_path
+        path = self.source_path(d)
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
         key = (d.id, os.stat(path).st_mtime, json.dumps(d.reader_options, sort_keys=True),
@@ -211,11 +218,12 @@ class SectionDataProvider:
             if style.scale is None:
                 style.scale = ColorScale.auto(mesh.values, log=(d.quantity == "resistivity"))
         except FileNotFoundError:
-            return SectionLayer(d, None, style, f"source missing: {d.source_path}")
+            return SectionLayer(d, None, style, f"source missing: {self.source_path(d)}")
         except ValueError as exc:
             return SectionLayer(d, None, style, str(exc))
         except OSError as exc:
-            return SectionLayer(d, None, style, f"cannot read {d.source_path}: {exc.strerror or exc}")
+            return SectionLayer(d, None, style,
+                                f"cannot read {self.source_path(d)}: {exc.strerror or exc}")
         except Exception as exc:                # never raise from layers()
             return SectionLayer(d, None, style, f"{type(exc).__name__}: {exc}")
         return SectionLayer(d, mesh, style, None)

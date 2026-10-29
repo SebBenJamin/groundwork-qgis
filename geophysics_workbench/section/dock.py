@@ -39,6 +39,7 @@ def _registered_source_for(provider):
 class SectionDock(QDockWidget):
     cursor_moved = pyqtSignal(float, float)     # forward chainage, elevation
     cursor_left = pyqtSignal()                  # the mouse left the section
+    profile_changed = pyqtSignal(object)        # open profile id, or None when closed
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -221,6 +222,7 @@ class SectionDock(QDockWidget):
         self.zoom_full()
         self.show_cursor(None)
         self._set_hint()
+        self.profile_changed.emit(profile_id)
 
     def _set_curve(self, profile) -> None:
         self.canvas.setProfileCurve(QgsLineString([QgsPoint(float(x), float(y))
@@ -235,6 +237,7 @@ class SectionDock(QDockWidget):
         self.layer_list.set_layers(self.provider, [])
         self._show_errors([])
         self.show_cursor(None)
+        self.profile_changed.emit(None)
 
     def _current_layers(self) -> list:
         if self._layers is None:
