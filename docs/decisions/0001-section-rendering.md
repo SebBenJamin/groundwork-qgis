@@ -21,7 +21,7 @@ Can `QgsElevationProfileCanvas`, fed by a plugin-registered `QgsAbstractProfileS
   - `vector`: `renderResults` sets `painter.setTransform(worldTransform, True)` and calls `drawPolygon` once per quad on every paint.
   - `image`: `renderResults` calls `drawImage(worldTransform.mapRect(dataRect), cachedImage)`.
 
-All numbers below come from the final run (run 3). The two earlier runs were consistent with it: full refresh was 623–722 ms (vector) and 664–716 ms (image), and pans were within 3 ms of the figures below.
+All numbers below come from the final run (run 3). The two earlier runs were consistent with it: full refresh was 623–722 ms (vector) and 664–716 ms (image), and pans were within 3 ms of the figures below. A fourth run, after fix round 1, was also consistent: full refresh max 657 ms (vector) and 700 ms (image), pan max 101.4 ms and 20.5 ms. The script exited 0 with all GO criteria asserted.
 
 ## Measurements
 
@@ -47,7 +47,7 @@ Each figure is wall-clock time for `panContentsBy(±40 px, 0)` plus a synchronou
 
 | check | result |
 |---|---|
-| `canvasPointHovered` with **no** tool installed | **0 signals**. With no tool, `QGraphicsView` accepts the move event and the canvas returns before emitting the signal. |
+| `canvasPointHovered` with **no** tool installed | **0 signals** (measured). The cause is *inferred* from how the code is structured, not traced: with no tool, the base `QGraphicsView` mouse-move handling accepts the event, and the canvas returns before emitting the signal. |
 | `canvasPointHovered` with the built-in `QgsPlotToolPan` installed | PASS: 1 signal. Target (250, 75), received (249.83, 74.94), point not empty. |
 | `canvasPointHovered` with the custom `QgsPlotTool` installed | PASS: same result as with the pan tool. |
 | `results.identify(QgsProfilePoint(250.3, 75.1), QgsProfileIdentifyContext())` | PASS: returns `QgsProfileIdentifyResults(None, [{cell_i: 250, cell_j: 100, value: 2.251311…}])`, and the value equals `values[250, 100]` exactly. |
@@ -86,14 +86,32 @@ What this means for Task 10:
 
 **Both strategies pass every timing criterion at 100k cells**, so QImage caching was not *required*. The plain per-quad `renderResults` (`vector`) passed on its own:
 
-- `vector`: full refresh max **672 ms** (≤ 1.5 s ✔), pan max **99.9 ms** (≤ 300 ms ✔). Rendering costs about 0.8 µs per quad per paint and grows linearly with cell count, so it would reach the 300 ms pan budget at around 350k cells. Output stays crisp at any zoom. Layout PDFs are true vector, but they are large and show seams.
-- `image`: full refresh max **787 ms** ✔, pan max **23.7 ms** ✔. Each paint costs the same no matter how many cells there are. The cost is that rasterising in `generateProfile` adds about 250 ms, the image pixelates if you zoom past its resolution (it would have to be re-rasterised on zoom), and layout PDFs are raster but smaller and seam-free.
+- `vector`: full refresh max **672 ms** (≤ 1.5 s ✔), pan max **99.9 ms** (≤ 300 ms ✔). Output stays crisp at any zoom. Layout PDFs are true vector, but they are large and show seams.
+- `image`: full refresh max **787 ms** ✔, pan max **23.7 ms** ✔. Each paint costs the same no matter how many cells there are. The costs: rasterising in `generateProfile` adds about 250 ms, the image pixelates if you zoom past its resolution (it would have to be re-rasterised on zoom), and layout PDFs are raster, though smaller and seam-free.
 
-Recommendation for Tasks 10 and 11: start with `vector` rendering for the canvas. It passes comfortably and is the simplest. Keep the QImage cache in reserve for sections well above about 300k cells and as the option for layout or print export, where it avoids seams. Alternatively, stroke each quad with a hairline pen of its own fill colour in the PDF.
+### Scaling ceiling: full refresh breaks first
+
+These are linear extrapolations from the 100k-cell measurements. Every per-cell cost below is a Python loop, so linear scaling is a reasonable assumption.
+
+| limit | vector | image |
+|---|---|---|
+| Full refresh ≤ 1.5 s (≈ 6.2–6.7 µs/cell vs ≈ 7.6–7.9 µs/cell, dominated by `generateProfile` ≈ 0.5 s vs ≈ 0.73 s per 100k) | **≈ 230k cells** | **≈ 200k cells** |
+| Pan ≤ 300 ms (`renderResults` ≈ 0.8 µs/cell vs constant ≈ 1 ms) | ≈ 350k cells | unbounded |
+
+- **The binding limit is the full-refresh budget, not pan.** It comes from the per-quad Python loop in `SpikeGenerator.generateProfile`, which turns numpy corner lists into one `QPolygonF` per quad (`spike.py`, the `for q, b in zip(quads, flat_bins)` loop).
+- **QImage caching only helps pan.** It makes refresh *worse*, because it adds the rasterisation pass to generation, so it does not lift the binding limit.
+- **Generation must be vectorised for sections above about 200k cells.** That means numpy end to end, with no per-cell Python object creation; for example, rasterise the cell values with numpy straight into a `QImage` buffer, or batch polygons per colour bin. This also cuts the GIL starvation described under threading.
+
+### Recommendation for Tasks 10 and 11
+
+- **Canvas:** start with `vector` rendering. It passes comfortably at 100k cells and is the simplest.
+- **Generator:** write it numpy-first from the start, because the per-cell Python loop is what sets the ≈ 200–230k-cell ceiling.
+- **QImage cache:** keep it in reserve as a *pan* optimisation for very large sections, once generation is vectorised.
+- **Print and layout export:** the QImage cache is also the option here, because it avoids seams. The other choice is to stroke each quad in the PDF with a hairline pen in its own fill colour.
 
 ## Other findings worth carrying forward
 
-- **The panel must always have a plot tool installed.** With no tool, `canvasPointHovered` never fires. QGIS's own profile dock always has one (pan by default), and a custom tool works as long as it leaves move events unaccepted.
+- **The panel must always have a plot tool installed.** With no tool, `canvasPointHovered` never fires (measured; the mechanism is inferred, see the Interaction table). QGIS's own profile dock always has one (pan by default), and a custom tool works as long as it leaves move events unaccepted.
 - **Copy the `canvasPointHovered(QgsPointXY, QgsProfilePoint)` arguments inside the slot.** They are const references and may not be valid after the emit. The first spike run stored the wrapper objects and read them later, and that hover check failed. Copying `distance()`/`elevation()` inside the slot fixed it.
 - **`activeJobCountChanged` sometimes goes `1 → 0 → 1`** after a refresh (a deferred follow-up job) with no extra `generateProfile` call. Code that waits for completion must check for "count reached 0 and new results present", not a single transition.
 - **`QgsProfileSourceRegistry.unregisterProfileSource(source)` is deprecated since QGIS 4.0.** Unregister by id: `unregisterProfileSource(source_id)`. `registerProfileSource` takes ownership.
