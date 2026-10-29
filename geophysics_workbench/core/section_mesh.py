@@ -30,6 +30,49 @@ def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     return scale
 
 
+SLIVER_ANGLE = 170.0    # degrees: a boundary triangle this obtuse is convex-hull filling
+
+
+def _peel_hull_slivers(pts: np.ndarray, simplices: np.ndarray,
+                       max_angle: float = SLIVER_ANGLE) -> np.ndarray:
+    """Drop near-collinear triangles from the mesh boundary, repeatedly.
+
+    Delaunay fills the convex hull: where the outer row of points is not convex (the deepest
+    row under a hill, the top row in a hollow) it bridges the row with slivers whose three
+    corners are almost in line. They are thin but lie outside the data, and the edge-length
+    rule keeps them where the rows are coarse. Peeling only boundary triangles never opens
+    holes inside the model; peeling repeats because removing one layer exposes the next."""
+    p = pts[simplices]
+    a, b = np.roll(p, -1, axis=1) - p, np.roll(p, 1, axis=1) - p
+    norm = np.linalg.norm(a, axis=2) * np.linalg.norm(b, axis=2)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cos = (a * b).sum(axis=2) / norm
+    # zero-length edges (duplicate points) count as slivers
+    sliver = (np.nan_to_num(cos, nan=-1.0) <= np.cos(np.radians(max_angle))).any(axis=1)
+    if not sliver.any():
+        return simplices
+    # neighbour across each edge (-1 on the boundary); an edge is shared by at most two
+    n, t = len(pts), len(simplices)
+    e = np.sort(np.stack([simplices[:, [0, 1]], simplices[:, [1, 2]], simplices[:, [2, 0]]],
+                         axis=1).astype(np.int64), axis=2)
+    key = (e[..., 0] * n + e[..., 1]).ravel()
+    order = np.argsort(key, kind="stable")
+    pair = np.nonzero(key[order][1:] == key[order][:-1])[0]
+    first, second = order[pair], order[pair + 1]
+    nb = np.full(3 * t, -1, dtype=np.int64)
+    nb[first], nb[second] = second // 3, first // 3
+    nb = nb.reshape(t, 3)
+    keep = np.ones(t, dtype=bool)
+    stack = list(np.nonzero(sliver & (nb < 0).any(axis=1))[0])
+    while stack:                                   # visits slivers only
+        i = stack.pop()
+        if not keep[i]:
+            continue
+        keep[i] = False
+        stack.extend(j for j in nb[i] if j >= 0 and keep[j] and sliver[j])
+    return simplices[keep]
+
+
 @dataclass
 class SectionMesh:
     vertices: np.ndarray            # (n, 2) [x, z]
@@ -56,7 +99,8 @@ class SectionMesh:
         """Delaunay mesh of scattered points. With an explicit max_edge, triangles with
         a longer edge are dropped. By default a local rule is used: a triangle is
         dropped when its longest edge exceeds 3 x the largest per-vertex scale of its
-        corners (median length of the Delaunay edges at that vertex)."""
+        corners (median length of the Delaunay edges at that vertex). Either way,
+        near-collinear slivers on the boundary (convex-hull filling) are then peeled off."""
         x, z, v = (np.asarray(a, dtype=float).ravel() for a in (x, z, v))
         if not (x.size == z.size == v.size):
             raise ValueError("x, z and v must have the same length")
@@ -79,7 +123,7 @@ class SectionMesh:
             keep = longest <= 3.0 * scale[simplices].max(axis=1)
         else:
             keep = longest <= max_edge
-        simplices = simplices[keep]
+        simplices = _peel_hull_slivers(pts, simplices[keep])
         if len(simplices) == 0:
             raise ValueError("All triangles were filtered out; increase max_edge or check the points")
         vv = v[simplices]

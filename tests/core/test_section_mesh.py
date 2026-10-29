@@ -117,3 +117,30 @@ def test_default_removes_trapezoid_bridge():
 def test_all_filtered_raises():
     with pytest.raises(ValueError, match="filtered"):
         SectionMesh.from_points(np.array([0, 1, 0.0]), np.array([0, 0, -1.0]), np.ones(3), max_edge=0.1)
+
+
+def _bent_model_points():
+    """Cell centres of a model under a hill (elevation space): fine rows near the surface,
+    coarse rows at depth, every row following the topography."""
+    s = np.arange(1.25, 200.0, 2.5)
+    topo = 60.0 + 4.0 * np.sin(np.pi * s / 200.0)                      # hill in the middle
+    edges = np.r_[0.0, np.cumsum(0.5 * 1.1 ** np.arange(30))]
+    depth = 0.5 * (edges[:-1] + edges[1:])
+    ss, dd = np.meshgrid(s, depth)
+    zz = np.interp(ss, s, topo) - dd
+    return ss.ravel(), zz.ravel(), s, topo, depth
+
+
+def test_default_drops_hull_slivers_of_bent_rows():
+    """The convex hull bridges the bulging bottom row (and the top row in hollows) with
+    near-collinear slivers; they must not add area outside the rows."""
+    x, z, s, topo, depth = _bent_model_points()
+    m = SectionMesh.from_points(x, z, np.full(x.size, 30.0))
+    cent = m.vertices[m.cells[:, :3]].mean(axis=1)
+    top = np.interp(cent[:, 0], s, topo) - depth[0]
+    bottom = np.interp(cent[:, 0], s, topo) - depth[-1]
+    tol = 1e-6
+    assert (cent[:, 1] >= bottom - tol).all(), "cells below the deepest row"
+    assert (cent[:, 1] <= top + tol).all(), "cells above the shallowest row"
+    # nothing inside the rows is lost: a regular grid splits into 2 triangles per cell
+    assert len(m.cells) == 2 * (len(s) - 1) * (len(depth) - 1)

@@ -4,12 +4,17 @@ from __future__ import annotations
 from dataclasses import replace
 
 from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
-from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QSlider,
-                                 QToolButton, QVBoxLayout, QWidget)
+from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QScrollArea,
+                                 QSizePolicy, QSlider, QSplitter, QToolButton, QVBoxLayout,
+                                 QWidget)
 
 from .data import SectionLayer, layer_name
 from .readout import format_value, unit_label
 from .scale_dialog import ColorScaleDialog, ramp_icon
+
+MIN_WIDTH = 300
+MAX_HINT_WIDTH = 480            # preferred width: full layer names, up to this
+MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
 
 
 def _scale_text(layer: SectionLayer) -> str:
@@ -26,6 +31,8 @@ class _LayerRow(QWidget):
         self.dataset_id = layer.dataset.id
         self._owner = owner
         self.check = QCheckBox(layer_name(layer.dataset))
+        self.check.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.check.setMinimumWidth(MIN_NAME_WIDTH)
         self.check.toggled.connect(lambda on: owner.set_visible(self.dataset_id, on))
         self.opacity = QSlider(Qt.Orientation.Horizontal)
         self.opacity.setRange(0, 100)
@@ -90,6 +97,8 @@ class LayerList(QWidget):
         self._box_layout.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll = scroll
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(self._box)
         layout = QVBoxLayout(self)
@@ -97,7 +106,8 @@ class LayerList(QWidget):
         layout.addWidget(title)
         layout.addWidget(self._empty)
         layout.addWidget(scroll, 1)
-        self.setMinimumWidth(300)
+        self._hint_width = MIN_WIDTH
+        self.setMinimumWidth(MIN_WIDTH)
 
     def dataset_ids(self) -> list[str]:
         return list(self._rows)
@@ -121,6 +131,43 @@ class LayerList(QWidget):
             for dataset_id, row in self._rows.items():
                 row.update_from(self._layers[dataset_id])
         self._empty.setVisible(not ids)
+        self._fit_width()
+
+    def _fit_width(self) -> None:
+        """Wide enough for every row's controls (the list never scrolls sideways)."""
+        rows = list(self._rows.values())
+        extra = (self.layout().contentsMargins().left() + self.layout().contentsMargins().right()
+                 + self._scroll.verticalScrollBar().sizeHint().width() + 4)
+        need = max([r.minimumSizeHint().width() for r in rows], default=0) + extra
+        full = max([r.minimumSizeHint().width() - r.check.minimumWidth()
+                    + r.check.sizeHint().width() for r in rows], default=0) + extra
+        self.setMinimumWidth(max(MIN_WIDTH, need))
+        self._hint_width = max(self.minimumWidth(), min(full, MAX_HINT_WIDTH))
+        self.updateGeometry()
+        self._grow_in_splitter()
+
+    def _grow_in_splitter(self) -> None:
+        """A splitter reads size hints only when first shown: widen this list to its hint
+        by taking space from the widest neighbour. Never shrinks (the user may have
+        dragged the handle)."""
+        splitter = self.parentWidget()
+        if not isinstance(splitter, QSplitter):
+            return
+        sizes = splitter.sizes()
+        i = splitter.indexOf(self)
+        if i < 0 or sum(sizes) <= 0 or sizes[i] >= self._hint_width:
+            return
+        j = max((k for k in range(len(sizes)) if k != i), key=lambda k: sizes[k], default=None)
+        if j is None:
+            return
+        grow = min(self._hint_width - sizes[i], max(0, sizes[j] - 200))
+        sizes[i] += grow
+        sizes[j] -= grow
+        splitter.setSizes(sizes)
+
+    def sizeHint(self) -> QSize:
+        hint = super().sizeHint()
+        return QSize(max(hint.width(), self._hint_width), hint.height())
 
     def clear(self) -> None:
         self.set_layers(self.provider, [])
@@ -137,6 +184,7 @@ class LayerList(QWidget):
             row = self._rows.get(dataset_id)
             if row is not None:
                 row.update_from(layer)
+                self._fit_width()               # the scale text may have grown
         self.style_changed.emit(dataset_id)
 
     def set_visible(self, dataset_id: str, visible: bool) -> None:
