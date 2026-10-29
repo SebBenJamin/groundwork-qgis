@@ -1,12 +1,13 @@
-"""Layer list of the section panel: visibility, opacity and colour scale per dataset."""
+"""Layer list of the section panel: visibility, opacity and colour scale per dataset, and
+a context menu to remove a dataset from its profile."""
 from __future__ import annotations
 
 from dataclasses import replace
 
 from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
-from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QScrollArea,
-                                 QSizePolicy, QSlider, QSplitter, QToolButton, QVBoxLayout,
-                                 QWidget)
+from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QMessageBox,
+                                 QScrollArea, QSizePolicy, QSlider, QSplitter, QToolButton,
+                                 QVBoxLayout, QWidget)
 
 from .data import SectionLayer, layer_name
 from .readout import format_value, unit_label
@@ -15,6 +16,7 @@ from .scale_dialog import ColorScaleDialog, ramp_icon
 MIN_WIDTH = 300
 MAX_HINT_WIDTH = 480            # preferred width: full layer names, up to this
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
+REMOVE_TEXT = "Remove from profile…"
 
 
 def _scale_text(layer: SectionLayer) -> str:
@@ -45,6 +47,11 @@ class _LayerRow(QWidget):
         self.scale_button.setIconSize(QSize(40, 10))
         self.scale_button.setToolTip("Colour scale")
         self.scale_button.clicked.connect(lambda: owner.edit_scale(self.dataset_id))
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(
+            lambda pos: owner.row_menu(self.dataset_id).exec(self.mapToGlobal(pos)))
+        for child in (self.check, self.opacity, self.scale_button):     # menu on the controls too
+            child.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         row = QHBoxLayout(self)
         row.setContentsMargins(2, 1, 2, 1)
         row.addWidget(self.check, 1)
@@ -81,6 +88,7 @@ class LayerList(QWidget):
     """One row per dataset of the open profile, topmost layer first."""
 
     style_changed = pyqtSignal(str)
+    dataset_removed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -195,6 +203,31 @@ class LayerList(QWidget):
 
     def set_scale(self, dataset_id: str, scale) -> None:
         self._update_style(dataset_id, scale=scale)
+
+    # -- removing ----------------------------------------------------------------------------
+    def row_menu(self, dataset_id: str) -> QMenu:
+        """Context menu of a row (the caller shows and owns it)."""
+        menu = QMenu(self)
+        menu.addAction(REMOVE_TEXT).triggered.connect(lambda: self.remove_dataset(dataset_id))
+        return menu
+
+    def remove_dataset(self, dataset_id: str) -> bool:
+        """Ask, then remove the dataset from its profile (store, provider; the section panel
+        refreshes on the provider's change notice). The model file is not touched."""
+        layer = self._layers.get(dataset_id)
+        if self.provider is None or layer is None:
+            return False
+        answer = QMessageBox.question(
+            self, "Remove from profile",
+            f"Remove “{layer_name(layer.dataset)}” from this profile?\n\n"
+            "The model file stays where it is; you can add it again with Add ERT model.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+        self.provider.remove_dataset(dataset_id)
+        self.dataset_removed.emit(dataset_id)
+        return True
 
     def edit_scale(self, dataset_id: str) -> None:
         layer = self._layers.get(dataset_id)

@@ -176,6 +176,14 @@ class SectionDataProvider:
         self._styles[dataset_id] = style
         self.notify_changed()
 
+    def remove_dataset(self, dataset_id: str) -> None:
+        """Delete ``dataset_id`` from the store (the model file stays), forget its style
+        and cached read, and tell the listeners."""
+        self.store.delete_dataset(dataset_id)
+        self._styles.pop(dataset_id, None)
+        self._cache.pop(dataset_id, None)
+        self.notify_changed()
+
     # -- topography and stations -----------------------------------------------------------
     @staticmethod
     def _topo_set(sets: list[StationSet]) -> StationSet | None:
