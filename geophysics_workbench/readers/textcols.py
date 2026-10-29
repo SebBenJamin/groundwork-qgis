@@ -39,7 +39,10 @@ def _delimiter(line: str) -> str:
 def _split(line: str, delim: str) -> list[str]:
     if delim == " ":
         return line.split()
-    return [t.strip() for t in line.split(delim)]
+    tokens = [t.strip() for t in line.split(delim)]
+    while tokens and not tokens[-1]:                # trailing delimiter: ``1;2;3;``
+        tokens.pop()
+    return tokens
 
 
 def _to_float(tok: str, delim: str) -> float:

@@ -124,7 +124,10 @@ class VtkLegacyReader(Reader):
                 raise ValueError(f"{path.name}: array {want!r} not found; available: {', '.join(names)}")
             chosen = want
         else:
-            chosen = next((n for n in names if "resist" in n.lower()), names[0])
+            # ResIPy also writes Resistivity(log10): prefer the linear array
+            resist = [n for n in names if "resist" in n.lower()]
+            chosen = next((n for n in resist if "log" not in n.lower()),
+                          resist[0] if resist else names[0])
         values = arrays[chosen]
         if len(values) != len(cells):
             raise ValueError(f"{path.name}: array {chosen!r} has {len(values)} values for {len(cells)} cells")
@@ -134,7 +137,7 @@ class VtkLegacyReader(Reader):
         axes = options.get("axes") or self._auto_axes(points, path.name)
         i, j = axes
         verts = points[:, [i, j]]
-        is_res = "resist" in chosen.lower()
+        is_res = "resist" in chosen.lower() and "log" not in chosen.lower()
         mesh = SectionMesh(verts, conn, values,
                            quantity="resistivity" if is_res else chosen,
                            unit="ohm.m" if is_res else "")

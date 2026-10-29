@@ -151,3 +151,18 @@ def test_zond_detection_checks_the_log_column(tmp_path):
     p = tmp_path / "four_cols.dat"                  # 4+ columns but no log10 pair
     p.write_text("1 2 3 4\n5 6 7 8\n9 10 11 12\n")
     assert readers.detect(p) == []
+
+
+def test_vtk_prefers_linear_resistivity_over_log(tmp_path):
+    """ResIPy writes Resistivity(log10) next to Resistivity(ohm.m): take the linear one."""
+    text = (F / "f001_res.vtk").read_text()
+    log_block = ("SCALARS Resistivity(log10) float 1\nLOOKUP_TABLE default\n"
+                 + "\n".join(["1.5"] * 8) + "\n")
+    p = tmp_path / "log_first.vtk"
+    sens = "SCALARS Sensitivity(log10)"
+    p.write_text(text.replace(sens, log_block + sens, 1))
+    r = readers.read(p)
+    assert r.provenance["array"] == "Resistivity(ohm.m)"
+    assert r.mesh.quantity == "resistivity" and r.mesh.unit == "ohm.m"
+    only_log = readers.read(p, array="Resistivity(log10)")
+    assert only_log.mesh.quantity == "Resistivity(log10)" and only_log.mesh.unit == ""

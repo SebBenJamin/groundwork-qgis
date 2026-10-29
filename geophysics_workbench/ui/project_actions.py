@@ -12,6 +12,7 @@ import os
 import uuid
 from pathlib import Path
 
+import numpy as np
 from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsProject,
                        QgsProviderRegistry, QgsSingleSymbolRenderer, QgsTextFormat,
                        QgsVectorLayer, QgsVectorLayerSimpleLabeling)
@@ -193,13 +194,19 @@ def model_source_path(store: ProjectStore, path: Path) -> str:
         return str(path)
 
 
+def _has_elevations(store: ProjectStore, profile_id: str) -> bool:
+    return any(len(s.xyz) and np.isfinite(s.xyz[:, 2]).any()
+               for s in store.station_sets(profile_id))
+
+
 def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: Path,
               reader: str, options: dict, name: str, provider=None) -> Dataset:
     """Validate ``path`` by reading it once, then save it as a model dataset.
 
     ``options`` may hold ``z_kind`` and ``chainage_offset`` (default 0) plus reader options;
     a missing ``z_kind`` comes from the reader. Raises the reader's ValueError for unusable
-    files and ValueError when it is still unknown whether Z is elevation or depth."""
+    files, and ValueError when it is still unknown whether Z is elevation or depth or when
+    a depth model meets a profile whose stations have no elevations."""
     path = Path(path)
     opts = dict(options)
     opts["chainage_offset"] = float(opts.get("chainage_offset") or 0.0)
@@ -208,12 +215,17 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     z_kind = opts.get("z_kind") or result.z_kind
     if z_kind not in Z_CHOICES:
         raise ValueError(f"Choose whether Z is elevation or depth for {path.name}")
+    if z_kind == "depth" and not _has_elevations(store, profile_id):
+        raise ValueError(f"{path.name}: a depth model is hung from the station elevations, "
+                         "but this profile's stations have none. Create the profile from "
+                         "a station file with a Z column, or choose Z means Elevation.")
     opts["z_kind"] = z_kind
     mtime, sha1 = file_fingerprint(str(path))
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id, "ert_model",
                       model_source_path(store, path),
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
-                      dict(result.provenance), name=name or path.stem)
+                      dict(result.provenance), name=name or path.stem,
+                      quantity=result.mesh.quantity, unit=result.mesh.unit)
     store.save_dataset(dataset)
     if provider is not None:
         provider.notify_changed()

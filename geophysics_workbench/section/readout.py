@@ -10,8 +10,14 @@ def unit_label(unit: str) -> str:
 
 
 def format_value(value: float) -> str:
-    """No decimals from 100 up, one below (by magnitude)."""
-    return f"{value:.0f}" if abs(value) >= 100 else f"{value:.1f}"
+    """No decimals from 100 up, one from 1 up, three significant digits below 1 (so a
+    small value never shows as 0.0); zero is "0.0"."""
+    size = abs(value)
+    if size >= 100:
+        return f"{value:.0f}"
+    if size >= 1 or size == 0:
+        return f"{value:.1f}"
+    return f"{value:.3g}"
 
 
 def format_readout(s: float, z: float | None = None, depth: float | None = None,

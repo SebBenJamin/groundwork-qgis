@@ -361,5 +361,15 @@ def test_open_missing_profile_shows_message_not_traceback(qgis_app, store_with_m
     assert dock.current_profile_id() is None
     assert "not found" in dock.readout.text()
     assert dock.profile_combo.currentIndex() == 0
-    assert [dock.profile_combo.itemData(i) for i in range(dock.profile_combo.count())] == [None, p.id]
+    combo = dock.profile_combo
+    assert [combo.itemData(i) for i in range(combo.count())] == [None, p.id]
     assert dock.open_profile(p.id) is True and dock.current_profile_id() == p.id
+
+
+def test_format_value_keeps_small_values_visible():
+    from geophysics_workbench.section.readout import format_value
+
+    assert format_value(0.0123) == "0.0123" and format_value(0.04) == "0.04"
+    assert format_value(0.5) == "0.5" and format_value(-0.00456) == "-0.00456"
+    assert format_value(0.0) == "0.0"
+    assert format_value(27.34) == "27.3" and format_value(1234.6) == "1235"

@@ -194,3 +194,34 @@ def test_store_layers_are_read_only(qgis_app, tmp_path):
     attached = attach_store(again)                      # ... attaching protects them again
     for layer in store_layers(attached, again).values():
         assert layer.readOnly() and not layer.startEditing()
+
+
+# -- add_model checks ----------------------------------------------------------------------
+def test_add_model_refuses_depth_model_without_station_elevations(qgis_app, tmp_path):
+    from geophysics_workbench.core.model import profile_from_stations
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from geophysics_workbench.ui.project_actions import add_model
+
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p, s = profile_from_stations("Flat", "EPSG:25832", np.array([[0, 0], [50, 0.0]]))  # no z
+    st.save_profile(p); st.save_station_set(s)
+    src = tmp_path / "zond_model_depth.dat"
+    shutil.copy(FIXTURES / "zond_model_depth.dat", src)
+    with pytest.raises(ValueError, match="elevation"):
+        add_model(st, p.id, s.id, src, "zondres_xyz", {}, "depth model")
+    assert st.datasets(p.id) == []
+    add_model(st, p.id, s.id, src, "zondres_xyz", {"z_kind": "elevation"}, "as elevation")
+    assert len(st.datasets(p.id)) == 1
+
+
+def test_add_model_keeps_the_readers_quantity_and_unit(qgis_app, tmp_path, store_with_model):
+    from geophysics_workbench.ui.project_actions import add_model
+
+    st, p, _ = store_with_model
+    src = tmp_path / "f001_res.vtk"
+    shutil.copy(FIXTURES / "f001_res.vtk", src)
+    d = add_model(st, p.id, st.station_sets(p.id)[0].id, src, "vtk_legacy",
+                  {"array": "Sensitivity(log10)"}, "sens")
+    assert (d.quantity, d.unit) == ("Sensitivity(log10)", "")
+    [back] = [x for x in st.datasets(p.id) if x.id == d.id]
+    assert (back.quantity, back.unit) == ("Sensitivity(log10)", "")

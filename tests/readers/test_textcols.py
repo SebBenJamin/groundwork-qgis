@@ -53,3 +53,12 @@ def test_garbage_names_file_and_line(tmp_path):
     p.write_text("")
     with pytest.raises(ValueError, match="empty"):
         read_columns(p)
+
+
+def test_trailing_delimiter_is_ignored():
+    from geophysics_workbench.readers.textcols import parse_columns
+
+    header, arr = parse_columns("x;z;rho;\n1;2;3;\n4;5;6;\n")
+    assert header == ["x", "z", "rho"] and arr.tolist() == [[1, 2, 3], [4, 5, 6]]
+    _, arr = parse_columns("1,2,3,\n4,5,6,\n")
+    assert arr.tolist() == [[1, 2, 3], [4, 5, 6]]
