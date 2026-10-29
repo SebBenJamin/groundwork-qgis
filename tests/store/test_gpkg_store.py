@@ -3,7 +3,8 @@ import sqlite3
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import Dataset, Profile, StationSet, profile_from_stations
+from geophysics_workbench.core.model import (Dataset, Profile, StationSet, attach_station_set,
+                                             profile_from_stations)
 from geophysics_workbench.store.gpkg_store import ProjectStore
 
 
@@ -80,7 +81,9 @@ def test_crs_and_layer_uri(tmp_path):
 def test_nan_z_and_order_roundtrip(tmp_path):
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     xyz = np.array([[0, 0, np.nan], [10, 0, 5.5], [20, 0, np.nan], [30, 0, 7.0]])
-    p, s = profile_from_stations("P", "EPSG:25832", xyz, numbers=np.array([4, 3, 2, 1]))
+    p, _ = profile_from_stations("P", "EPSG:25832", xyz)
+    # attach (not profile_from_stations, which sorts by number) keeps the row order
+    s = attach_station_set(p, "P", "ert", xyz, numbers=np.array([4, 3, 2, 1]))
     s.warnings = ["w1", "ä"]
     st.save_profile(p); st.save_station_set(s)
     r = ProjectStore.open(tmp_path / "p.gpkg").station_sets(p.id)[0]
