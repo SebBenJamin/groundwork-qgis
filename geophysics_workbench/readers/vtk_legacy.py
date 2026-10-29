@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from ..core.section_mesh import SectionMesh
-from .base import Reader, ReaderResult
+from .base import Reader, ReaderResult, fill_mask
 from .textcols import decode_bytes
 
 _TRIANGLE, _QUAD = 5, 9
@@ -129,6 +129,8 @@ class VtkLegacyReader(Reader):
         if len(values) != len(cells):
             raise ValueError(f"{path.name}: array {chosen!r} has {len(values)} values for {len(cells)} cells")
 
+        masked = fill_mask(values)                 # -9999 fill / NaN: keep the cell, value NaN
+        values = np.where(masked, np.nan, values)
         axes = options.get("axes") or self._auto_axes(points, path.name)
         i, j = axes
         verts = points[:, [i, j]]
@@ -143,6 +145,7 @@ class VtkLegacyReader(Reader):
             "array": chosen,
             "axes": (int(i), int(j)),
             "n_cells": int(len(cells)),
+            "n_masked": int(masked.sum()),
         })
 
     @staticmethod

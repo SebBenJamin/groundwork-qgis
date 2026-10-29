@@ -91,3 +91,43 @@ def test_unknown_format_and_reader(tmp_path):
         readers.read(p)
     with pytest.raises(ValueError, match="Unknown reader"):
         readers.get("nope")
+
+
+def test_r2_fill_values_are_masked(tmp_path):
+    lines = (F / "f001_res.dat").read_text().splitlines()
+    lines[0] = "\t-9.99900e+03\t-9.99900e+03\t-9.99900e+03\t-9.99900e+03"
+    lines[1] = lines[1].replace(lines[1].split()[2], "-9.99900e+03")
+    p = tmp_path / "f002_res.dat"; p.write_text("\n".join(lines) + "\n")
+    r = readers.read(p)
+    assert r.provenance["n_masked"] == 2 and (r.mesh.values > 0).all()
+    assert readers.read(F / "f001_res.dat").provenance["n_masked"] == 0
+
+
+def test_r2_all_fill_raises(tmp_path):
+    p = tmp_path / "f003_res.dat"
+    p.write_text("".join(f"\t{i}.0\t-{i}.0\t-9999.0\t-9999.0\n" for i in range(5)))
+    with pytest.raises(ValueError, match="fill values"):
+        readers.read(p)
+
+
+def test_nonpositive_resistivity_message(tmp_path):
+    p = tmp_path / "f004_res.dat"
+    p.write_text("".join(f"\t{i}.0\t-{j}.0\t{0 if i == 0 else 5}.0\t0.0\n" for i in range(3) for j in range(1, 3)))
+    with pytest.raises(ValueError, match=r"f004_res\.dat: 2 resistivity value"):
+        readers.read(p)
+
+
+def test_vtk_fill_values_become_nan(tmp_path):
+    txt = (F / "f001_res.vtk").read_text().replace("\n80.00\n", "\n-9999\n", 1)
+    p = tmp_path / "fill.vtk"; p.write_text(txt)
+    r = readers.read(p)
+    assert r.provenance["n_masked"] == 1 and np.isnan(r.mesh.values[1])
+    assert r.mesh.cells.shape[0] == 8 and np.isfinite(np.delete(r.mesh.values, 1)).all()
+
+
+def test_zond_nan_token_is_masked(tmp_path):
+    lines = (F / "zond_model.dat").read_text().splitlines()
+    cols = lines[2].split("\t"); cols[3] = "nan"; lines[2] = "\t".join(cols)
+    p = tmp_path / "nan.dat"; p.write_text("\n".join(lines) + "\n")
+    r = readers.read(p)
+    assert r.provenance["n_masked"] == 1 and (r.mesh.values > 0).all()

@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core.section_mesh import SectionMesh
-from .base import Reader, ReaderResult
+from .base import Reader, ReaderResult, mesh_from_resistivity_points
 from .textcols import read_columns, sniff_columns
 
 _TEXT_SUFFIXES = {".dat", ".txt", ".xyz"}
@@ -37,10 +36,7 @@ class ZondResReader(Reader):
         if arr.shape[1] < 4:
             raise ValueError(f"{path.name}: expected at least 4 columns (x, z, log rho, rho), "
                              f"found {arr.shape[1]}")
-        try:
-            mesh = SectionMesh.from_points(arr[:, 0], arr[:, 1], arr[:, 3])
-        except ValueError as exc:
-            raise ValueError(f"{path.name}: {exc}") from None
+        mesh, n_masked = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 3], path.name)
         is_depth = header is not None and "depth" in " ".join(header).lower()
         return ReaderResult(mesh, "depth" if is_depth else "unknown", {
             "reader": self.name,
@@ -48,4 +44,5 @@ class ZondResReader(Reader):
             "has_world_xy": arr.shape[1] >= 6,
             "header": header,
             "n_points": int(arr.shape[0]),
+            "n_masked": n_masked,
         })

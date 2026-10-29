@@ -11,8 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..core.section_mesh import SectionMesh
-from .base import Reader, ReaderResult
+from .base import Reader, ReaderResult, mesh_from_resistivity_points
 from .textcols import read_columns
 
 _NAME = re.compile(r"f(\d{3})_res\.dat", re.IGNORECASE)
@@ -34,10 +33,7 @@ class R2ResReader(Reader):
         if arr.shape[1] != 4:
             raise ValueError(f"{path.name}: expected 4 columns (x, z, resistivity, log10), "
                              f"found {arr.shape[1]}")
-        try:
-            mesh = SectionMesh.from_points(arr[:, 0], arr[:, 1], arr[:, 2])
-        except ValueError as exc:
-            raise ValueError(f"{path.name}: {exc}") from None
+        mesh, n_masked = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 2], path.name)
         m = _NAME.fullmatch(path.name)
         index = int(m.group(1)) if m else None
         return ReaderResult(mesh, "elevation", {
@@ -46,4 +42,5 @@ class R2ResReader(Reader):
             "file_index": index,
             "iteration": index,
             "n_points": int(arr.shape[0]),
+            "n_masked": n_masked,
         })
