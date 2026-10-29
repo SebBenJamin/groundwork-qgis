@@ -9,17 +9,6 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "ert"
 
 
 @pytest.fixture
-def warnings_shown(monkeypatch):
-    """Record QMessageBox.warning calls instead of blocking on a modal box."""
-    from qgis.PyQt.QtWidgets import QMessageBox
-
-    shown = []
-    monkeypatch.setattr(QMessageBox, "warning",
-                        staticmethod(lambda parent, title, text, *a, **k: shown.append(text)))
-    return shown
-
-
-@pytest.fixture
 def project_store(qgis_app, tmp_path):
     from qgis.core import QgsProject
 

@@ -202,7 +202,7 @@ class WorkbenchPlugin:
             return
         try:
             store = project_actions.open_store(Path(path), QgsProject.instance())
-        except ValueError as exc:
+        except (ValueError, OSError, RuntimeError) as exc:   # corrupt, locked or not a gpkg
             QMessageBox.warning(window, "Open workbench project", str(exc))
             return
         self.set_store(store)
