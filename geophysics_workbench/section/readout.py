@@ -24,10 +24,11 @@ BEYOND = "beyond stations"
 
 
 def format_readout(s: float, z: float | None = None, depth: float | None = None,
-                   xy=None, hits=(), beyond: bool = False) -> str:
+                   xy=None, hits=(), beyond: bool = False, extra=()) -> str:
     """``s = 123.4 m · z = 61.2 m · depth = 3.8 m · X 432105.2 Y 5851234.9 · P1 model: 27.3 Ω·m``.
     Parts whose input is ``None`` are left out; ``hits`` are ``identify`` dicts. ``beyond``
-    (s outside the station coverage) appends `` · beyond stations``."""
+    (s outside the station coverage) appends `` · beyond stations``. ``extra`` (context lines)
+    follow on a second line, joined by `` · ``."""
     parts = [f"s = {s:.1f} m"]
     if z is not None:
         parts.append(f"z = {z:.1f} m")
@@ -40,4 +41,5 @@ def format_readout(s: float, z: float | None = None, depth: float | None = None,
         parts.append(f"{hit['name']}: {format_value(hit['value'])}" + (f" {unit}" if unit else ""))
     if beyond:
         parts.append(BEYOND)
-    return SEP.join(parts)
+    text = SEP.join(parts)
+    return text + "\n" + SEP.join(extra) if extra else text

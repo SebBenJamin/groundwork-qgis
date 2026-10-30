@@ -19,9 +19,11 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphi
                                  QWidget)
 
 from .data import identify_layers, layer_name
+from .dock_context import context_lines
 from .layer_list import LayerList
 from .profile_source import SOURCE_ID
 from .readout import format_readout
+from .topo_switch import TopoSwitch
 from .view_fit import ViewFitter
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
@@ -61,6 +63,8 @@ class SectionDock(QDockWidget):
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
         self.profile_combo.currentIndexChanged.connect(self._combo_changed)
+        self.topo = TopoSwitch(self)
+        self.topo_combo = self.topo.combo
         self.ve_spin = QDoubleSpinBox()
         self.ve_spin.setRange(1.0, 20.0)
         self.ve_spin.setDecimals(1)
@@ -109,6 +113,8 @@ class SectionDock(QDockWidget):
         top = QHBoxLayout()
         top.addWidget(QLabel("Profile"))
         top.addWidget(self.profile_combo)
+        top.addWidget(self.topo.label)
+        top.addWidget(self.topo_combo)
         top.addStretch(1)
         top.addWidget(QLabel("Vertical exaggeration"))
         top.addWidget(self.ve_spin)
@@ -164,6 +170,7 @@ class SectionDock(QDockWidget):
             return
         self._layers = None
         self._fill_combo()
+        self.topo.sync()
         if self._profile is None:
             return
         try:
@@ -221,6 +228,7 @@ class SectionDock(QDockWidget):
         self.provider.active_profile_id = profile.id    # wins over profiles on the same line
         self._layers = None
         self._fill_combo()
+        self.topo.sync()
         self.canvas.setCrs(QgsCoordinateReferenceSystem(self.provider.store.crs_authid))
         self._set_curve(profile)
         if self._source is not None and not self.canvas.sources():
@@ -246,6 +254,7 @@ class SectionDock(QDockWidget):
         self.canvas.clear()
         self.layer_list.set_layers(self.provider, [])
         self._show_errors([])
+        self.topo.sync()
         self.show_cursor(None)
         self.profile_changed.emit(None)
 
@@ -338,15 +347,16 @@ class SectionDock(QDockWidget):
         inside = 0.0 <= s <= profile.chainage.length
         xy = tuple(float(v) for v in profile.chainage.to_xy(s)) if inside else None
         layers = self._current_layers()
-        depth, hits = None, []
+        depth, hits, extra = None, [], []
         if z is not None:
             topo = self._topo
             if topo is not None and len(topo[0]) > 1 and topo[0][0] <= s <= topo[0][-1]:
                 depth = float(np.interp(s, *topo)) - z
             hits = identify_layers(layers, s, z)
+            extra = context_lines(self, s, z)
         cover = self._coverage
         beyond = cover is not None and not cover[0] <= s <= cover[1]
-        self.readout.setText(format_readout(s, z, depth, xy, hits, beyond))
+        self.readout.setText(format_readout(s, z, depth, xy, hits, beyond, extra))
 
     def show_cursor(self, s: float | None) -> None:
         """Vertical guide at forward chainage ``s``; ``None`` hides it."""
