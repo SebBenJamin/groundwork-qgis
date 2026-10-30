@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from ..core.ties import TieColumn
 from ..section.readout import format_value, unit_label
@@ -52,7 +52,9 @@ class TiesPlot(FigureCanvasQTAgg):
             ax.set_xscale("log")
             plain = FuncFormatter(lambda v, _pos: format_value(v).removesuffix(".0"))
             ax.xaxis.set_major_formatter(plain)
-            ax.xaxis.set_minor_formatter(plain)
+            lo, hi = ax.get_xlim()
+            # minor labels only on a short axis (under a decade); else decade labels only
+            ax.xaxis.set_minor_formatter(plain if hi < 10 * lo else NullFormatter())
         if row.mismatch is not None and row.mismatch.z_range is not None:
             ax.axhspan(*row.mismatch.z_range, color="0.5", alpha=0.15, lw=0)
         label = quantity.capitalize()

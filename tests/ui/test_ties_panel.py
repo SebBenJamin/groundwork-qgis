@@ -172,6 +172,14 @@ def test_plugin_menu_action_and_lifecycle(qgis_app, fake_iface, store_with_model
 def test_double_crossing_gives_two_rows_with_own_columns(make_panel, store_with_model, tmp_path):
     st, p1, _ = store_with_model
     p2 = _add(st, tmp_path, "P2", [[3, -2, 100], [3, 1, 100], [4, 1, 100], [4, -2, 100]])
+    top = tmp_path / "P2_top.dat"                       # second visible layer, drawn last
+    rows_in = np.loadtxt(FIXTURES / "ert" / "f001_res.dat")
+    rows_in[:, 2] *= 3
+    rows_in[:, 3] += np.log10(3)
+    np.savetxt(top, rows_in)
+    mt, sha = file_fingerprint(top)
+    st.save_dataset(Dataset("dP2top", p2.id, st.station_sets(p2.id)[0].id, "ert_model", str(top),
+                            mt, sha, "r2_res_dat", {"z_kind": "elevation"}, {}, name="P2 top"))
     panel, prov, _dock = make_panel(st)
     rows = [r for r in panel.rows if r.a_name == "P1" and r.b_name == "P2"]
     assert len(rows) == 2 and len(panel.rows) == 2
@@ -181,8 +189,9 @@ def test_double_crossing_gives_two_rows_with_own_columns(make_panel, store_with_
     from geophysics_workbench.section.ties_data import tie_column
     for r in rows:
         for col, pid, pos in ((r.col_a, p1.id, r.s_a), (r.col_b, p2.id, r.s_b)):
-            expect = tie_column(prov.layers(pid)[0], pos)
+            expect = tie_column(prov.layers(pid)[-1], pos)       # topmost = last drawn
             assert col.values.tolist() == expect.values.tolist() and col.values.size
+    assert all(r.col_b.dataset_name == "P2 top" for r in rows)
     assert rows[0].col_b.values.tolist() != rows[1].col_b.values.tolist()
 
 
@@ -198,3 +207,29 @@ def test_sorting_is_numeric(make_panel, store_with_model, tmp_path):
     assert [r[1] for r in _cells(panel)][:2] == ["P1 47 m · P3 4 m", "P1 120 m · P2 4 m"]
     panel.table.sortItems(1, Qt.SortOrder.DescendingOrder)
     assert _cells(panel)[0][1].startswith("P1 120 m")
+
+
+def _plot_labels(values, qgis_app):
+    from geophysics_workbench.core.ties import TieColumn
+    from geophysics_workbench.ui.ties_panel import TieRow
+    from geophysics_workbench.ui.ties_plot import TiesPlot
+    v = np.array(values, dtype=float)
+    z = np.linspace(0.0, -2.0 * len(v) / 2, len(v) + 1)
+    col = TieColumn("m", z[:-1], z[1:], v, None, "resistivity", "ohm.m")
+    plot = TiesPlot()
+    plot.show_row(TieRow("a", "b", "A", "B", 1.0, 1.0, 0.0, col, col, None, ""))
+    plot.draw()
+    lo, hi = plot.ax.get_xlim()
+    minor = [t.get_text() for t, x in zip(plot.ax.xaxis.get_minorticklabels(),
+                                          plot.ax.xaxis.get_minorticklocs()) if lo <= x <= hi]
+    major = [t.get_text() for t, x in zip(plot.ax.xaxis.get_majorticklabels(),
+                                          plot.ax.xaxis.get_majorticklocs()) if lo <= x <= hi]
+    return minor, major
+
+
+def test_log_ticks_minor_labels_only_on_short_axis(qgis_app):
+    minor, major = _plot_labels([8, 30, 150, 600], qgis_app)       # two decades
+    assert minor and all(t == "" for t in minor)
+    assert major and all(t in ("10", "100") for t in major)
+    minor, major = _plot_labels([200, 300, 450, 600], qgis_app)    # under a decade
+    assert any(t != "" for t in minor)
