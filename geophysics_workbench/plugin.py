@@ -31,6 +31,7 @@ class WorkbenchPlugin:
         self.pick_action = None
         self.new_profile_action = None
         self.add_model_action = None
+        self.context_action = None
         self._profile_dialog = None
         self._project_signals = []
 
@@ -53,6 +54,7 @@ class WorkbenchPlugin:
         self.menu.addSeparator()
         self.new_profile_action = self.add_action("New profile…", self.new_profile)
         self.add_model_action = self.add_action("Add ERT model…", self.add_model)
+        self.context_action = self.add_action("Context layers…", self.edit_context)
         self.menu.addSeparator()
         self.add_action("Show section panel", self.show_section_panel)
         self.pick_action = self.add_action("Pick profile on map", self.toggle_pick_tool,
@@ -96,6 +98,7 @@ class WorkbenchPlugin:
             self.menu = None
         self.actions.clear()
         self.pick_action = self.new_profile_action = self.add_model_action = None
+        self.context_action = None
 
     def add_action(self, text, callback, icon=None, checkable=False):
         """Add a menu action. `icon` is a file name inside the icons folder or an absolute path."""
@@ -153,6 +156,8 @@ class WorkbenchPlugin:
     def _update_actions(self, *_):
         if self.new_profile_action is not None:
             self.new_profile_action.setEnabled(self.store is not None)
+        if self.context_action is not None:
+            self.context_action.setEnabled(self.store is not None)
         if self.add_model_action is not None:
             self.add_model_action.setEnabled(
                 self.dock is not None and self.dock.current_profile_id() is not None)
@@ -234,6 +239,16 @@ class WorkbenchPlugin:
         if self.store is None or pid is None:
             return
         dialog = AddModelDialog(self.iface, self.store, pid, provider=self.provider)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+
+    def edit_context(self):
+        from .ui.context_dialog import ContextDialog
+        if self.store is None:
+            return
+        dialog = ContextDialog(self.iface, QgsProject.instance())
         try:
             dialog.exec()
         finally:
