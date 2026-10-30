@@ -22,6 +22,7 @@ from ..core.model import Dataset, Profile, StationSet, data_to_chainage
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
+from .context_cache import GatheredContext
 from .topography import TOPOGRAPHY_SOURCES, dem_line, station_line, topo_set
 
 #: reader_options keys applied by the provider, not passed to the reader as such
@@ -166,22 +167,26 @@ class SectionDataProvider:
         self.active_profile_id: str | None = None
         self._styles: dict[str, LayerStyle] = {}
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
-        self._gathered: dict[str, ContextItems] = {}            # profile id -> no ties
+        self._gathered = GatheredContext()
         self._ties: dict[str, tuple[float, list[Tie]]] = {}     # id -> (near_miss, ties)
-        self._context_source: Callable[[Profile], ContextItems] | None = None
         #: without a true crossing, profiles closer than this (metres) still tie
         self.near_miss: float = 10.0
+        #: profile id -> last ``context_source`` error ("Type: message"); cleared on success
+        self.context_errors: dict[str, str] = self._gathered.errors
+        #: called as (profile_id, message) when ``context_source`` raises
+        self.on_context_error: Callable[[str, str], None] | None = None
 
     @property
     def context_source(self) -> Callable[[Profile], ContextItems] | None:
         """Gathers a profile's context in forward chainage; called on the main thread.
-        Setting it drops the cached context."""
-        return self._context_source
+        Setting it drops the cached context and its errors."""
+        return self._gathered.source
 
     @context_source.setter
     def context_source(self, source: Callable[[Profile], ContextItems] | None) -> None:
-        self._context_source = source
+        self._gathered.source = source
         self._gathered.clear()
+        self._gathered.errors.clear()
         self._ties.clear()
 
     def notify_changed(self) -> None:
@@ -233,11 +238,12 @@ class SectionDataProvider:
 
     def _chosen_topography(self, profile: Profile | None,
                            sets: list[StationSet]) -> tuple[np.ndarray, np.ndarray] | None:
+        stations = station_line(sets)
         if profile is not None and profile.metadata.get("topography") == "dem":
-            line = dem_line(self._items(profile).dem)
+            line = dem_line(self._items(profile).dem, stations)
             if line is not None:
                 return line
-        return station_line(sets)
+        return stations
 
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
         """The surface depth models hang from: the DEM line when the profile's choice is
@@ -323,18 +329,9 @@ class SectionDataProvider:
 
     # -- context and ties ------------------------------------------------------------------
     def _items(self, profile: Profile) -> ContextItems:
-        """What ``context_source`` gathers for ``profile`` (no ties), cached until
-        ``notify_changed()``: the gatherer samples the DEM on every call."""
-        items = self._gathered.get(profile.id)
-        if items is None:
-            items = ContextItems()
-            if self._context_source is not None:
-                try:
-                    items = self._context_source(profile)
-                except Exception:               # a broken source must not break the section
-                    items = ContextItems()
-            self._gathered[profile.id] = items
-        return items
+        """What ``context_source`` gathers for ``profile`` (no ties); cached until
+        ``notify_changed()``, failures recorded in ``context_errors``."""
+        return self._gathered.items(profile, self.on_context_error)
 
     def ties(self, profile_id: str) -> list[Tie]:
         """Ties with every other profile in the store, columns from that profile's visible

@@ -3,7 +3,7 @@ and the registered profile source, and follows the QGIS project: the workbench p
 (GeoPackage) it refers to is attached on load and detached when the project is cleared."""
 from pathlib import Path
 
-from qgis.core import QgsCoordinateReferenceSystem, QgsProject
+from qgis.core import Qgis, QgsCoordinateReferenceSystem, QgsMessageLog, QgsProject
 from qgis.gui import QgsProjectionSelectionDialog
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QAction, QIcon
@@ -29,6 +29,7 @@ class WorkbenchPlugin:
         self.provider: SectionDataProvider | None = None
         self.source = None
         self.gatherer: ContextGatherer | None = None
+        self._context_logged: set[tuple[str, str]] = set()
         self.dock: SectionDock | None = None
         self.map_link: MapLink | None = None
         self.pick_action = None
@@ -135,6 +136,8 @@ class WorkbenchPlugin:
                                             on_change=self.provider.notify_changed)
             self.provider.context_source = self.gatherer.items_for
             self.provider.near_miss = read_settings(project).near_miss
+            self.provider.on_context_error = self._log_context_error
+            self._context_logged.clear()
             self.source = register_source(self.provider)
             if self.dock is not None:
                 self.dock.set_provider(self.provider, self.source)
@@ -152,6 +155,18 @@ class WorkbenchPlugin:
         if self.gatherer is not None:
             self.gatherer.close()
             self.gatherer = None
+
+    def _log_context_error(self, profile_id: str, message: str):
+        """The context of a profile could not be gathered: log it once per profile and text."""
+        if (profile_id, message) in self._context_logged or self.store is None:
+            return
+        self._context_logged.add((profile_id, message))
+        try:
+            name = self.store.profile(profile_id).name
+        except KeyError:
+            name = profile_id
+        QgsMessageLog.logMessage(f"Context for profile '{name}' could not be gathered: "
+                                 f"{message}", MENU_TITLE, Qgis.MessageLevel.Warning)
 
     # -- QGIS project --------------------------------------------------------------------------
     def _project_read(self, *_):

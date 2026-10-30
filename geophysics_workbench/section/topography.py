@@ -28,15 +28,27 @@ def station_line(sets: list[StationSet]) -> tuple[np.ndarray, np.ndarray] | None
     return s.chainage[ok][order].astype(float), s.xyz[ok, 2][order].astype(float)
 
 
-def dem_line(dem: tuple[np.ndarray, np.ndarray] | None) -> tuple[np.ndarray, np.ndarray] | None:
-    """DEM samples ``(s, z)`` as a topography line. NaN (nodata) samples are dropped, so
-    interpolation bridges gaps and clamps beyond the last valid sample; ``None`` with fewer
-    than two valid samples."""
+def dem_line(dem: tuple[np.ndarray, np.ndarray] | None,
+             stations: tuple[np.ndarray, np.ndarray] | None = None
+             ) -> tuple[np.ndarray, np.ndarray] | None:
+    """DEM samples ``(s, z)`` as a topography line. A NaN sample (nodata, or off the raster)
+    takes the ``stations`` line's elevation at the same s: the DEM is used where it has data
+    and the stations elsewhere, so no flat surface is invented past the raster's edge.
+    Without a station line NaN samples are dropped. ``None`` when the DEM has no valid
+    sample or fewer than two samples remain."""
     if dem is None:
         return None
     s, z = (np.asarray(a, dtype=float) for a in dem)
-    ok = np.isfinite(s) & np.isfinite(z)
-    if ok.sum() < 2:
+    keep = np.isfinite(s)
+    s, z = s[keep], z[keep].copy()
+    missing = ~np.isfinite(z)
+    if missing.all():
         return None
-    order = np.argsort(s[ok], kind="stable")
-    return s[ok][order], z[ok][order]
+    if stations is not None:
+        z[missing] = np.interp(s[missing], *stations)
+    else:
+        s, z = s[~missing], z[~missing]
+    if len(s) < 2:
+        return None
+    order = np.argsort(s, kind="stable")
+    return s[order], z[order]

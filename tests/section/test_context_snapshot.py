@@ -110,10 +110,16 @@ def test_reverse_snapshot_mirrors_context(store_with_model, tmp_path):
     st, p, _ = store_with_model
     _add_b(st, tmp_path)
     prov = SectionDataProvider(st)
-    prov.context_source = lambda profile: _fake_items()
+    items = _fake_items()
+    items.dem = (np.array([0.0, 5.0, 20.0, 50.0]), np.array([100.0, 100.5, 101.0, 102.0]))
+    prov.context_source = lambda profile: items
     fwd = prov.snapshot(p.id).context
     rev = prov.snapshot(p.id, reverse=True).context
     length = 50.0
+    np.testing.assert_allclose(rev.dem[0], length - fwd.dem[0][::-1])   # asymmetric grid
+    np.testing.assert_allclose(rev.dem[0], np.array([0.0, 30.0, 45.0, 50.0]))
+    np.testing.assert_allclose(rev.ties[0].columns[0].values, fwd.ties[0].columns[0].values)
+    np.testing.assert_allclose(rev.ties[0].columns[0].z_top, fwd.ties[0].columns[0].z_top)
     assert [c.s for c in rev.crossings] == approx([length - c.s for c in fwd.crossings])
     assert [pt.s for pt in rev.points] == approx([length - pt.s for pt in fwd.points])
     assert [t.s for t in rev.ties] == approx([30.0])
@@ -126,13 +132,39 @@ def test_reverse_snapshot_mirrors_context(store_with_model, tmp_path):
     assert fwd.crossings[0].s == approx(10) and fwd.ties[0].s == approx(20)
 
 
-def _add_depth_model(st, p, tmp_path):
+def _add_depth_model(st, p, tmp_path, offset=0.0):
+    """Zond depth model, cells 0 .. 10 m (+ ``offset``) along P1."""
     src = tmp_path / "zond_model_depth.dat"
     shutil.copy(os.path.join(FIXTURES, "zond_model_depth.dat"), src)
     s = st.station_sets(p.id)[0]
     mt, sha = file_fingerprint(src)
     st.save_dataset(Dataset("dz", p.id, s.id, "ert_model", str(src), mt, sha, "zondres_xyz",
-                            {"z_kind": "depth"}, {}, name="depth"))
+                            {"z_kind": "depth", "chainage_offset": offset}, {}, name="depth"))
+
+
+def _stations(s):
+    return np.interp(s, [0, 50], [100, 102])
+
+
+def test_partial_dem_falls_back_to_stations_beyond_its_data(store_with_model, tmp_path):
+    st, p, _ = store_with_model
+    _add_depth_model(st, p, tmp_path, offset=30.0)            # cells 30 .. 40 m
+    items = _fake_items(dem_offset=2.0)
+    s = items.dem[0]
+    items.dem[1][s > 25] = np.nan                             # the raster ends at s = 25
+    prov = SectionDataProvider(st)
+    prov.context_source = lambda profile: items
+    prov.set_topography_source(p.id, "dem")
+    line_s, line_z = prov.topography(p.id)
+    np.testing.assert_allclose(line_s, s)
+    np.testing.assert_allclose(line_z[s <= 25], _stations(s[s <= 25]) + 2.0)   # DEM
+    np.testing.assert_allclose(line_z[s > 25], _stations(s[s > 25]))           # stations
+    v = prov.layers(p.id)[1].mesh.vertices
+    assert v[:, 0].min() == approx(30.0)
+    # the top row follows the station line, not the DEM edge value (103 m at s = 25)
+    assert v[:, 1].max() == approx(_stations(40.0))
+    top = v[np.isclose(v[:, 1], _stations(v[:, 0]))]
+    assert len(top) == 10                                     # 5 cells x 2 corners
 
 
 def test_dem_topography_choice_drives_depth_model(store_with_model, tmp_path):
@@ -162,7 +194,7 @@ def test_dem_topography_choice_drives_depth_model(store_with_model, tmp_path):
         prov.set_topography_source(p.id, "lidar")
 
 
-def test_dem_choice_without_dem_uses_stations_and_skips_nan(store_with_model, tmp_path):
+def test_dem_choice_without_dem_uses_stations_and_fills_nan(store_with_model, tmp_path):
     st, p, _ = store_with_model
     _add_depth_model(st, p, tmp_path)
     prov = SectionDataProvider(st)
@@ -173,7 +205,9 @@ def test_dem_choice_without_dem_uses_stations_and_skips_nan(store_with_model, tm
     items.dem[1][3:5] = np.nan                          # a nodata gap inside the profile
     prov.context_source = lambda profile: items
     s, z = prov.topography(p.id)
-    assert np.isfinite(z).all() and len(s) == 9
+    assert np.isfinite(z).all() and len(s) == 11
+    np.testing.assert_allclose(z[3:5], _stations(s[3:5]))     # the gap: station line
+    np.testing.assert_allclose(z[5:], _stations(s[5:]) + 2.0)
     mesh = prov.layers(p.id)[1].mesh
     assert np.isfinite(mesh.vertices).all()
     all_nan = _fake_items()
@@ -199,9 +233,53 @@ def test_failing_context_source_does_not_break_the_section(store_with_model):
 
     def boom(profile):
         raise RuntimeError("layer gone")
+    reported = []
+    prov.on_context_error = lambda pid, message: reported.append((pid, message))
     prov.context_source = boom
     snap = prov.snapshot(p.id)
     assert snap.context.crossings == [] and snap.layers[0].error is None
+    assert prov.context_errors == {p.id: "RuntimeError: layer gone"}
+    prov.snapshot(p.id)                                       # cached: not asked again
+    assert reported == [(p.id, "RuntimeError: layer gone")]
+    prov.context_source = lambda profile: _fake_items()
+    assert prov.context(p.id).crossings and prov.context_errors == {}   # cleared on success
+
+
+def test_plugin_logs_context_errors_once(qgis_app, fake_iface, store_with_model, monkeypatch):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench import plugin as plugin_module
+    from geophysics_workbench.plugin import WorkbenchPlugin
+
+    QgsProject.instance().clear()
+    logged = []
+
+    class FakeLog:
+        @staticmethod
+        def logMessage(message, tag, level):
+            logged.append((message, tag))
+    monkeypatch.setattr(plugin_module, "QgsMessageLog", FakeLog)
+    st, p, _ = store_with_model
+
+    def boom(profile):
+        raise RuntimeError("layer gone")
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        plugin.provider.context_source = boom
+        plugin.provider.snapshot(p.id)
+        plugin.provider.notify_changed()                      # asked again, same error
+        plugin.provider.snapshot(p.id)
+        assert len(logged) == 1
+        message, tag = logged[0]
+        assert tag == "Geophysics Workbench"
+        assert "P1" in message and "RuntimeError: layer gone" in message
+    finally:
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
 
 
 def test_plugin_closes_gatherer_on_store_change(qgis_app, fake_iface, store_with_model,

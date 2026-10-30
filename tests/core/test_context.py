@@ -86,14 +86,15 @@ def test_context_items_mirrored():
         points=[ProjectedPoint(20, 5.0, "p", "borehole", 101.0, [LogInterval(0, 1, "sand")])],
         band=[BandSegment(0, 40, "x"), BandSegment(40, 100, "y")],
         ties=[Tie(25, "id", "other", 7.0, 0.0, [col])],
-        dem=(np.array([0.0, 50.0, 100.0]), np.array([1.0, 2.0, np.nan])), dem_tolerance=2.0)
+        dem=(np.array([0.0, 20.0, 100.0]), np.array([1.0, 2.0, np.nan])), dem_tolerance=2.0)
     m = items.mirrored(100.0)
     assert [(c.s, c.label, c.angle_deg) for c in m.crossings] == [(30, "b", 80.0), (90, "a", 30.0)]
     assert (m.points[0].s, m.points[0].offset, m.points[0].z_top) == (80, 5.0, 101.0)
     assert m.points[0].log == items.points[0].log
     assert [(b.s0, b.s1, b.label) for b in m.band] == [(0, 60, "y"), (60, 100, "x")]
     assert m.ties[0].s == 75 and m.ties[0].s_other == 7.0 and m.ties[0].columns == [col]
-    np.testing.assert_allclose(m.dem[0], [0, 50, 100])
+    np.testing.assert_allclose(m.dem[0], np.array([0, 80, 100]))       # asymmetric grid
+    np.testing.assert_allclose(m.dem[0], 100.0 - items.dem[0][::-1])
     np.testing.assert_allclose(m.dem[1], [np.nan, 2.0, 1.0])
     assert m.dem_tolerance == 2.0
     assert items.crossings[0].s == 10                      # original untouched
