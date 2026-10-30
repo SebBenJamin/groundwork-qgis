@@ -13,6 +13,7 @@ import numpy as np
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                        QgsExpression, QgsFeatureRequest, QgsGeometry, QgsMapLayer,
                        QgsMessageLog, QgsProject, QgsRectangle, QgsVariantUtils)
+from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QTimer
 
 from ..core.context import (BandSegment, ContextItems, Crossing, LogInterval, ProjectedPoint,
@@ -32,7 +33,7 @@ _SIGNALS = ("featureAdded", "featureDeleted", "geometryChanged", "attributeValue
 
 def voltage_label(value: str) -> str:
     """'380000;110000' -> '380 kV' (first number; >= 1000 means volts). Not a number: as is."""
-    match = _NUMBER.search(value)
+    match = _NUMBER.match(value.strip())
     if match is None:
         return value
     number = float(match.group().replace(",", "."))
@@ -62,11 +63,12 @@ class ContextGatherer:
         self._on_change = on_change
         self._logged: set[tuple[str, str]] = set()
         self._watched: dict[str, QgsMapLayer] = {}
+        self._drop_slots: dict[str, Callable[[], None]] = {}
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.setInterval(DEBOUNCE_MS)
         self._timer.timeout.connect(self._fire)
-        project.layersRemoved.connect(self._kick)
+        project.layersRemoved.connect(self._removed)
 
     # -- public ---------------------------------------------------------------------------
     def items_for(self, profile: Profile) -> ContextItems:
@@ -83,6 +85,8 @@ class ContextGatherer:
             items.dem = self._try(settings.dem_layer_id, "DEM",
                                   lambda: sample_profile(dem_layer, chain, self._crs_authid,
                                                          self._project))
+            if items.dem is None:
+                self._warn(settings.dem_layer_id, "DEM has no data along the profile")
         for s in settings.line_layers:
             items.crossings += self._try(s.layer_id, "line layer", lambda: self._lines(
                 s, xy, box)) or []
@@ -105,7 +109,7 @@ class ContextGatherer:
         self._timer.stop()
         self._unwatch()
         try:
-            self._project.layersRemoved.disconnect(self._kick)
+            self._project.layersRemoved.disconnect(self._removed)
         except (TypeError, RuntimeError):
             pass
 
@@ -116,10 +120,14 @@ class ContextGatherer:
             layer = self._project.mapLayer(layer_id)
             if layer is not None:
                 wanted[layer_id] = layer
-        if set(wanted) == set(self._watched):
+        if (set(wanted) == set(self._watched)
+                and all(wanted[k] is self._watched[k] for k in wanted)):
             return
         self._unwatch()
         for layer in wanted.values():
+            slot = self._drop_slot(layer)
+            layer.willBeDeleted.connect(slot)
+            self._drop_slots[layer.id()] = slot
             for name in _SIGNALS:
                 signal = getattr(layer, name, None)
                 if signal is not None:
@@ -127,15 +135,31 @@ class ContextGatherer:
         self._watched = wanted
 
     def _unwatch(self) -> None:
-        for layer in self._watched.values():
-            for name in _SIGNALS:
-                signal = getattr(layer, name, None)
+        watched, self._watched = self._watched, {}
+        slots, self._drop_slots = self._drop_slots, {}
+        for layer in watched.values():
+            if sip.isdeleted(layer):
+                continue
+            for name, slot in [(n, self._kick) for n in _SIGNALS] + [
+                    ("willBeDeleted", slots.get(layer.id()))]:
                 try:
-                    if signal is not None:
-                        signal.disconnect(self._kick)
-                except (TypeError, RuntimeError):      # never connected, or layer deleted
+                    getattr(layer, name).disconnect(slot)
+                except (TypeError, RuntimeError, AttributeError):   # never connected
                     pass
-        self._watched = {}
+
+    def _drop_slot(self, layer):
+        layer_id = layer.id()
+
+        def drop():
+            """The layer is going away: forget it (its signals die with it) and refresh."""
+            self._watched.pop(layer_id, None)
+            self._drop_slots.pop(layer_id, None)
+            self._kick()
+        return drop
+
+    def _removed(self, layer_ids) -> None:
+        if any(i in self._watched for i in layer_ids):
+            self._kick()
 
     def _kick(self, *_args) -> None:
         self._timer.start()
@@ -243,8 +267,12 @@ class ContextGatherer:
         for (feature, (x, y)), (s, off) in _project(xy, found, buffer):
             bid = _text(feature[b.id_field])
             z_top = _number(feature[b.elevation_field]) if b.elevation_field else None
-            if z_top is None and b.elevation_field == "" and dem_layer is not None:
-                z_top = sample_point(dem_layer, x, y, self._crs_authid, self._project)
+            if z_top is None and dem_layer is not None:
+                try:
+                    z_top = sample_point(dem_layer, x, y, self._crs_authid, self._project)
+                except Exception as exc:
+                    self._warn(b.layer_id, f"DEM sample at borehole failed: "
+                                           f"{type(exc).__name__}: {exc}")
             log = self._log(b, bid) if bid else []
             out.append(ProjectedPoint(s, off, bid or layer.name(), "borehole", z_top, log))
         return out

@@ -75,6 +75,8 @@ def test_voltage_labels(project, profile):
     assert voltage_label("20") == "20 kV"
     assert voltage_label("62500") == "62.5 kV"
     assert voltage_label("high") == "high"
+    assert voltage_label("UW Nord 2") == "UW Nord 2"
+    assert voltage_label(" 380000 ") == "380 kV"
 
 
 def test_line_without_label_field_uses_layer_name(project, profile):
@@ -143,6 +145,16 @@ def test_band_from_polygon_layer(project, profile):
 
 def _write_dem(path, nodata_cols=range(40, 50)):
     from osgeo import gdal, osr
+    before = gdal.GetUseExceptions()
+    gdal.UseExceptions()
+    try:
+        return _write_dem_raw(path, nodata_cols, gdal, osr)
+    finally:
+        if not before:
+            gdal.DontUseExceptions()
+
+
+def _write_dem_raw(path, nodata_cols, gdal, osr):
     ds = gdal.GetDriverByName("GTiff").Create(str(path), 101, 3, 1, gdal.GDT_Float32)
     ds.SetGeoTransform((-0.5, 1.0, 0, 1.5, 0, -1.0))     # pixel centres at integer x, y = 1, 0, -1
     srs = osr.SpatialReference()
@@ -251,6 +263,8 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
     warnings = [m for m, tag, level in got if tag == "Geophysics Workbench"
                 and level == Qgis.MessageLevel.Warning]
     assert len(warnings) == 3
+    for needle in ("gone-id", "voltage_old", "'unit'"):
+        assert sum(needle in w for w in warnings) == 1
     assert n_first == len(got)
 
 
@@ -365,3 +379,65 @@ def test_changed_settings_reconnect(project, profile, qgis_app):
         g.close()
         a.rollBack()
         b.rollBack()
+
+
+def test_removed_watched_layer_does_not_break_gatherer(project, profile, qgis_app):
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    lines = _layer(project, "LineString", "Lines")
+    calls = []
+    g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]),
+                  lambda: calls.append(1))
+    g.items_for(profile)
+    project.removeMapLayer(lines.id())
+    items = g.items_for(profile)
+    assert items.crossings == []
+    _wait(qgis_app, 500)
+    assert calls == [1]                           # one refresh for the removal
+    g.close()
+    g.close()
+
+
+def test_close_after_layer_removed_twice(project, profile, qgis_app):
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    lines = _layer(project, "LineString", "Lines")
+    g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]))
+    g.items_for(profile)
+    project.removeMapLayer(lines.id())
+    g.close()
+    g.close()
+
+
+def test_dem_outside_profile_logs_one_warning(project, profile, tmp_path, qgis_app):
+    from osgeo import gdal
+    from qgis.core import QgsRasterLayer
+    from geophysics_workbench.core.context_settings import ContextSettings
+    from geophysics_workbench.core.model import Profile
+    _write_dem(tmp_path / "dem.tif")
+    dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
+    project.addMapLayer(dem)
+    far = Profile("f", "F", np.array([[5000.0, 5000.0], [5100.0, 5000.0]]), AUTH)
+    got, stop = _capture_log(qgis_app)
+    g = _gatherer(project, ContextSettings(dem_layer_id=dem.id()))
+    try:
+        assert g.items_for(far).dem is None
+        g.items_for(far)
+    finally:
+        stop()
+        g.close()
+    dem_warnings = [m for m, tag, _l in got if tag == "Geophysics Workbench" and "DEM" in m]
+    assert len(dem_warnings) == 1
+
+
+def test_null_elevation_falls_back_to_dem(project, profile, tmp_path):
+    from qgis.core import QgsRasterLayer
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    arr = _write_dem(tmp_path / "dem.tif")
+    dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
+    project.addMapLayer(dem)
+    bh = _layer(project, "Point", "BH", "bid:string&field=elev:double")
+    _add(bh, "POINT(20 1)", ["B1", None])
+    g = _gatherer(project, ContextSettings(borehole=BoreholeSetting(bh.id(), "bid", "elev"),
+                                           dem_layer_id=dem.id()))
+    items = g.items_for(profile)
+    g.close()
+    assert items.points[0].z_top == approx(float(arr[0, 20]), abs=1e-4)
