@@ -2,12 +2,13 @@
 projection, polygon bands and profile ties. NumPy + matplotlib.path only."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 from matplotlib.path import Path
 
 from .chainage import Chainage
+from .ties import Tie
 
 _EPS = 1e-9
 _DEDUP = 1e-6
@@ -43,6 +44,33 @@ class BandSegment:
     s0: float
     s1: float
     label: str
+
+
+@dataclass
+class ContextItems:
+    """Everything third-party drawn on one section, as plain data (safe for worker threads)."""
+    crossings: list[Crossing] = field(default_factory=list)
+    points: list[ProjectedPoint] = field(default_factory=list)
+    band: list[BandSegment] = field(default_factory=list)
+    ties: list[Tie] = field(default_factory=list)
+    dem: tuple[np.ndarray, np.ndarray] | None = None    # (s ascending, z); nan = no data
+    dem_tolerance: float = 1.0
+
+    def mirrored(self, length: float) -> "ContextItems":
+        """The same items for the reversed profile: every s becomes ``length - s``. Offsets,
+        angles and tie columns are unchanged; ``Tie.s_other`` stays."""
+        dem = None
+        if self.dem is not None:
+            s, z = self.dem
+            dem = (length - np.asarray(s, float)[::-1], np.asarray(z, float)[::-1].copy())
+        return ContextItems(
+            crossings=sorted((replace(c, s=length - c.s) for c in self.crossings),
+                             key=lambda c: c.s),
+            points=sorted((replace(p, s=length - p.s) for p in self.points), key=lambda p: p.s),
+            band=sorted((BandSegment(length - b.s1, length - b.s0, b.label) for b in self.band),
+                        key=lambda b: b.s0),
+            ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
+            dem=dem, dem_tolerance=self.dem_tolerance)
 
 
 def _cum(xy: np.ndarray) -> np.ndarray:
