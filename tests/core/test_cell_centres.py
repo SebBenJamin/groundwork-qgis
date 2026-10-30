@@ -133,3 +133,69 @@ def test_coarser_columns_at_depth_fall_back_to_delaunay():
     assert kind == "delaunay"
     ref = SectionMesh.from_points(pts[:, 0], pts[:, 1], v)
     np.testing.assert_array_equal(mesh.cells, ref.cells)
+
+
+def _covered_area(mesh):
+    """Sum of the cell areas (shoelace; triangles repeat their first corner)."""
+    c = np.where(mesh.cells >= 0, mesh.cells, mesh.cells[:, :1])
+    p = mesh.vertices[c]
+    x, y = p[..., 0], p[..., 1]
+    return float(0.5 * np.abs((x * np.roll(y, -1, 1) - np.roll(x, -1, 1) * y).sum(1)).sum())
+
+
+@pytest.mark.parametrize("n_cols, n_rows", [(8, 25), (2, 40), (12, 20)])
+@pytest.mark.parametrize("sign", [1.0, -1.0])
+def test_depth_grid_with_fewer_columns_than_rows_uses_rows(n_cols, n_rows, sign):
+    # a depth model hangs from a flat datum: its rows are never coincidental, so the top
+    # snaps to depth 0 even when there are fewer columns than rows
+    thick = 0.5 * 1.1 ** np.arange(n_rows)
+    centres = np.cumsum(thick) - thick / 2
+    x, d = np.meshgrid(1.25 + 2.5 * np.arange(n_cols), centres)
+    z = sign * np.round(d, 4)
+    mesh, kind = SectionMesh.from_cell_centres(x.ravel(), z.ravel(), np.full(x.size, 50.0),
+                                               z_kind="depth")
+    assert kind == "rows"
+    _x0, _x1, zmin, zmax = mesh.bounds()
+    assert (zmin if sign > 0 else zmax) == 0.0
+
+
+def _merged_coarse_model(top, fine_rows, coarse_rows, n_fine=30, fine_dz=0.5, coarse_dz=2.0):
+    """``n_fine`` columns of 2.5 m cells over ``fine_rows`` rows, then ``coarse_rows`` rows
+    of cells merged three at a time (7.5 m), their centres on every third fine centre.
+    ``top(x)`` is the surface (z) or 0 for depths (then z is depth, positive)."""
+    xf = 1.25 + 2.5 * np.arange(n_fine)
+    xc = 3.75 + 7.5 * np.arange(n_fine // 3)
+    pts = [(x0, (k + 0.5) * fine_dz) for k in range(fine_rows) for x0 in xf]
+    base = fine_rows * fine_dz
+    pts += [(x0, base + (k + 0.5) * coarse_dz) for k in range(coarse_rows) for x0 in xc]
+    pts = np.array(pts)
+    return pts[:, 0], np.round(top(pts[:, 0]) - pts[:, 1], 4) if top else pts[:, 1]
+
+
+def test_merged_coarse_cells_on_a_slope_do_not_draw_as_strips():
+    # region 75 m x 14 m = 1050 m2; grouped by x it drew as strips covering 450 m2
+    x, z = _merged_coarse_model(lambda X: 50 + 0.05 * X, 4, 6)
+    mesh, kind = SectionMesh.from_cell_centres(x, z, np.full(x.size, 50.0), z_kind="elevation")
+    assert kind != "columns"
+    assert _covered_area(mesh) > 0.8 * 1050
+
+
+def test_merged_coarse_cells_of_a_depth_model_use_rows():
+    x, z = _merged_coarse_model(None, 4, 10, n_fine=9, coarse_dz=1.0)
+    mesh, kind = SectionMesh.from_cell_centres(x, z, np.full(x.size, 50.0), z_kind="depth")
+    assert kind == "rows"
+    assert mesh.bounds() == pytest.approx((0.0, 22.5, 0.0, 12.0))
+    assert _covered_area(mesh) == pytest.approx(22.5 * 12.0)
+
+
+def test_depth_trapezoid_keeps_rows_and_the_surface():
+    # Res2DInv-style trapezoid: each layer two cells shorter at both ends. Real cells, so
+    # the span-end check (meant for coincidental groupings) must not reject depth rows.
+    depths = np.cumsum(0.5 * 1.1 ** np.arange(12)) - 0.25
+    pts = np.array([(x0, d) for j, d in enumerate(depths)
+                    for x0 in 1.25 + 2.5 * np.arange(2 * j, 60 - 2 * j)])
+    z = np.round(pts[:, 1], 4)
+    mesh, kind = SectionMesh.from_cell_centres(pts[:, 0], z, np.full(len(z), 50.0),
+                                               z_kind="depth")
+    assert kind == "rows"
+    assert mesh.bounds()[0:3] == pytest.approx((0.0, 150.0, 0.0))
