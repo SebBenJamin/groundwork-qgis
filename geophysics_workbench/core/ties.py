@@ -74,8 +74,10 @@ def tie_mismatch(a: TieColumn, b: TieColumn) -> TieMismatch:
 
 
 def mismatch_text(m: TieMismatch) -> str:
-    if m.z_range is None or (m.factor is None and m.rel_diff is None):
+    if m.z_range is None:
         return "no depth overlap"
+    if m.factor is None and m.rel_diff is None:
+        return "no comparable values"
     where = f"median, {m.z_range[0]:.0f}–{m.z_range[1]:.0f} m a.s.l."
     if m.factor is not None:
         return f"×{m.factor:.1f} ({where})"

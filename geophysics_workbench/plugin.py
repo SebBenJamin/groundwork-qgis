@@ -36,6 +36,8 @@ class WorkbenchPlugin:
         self.new_profile_action = None
         self.add_model_action = None
         self.context_action = None
+        self.ties_action = None
+        self.ties_panel = None
         self._profile_dialog = None
         self._project_signals = []
 
@@ -59,6 +61,7 @@ class WorkbenchPlugin:
         self.new_profile_action = self.add_action("New profile…", self.new_profile)
         self.add_model_action = self.add_action("Add ERT model…", self.add_model)
         self.context_action = self.add_action("Context layers…", self.edit_context)
+        self.ties_action = self.add_action("Profile ties…", self.show_ties_panel)
         self.menu.addSeparator()
         self.add_action("Show section panel", self.show_section_panel)
         self.pick_action = self.add_action("Pick profile on map", self.toggle_pick_tool,
@@ -86,6 +89,7 @@ class WorkbenchPlugin:
                 pass
         self._project_signals.clear()
         self._close_profile_dialog()
+        self._close_ties_panel()
         if self.map_link is not None:
             self.map_link.unload()
             self.map_link = None
@@ -103,7 +107,7 @@ class WorkbenchPlugin:
             self.menu = None
         self.actions.clear()
         self.pick_action = self.new_profile_action = self.add_model_action = None
-        self.context_action = None
+        self.context_action = self.ties_action = None
 
     def add_action(self, text, callback, icon=None, checkable=False):
         """Add a menu action. `icon` is a file name inside the icons folder or an absolute path."""
@@ -124,6 +128,7 @@ class WorkbenchPlugin:
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
         self._close_profile_dialog()
+        self._close_ties_panel()
         if self.dock is not None:
             self.dock.set_provider(None)
         self._drop_source()
@@ -191,6 +196,8 @@ class WorkbenchPlugin:
             self.new_profile_action.setEnabled(self.store is not None)
         if self.context_action is not None:
             self.context_action.setEnabled(self.store is not None)
+        if self.ties_action is not None:
+            self.ties_action.setEnabled(self.store is not None)
         if self.add_model_action is not None:
             self.add_model_action.setEnabled(
                 self.dock is not None and self.dock.current_profile_id() is not None)
@@ -290,6 +297,24 @@ class WorkbenchPlugin:
         if accepted and self.provider is not None:
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.notify_changed()               # redraw with the new layers now
+
+    def show_ties_panel(self):
+        from .ui.ties_panel import TiesPanel
+        if self.provider is None or self.dock is None:
+            return
+        if self.ties_panel is None:
+            self.ties_panel = TiesPanel(self.provider, self.dock, self.iface.mainWindow())
+            self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.ties_panel)
+        self.ties_panel.refresh()
+        self.ties_panel.show()
+        self.ties_panel.raise_()
+
+    def _close_ties_panel(self):
+        panel, self.ties_panel = self.ties_panel, None
+        if panel is not None:
+            panel.detach()
+            self.iface.removeDockWidget(panel)
+            panel.deleteLater()
 
     # -- actions -------------------------------------------------------------------------------
     def show_section_panel(self):

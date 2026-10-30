@@ -36,3 +36,10 @@ def test_tie_mismatch_no_overlap_and_linear_quantity():
     m = tie_mismatch(c, d)
     assert m.rel_diff == pytest.approx(1.0) and m.factor is None
     assert mismatch_text(m).startswith("100 % (median, 0–10")
+
+
+def test_mismatch_text_overlap_without_finite_samples():
+    a = TieColumn("A", np.array([10.0]), np.array([0.0]), np.array([np.nan]), None, "velocity", "m/s")
+    b = TieColumn("B", np.array([10.0]), np.array([0.0]), np.array([100.0]), None, "velocity", "m/s")
+    m = tie_mismatch(a, b)
+    assert m.z_range == pytest.approx((0.0, 10.0)) and mismatch_text(m) == "no comparable values"
