@@ -3,8 +3,8 @@
 A QGIS 4.2+ plugin for loading, displaying and interpreting georeferenced geophysical
 profiles and sections (e.g. ERT).
 
-**Status:** 0.1.0, first test release (milestone M1). See the
-[release note](docs/releases/0.1.0.md).
+**Status:** 0.1.1, a patch of the first test release (milestone M1). See the latest
+[release note](docs/releases/0.1.1.md) (first release: [0.1.0](docs/releases/0.1.0.md)).
 
 ## Install
 
@@ -12,12 +12,12 @@ Requires QGIS 4.2 or newer.
 
 1. **Plugins → Manage and Install Plugins… → Install from ZIP** (German QGIS:
    **Erweiterungen → Erweiterungen verwalten und installieren… → Aus ZIP installieren**).
-2. Choose `geophysics_workbench-0.1.0.zip` and click **Install Plugin**.
+2. Choose `geophysics_workbench-0.1.1.zip` and click **Install Plugin**.
 3. A **Geophysics Workbench** menu appears in the menu bar.
 
 ## Open the demo
 
-Unzip `geophysics_workbench-demo-0.1.0.zip` into any folder and open `demo_project.qgz`
+Unzip `geophysics_workbench-demo-0.1.1.zip` into any folder and open `demo_project.qgz`
 in it (**Project → Open…**). Then **Geophysics Workbench → Pick profile on map** and click
 the P1 line to show its section.
 
