@@ -6,6 +6,8 @@ via ``rc.convertToPainterUnits``. Only plain snapshot data is used. Boreholes an
 live in ``context_render_points``."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from qgis.core import Qgis
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
@@ -14,7 +16,9 @@ from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 from ..core.lithology import lithology_colour
 
 _MM = Qgis.RenderUnit.Millimeters
-BAND_NEAR, BAND_FAR = 1.5, 4.5          # mm above the surface
+BAND_GAP = 1.5                          # mm between the station number labels and the band
+BAND_THICKNESS = 3.0                    # mm
+LABEL_ROWS = 3
 BAND_OPACITY = 0.85
 DEM_COLOUR = (140, 90, 40)
 FLAG_COLOUR = (220, 30, 30)             # station whose height disagrees with the DEM
@@ -74,11 +78,20 @@ def dem_at(dem, s) -> np.ndarray:
     return np.where((s < ds[0]) | (s > ds[-1]), np.nan, out)
 
 
+def band_offsets(rc) -> tuple[float, float]:
+    """Device offsets above the surface of the band's lower and upper edge: clear of the
+    station triangles and their number labels (see ``WorkbenchProfileResults._draw_stations``)."""
+    half = max(3.0, mm(rc, 1.0))
+    number = max(10, round(mm(rc, 3.0)))
+    near = 2 * half + 1.6 * number + mm(rc, BAND_GAP)
+    return near, near + mm(rc, BAND_THICKNESS)
+
+
 # -- geology band ------------------------------------------------------------------------------
 def draw_band(painter, rc, wt, items, surface) -> None:
     if not items.band or surface is None or len(surface[0]) < 2:
         return
-    near, far = mm(rc, BAND_NEAR), mm(rc, BAND_FAR)
+    near, far = band_offsets(rc)
     font = set_label_font(painter, rc, 2.4)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     ss = np.asarray(surface[0], float)
@@ -132,29 +145,74 @@ def draw_dem(painter, rc, wt, items, stations, station_z) -> None:
 
 
 # -- crossings and ties ------------------------------------------------------------------------
-def _vertical(painter, wt, s: float, z_range, label: str, rgb) -> float:
-    """Dashed line over the whole z range with its label at the top; returns device x."""
-    top, bottom = wt.map(QPointF(s, z_range[1])), wt.map(QPointF(s, z_range[0]))
-    painter.drawLine(top, bottom)
-    if label:
-        fm = painter.fontMetrics()
-        draw_label(painter, label, top.x(), top.y() + fm.height() + 2, rgb)
-    return top.x()
+def offset_text(offset: float) -> str:
+    return f"({'+' if offset >= 0 else '−'}{abs(round(offset))} m)"
 
 
-def draw_crossings(painter, rc, wt, items, z_range) -> None:
+@dataclass
+class Label:
+    x: float
+    y: float            # device y of the label's bottom edge
+    text: str
+    rgb: tuple
+
+
+def plan_labels(painter, rc, wt, items, surface) -> dict:
+    """Place every crossing, tie, borehole and point label in rows above the band, centred
+    on its chainage; a label that would overlap one in its row goes one row higher (up to
+    ``LABEL_ROWS``). Keyed by ``id()`` of the item."""
+    if surface is None or len(surface[0]) < 1:
+        return {}
+    set_label_font(painter, rc)
+    fm = painter.fontMetrics()
+    _, far = band_offsets(rc)
+    h = fm.height() + 1
+    specs = []
+    for c in items.crossings:
+        if c.kind != "profile":                        # drawn as a tie
+            power = c.kind == "powerline"
+            specs.append((c, c.s, ("⚡ " if power else "") + c.label,
+                          POWERLINE_COLOUR if power else LINE_COLOUR))
+    specs += [(t, t.s, tie_label(t), TIE_COLOUR) for t in items.ties]
+    for p in items.points:
+        text = (f"{p.label} {offset_text(p.offset)}".strip()
+                if p.kind == "borehole" and p.log else p.label)
+        specs.append((p, p.s, text, (0, 0, 0)))
+    rows: list[list[tuple[float, float]]] = [[] for _ in range(LABEL_ROWS)]
+    out = {}
+    for item, s, text, rgb in specs:
+        if not text:
+            continue
+        x = wt.map(QPointF(s, float(np.interp(s, *surface)))).x()
+        half_w = (fm.horizontalAdvance(text) + 4) / 2
+        row = next((r for r in range(LABEL_ROWS)
+                    if all(x + half_w + 2 <= a or x - half_w - 2 >= b for a, b in rows[r])),
+                   LABEL_ROWS - 1)
+        rows[row].append((x - half_w, x + half_w))
+        y = surface_y(wt, surface, s) - far - mm(rc, 1.0) - row * h
+        out[id(item)] = Label(x, y, text, rgb)
+    return out
+
+
+def _vertical(painter, wt, s: float, z_range, label) -> None:
+    """Dashed line from the bottom of the z range up to its label (or the top of the range)."""
+    bottom = wt.map(QPointF(s, z_range[0]))
+    top = QPointF(label.x, label.y) if label else wt.map(QPointF(s, z_range[1]))
+    painter.drawLine(QPointF(top.x(), top.y()), bottom)
+
+
+def draw_crossings(painter, rc, wt, items, z_range, plan=None) -> None:
     if not items.crossings or not z_range[0] < z_range[1]:
         return
-    set_label_font(painter, rc)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setBrush(Qt.BrushStyle.NoBrush)
     for c in items.crossings:
-        if c.kind == "profile":                        # drawn as a tie
+        if c.kind == "profile":
             continue
         power = c.kind == "powerline"
-        rgb = POWERLINE_COLOUR if power else LINE_COLOUR
-        painter.setPen(line_pen(rc, rgb, 0.6 if power else 0.3, dashed=True))
-        _vertical(painter, wt, c.s, z_range, ("⚡ " if power else "") + c.label, rgb)
+        painter.setPen(line_pen(rc, POWERLINE_COLOUR if power else LINE_COLOUR,
+                                0.6 if power else 0.3, dashed=True))
+        _vertical(painter, wt, c.s, z_range, (plan or {}).get(id(c)))
 
 
 def tie_strip_column(tie):
@@ -169,15 +227,15 @@ def tie_label(tie) -> str:
     return tie.other_name + (f" · {round(tie.distance)} m" if tie.distance >= 0.5 else "")
 
 
-def draw_ties(painter, rc, wt, items, z_range) -> None:
+def draw_ties(painter, rc, wt, items, z_range, plan=None) -> None:
     if not items.ties or not z_range[0] < z_range[1]:
         return
-    set_label_font(painter, rc)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     for tie in items.ties:
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(line_pen(rc, TIE_COLOUR, 0.3, dashed=True))
-        x = _vertical(painter, wt, tie.s, z_range, tie_label(tie), TIE_COLOUR)
+        _vertical(painter, wt, tie.s, z_range, (plan or {}).get(id(tie)))
+        x = wt.map(QPointF(tie.s, z_range[1])).x()
         col = tie_strip_column(tie)
         if col is None:
             continue
@@ -214,3 +272,23 @@ def context_z_values(snapshot) -> list[float]:
         if col is not None and len(col.z_top):
             out.extend((float(np.max(col.z_top)), float(np.min(col.z_bottom))))
     return [v for v in out if np.isfinite(v)]
+
+
+def draw_labels(painter, rc, items, plan: dict) -> None:
+    """All labels last, so no column, strip or line overdraws one."""
+    set_label_font(painter, rc)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    for lab in plan.values():
+        draw_label(painter, lab.text, lab.x, lab.y, lab.rgb)
+
+
+def draw_over_stations(painter, rc, wt, items, stations, station_z, surface, z_range) -> None:
+    """Everything drawn after the stations: DEM, crossings, boreholes, ties, then labels."""
+    from .context_render_points import draw_points
+
+    plan = plan_labels(painter, rc, wt, items, surface)
+    draw_dem(painter, rc, wt, items, stations, station_z)
+    draw_crossings(painter, rc, wt, items, z_range, plan)
+    draw_points(painter, rc, wt, items, surface)
+    draw_ties(painter, rc, wt, items, z_range, plan)
+    draw_labels(painter, rc, items, plan)

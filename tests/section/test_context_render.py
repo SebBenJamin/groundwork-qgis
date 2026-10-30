@@ -25,11 +25,24 @@ def _mm(img, value):
         painter.end()
 
 
-def _results(context, stations=(), z_range=Z_RANGE):
+def _band_offsets(img):
+    from qgis.core import QgsRenderContext
+    from qgis.PyQt.QtGui import QPainter
+
+    from geophysics_workbench.section.context_render import band_offsets
+
+    painter = QPainter(img)
+    try:
+        return band_offsets(QgsRenderContext.fromQPainter(painter))
+    finally:
+        painter.end()
+
+
+def _results(context, stations=(), z_range=Z_RANGE, topo_z=0.0):
     from geophysics_workbench.section.data import SectionSnapshot
     from geophysics_workbench.section.profile_source import WorkbenchProfileResults
 
-    topo = (np.array([40.0, 80.0]), np.array([0.0, 0.0]))
+    topo = (np.array([40.0, 80.0]), np.array([topo_z, topo_z]))
     snap = SectionSnapshot("p1", [], topo, [(float(s), "") for s in stations], None, context)
     station_z = np.interp([float(s) for s in stations], *topo) if stations else None
     return WorkbenchProfileResults(snap, [], z_range, station_z, None)
@@ -57,9 +70,26 @@ def test_band_colour_appears_above_surface(qgis_app):
     from geophysics_workbench.core.lithology import lithology_colour
 
     img = _img(_results(ContextItems(band=[BandSegment(50.0, 70.0, "Sand")])))
-    x, y = _x(55.0), _y(0.0) - round(_mm(img, 3.0))
+    near, far = _band_offsets(img)
+    x, y = _x(55.0), _y(0.0) - round(0.5 * (near + far))
     assert _close(img.pixel(x, y), _blend(lithology_colour("Sand"), 0.85))
     assert img.pixel(_x(45.0), y) == 0xFFFFFFFF            # outside the segment
+
+
+def test_crossing_label_lies_above_the_band(qgis_app):
+    from geophysics_workbench.core.context import BandSegment, ContextItems, Crossing
+
+    items = ContextItems(band=[BandSegment(50.0, 70.0, "Sand")],
+                         crossings=[Crossing(60.0, "HS 110 kV", "powerline", 90.0)])
+    img = _img(_results(items, topo_z=-1.0))
+    near, far = _band_offsets(img)
+    band_top = _y(-1.0) - far
+    hits = [y for x in range(_x(60.0) - 60, _x(60.0) + 60) for y in range(img.height())
+            if (lambda c: c.red() > c.green() + 60 and c.red() > c.blue() + 60)(
+                __import__("qgis.PyQt.QtGui", fromlist=["QColor"]).QColor(img.pixel(x, y)))
+            and abs(x - _x(60.0)) > 3]                      # leave the dashed line out
+    assert hits, "no label pixels"
+    assert max(hits) < band_top - 1, (max(hits), band_top)
 
 
 def _orange_in_column(img, s):

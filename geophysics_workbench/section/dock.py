@@ -37,6 +37,9 @@ def _registered_source_for(provider):
     return source if getattr(source, "provider", None) is provider else None
 
 
+HEADROOM = 0.22          # of the z extent above the data when context is drawn
+
+
 class SectionDock(QDockWidget):
     cursor_moved = pyqtSignal(float, float)     # forward chainage, elevation
     cursor_left = pyqtSignal()                  # the mouse left the section
@@ -282,6 +285,9 @@ class SectionDock(QDockWidget):
         zmin, zmax = min(z), max(z)
         if zmax - zmin < 1.0:
             zmin, zmax = zmin - 0.5, zmax + 0.5
+        ctx = self.provider.context(self._profile.id)
+        if ctx is not None and (ctx.band or ctx.crossings or ctx.points or ctx.ties):
+            zmax += HEADROOM * (zmax - zmin)    # room for the band and its label rows
         return min(s), max(s), zmin, zmax
 
     def _fit_extent(self):

@@ -20,8 +20,7 @@ from qgis.PyQt.QtCore import QByteArray, QDataStream, QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPainterPath, QPen,
                              QPolygonF)
 
-from .context_render import (context_z_values, draw_band, draw_crossings, draw_dem, draw_ties)
-from .context_render_points import draw_points
+from .context_render import context_z_values, draw_band, draw_over_stations
 from .data import SectionDataProvider, SectionSnapshot, cell_path_groups, identify_layers
 
 SOURCE_ID = "geophysics_workbench"
@@ -132,11 +131,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 draw_band(painter, rc, wt, ctx, topo)
             self._draw_stations(painter, rc, wt)
             if ctx is not None:
-                z_range = (self._z[0], self._z[1])
-                draw_dem(painter, rc, wt, ctx, self.snapshot.stations, self._station_z)
-                draw_crossings(painter, rc, wt, ctx, z_range)
-                draw_points(painter, rc, wt, ctx, topo)
-                draw_ties(painter, rc, wt, ctx, z_range)
+                draw_over_stations(painter, rc, wt, ctx, self.snapshot.stations,
+                                   self._station_z, topo, (self._z[0], self._z[1]))
         finally:
             painter.restore()
 
