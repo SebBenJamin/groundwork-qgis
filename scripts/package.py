@@ -7,9 +7,9 @@ dist/geophysics_workbench-<version>.zip       the plugin, top folder geophysics_
 dist/geophysics_workbench-demo-<version>.zip  the contents of demo/: unzip anywhere and open
                                               demo_project.qgz
 
-The version comes from geophysics_workbench/metadata.txt. Byte caches and editor or
-SQLite side files are left out; so are tests, spikes and the demo (they live outside the
-plugin folder).
+The version comes from geophysics_workbench/metadata.txt. Byte caches, editor or SQLite
+side files and GDAL .aux.xml statistics are left out; so are tests, spikes and the demo
+(they live outside the plugin folder).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ DEMO = REPO / "demo"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 EXCLUDE_FILES = ("*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
-                 "*-journal", ".DS_Store", "Thumbs.db")
+                 "*-journal", "*.aux.xml", ".DS_Store", "Thumbs.db")
 MAX_PLUGIN_BYTES = 1_000_000
 
 
