@@ -3,11 +3,14 @@
 Opens demo/demo_project.qgz offscreen, starts the plugin with a minimal fake QGIS
 interface, opens each profile in the section panel and saves the panel as a PNG:
 
-    python-qgis.bat scripts/render_demo_section.py [version]
+    python-qgis.bat scripts/render_demo_section.py [version] [out_dir]
 
-writes docs/releases/<version>-P1.png and -P2.png (version defaults to metadata.txt).
-P1 is the R2 elevation model, P2 the Zond depth model (checks depth conversion against
-the topography).
+writes <out_dir>/<version>-P1.png, -P2.png and -ties.png (version defaults to
+metadata.txt, out_dir to docs/releases). P1 is the R2 elevation model, P2 the Zond depth
+model (checks depth conversion against the topography). P2 is zoomed to its upper part
+from the powerline crossing on, at a higher vertical exaggeration, so the 2 m road
+embankment on the DEM line near s = 250 is visible. The ties panel is shown with the
+P1 x P3 row selected.
 """
 import os
 import sys
@@ -25,8 +28,11 @@ from qgis.core import QgsApplication, QgsProject  # noqa: E402
 from qgis.PyQt.QtCore import QCoreApplication, QEvent, QEventLoop, QTimer  # noqa: E402
 from qgis.PyQt.QtGui import QFont  # noqa: E402
 
-PROFILES = ("P1", "P2")
+#: profile name -> (vertical exaggeration, zoom); zoom (s0, s1, z_top) or None = whole section
+PROFILES = {"P1": (2.0, None), "P2": (4.0, (125.0, 360.0, 77.0))}
 SIZE = (1400, 560)
+TIES_SIZE = (900, 720)
+TIES_ROW = "P1 × P3"
 UI_FONT = "Segoe UI"            # what QGIS uses on Windows
 
 
@@ -88,6 +94,15 @@ def wait_idle(app, dock, timeout_s=60.0, quiet_s=0.5):
         raise RuntimeError("section generation did not finish")
 
 
+def zoom_to(dock, ve: float, s0: float, s1: float, z_top: float) -> None:
+    """Show chainage s0 .. s1 at exaggeration ``ve``, the top of the view at ``z_top``,
+    as a user zoom (the dock stops re-fitting the whole section)."""
+    dock.fit.user_navigated()
+    area = dock.canvas.plotArea()
+    epp = (s1 - s0) / area.width() / ve              # elevation per pixel
+    dock.canvas.setVisiblePlotRange(s0, s1, z_top - epp * area.height(), z_top)
+
+
 def version() -> str:
     cp = ConfigParser()
     cp.read(REPO / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
@@ -114,9 +129,13 @@ def render(out_dir: Path, ver: str) -> list[Path]:
         app = QgsApplication.instance()
         app.processEvents()
         by_name = {p.name: p.id for p in plugin.store.profiles()}
-        for name in PROFILES:
+        for name, (ve, zoom) in PROFILES.items():
+            dock.ve_spin.setValue(ve)
             dock.open_profile(by_name[name])
             wait_idle(app, dock)
+            if zoom is not None:
+                zoom_to(dock, ve, *zoom)
+                wait_idle(app, dock)
             errors = dock.errors.text()
             if errors:
                 raise RuntimeError(f"{name}: layer errors: {errors}")
@@ -124,7 +143,8 @@ def render(out_dir: Path, ver: str) -> list[Path]:
             if not dock.grab().save(str(out)):
                 raise RuntimeError(f"could not write {out}")
             written.append(out)
-            print(f"wrote {out.relative_to(REPO)}")
+            print(f"wrote {out}")
+        written.append(render_ties(plugin, app, out_dir / f"{ver}-ties.png"))
     finally:
         plugin.unload()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
@@ -133,9 +153,31 @@ def render(out_dir: Path, ver: str) -> list[Path]:
     return written
 
 
+def render_ties(plugin, app, out: Path) -> Path:
+    """The Profile ties panel, floating, with the ``TIES_ROW`` row selected."""
+    plugin.show_ties_panel()
+    panel = plugin.ties_panel
+    panel.setFloating(True)
+    panel.resize(*TIES_SIZE)
+    table = panel.table
+    rows = [r for r in range(table.rowCount()) if table.item(r, 0).text() == TIES_ROW]
+    if not rows:
+        raise RuntimeError(f"the ties panel has no {TIES_ROW} row")
+    table.selectRow(rows[0])
+    for _ in range(5):                               # let the plot and layout settle
+        app.processEvents()
+        time.sleep(0.05)
+    panel.plot.draw()
+    app.processEvents()
+    if not panel.grab().save(str(out)):
+        raise RuntimeError(f"could not write {out}")
+    print(f"wrote {out}")
+    return out
+
+
 def main() -> int:
     ver = sys.argv[1] if len(sys.argv) > 1 else version()
-    out_dir = REPO / "docs" / "releases"
+    out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else REPO / "docs" / "releases"
     out_dir.mkdir(parents=True, exist_ok=True)
     app = QgsApplication([], True)
     app.initQgis()
