@@ -61,19 +61,34 @@ def is_log10_pair(arr: np.ndarray, value_col: int, log_col: int, tol: float = 0.
     return bool(np.all(np.abs(np.log10(v[ok]) - lg[ok]) <= tol))
 
 
-def mesh_from_resistivity_points(x, z, v, name: str) -> tuple[SectionMesh, int]:
-    """Drop fill/NaN points, check positivity, triangulate. Returns (mesh, n_masked).
-    ValueErrors name the file."""
+def _no_position(a: np.ndarray) -> np.ndarray:
+    """True where a coordinate is missing: not finite, or the -9999 fill itself."""
+    return ~np.isfinite(a) | (np.abs(a - FILL_VALUE) < 1e-6)
+
+
+def mesh_from_resistivity_points(x, z, v, name: str,
+                                 z_kind: str = "unknown") -> tuple[SectionMesh, int, str]:
+    """Mesh of a cell-centre model: ``(mesh, n_masked, reconstruction)``.
+
+    Checks positivity, then rebuilds the real cells when the centres form rows or columns
+    (``SectionMesh.from_cell_centres``; ``reconstruction`` is "rows" or "columns"): a
+    fill/NaN value keeps its cell, without a value. Otherwise fill/NaN points are dropped
+    and the rest triangulated ("delaunay"). Points without a position are always dropped.
+    ``z_kind`` "depth" puts the top edge of a row model on the surface. ValueErrors name
+    the file."""
     x, z, v = (np.asarray(a, dtype=float) for a in (x, z, v))
-    bad = fill_mask(v) | ~np.isfinite(x) | ~np.isfinite(z)
-    n_masked = int(bad.sum())
-    if bad.all():
+    masked = fill_mask(v)
+    unplaced = _no_position(x) | _no_position(z)
+    n_masked = int((masked | unplaced).sum())
+    if (masked | unplaced).all():
         raise ValueError(f"{name}: all {n_masked} values are fill values (-9999) or NaN; nothing to read")
-    x, z, v = x[~bad], z[~bad], v[~bad]
-    n_neg = int((v <= 0).sum())
+    n_neg = int((v[~(masked | unplaced)] <= 0).sum())
     if n_neg:
         raise ValueError(f"{name}: {n_neg} resistivity value(s) are zero or negative (invalid data)")
+    keep = ~unplaced
+    v = np.where(masked, np.nan, v)[keep]
     try:
-        return SectionMesh.from_points(x, z, v), n_masked
+        mesh, kind = SectionMesh.from_cell_centres(x[keep], z[keep], v, z_kind=z_kind)
     except ValueError as exc:
         raise ValueError(f"{name}: {exc}") from None
+    return mesh, n_masked, kind

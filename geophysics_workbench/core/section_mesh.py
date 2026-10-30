@@ -8,6 +8,8 @@ import numpy as np
 from matplotlib.path import Path
 from scipy.spatial import Delaunay
 
+from .cell_centres import cell_boxes, quads
+
 
 def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     """Median length of the unique Delaunay edges incident to each vertex (vectorised)."""
@@ -130,6 +132,29 @@ class SectionMesh:
         vals = np.exp(np.log(vv).mean(axis=1)) if quantity == "resistivity" else vv.mean(axis=1)
         cells = np.column_stack([simplices, np.full(len(simplices), -1)])
         return cls(pts, cells, vals, **kw)
+
+    @classmethod
+    def from_cell_centres(cls, x, z, v, z_kind: str = "unknown",
+                          **kw) -> tuple["SectionMesh", str]:
+        """Mesh of a model given as one value per cell centre: ``(mesh, reconstruction)``.
+
+        Centres in rows of constant z (else columns of constant x) become their real
+        rectangular cells (``core.cell_centres``); a nan value keeps its quad, without
+        colour. For a depth model the top row's upper edge is the surface (depth 0).
+        Otherwise the finite points are triangulated by ``from_points``."""
+        x, z, v = (np.asarray(a, dtype=float).ravel() for a in (x, z, v))
+        if not (x.size == z.size == v.size):
+            raise ValueError("x, z and v must have the same length")
+        found = cell_boxes(x, z, depth=(z_kind == "depth")) if x.size >= 4 else None
+        if found is None:
+            ok = np.isfinite(v)
+            return cls.from_points(x[ok], z[ok], v[ok], **kw), "delaunay"
+        kind, boxes = found
+        good = v[np.isfinite(v)]
+        if kw.get("quantity", "resistivity") == "resistivity" and not np.all(good > 0):
+            raise ValueError("Resistivity values must be positive (the log-mean needs v > 0)")
+        verts, cells = quads(boxes)
+        return cls(verts, cells, v, **kw), kind
 
     # -- transforms -----------------------------------------------------
     def with_x(self, fn: Callable[[np.ndarray], np.ndarray]) -> "SectionMesh":

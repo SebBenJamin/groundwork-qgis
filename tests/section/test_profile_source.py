@@ -206,8 +206,8 @@ def test_station_ticks_follow_topography_or_mesh_top(qgis_app, store_with_model,
     st2.save_dataset(Dataset("e1", p2.id, s2.id, "ert_model", str(src2), mt, sha, "r2_res_dat",
                              {}, {}, name="no topo"))
     no_topo = _generate(WorkbenchProfileSource(SectionDataProvider(st2)), p2.xy, st2.crs_authid)
-    assert no_topo._station_z == pytest.approx([-0.5, -0.5])            # top of the mesh
-    assert no_topo.zRange().lower() == pytest.approx(-5) and no_topo.zRange().upper() == pytest.approx(-0.5)
+    assert no_topo._station_z == pytest.approx([0, 0])                  # top of the mesh
+    assert no_topo.zRange().lower() == pytest.approx(-6) and no_topo.zRange().upper() == pytest.approx(0)
 
 
 class _LogCatcher:

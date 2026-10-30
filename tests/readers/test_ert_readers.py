@@ -99,7 +99,9 @@ def test_r2_fill_values_are_masked(tmp_path):
     lines[1] = lines[1].replace(lines[1].split()[2], "-9.99900e+03")
     p = tmp_path / "f002_res.dat"; p.write_text("\n".join(lines) + "\n")
     r = readers.read(p)
-    assert r.provenance["n_masked"] == 2 and (r.mesh.values > 0).all()
+    # the row without a position is dropped; the fill value keeps its cell, without a value
+    assert r.provenance["n_masked"] == 2 and len(r.mesh.values) == 19
+    assert np.isnan(r.mesh.values[0]) and (r.mesh.values[1:] > 0).all()
     assert readers.read(F / "f001_res.dat").provenance["n_masked"] == 0
 
 
@@ -130,7 +132,8 @@ def test_zond_nan_token_is_masked(tmp_path):
     cols = lines[2].split("\t"); cols[3] = "nan"; lines[2] = "\t".join(cols)
     p = tmp_path / "nan.dat"; p.write_text("\n".join(lines) + "\n")
     r = readers.read(p)
-    assert r.provenance["n_masked"] == 1 and (r.mesh.values > 0).all()
+    assert r.provenance["n_masked"] == 1 and np.isnan(r.mesh.values[1])
+    assert (np.delete(r.mesh.values, 1) > 0).all()
 
 
 @pytest.mark.parametrize("name", ["P1_res.dat", "P1_iter7.txt", "model.xyz"])

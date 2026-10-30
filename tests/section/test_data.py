@@ -65,8 +65,9 @@ def test_layer_mesh_in_chainage_and_identify_values(store_with_model, tmp_path):
     prov = SectionDataProvider(st)
     [layer] = prov.layers(p.id)
     xmin, xmax, zmin, zmax = layer.mesh.bounds()
-    # f001_res.dat spans x 1..9, z -5..-0.5; metre0 is 0 for station 1 at chainage 0
-    assert (xmin, xmax, zmin, zmax) == pytest.approx((1 + s.metre0, 9 + s.metre0, -5, -0.5))
+    # f001_res.dat has cell centres x 1..9, z -5..-0.5: its rebuilt cells span x 0..10,
+    # z -6..0 (0.1.1); metre0 is 0 for station 1 at chainage 0
+    assert (xmin, xmax, zmin, zmax) == pytest.approx((0 + s.metre0, 10 + s.metre0, -6, 0))
     hit = prov.identify(p.id, 5.0, -2.0)
     assert hit[0]["value"] == pytest.approx(layer.mesh.value_at(5.0, -2.0))
     assert hit[0]["version"] == 1
@@ -81,12 +82,15 @@ def test_chainage_offset_and_depth_conversion_use_chainage(store_with_model, tmp
     layer = SectionDataProvider(st).layers(p.id)[1]
     assert layer.error is None
     v = layer.mesh.vertices
-    assert v[:, 0].min() == pytest.approx(11.0) and v[:, 0].max() == pytest.approx(19.0)
-    # topography: stations (s=0, z=100) and (s=50, z=102); top row of the model is 0.5 m deep
-    top = v[np.isclose(v[:, 1], np.interp(v[:, 0], [0, 50], [100, 102]) - 0.5)]
-    assert len(top) == 5                                             # x = 1, 3, ..., 9 (+10)
-    assert top[:, 1] == pytest.approx(np.interp(top[:, 0], [0, 50], [100, 102]) - 0.5)
-    assert v[:, 1].min() == pytest.approx(np.interp(11.0, [0, 50], [100, 102]) - 5.0, abs=0.2)
+    # cell centres x 1..9 (+10): the rebuilt cells span 10..20
+    assert v[:, 0].min() == pytest.approx(10.0) and v[:, 0].max() == pytest.approx(20.0)
+    # topography: stations (s=0, z=100) and (s=50, z=102); the top row's cells start at
+    # depth 0, on the surface (centres 0.5 m deep)
+    top = v[np.isclose(v[:, 1], np.interp(v[:, 0], [0, 50], [100, 102]))]
+    assert len(top) == 10                                            # 5 cells x 2 corners
+    assert v[:, 1].max() == pytest.approx(np.interp(20.0, [0, 50], [100, 102]))
+    # deepest centres at 5 m, the gap above is 2 m: the bottom edge is 6 m deep
+    assert v[:, 1].min() == pytest.approx(np.interp(10.0, [0, 50], [100, 102]) - 6.0)
 
 
 def test_depth_model_without_topography_is_an_error(tmp_path):
@@ -170,7 +174,7 @@ def test_match_curve_and_reversed_snapshot(store_with_model):
     assert prof.id == p.id and rev is True
     snap = prov.snapshot(p.id, reverse=True)
     xmin, xmax, _, _ = snap.layers[0].mesh.bounds()
-    assert (xmin, xmax) == pytest.approx((50 - 9, 50 - 1))
+    assert (xmin, xmax) == pytest.approx((50 - 10, 50 - 0))
     assert snap.topo[0] == pytest.approx([0, 50]) and snap.topo[1] == pytest.approx([102, 100])
     assert [s for s, _ in snap.stations] == pytest.approx([50, 0])
 

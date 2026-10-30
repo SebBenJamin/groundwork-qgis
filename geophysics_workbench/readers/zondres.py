@@ -31,13 +31,16 @@ class ZondResReader(Reader):
         if arr.shape[1] < 4:
             raise ValueError(f"{path.name}: expected at least 4 columns (x, z, log rho, rho), "
                              f"found {arr.shape[1]}")
-        mesh, n_masked = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 3], path.name)
         is_depth = header is not None and "depth" in " ".join(header).lower()
-        return ReaderResult(mesh, "depth" if is_depth else "unknown", {
+        z_kind = "depth" if is_depth else "unknown"
+        mesh, n_masked, kind = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 3],
+                                                            path.name, z_kind)
+        return ReaderResult(mesh, z_kind, {
             "reader": self.name,
             "source_name": path.name,
             "has_world_xy": arr.shape[1] >= 6,
             "header": header,
             "n_points": int(arr.shape[0]),
             "n_masked": n_masked,
+            "reconstruction": kind,
         })

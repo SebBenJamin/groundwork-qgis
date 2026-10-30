@@ -37,7 +37,8 @@ class R2ResReader(Reader):
         if arr.shape[1] != 4:
             raise ValueError(f"{path.name}: expected 4 columns (x, z, resistivity, log10), "
                              f"found {arr.shape[1]}")
-        mesh, n_masked = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 2], path.name)
+        mesh, n_masked, kind = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 2],
+                                                            path.name, "elevation")
         m = _NAME.fullmatch(path.name)
         index = int(m.group(1)) if m else None
         return ReaderResult(mesh, "elevation", {
@@ -47,4 +48,5 @@ class R2ResReader(Reader):
             "iteration": index,
             "n_points": int(arr.shape[0]),
             "n_masked": n_masked,
+            "reconstruction": kind,
         })
