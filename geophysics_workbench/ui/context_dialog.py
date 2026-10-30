@@ -10,9 +10,10 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox, QLabel,
                                  QScrollArea, QVBoxLayout, QWidget)
 
-from ..core.context_settings import (BandSetting, ContextSettings, LineLayerSetting,
+from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings, LineLayerSetting,
                                      PointLayerSetting)
-from .borehole_mapping import BoreholeGroup, field_of, fill_field_combo, fill_layer_combo
+from .borehole_mapping import (MISSING, BoreholeGroup, field_of, fill_field_combo,
+                               fill_layer_combo, keep_missing)
 from .project_actions import SCOPE
 
 KEY = "context"
@@ -112,9 +113,9 @@ class ContextDialog(QDialog):
         QFormLayout(dem_box).addRow("Raster layer", self.dem_combo)
         outer.addWidget(dem_box)
 
-        self.buffer_spin = _spin(0, 10000, 25.0)
-        self.near_miss_spin = _spin(0, 10000, 10.0)
-        self.dem_tolerance_spin = _spin(0, 1000, 1.0)
+        self.buffer_spin = _spin(0, MAX_DISTANCE, 25.0)
+        self.near_miss_spin = _spin(0, MAX_DISTANCE, 10.0)
+        self.dem_tolerance_spin = _spin(0, MAX_DISTANCE, 1.0)
         values = QFormLayout()
         values.addRow("Buffer (m)", self.buffer_spin)
         values.addRow("Near-miss ties within (m)", self.near_miss_spin)
@@ -132,6 +133,10 @@ class ContextDialog(QDialog):
         layout.addWidget(scroll)
         layout.addWidget(buttons)
         self.resize(640, 720)
+        self.note = QLabel()
+        self.note.setStyleSheet("color: grey;")
+        layout.insertWidget(1, self.note)
+        self.stale_lines, self.stale_points, self.loaded_band = [], [], None
         self._load(read_settings(self.project))
 
     def _layer_group(self, title, layers, powerline):
@@ -163,23 +168,39 @@ class ContextDialog(QDialog):
         for item in s.point_layers:
             if item.layer_id in self.point_rows:
                 self.point_rows[item.layer_id].load(item.label_field)
+        self.stale_lines = [i for i in s.line_layers if i.layer_id not in self.line_rows]
+        self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
         self.borehole.load(s.borehole)
+        self.loaded_band = s.band
         if s.band is not None:
+            keep_missing(self.band_combo, self.project, s.band.layer_id)
             self.select_band(s.band.layer_id, s.band.label_field)
+        keep_missing(self.dem_combo, self.project, s.dem_layer_id)
         self.select_dem(s.dem_layer_id)
+        missing = (len(self.stale_lines) + len(self.stale_points) + self.borehole.missing_count()
+                   + sum(c.currentText() == MISSING for c in (self.band_combo, self.dem_combo)))
+        self.note.setText(f"{missing} saved layer(s) are not in this project; "
+                          "their settings are kept." if missing else "")
         self.buffer_spin.setValue(s.buffer)
         self.near_miss_spin.setValue(s.near_miss)
         self.dem_tolerance_spin.setValue(s.dem_tolerance)
 
     def settings(self) -> ContextSettings:
         band_id = self.band_combo.currentData() or ""
+        band_label = field_of(self.band_label)
+        old = self.loaded_band
+        if (old is not None and old.layer_id == band_id
+                and self.project.mapLayer(band_id) is None):
+            band_label = old.label_field                # layer missing: keep its saved label
         return ContextSettings(
             line_layers=[LineLayerSetting(r.layer_id, field_of(r.label), r.powerline.isChecked())
-                         for r in self.line_rows.values() if r.check.isChecked()],
+                         for r in self.line_rows.values() if r.check.isChecked()]
+            + list(self.stale_lines),
             point_layers=[PointLayerSetting(r.layer_id, field_of(r.label))
-                          for r in self.point_rows.values() if r.check.isChecked()],
+                          for r in self.point_rows.values() if r.check.isChecked()]
+            + list(self.stale_points),
             borehole=self.borehole.setting(),
-            band=BandSetting(band_id, field_of(self.band_label)) if band_id else None,
+            band=BandSetting(band_id, band_label) if band_id else None,
             dem_layer_id=self.dem_combo.currentData() or "",
             buffer=self.buffer_spin.value(), near_miss=self.near_miss_spin.value(),
             dem_tolerance=self.dem_tolerance_spin.value())

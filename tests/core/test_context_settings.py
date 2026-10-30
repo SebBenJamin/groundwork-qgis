@@ -23,3 +23,8 @@ def test_settings_from_bad_json_gives_defaults():
         assert got.buffer == 25.0 and got.line_layers == [] and got.borehole is None
     got = ContextSettings.from_json('{"line_layers": 3, "borehole": 5, "extra": 1, "near_miss": 7}')
     assert got.line_layers == [] and got.borehole is None and got.near_miss == 7.0
+
+
+def test_distances_beyond_the_dialog_range_fall_back():
+    got = ContextSettings.from_json('{"buffer": 1e9, "near_miss": Infinity, "dem_tolerance": 999999}')
+    assert got.buffer == 25.0 and got.near_miss == 10.0 and got.dem_tolerance == 999999.0

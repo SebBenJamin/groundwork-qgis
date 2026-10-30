@@ -8,6 +8,7 @@ from qgis.PyQt.QtWidgets import QComboBox, QFormLayout, QGroupBox
 from ..core.context_settings import BoreholeSetting
 
 NONE = "None"
+MISSING = "(not in project)"
 
 
 def fill_layer_combo(combo: QComboBox, layers, current: str = "") -> None:
@@ -19,6 +20,14 @@ def fill_layer_combo(combo: QComboBox, layers, current: str = "") -> None:
         combo.addItem(layer.name(), layer.id())
     combo.setCurrentIndex(max(0, combo.findData(current)))
     combo.blockSignals(False)
+
+
+def keep_missing(combo: QComboBox, project, layer_id: str) -> None:
+    """A saved layer id that is not in the project stays selectable as '(not in project)', so
+    pressing OK keeps its settings; choosing another entry (or 'None') replaces it."""
+    if layer_id and project.mapLayer(layer_id) is None:
+        combo.addItem(MISSING, layer_id)
+        combo.setCurrentIndex(combo.count() - 1)
 
 
 def fill_field_combo(combo: QComboBox, layer, current: str = "", optional: bool = True) -> None:
@@ -40,6 +49,7 @@ class BoreholeGroup(QGroupBox):
     def __init__(self, project, vector_layers: list[QgsVectorLayer], point_layers):
         super().__init__("Boreholes")
         self.project = project
+        self.loaded = None                  # the saved setting, kept for layers now missing
         self.layer_combo = QComboBox()
         self.id_combo = QComboBox()
         self.elevation_combo = QComboBox()
@@ -92,6 +102,9 @@ class BoreholeGroup(QGroupBox):
     def load(self, setting: BoreholeSetting | None) -> None:
         if setting is None:
             return
+        self.loaded = setting
+        keep_missing(self.layer_combo, self.project, setting.layer_id)
+        keep_missing(self.log_combo, self.project, setting.log_layer_id)
         self.set_layer(setting.layer_id)
         self.set_log_layer(setting.log_layer_id)
         self._refill_borehole(setting)
@@ -99,10 +112,20 @@ class BoreholeGroup(QGroupBox):
 
     def setting(self) -> BoreholeSetting | None:
         layer_id = self.layer_combo.currentData() or ""
-        if not layer_id:
+        log_id = self.log_combo.currentData() or ""
+        if not layer_id and not log_id:
             return None
+        old = self.loaded
+        keep = old is not None and old.layer_id == layer_id and self._layer(self.layer_combo) is None
+        keep_log = old is not None and old.log_layer_id == log_id             and self._layer(self.log_combo) is None
         return BoreholeSetting(
-            layer_id, field_of(self.id_combo), field_of(self.elevation_combo),
-            self.log_combo.currentData() or "", field_of(self.log_id_combo),
-            field_of(self.top_combo), field_of(self.bottom_combo),
-            field_of(self.lithology_combo))
+            layer_id, old.id_field if keep else field_of(self.id_combo),
+            old.elevation_field if keep else field_of(self.elevation_combo), log_id,
+            old.log_id_field if keep_log else field_of(self.log_id_combo),
+            old.top_field if keep_log else field_of(self.top_combo),
+            old.bottom_field if keep_log else field_of(self.bottom_combo),
+            old.lithology_field if keep_log else field_of(self.lithology_combo))
+
+    def missing_count(self) -> int:
+        return sum(1 for c in (self.layer_combo, self.log_combo)
+                   if c.currentText() == MISSING)

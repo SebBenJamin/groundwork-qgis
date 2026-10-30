@@ -6,9 +6,11 @@ the defaults, field by field."""
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field, fields
 
 VERSION = 1
+MAX_DISTANCE = 1e6                                     # metres; the dialog's spin boxes allow the same
 
 
 @dataclass
@@ -75,7 +77,8 @@ class ContextSettings:
         out.dem_layer_id = dem if isinstance(dem, str) else ""
         for name in ("buffer", "near_miss", "dem_tolerance"):
             value = data.get(name)
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value) and 0 <= value <= MAX_DISTANCE):
                 setattr(out, name, float(value))
         return out
 

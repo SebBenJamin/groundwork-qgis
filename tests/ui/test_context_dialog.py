@@ -78,3 +78,31 @@ def test_menu_action_enabled_only_with_store(qgis_app, fake_iface, store_with_mo
         plugin.unload()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
         qgis_app.processEvents()
+
+
+def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+                                                            LineLayerSetting)
+    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+                                                        write_settings)
+
+    prj = QgsProject()
+    saved = ContextSettings(line_layers=[LineLayerSetting("gone_line", "name", True)],
+                            borehole=BoreholeSetting("gone_bh", "id", "z", "gone_log", "hid",
+                                                     "t", "b", "lith"),
+                            band=BandSetting("gone_band", "unit"), dem_layer_id="gone_dem")
+    write_settings(prj, saved)
+    dlg = ContextDialog(fake_iface, prj)
+    assert "4" in dlg.note.text() or "5" in dlg.note.text()
+    dlg.accept()
+    assert read_settings(prj) == saved
+
+    dlg = ContextDialog(fake_iface, prj)
+    dlg.select_dem("")                                   # the user picks "None"
+    dlg.accept()
+    got = read_settings(prj)
+    assert got.dem_layer_id == ""
+    assert got.line_layers == saved.line_layers and got.borehole == saved.borehole
+    assert got.band == saved.band
