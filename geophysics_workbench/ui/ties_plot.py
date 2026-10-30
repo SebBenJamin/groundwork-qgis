@@ -4,9 +4,10 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter
 
 from ..core.ties import TieColumn
-from ..section.readout import unit_label
+from ..section.readout import format_value, unit_label
 
 COLORS = ("#1f77b4", "#d95f02")
 
@@ -49,6 +50,9 @@ class TiesPlot(FigureCanvasQTAgg):
         unit = unit_label(cols[0][1].unit) if cols else ""
         if quantity == "resistivity":
             ax.set_xscale("log")
+            plain = FuncFormatter(lambda v, _pos: format_value(v).removesuffix(".0"))
+            ax.xaxis.set_major_formatter(plain)
+            ax.xaxis.set_minor_formatter(plain)
         if row.mismatch is not None and row.mismatch.z_range is not None:
             ax.axhspan(*row.mismatch.z_range, color="0.5", alpha=0.15, lw=0)
         label = quantity.capitalize()

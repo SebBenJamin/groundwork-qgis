@@ -20,6 +20,7 @@ NOTE = ("2D profiles in different directions are not expected to match exactly; 
 NO_MODEL = "no model at tie"
 HEADERS = ("Profiles", "At", "Distance", "Compared", "Mismatch")
 REFRESH_MS = 300
+SORT_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 @dataclass
@@ -52,6 +53,16 @@ class TieRow:
 
 def _natural(name: str) -> list:
     return [(0, int(t)) if t.isdigit() else (1, t.lower()) for t in re.split(r"(\d+)", name) if t]
+
+
+class SortItem(QTableWidgetItem):
+    """Table cell that sorts by a key kept in ``SORT_ROLE`` instead of by its text."""
+
+    def __lt__(self, other):
+        a, b = self.data(SORT_ROLE), other.data(SORT_ROLE)
+        if a is None or b is None:
+            return super().__lt__(other)
+        return a < b
 
 
 def _topmost(columns: list[TieColumn]) -> TieColumn | None:
@@ -160,8 +171,14 @@ class TiesPanel(QDockWidget):
             cells = (f"{row.a_name} × {row.b_name}",
                      f"{row.a_name} {row.s_a:.0f} m · {row.b_name} {row.s_b:.0f} m",
                      kind, compared, row.text)
+            m = row.mismatch
+            figure = None if m is None else (m.factor if m.factor is not None else m.rel_diff)
+            keys = (_natural(f"{row.a_name} {row.b_name}"),
+                    (_natural(row.a_name), row.s_a, row.s_b), row.distance,
+                    compared.lower(), (figure is None, figure or 0.0, row.text))
             for c, text in enumerate(cells):
-                item = QTableWidgetItem(text)
+                item = SortItem(text)
+                item.setData(SORT_ROLE, keys[c])
                 if c == 0:
                     item.setData(Qt.ItemDataRole.UserRole, row.key)
                 t.setItem(r, c, item)

@@ -167,3 +167,34 @@ def test_plugin_menu_action_and_lifecycle(qgis_app, fake_iface, store_with_model
         assert plugin.ties_panel is None and not action.isEnabled()
     finally:
         plugin.unload()
+
+
+def test_double_crossing_gives_two_rows_with_own_columns(make_panel, store_with_model, tmp_path):
+    st, p1, _ = store_with_model
+    p2 = _add(st, tmp_path, "P2", [[3, -2, 100], [3, 1, 100], [4, 1, 100], [4, -2, 100]])
+    panel, prov, _dock = make_panel(st)
+    rows = [r for r in panel.rows if r.a_name == "P1" and r.b_name == "P2"]
+    assert len(rows) == 2 and len(panel.rows) == 2
+    assert [(r.s_a, r.s_b) for r in rows] == [(approx(3.0), approx(2.0)), (approx(4.0), approx(5.0))]
+    ats = [c[1] for c in _cells(panel)]
+    assert len(set(ats)) == 2
+    from geophysics_workbench.section.ties_data import tie_column
+    for r in rows:
+        for col, pid, pos in ((r.col_a, p1.id, r.s_a), (r.col_b, p2.id, r.s_b)):
+            expect = tie_column(prov.layers(pid)[0], pos)
+            assert col.values.tolist() == expect.values.tolist() and col.values.size
+    assert rows[0].col_b.values.tolist() != rows[1].col_b.values.tolist()
+
+
+def test_sorting_is_numeric(make_panel, store_with_model, tmp_path):
+    from qgis.PyQt.QtCore import Qt
+    st, p1, _ = store_with_model
+    p1.xy = np.array([[0, 0.0], [150, 0.0]])
+    st.save_profile(p1)
+    _add(st, tmp_path, "P2", [[120, -4, 100], [120, 46, 100]])
+    _add(st, tmp_path, "P3", [[47, -4, 100], [47, 46, 100]])
+    panel, _prov, _dock = make_panel(st)
+    panel.table.sortItems(1, Qt.SortOrder.AscendingOrder)
+    assert [r[1] for r in _cells(panel)][:2] == ["P1 47 m · P3 4 m", "P1 120 m · P2 4 m"]
+    panel.table.sortItems(1, Qt.SortOrder.DescendingOrder)
+    assert _cells(panel)[0][1].startswith("P1 120 m")
