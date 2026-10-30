@@ -9,6 +9,8 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSp
                                  QMessageBox, QPushButton, QVBoxLayout)
 
 from .. import readers
+from ..core.coverage import overhang_message
+from ..core.model import x_to_chainage
 from .project_actions import add_model
 
 Z_ITEMS = [("Choose…", None), ("Elevation", "elevation"), ("Depth below surface", "depth")]
@@ -35,6 +37,7 @@ class AddModelDialog(QDialog):
         super().__init__(parent if parent is not None else iface.mainWindow())
         self.iface, self.store, self.profile_id, self.provider = iface, store, profile_id, provider
         profile = store.profile(profile_id)
+        self.profile_name = profile.name
         self.setWindowTitle(f"Add ERT model to {profile.name}")
         self.dataset = None
         self.last_error = None
@@ -63,12 +66,20 @@ class AddModelDialog(QDialog):
         self.offset_spin.setDecimals(2)
         self.offset_spin.setSuffix(" m")
         self.offset_spin.setToolTip("Added to the file's x (m) to place the model on the profile")
+        self.offset_spin.valueChanged.connect(lambda _v: self._update_preview())
         self.set_combo = QComboBox()
+        self._sets = {}
         for s in store.station_sets(profile_id):
+            self._sets[s.id] = s
             self.set_combo.addItem(s.name or s.id, s.id)
+        self.set_combo.currentIndexChanged.connect(lambda _i: self._update_preview())
         self.name_edit = QLineEdit()
         self.preview = QLabel("Choose a model file.")
         self.preview.setWordWrap(True)
+        self.warning = QLabel()                     # model reaches far beyond the stations
+        self.warning.setWordWrap(True)
+        self.warning.setStyleSheet("color: #9a5b00;")
+        self.warning.hide()
 
         form = QFormLayout()
         form.addRow("File", file_row)
@@ -78,6 +89,7 @@ class AddModelDialog(QDialog):
         form.addRow("Station set", self.set_combo)
         form.addRow("Dataset name", self.name_edit)
         form.addRow("Preview", self.preview)
+        form.addRow("", self.warning)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -109,6 +121,7 @@ class AddModelDialog(QDialog):
 
     def _update_preview(self) -> None:
         path, reader = self.file_edit.text().strip(), self.reader_combo.currentData()
+        self._set_warning("")
         if not path:
             self.preview.setText("Choose a model file.")
             return
@@ -130,6 +143,21 @@ class AddModelDialog(QDialog):
             self.z_combo.blockSignals(False)
         self.preview.setStyleSheet("")
         self.preview.setText(describe(self._result, self.z_combo.currentData()))
+        self._set_warning(self.overhang_warning())
+
+    def overhang_warning(self) -> str:
+        """Warning when the read model, placed with the chosen station set and offset,
+        reaches more than two station spacings before or beyond the stations; else ""."""
+        station_set = self._sets.get(self.set_combo.currentData())
+        if self._result is None or station_set is None:
+            return ""
+        xmin, xmax = self._result.mesh.bounds()[:2]
+        s = x_to_chainage([xmin, xmax], station_set, self.offset_spin.value())
+        return overhang_message(s[0], s[1], station_set, self.profile_name)
+
+    def _set_warning(self, text: str) -> None:
+        self.warning.setText(text)
+        self.warning.setVisible(bool(text))
 
     def _show_error(self, message: str) -> None:
         self.preview.setStyleSheet("color: #b00020;")
@@ -143,6 +171,14 @@ class AddModelDialog(QDialog):
                 raise ValueError("Choose a model file")
             if self.set_combo.currentData() is None:
                 raise ValueError("This profile has no station set to place the model on")
+            if self._key != (path, self.reader_combo.currentData()):
+                self._update_preview()              # the overhang check needs this file
+            warning = self.overhang_warning() if self._key is not None else ""
+            if warning and QMessageBox.question(
+                    self, self.windowTitle(), warning,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
             options = {"chainage_offset": self.offset_spin.value()}
             if self.z_combo.currentData():
                 options["z_kind"] = self.z_combo.currentData()

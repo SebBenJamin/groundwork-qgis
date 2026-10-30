@@ -82,13 +82,19 @@ class Dataset:
     name: str = ""
 
 
-def data_to_chainage(x_data: np.ndarray, station_set: StationSet, dataset: Dataset) -> np.ndarray:
+def x_to_chainage(x_data: np.ndarray, station_set: StationSet,
+                  chainage_offset: float = 0.0) -> np.ndarray:
     """Map data-file metres to profile chainage: ``metre0 + direction * (x + offset)``.
     Data metres count from station 1 in the numbering direction, so a station set
     numbered against the profile direction mirrors the model."""
-    offset = dataset.reader_options.get("chainage_offset", 0.0)
     return (station_set.metre0
-            + station_set.direction * (np.asarray(x_data, dtype=float) + offset))
+            + station_set.direction * (np.asarray(x_data, dtype=float) + chainage_offset))
+
+
+def data_to_chainage(x_data: np.ndarray, station_set: StationSet, dataset: Dataset) -> np.ndarray:
+    """``x_to_chainage`` with the dataset's ``chainage_offset`` reader option."""
+    return x_to_chainage(x_data, station_set,
+                         dataset.reader_options.get("chainage_offset", 0.0))
 
 
 def _as_xyz(xyz: np.ndarray) -> np.ndarray:
