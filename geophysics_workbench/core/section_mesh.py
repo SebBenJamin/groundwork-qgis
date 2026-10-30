@@ -207,3 +207,23 @@ class SectionMesh:
             for i, poly in zip(idx, polys):
                 out[i] = poly
         return out
+
+    def column_at(self, s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """``(z_top, z_bottom, values)`` of every cell the vertical line x = s crosses,
+        sorted top to bottom (empty arrays when there are none; nan cells are kept).
+        Each cell's closed ring is cut with x = s; an edge lying on x = s hits at both ends."""
+        c = self.cells
+        ring = self.vertices[np.where(c >= 0, c, c[:, :1])]          # (m, 4, 2); triangle pad = vertex 0
+        p0, p1 = ring, np.roll(ring, -1, axis=1)                     # edges i -> i+1, closing the ring
+        dx = p1[..., 0] - p0[..., 0]
+        d0, d1 = p0[..., 0] - s, p1[..., 0] - s
+        tol = 1e-9 * max(1.0, abs(s))
+        on = (np.abs(d0) <= tol) & (np.abs(d1) <= tol)               # edge lies on the line
+        cross = (d0 * d1 <= 0) & ~on & (dx != 0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            zc = p0[..., 1] + (s - p0[..., 0]) / dx * (p1[..., 1] - p0[..., 1])
+        z_lo = np.minimum(np.where(cross, zc, np.inf), np.where(on, np.minimum(p0[..., 1], p1[..., 1]), np.inf)).min(1)
+        z_hi = np.maximum(np.where(cross, zc, -np.inf), np.where(on, np.maximum(p0[..., 1], p1[..., 1]), -np.inf)).max(1)
+        hit = np.isfinite(z_lo) & np.isfinite(z_hi)
+        order = np.argsort(-z_hi[hit], kind="stable")
+        return z_hi[hit][order], z_lo[hit][order], self.values[hit][order]
