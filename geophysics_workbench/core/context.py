@@ -49,6 +49,11 @@ def _cum(xy: np.ndarray) -> np.ndarray:
     return np.r_[0.0, np.cumsum(np.hypot(*np.diff(xy, axis=0).T))]
 
 
+def _closed(ring) -> np.ndarray:
+    r = np.asarray(ring, float)
+    return r if np.array_equal(r[0], r[-1]) else np.vstack([r, r[:1]])
+
+
 def _intersections(a_xy: np.ndarray, b_xy: np.ndarray) -> list[tuple[float, float, float]]:
     """All crossings of two polylines as (s_a, s_b, acute angle in degrees),
     sorted by s_a, with hits closer than 1e-6 m in both s_a and s_b merged."""
@@ -113,9 +118,9 @@ def project_points(profile_xy, points_xy, buffer: float) -> list[tuple[int, floa
 def polygon_intervals(profile_xy, polygons, labels: list[str]) -> list[BandSegment]:
     """Stretches of the profile inside each polygon (exterior minus holes)."""
     ch = Chainage(profile_xy)
-    out: list[BandSegment] = []
+    raw: list[BandSegment] = []
     for (exterior, holes), label in zip(polygons, labels):
-        rings = [np.asarray(exterior, float)] + [np.asarray(h, float) for h in holes]
+        rings = [_closed(r) for r in [exterior, *holes]]
         cuts = [0.0, ch.length]
         for ring in rings:
             cuts += [sa for sa, _sb, _ang in _intersections(ch.xy, ring)]
@@ -126,11 +131,17 @@ def polygon_intervals(profile_xy, polygons, labels: list[str]) -> list[BandSegme
                 continue
             mid = ch.to_xy(0.5 * (s0 + s1))
             if paths[0].contains_point(mid) and not any(p.contains_point(mid) for p in paths[1:]):
-                if out and out[-1].label == label and s0 - out[-1].s1 < _DEDUP:
-                    out[-1].s1 = float(s1)
-                else:
-                    out.append(BandSegment(float(s0), float(s1), label))
-    out.sort(key=lambda b: b.s0)
+                raw.append(BandSegment(float(s0), float(s1), label))
+    # merge touching or overlapping stretches per label, whatever the polygon order
+    out: list[BandSegment] = []
+    last: dict[str, BandSegment] = {}
+    for seg in sorted(raw, key=lambda b: b.s0):
+        prev = last.get(seg.label)
+        if prev is not None and seg.s0 - prev.s1 < _DEDUP:
+            prev.s1 = max(prev.s1, seg.s1)
+        else:
+            last[seg.label] = seg
+            out.append(seg)
     return out
 
 

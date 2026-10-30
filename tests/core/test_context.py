@@ -50,3 +50,20 @@ def test_dataclasses_have_independent_default_logs():
     a.log.append(LogInterval(0.0, 1.0, "sand"))
     assert b.log == [] and a.z_top is None
     assert Crossing(1.0, "x", "line", 90.0).kind == "line" and BandSegment(0.0, 1.0, "g").label == "g"
+
+
+def test_polygon_intervals_unclosed_ring_is_closed():
+    sq = np.array([[20.0, -10], [80, -10], [80, 10], [20, 10]])   # no closing vertex
+    segs = polygon_intervals(L, [(sq, [])], ["a"])
+    assert [(round(b.s0), round(b.s1)) for b in segs] == [(20, 80)]
+
+
+def _box(x0, x1):
+    return np.array([[x0, -5.0], [x1, -5], [x1, 5], [x0, 5], [x0, -5]])
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_polygon_intervals_overlapping_same_label_merge(order):
+    polys = [(_box(10, 60), []), (_box(20, 40), [])]
+    segs = polygon_intervals(L, [polys[i] for i in order], ["a", "a"])
+    assert [(round(b.s0), round(b.s1), b.label) for b in segs] == [(10, 60, "a")]
