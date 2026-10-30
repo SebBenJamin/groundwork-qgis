@@ -62,3 +62,37 @@ def test_borehole_without_top_hangs_from_the_surface():
 def test_readout_second_line():
     assert format_readout(5.0, 1.0, extra=[]) == "s = 5.0 m · z = 1.0 m"
     assert format_readout(5.0, 1.0, extra=["A", "B"]) == "s = 5.0 m · z = 1.0 m\nA · B"
+
+
+def test_strip_start_is_the_nearest_free_slot_beside_the_tie_line():
+    """R15: right of the tie line unless a borehole column stands there; then left of the
+    line when that is free, else just past the columns, on the nearer side (right on a draw)."""
+    from geophysics_workbench.section.context_readout import strip_start
+
+    items = _items()                                        # B1 column at 20 +- 0.5
+    pts = items.points
+    assert strip_start(pts, 40.0, 1.5, 0.5) == 40.0         # nothing near: right of the line
+    assert strip_start(pts, 19.0, 1.5, 0.5) == 17.5         # column right of the line: left
+    assert strip_start(pts, 21.0, 1.5, 0.5) == 21.0         # column left of the line: stays
+    assert strip_start(pts, 18.0, 1.5, 0.5) == 18.0         # strip ends at 19.5, column at 19.5
+    assert strip_start(pts, 20.0, 1.5, 0.5) == 20.5         # column on the line: past it, right
+    assert strip_start(pts, 20.2, 1.5, 0.5) == 20.5         # nearer past its right edge
+    assert strip_start(pts, 19.8, 1.5, 0.5) == 18.0         # nearer past its left edge
+    pts.append(type(pts[0])(21.5, 0.0, "B9", "borehole", 100.0, list(pts[0].log)))
+    assert strip_start(pts, 20.0, 1.5, 0.5) == 18.0         # right blocked twice: left wins
+    pts[0].log = []                                         # no log: a diamond, not a column
+    assert strip_start(pts[:1], 20.0, 1.5, 0.5) == 20.0
+
+
+def test_tie_readout_follows_the_strip_off_a_borehole_column():
+    """R15: the readout reads the tie where the strip is drawn."""
+    items = _items()
+    kw = dict(tol_s=1.0, column_half_width_s=0.5, strip_width_s=1.5)
+    items.points[0].s = 40.0                                # B1 on the P3 tie: strip 40.5 .. 42
+    assert "Tie P3: 95.3 Ω·m" in context_hits(items, 41.8, 97.0, **kw)
+    for s in (39.0, 40.2):
+        assert not any(h.startswith("Tie") for h in context_hits(items, s, 97.0, **kw))
+    items.points[0].s = 41.0                                # B1 right of the line: strip 38.5 .. 40
+    assert "Tie P3: 95.3 Ω·m" in context_hits(items, 39.0, 97.0, **kw)
+    for s in (38.4, 40.7):
+        assert not any(h.startswith("Tie") for h in context_hits(items, s, 97.0, **kw))

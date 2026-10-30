@@ -38,12 +38,15 @@ def _band_offsets(img):
         painter.end()
 
 
-def _results(context, stations=(), z_range=Z_RANGE, topo_z=0.0):
+def _results(context, stations=(), z_range=Z_RANGE, topo_z=0.0, layers=()):
+    """``layers`` are the viewed profile's snapshot layers (not drawn here: the results
+    get no cell paths), which the tie strips take their colour scale from."""
     from geophysics_workbench.section.data import SectionSnapshot
     from geophysics_workbench.section.profile_source import WorkbenchProfileResults
 
     topo = (np.array([40.0, 80.0]), np.array([topo_z, topo_z]))
-    snap = SectionSnapshot("p1", [], topo, [(float(s), "") for s in stations], None, context)
+    snap = SectionSnapshot("p1", list(layers), topo, [(float(s), "") for s in stations], None,
+                           context)
     station_z = np.interp([float(s) for s in stations], *topo) if stations else None
     return WorkbenchProfileResults(snap, [], z_range, station_z, None)
 
@@ -154,20 +157,104 @@ def test_dem_gap_keeps_station_black_and_breaks_the_line(qgis_app):
     assert not _is_red(img.pixel(_x(60.0), _y(0.0) - half))
 
 
-def test_tie_column_uses_other_profiles_scale(qgis_app):
-    from geophysics_workbench.core.colors import ColorScale
+def _host_layer(quantity, scale, visible=True):
+    """A layer of the viewed profile with ``scale``; its one cell is never drawn here."""
+    from geophysics_workbench.core.model import Dataset
+    from geophysics_workbench.core.section_mesh import SectionMesh
+    from geophysics_workbench.section.data import LayerStyle, SectionLayer
+
+    d = Dataset("h", "p1", "s1", "ert_model", "x", 0, "", "r2_res_dat", {}, {},
+                quantity=quantity)
+    mesh = SectionMesh(np.array([[0.0, 0], [4, 0], [0, -4]]), np.array([[0, 1, 2, -1]]),
+                       np.array([7.0]), quantity=quantity)
+    return SectionLayer(d, mesh, LayerStyle(visible=visible, scale=scale), None)
+
+
+def _tie_items(scale, points=()):
     from geophysics_workbench.core.context import ContextItems
     from geophysics_workbench.core.ties import Tie, TieColumn
 
-    scale = ColorScale("Spectral_r", 1.0, 1000.0, True)
     col = TieColumn("P3 model", np.array([0.0, -1.0]), np.array([-1.0, -2.0]),
                     np.array([10.0, 500.0]), scale, "resistivity", "ohm.m")
-    items = ContextItems(ties=[Tie(60.0, "p3", "P3", 30.0, 0.0, [col])])
-    img = _img(_results(items))
+    return ContextItems(ties=[Tie(60.0, "p3", "P3", 30.0, 0.0, [col])], points=list(points))
+
+
+def test_tie_strip_uses_host_profiles_scale(qgis_app):
+    """R14: the strip is drawn in the colour scale of the profile being viewed, from its
+    topmost visible layer of the same quantity (hidden and other-quantity layers skipped)."""
+    from geophysics_workbench.core.colors import ColorScale
+
+    own = ColorScale("Spectral_r", 1.0, 1000.0, True)
+    host = ColorScale("Spectral_r", 8.0, 40.0, True)
+    layers = [_host_layer("resistivity", ColorScale("gray", 1.0, 1000.0, True)),
+              _host_layer("resistivity", host),
+              _host_layer("chargeability", ColorScale("viridis", 0.0, 50.0, False)),
+              _host_layer("resistivity", ColorScale("jet", 1.0, 1000.0, True), visible=False)]
+    img = _img(_results(_tie_items(own), layers=layers))
     x = _x(60.0) + round(_mm(img, 1.5))
-    assert _close(img.pixel(x, _y(-0.5)), tuple(scale.rgba(10.0)[0][:3]))
-    assert _close(img.pixel(x, _y(-1.5)), tuple(scale.rgba(500.0)[0][:3]))
+    a, b = host.rgba(10.0)[0][:3].astype(int), own.rgba(10.0)[0][:3].astype(int)
+    assert np.abs(a - b).max() > 40                         # the two scales tell apart
+    assert _close(img.pixel(x, _y(-0.5)), tuple(host.rgba(10.0)[0][:3]))
+    assert _close(img.pixel(x, _y(-1.5)), tuple(host.rgba(500.0)[0][:3]))
     assert img.pixel(x + round(_mm(img, 4.0)), _y(-0.5)) == 0xFFFFFFFF
+
+
+def test_tie_strip_falls_back_to_its_own_scale(qgis_app):
+    """Without a visible layer of the strip's quantity on the viewed profile, the strip
+    keeps the other profile's own scale."""
+    from geophysics_workbench.core.colors import ColorScale
+
+    own = ColorScale("Spectral_r", 1.0, 1000.0, True)
+    for layers in ([], [_host_layer("chargeability", ColorScale("viridis", 0.0, 50.0, False)),
+                        _host_layer("resistivity", ColorScale("jet", 1.0, 9.0), visible=False)]):
+        img = _img(_results(_tie_items(own), layers=layers))
+        x = _x(60.0) + round(_mm(img, 1.5))
+        assert _close(img.pixel(x, _y(-0.5)), tuple(own.rgba(10.0)[0][:3]))
+        assert _close(img.pixel(x, _y(-1.5)), tuple(own.rgba(500.0)[0][:3]))
+
+
+def test_tie_strip_moves_off_a_borehole_column(qgis_app):
+    """R15: a borehole column right of the tie line sends the strip left of the line; a
+    column standing on the line (both sides blocked) sends it just past the column."""
+    from geophysics_workbench.core.colors import ColorScale
+    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
+    from geophysics_workbench.core.lithology import lithology_colour
+
+    scale = ColorScale("Spectral_r", 1.0, 1000.0, True)
+    blue = tuple(scale.rgba(10.0)[0][:3])
+    sand = lithology_colour("Sand")
+
+    def render(s_borehole):
+        bh = ProjectedPoint(s_borehole, 0.0, "B1", "borehole", 0.0,
+                            [LogInterval(0.0, 2.0, "Sand")])
+        return _img(_results(_tie_items(scale, [bh])))
+
+    img = render(50.0)                      # clear of the strip: it stays right of the line
+    mm = _mm(img, 1.0)                      # px per mm; the test maps 10 px to 1 m
+    x0, y = _x(60.0), _y(-0.5)
+    assert _close(img.pixel(x0 + round(1.5 * mm), y), blue)
+    # column right of the line (its left edge 0.35 mm past it): strip left of the line
+    img = render(60.0 + 1.6 * mm / 10.0)
+    assert _close(img.pixel(x0 - round(1.5 * mm), y), blue)
+    assert _close(img.pixel(x0 + round(1.6 * mm), y), sand)
+    # column on the line: the strip starts at its right edge (1.25 mm), left stays empty
+    img = render(60.0)
+    assert _close(img.pixel(x0 + round(1.25 * mm + 1.5 * mm), y), blue)
+    assert _close(img.pixel(x0 + round(0.6 * mm), y), sand)
+    assert _close(img.pixel(x0 - round(0.6 * mm), y), sand)
+    assert img.pixel(x0 - round(2.0 * mm), y) == 0xFFFFFFFF
+
+
+def test_tie_strip_is_framed_in_the_tie_colour(qgis_app):
+    """In the host's own scale the strip matches the section behind it, so a thin frame
+    in the tie colour keeps it readable as a column of its own."""
+    from geophysics_workbench.core.colors import ColorScale
+    from geophysics_workbench.section.context_render import TIE_COLOUR
+
+    img = _img(_results(_tie_items(ColorScale("Spectral_r", 1.0, 1000.0, True))))
+    edge = _x(60.0) + round(_mm(img, 3.0))
+    assert any(_close(img.pixel(x, _y(-0.5)), TIE_COLOUR, 40) for x in range(edge - 2, edge + 3))
+    assert not _close(img.pixel(_x(60.0) + round(_mm(img, 1.5)), _y(-0.5)), TIE_COLOUR, 40)
 
 
 def test_tie_without_scale_draws_no_strip(qgis_app):

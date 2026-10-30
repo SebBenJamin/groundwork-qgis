@@ -13,6 +13,28 @@ def _signed(value: float) -> str:
     return f"{MINUS if value < 0 else '+'}{abs(value):.1f}"
 
 
+def strip_start(points, tie_s: float, strip_width_s: float,
+                column_half_width_s: float) -> float:
+    """Chainage of a tie strip's left edge. The strip goes just right of the tie line;
+    where a borehole column stands there it moves to the nearest free slot instead: left
+    of the line when that is free, else just past the columns (a column centred on the
+    line blocks both sides), on the nearer side, the right on a draw. Shared by
+    ``context_render.draw_ties`` and the readout so both agree. Metres of chainage."""
+    cols = [(p.s - column_half_width_s, p.s + column_half_width_s)
+            for p in points if p.kind == "borehole" and p.log]
+
+    def blocker(a: float, b: float):
+        return next((c for c in cols if c[0] < b and c[1] > a), None)
+
+    right = tie_s                           # left edge of a strip right of the line
+    while (c := blocker(right, right + strip_width_s)) is not None:
+        right = c[1]
+    left = tie_s                            # right edge of a strip left of the line
+    while (c := blocker(left - strip_width_s, left)) is not None:
+        left = c[0]
+    return right if right - tie_s <= tie_s - left else left - strip_width_s
+
+
 def _dem_line(items: ContextItems, s: float, stations) -> str | None:
     if items.dem is None or len(items.dem[0]) < 1:
         return None
@@ -69,7 +91,8 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
                              f"{iv.top:.1f}\u2013{iv.bottom:.1f} m {iv.lithology}")
                 break
     for tie in items.ties:
-        if not 0.0 <= s - tie.s <= strip_width_s or not tie.columns:
+        start = strip_start(items.points, tie.s, strip_width_s, column_half_width_s)
+        if not start <= s <= start + strip_width_s or not tie.columns:
             continue
         col = tie.columns[0]
         for top, bot, v in zip(col.z_top, col.z_bottom, col.values):

@@ -132,7 +132,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             self._draw_stations(painter, rc, wt)
             if ctx is not None:
                 draw_over_stations(painter, rc, wt, ctx, self.snapshot.stations,
-                                   self._station_z, topo, (self._z[0], self._z[1]))
+                                   self._station_z, topo, (self._z[0], self._z[1]),
+                                   self.snapshot.layers)
         finally:
             painter.restore()
 

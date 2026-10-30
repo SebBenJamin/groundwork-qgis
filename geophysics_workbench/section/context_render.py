@@ -223,32 +223,58 @@ def tie_strip_column(tie):
     return col
 
 
+def strip_scale(col, host_layers):
+    """The scale a tie strip is drawn with: that of the viewed profile's topmost visible
+    layer of the column's quantity, so equal values look equal across the tie (finding
+    F2); the column's own scale when the viewed profile has no such layer."""
+    for la in reversed(host_layers or ()):                 # drawing order: last is on top
+        if (la.style.visible and la.mesh is not None and la.style.scale is not None
+                and la.dataset.quantity == col.quantity):
+            return la.style.scale
+    return col.scale
+
+
 def tie_label(tie) -> str:
     return tie.other_name + (f" · {round(tie.distance)} m" if tie.distance >= 0.5 else "")
 
 
-def draw_ties(painter, rc, wt, items, z_range, plan=None) -> None:
+def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> None:
+    """Dashed tie lines, each with a strip of the other profile's column just right of
+    the line, or in the nearest free slot beside a borehole column (``strip_start``)."""
+    from .context_readout import strip_start
+    from .context_render_points import COLUMN_WIDTH
+
     if not items.ties or not z_range[0] < z_range[1]:
         return
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    width = mm(rc, TIE_STRIP_WIDTH)
+    px_per_m = abs(wt.map(QPointF(1.0, 0.0)).x() - wt.map(QPointF(0.0, 0.0)).x()) or 1.0
     for tie in items.ties:
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(line_pen(rc, TIE_COLOUR, 0.3, dashed=True))
         _vertical(painter, wt, tie.s, z_range, (plan or {}).get(id(tie)))
-        x = wt.map(QPointF(tie.s, z_range[1])).x()
         col = tie_strip_column(tie)
         if col is None:
             continue
+        start = strip_start(items.points, tie.s, width / px_per_m,
+                            mm(rc, COLUMN_WIDTH) / 2 / px_per_m)
+        x = wt.map(QPointF(start, z_range[1])).x()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(Qt.PenStyle.NoPen)
-        for z_top, z_bot, rgba in zip(col.z_top, col.z_bottom, col.scale.rgba(col.values)):
+        rgba_all = strip_scale(col, host_layers).rgba(col.values)
+        ys = []
+        for z_top, z_bot, rgba in zip(col.z_top, col.z_bottom, rgba_all):
             if rgba[3] == 0:
                 continue
             y0 = wt.map(QPointF(tie.s, float(z_top))).y()
             y1 = wt.map(QPointF(tie.s, float(z_bot))).y()
             painter.setBrush(QBrush(QColor(*(int(c) for c in rgba))))
-            painter.drawRect(QRectF(QPointF(x, min(y0, y1)),
-                                    QPointF(x + mm(rc, TIE_STRIP_WIDTH), max(y0, y1))))
+            painter.drawRect(QRectF(QPointF(x, min(y0, y1)), QPointF(x + width, max(y0, y1))))
+            ys += [y0, y1]
+        if ys:              # in the host's scale the strip matches the section: frame it
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(line_pen(rc, TIE_COLOUR, 0.2))
+            painter.drawRect(QRectF(QPointF(x, min(ys)), QPointF(x + width, max(ys))))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
 
@@ -282,13 +308,15 @@ def draw_labels(painter, rc, items, plan: dict) -> None:
         draw_label(painter, lab.text, lab.x, lab.y, lab.rgb)
 
 
-def draw_over_stations(painter, rc, wt, items, stations, station_z, surface, z_range) -> None:
-    """Everything drawn after the stations: DEM, crossings, boreholes, ties, then labels."""
+def draw_over_stations(painter, rc, wt, items, stations, station_z, surface, z_range,
+                       host_layers=()) -> None:
+    """Everything drawn after the stations: DEM, crossings, boreholes, ties, then labels.
+    ``host_layers`` are the viewed profile's snapshot layers (tie strips use their scale)."""
     from .context_render_points import draw_points
 
     plan = plan_labels(painter, rc, wt, items, surface)
     draw_dem(painter, rc, wt, items, stations, station_z)
     draw_crossings(painter, rc, wt, items, z_range, plan)
     draw_points(painter, rc, wt, items, surface)
-    draw_ties(painter, rc, wt, items, z_range, plan)
+    draw_ties(painter, rc, wt, items, z_range, plan, host_layers)
     draw_labels(painter, rc, items, plan)

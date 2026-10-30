@@ -6,7 +6,7 @@ from .topography import station_line
 
 TOLERANCE_PX = 4.0
 COLUMN_MM = 2.5         # borehole column width, as drawn by context_render_points
-STRIP_MM = 3.0          # tie strip width, just right of the tie line
+STRIP_MM = 3.0          # tie strip width, beside the tie line (see context_readout.strip_start)
 
 
 def context_lines(dock, s: float, z: float) -> list[str]:
