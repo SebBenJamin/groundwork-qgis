@@ -145,13 +145,8 @@ def test_band_from_polygon_layer(project, profile):
 
 def _write_dem(path, nodata_cols=range(40, 50)):
     from osgeo import gdal, osr
-    before = gdal.GetUseExceptions()
-    gdal.UseExceptions()
-    try:
+    with gdal.ExceptionMgr(useExceptions=True), osr.ExceptionMgr(useExceptions=True):
         return _write_dem_raw(path, nodata_cols, gdal, osr)
-    finally:
-        if not before:
-            gdal.DontUseExceptions()
 
 
 def _write_dem_raw(path, nodata_cols, gdal, osr):
