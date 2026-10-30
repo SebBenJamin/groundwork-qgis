@@ -101,3 +101,35 @@ def test_hundred_thousand_centres_build_fast():
     elapsed = time.perf_counter() - t0
     assert kind == "rows" and len(mesh.cells) == 100_000
     assert elapsed < 1.0, f"{elapsed:.2f} s"
+
+
+def _topography_columns(xs, top, depths):
+    X, D = np.meshgrid(xs, depths)
+    return X.ravel(), np.round(top(X) - D, 3).ravel()
+
+
+def test_mirror_symmetric_topography_is_not_read_as_rows():
+    # 40 columns under a symmetric hill: every z occurs exactly twice (column j and its
+    # mirror), which once passed as rows of two 97.5 m wide cells
+    xs = 1.25 + 2.5 * np.arange(40)
+    depths = np.cumsum(0.5 * 1.1 ** np.arange(10)) - 0.25
+    x, z = _topography_columns(xs, lambda X: 50 + 5 * np.sin(np.pi * X / 100), depths)
+    mesh, kind = SectionMesh.from_cell_centres(x, z, np.full(x.size, 30.0), z_kind="elevation")
+    assert kind == "columns"
+    widths = np.ptp(mesh.vertices[mesh.cells][..., 0], axis=1)
+    assert widths == pytest.approx(2.5)
+    assert mesh.bounds()[:2] == pytest.approx((0.0, 100.0))
+
+
+def test_coarser_columns_at_depth_fall_back_to_delaunay():
+    # fine columns near the surface, coarser columns in between at depth: grouped by x
+    # they would draw as interleaved strips with gaps
+    xf = 1.25 + 2.5 * np.arange(40)
+    pts = [(x0, 50 + 0.03 * x0 - d) for x0 in xf for d in (0.25, 0.75, 1.25, 1.75)]
+    pts += [(x0, 50 + 0.03 * x0 - d) for x0 in 2.5 + 5 * np.arange(20) for d in (3, 5, 7, 9)]
+    pts = np.round(np.array(pts), 3)
+    v = np.full(len(pts), 30.0)
+    mesh, kind = SectionMesh.from_cell_centres(pts[:, 0], pts[:, 1], v, z_kind="elevation")
+    assert kind == "delaunay"
+    ref = SectionMesh.from_points(pts[:, 0], pts[:, 1], v)
+    np.testing.assert_array_equal(mesh.cells, ref.cells)

@@ -27,8 +27,10 @@ def describe(result: readers.ReaderResult, z_kind: str | None) -> str:
             f"{len(mesh.values)} cells · values {values.min():.3g} – {values.max():.3g} "
             f"{mesh.unit}" if len(values) else "no values")
     n_masked = int(result.provenance.get("n_masked") or 0)
-    if n_masked:
+    if n_masked and result.provenance.get("reconstruction") == "delaunay":
         text += f" · {n_masked} fill/NaN values skipped"
+    elif n_masked:
+        text += f" · {n_masked} {'cell' if n_masked == 1 else 'cells'} without a value (shown blank)"
     return text
 
 
@@ -41,7 +43,7 @@ class AddModelDialog(QDialog):
         self.setWindowTitle(f"Add ERT model to {profile.name}")
         self.dataset = None
         self.last_error = None
-        self._key = None                            # (path, reader) of the cached read
+        self._key = None                            # (path, reader, z_kind) of the cached read
         self._result = None
         self._auto_name = ""
 
@@ -125,25 +127,36 @@ class AddModelDialog(QDialog):
         if not path:
             self.preview.setText("Choose a model file.")
             return
-        key = (path, reader)
-        if key != self._key:
-            self._key, self._result = key, None
-            try:
-                self._result = readers.read(path, reader=reader)
-            except FileNotFoundError:
-                self._key = None                    # failures are not cached: re-read next time
-                self._show_error(f"File not found: {path}")
+        new_file = self._key is None or self._key[:2] != (path, reader)
+        if new_file:                                # the file's own z hint presets "Z means"
+            if not self._read(path, reader, None):
                 return
-            except (ValueError, OSError) as exc:
-                self._key = None
-                self._show_error(str(exc))
-                return
-            self.z_combo.blockSignals(True)         # preset from the file; unknown -> choose
+            self.z_combo.blockSignals(True)         # unknown -> choose
             self.z_combo.setCurrentIndex(max(0, self.z_combo.findData(self._result.z_kind)))
             self.z_combo.blockSignals(False)
+            self._key = (path, reader, self.z_combo.currentData())
+        z_kind = self.z_combo.currentData()
+        if self._key[2] != z_kind and not self._read(path, reader, z_kind):
+            return                                  # re-read: z decides the top edge
         self.preview.setStyleSheet("")
         self.preview.setText(describe(self._result, self.z_combo.currentData()))
         self._set_warning(self.overhang_warning())
+
+    def _read(self, path: str, reader: str, z_kind: str | None) -> bool:
+        """Read ``path`` with the chosen z meaning into the cache; show failures (which
+        are not cached, so the next preview reads again)."""
+        self._key, self._result = None, None
+        options = {"z_kind": z_kind} if z_kind else {}
+        try:
+            self._result = readers.read(path, reader=reader, **options)
+        except FileNotFoundError:
+            self._show_error(f"File not found: {path}")
+            return False
+        except (ValueError, OSError) as exc:
+            self._show_error(str(exc))
+            return False
+        self._key = (path, reader, z_kind)
+        return True
 
     def overhang_warning(self) -> str:
         """Warning when the read model, placed with the chosen station set and offset,
@@ -171,8 +184,8 @@ class AddModelDialog(QDialog):
                 raise ValueError("Choose a model file")
             if self.set_combo.currentData() is None:
                 raise ValueError("This profile has no station set to place the model on")
-            if self._key != (path, self.reader_combo.currentData()):
-                self._update_preview()              # the overhang check needs this file
+            if self._key != (path, self.reader_combo.currentData(), self.z_combo.currentData()):
+                self._update_preview()              # the overhang check needs this read
             warning = self.overhang_warning() if self._key is not None else ""
             if warning and QMessageBox.question(
                     self, self.windowTitle(), warning,

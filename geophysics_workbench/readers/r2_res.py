@@ -12,7 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .base import Reader, ReaderResult, is_log10_pair, mesh_from_resistivity_points
+from .base import (Reader, ReaderResult, chosen_z_kind, is_log10_pair,
+                   mesh_from_resistivity_points)
 from .textcols import read_columns, sniff_columns
 
 _NAME = re.compile(r"f(\d{3})_res\.dat", re.IGNORECASE)
@@ -37,11 +38,12 @@ class R2ResReader(Reader):
         if arr.shape[1] != 4:
             raise ValueError(f"{path.name}: expected 4 columns (x, z, resistivity, log10), "
                              f"found {arr.shape[1]}")
+        z_kind = chosen_z_kind(options, "elevation")
         mesh, n_masked, kind = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 2],
-                                                            path.name, "elevation")
+                                                            path.name, z_kind)
         m = _NAME.fullmatch(path.name)
         index = int(m.group(1)) if m else None
-        return ReaderResult(mesh, "elevation", {
+        return ReaderResult(mesh, z_kind, {
             "reader": self.name,
             "source_name": path.name,
             "file_index": index,

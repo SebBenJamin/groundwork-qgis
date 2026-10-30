@@ -4,6 +4,12 @@ ZondRes2D xyz and R2/ResIPy ``res.dat`` files store one value per cell, at its c
 When the centres line up in rows of constant z (or else columns of constant x), the real
 cells are rebuilt as quads: edges at the midpoints between neighbouring centres, outer
 edges half the neighbouring gap beyond the outermost centres. Fully vectorised.
+
+Grouping alone does not prove a grid. Coarser columns at depth interleave with fine ones,
+so each group's span must overlap its neighbouring groups' spans, or the cells would draw
+as strips with gaps. And a symmetric hill puts every elevation in exactly two columns, so
+its column model also groups into rows of two cells each: when both groupings work, the
+one with fewer, fuller groups is the grid (a coincidental grouping has many tiny groups).
 """
 from __future__ import annotations
 
@@ -31,15 +37,22 @@ def _outer_edges(level: np.ndarray, first: np.ndarray, last: np.ndarray):
     return lo, hi
 
 
+def _spans_overlap(lo_s, hi_s, first, last) -> bool:
+    """True when every group's span along ``b`` overlaps the next group's (arrays sorted
+    by group in level order, then ``b``): the groups' cells then join without gaps."""
+    g_lo, g_hi = lo_s[first], hi_s[last]
+    return bool(np.all(np.maximum(g_lo[1:], g_lo[:-1]) < np.minimum(g_hi[1:], g_hi[:-1])))
+
+
 def _grouped_boxes(a: np.ndarray, b: np.ndarray):
     """Boxes for centres grouped by equal ``a`` (rows when ``a`` is z), or None.
 
-    Returns ``(a_lo, a_hi, b_lo, b_hi, in_lowest, in_highest)`` in input order, where the
-    ``a`` edges come from the sorted group levels and the ``b`` edges from neighbours
-    inside each group; ``in_lowest`` / ``in_highest`` mark centres of the lowest / highest
-    ``a`` group.
-    None when there are fewer than 2 groups, a group with fewer than 2 centres, or two
-    centres of one group at the same ``b``."""
+    Returns ``(a_lo, a_hi, b_lo, b_hi, in_lowest, in_highest, n_groups)``, arrays in input
+    order: the ``a`` edges come from the sorted group levels and the ``b`` edges from
+    neighbours inside each group; ``in_lowest`` / ``in_highest`` mark centres of the
+    lowest / highest ``a`` group; ``n_groups`` counts the groups.
+    None when there are fewer than 2 groups, a group with fewer than 2 centres, two
+    centres of one group at the same ``b``, or neighbouring groups that do not overlap."""
     n = len(a)
     tol_a, tol_b = _tolerance(a), _tolerance(b)
     order_a = np.argsort(a, kind="stable")
@@ -64,29 +77,31 @@ def _grouped_boxes(a: np.ndarray, b: np.ndarray):
     if np.any(np.diff(bs)[~last[:-1]] <= tol_b):
         return None                                        # duplicate centre in a group
     lo_s, hi_s = _outer_edges(bs, first, last)
+    if not _spans_overlap(lo_s, hi_s, first, last):
+        return None                                        # strips with gaps between them
     b_lo, b_hi = np.empty(n), np.empty(n)
     b_lo[order], b_hi[order] = lo_s, hi_s
-    return lev_lo[gid], lev_hi[gid], b_lo, b_hi, gid == 0, gid == n_groups - 1
+    return lev_lo[gid], lev_hi[gid], b_lo, b_hi, gid == 0, gid == n_groups - 1, n_groups
 
 
 def cell_boxes(x, z, depth: bool = False) -> tuple[str, np.ndarray] | None:
     """``("rows" | "columns", boxes)`` with boxes ``(n, 4)`` = x_lo, x_hi, z_lo, z_hi in
-    input order, or None when the centres form neither rows nor columns.
+    input order, or None when the centres form neither rows nor columns that tile. When
+    both work, the grouping with fewer groups wins (rows on a tie).
 
     With ``depth`` the top edge of a row model is depth 0 (the surface): the lowest row
     edge when the depths are positive, the highest when they are given as negative z."""
     x, z = np.asarray(x, dtype=float).ravel(), np.asarray(z, dtype=float).ravel()
-    rows = _grouped_boxes(z, x)
-    if rows is not None:
-        z_lo, z_hi, x_lo, x_hi, in_first, in_last = rows
+    rows, cols = _grouped_boxes(z, x), _grouped_boxes(x, z)
+    if rows is not None and (cols is None or rows[-1] <= cols[-1]):
+        z_lo, z_hi, x_lo, x_hi, in_first, in_last, _n = rows
         if depth and z.min() >= 0:
             z_lo = np.where(in_first, 0.0, z_lo)
         elif depth and z.max() <= 0:
             z_hi = np.where(in_last, 0.0, z_hi)
         return "rows", np.column_stack([x_lo, x_hi, z_lo, z_hi])
-    cols = _grouped_boxes(x, z)
     if cols is not None:
-        x_lo, x_hi, z_lo, z_hi, _first, _last = cols
+        x_lo, x_hi, z_lo, z_hi, _first, _last, _n = cols
         return "columns", np.column_stack([x_lo, x_hi, z_lo, z_hi])
     return None
 

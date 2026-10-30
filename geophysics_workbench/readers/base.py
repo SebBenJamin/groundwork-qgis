@@ -39,6 +39,15 @@ class Reader:
 
 
 FILL_VALUE = -9999.0
+#: z meanings a user can choose; the ``z_kind`` read option wins over the file's own hint
+Z_CHOICES = ("elevation", "depth")
+
+
+def chosen_z_kind(options: dict, guess: str) -> str:
+    """The ``z_kind`` read option when it is a user choice (elevation/depth), else
+    ``guess`` (what the file itself suggests)."""
+    z = options.get("z_kind")
+    return z if z in Z_CHOICES else guess
 
 
 def fill_mask(v) -> np.ndarray:

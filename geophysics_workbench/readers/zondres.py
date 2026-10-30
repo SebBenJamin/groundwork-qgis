@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .base import Reader, ReaderResult, is_log10_pair, mesh_from_resistivity_points
+from .base import (Reader, ReaderResult, chosen_z_kind, is_log10_pair,
+                   mesh_from_resistivity_points)
 from .textcols import read_columns, sniff_columns
 
 
@@ -32,7 +33,7 @@ class ZondResReader(Reader):
             raise ValueError(f"{path.name}: expected at least 4 columns (x, z, log rho, rho), "
                              f"found {arr.shape[1]}")
         is_depth = header is not None and "depth" in " ".join(header).lower()
-        z_kind = "depth" if is_depth else "unknown"
+        z_kind = chosen_z_kind(options, "depth" if is_depth else "unknown")
         mesh, n_masked, kind = mesh_from_resistivity_points(arr[:, 0], arr[:, 1], arr[:, 3],
                                                             path.name, z_kind)
         return ReaderResult(mesh, z_kind, {

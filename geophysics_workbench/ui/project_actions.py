@@ -19,7 +19,7 @@ from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsP
 
 from .. import readers
 from ..core.model import Dataset, Profile, StationSet, file_fingerprint
-from ..section.data import WORKBENCH_KEYS
+from ..section.data import read_options
 from ..store.gpkg_store import ProjectStore
 
 SCOPE = "geophysics_workbench"
@@ -210,8 +210,7 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     path = Path(path)
     opts = dict(options)
     opts["chainage_offset"] = float(opts.get("chainage_offset") or 0.0)
-    result = readers.read(path, reader=reader or None,
-                          **{k: v for k, v in opts.items() if k not in WORKBENCH_KEYS})
+    result = readers.read(path, reader=reader or None, **read_options(opts))
     z_kind = opts.get("z_kind") or result.z_kind
     if z_kind not in Z_CHOICES:
         raise ValueError(f"Choose whether Z is elevation or depth for {path.name}")

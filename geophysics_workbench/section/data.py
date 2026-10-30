@@ -19,8 +19,17 @@ from ..core.model import Dataset, Profile, StationSet, data_to_chainage
 from ..core.section_mesh import SectionMesh
 from ..store.gpkg_store import ProjectStore
 
-#: reader_options keys applied by the provider, not passed to the reader
+#: reader_options keys applied by the provider, not passed to the reader as such
 WORKBENCH_KEYS = ("z_kind", "chainage_offset")
+
+
+def read_options(reader_options: dict) -> dict:
+    """Options for ``readers.read``: the reader's own options plus the user's ``z_kind``
+    choice, which decides where a cell-centre model's top edge goes (depth 0 or not)."""
+    options = {k: v for k, v in reader_options.items() if k not in WORKBENCH_KEYS}
+    if reader_options.get("z_kind"):
+        options["z_kind"] = reader_options["z_kind"]
+    return options
 DEPTH_NEEDS_TOPO = "depth model needs station elevations or a DEM"
 #: one QPainterPath element as serialised by QDataStream: int32 type, double x, double y
 PATH_ELEMENT = np.dtype([("t", ">i4"), ("x", ">f8"), ("y", ">f8")])
@@ -231,8 +240,7 @@ class SectionDataProvider:
         hit = self._cache.get(d.id)
         if hit is not None and hit[0] == key:
             return hit[1]
-        options = {k: v for k, v in d.reader_options.items() if k not in WORKBENCH_KEYS}
-        result = readers.read(path, reader=d.reader or None, **options)
+        result = readers.read(path, reader=d.reader or None, **read_options(d.reader_options))
         self._cache[d.id] = (key, result)
         return result
 
