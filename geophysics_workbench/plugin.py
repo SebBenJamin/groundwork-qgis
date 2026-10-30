@@ -9,11 +9,13 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
+from .section.context_layers import ContextGatherer
 from .section.data import SectionDataProvider
 from .section.dock import SectionDock
 from .section.map_link import MapLink
 from .section.profile_source import register_source, unregister_source
 from .ui import project_actions
+from .ui.context_dialog import read_settings
 
 MENU_TITLE = "Geophysics Workbench"
 _ICON_DIR = Path(__file__).parent / "icons"
@@ -26,6 +28,7 @@ class WorkbenchPlugin:
         self.actions = []
         self.provider: SectionDataProvider | None = None
         self.source = None
+        self.gatherer: ContextGatherer | None = None
         self.dock: SectionDock | None = None
         self.map_link: MapLink | None = None
         self.pick_action = None
@@ -91,6 +94,7 @@ class WorkbenchPlugin:
             self.dock.deleteLater()
             self.dock = None
         self._drop_source()
+        self._close_gatherer()
         self.provider = None
         if self.menu is not None:
             self.iface.mainWindow().menuBar().removeAction(self.menu.menuAction())
@@ -122,9 +126,15 @@ class WorkbenchPlugin:
         if self.dock is not None:
             self.dock.set_provider(None)
         self._drop_source()
+        self._close_gatherer()
         self.provider = None
         if store is not None:
             self.provider = SectionDataProvider(store)
+            project = QgsProject.instance()
+            self.gatherer = ContextGatherer(project, store.crs_authid,
+                                            on_change=self.provider.notify_changed)
+            self.provider.context_source = self.gatherer.items_for
+            self.provider.near_miss = read_settings(project).near_miss
             self.source = register_source(self.provider)
             if self.dock is not None:
                 self.dock.set_provider(self.provider, self.source)
@@ -134,6 +144,14 @@ class WorkbenchPlugin:
         if self.source is not None:
             unregister_source(self.source)
             self.source = None
+
+    def _close_gatherer(self):
+        """Stop the context gatherer watching layers; the provider no longer asks it."""
+        if self.provider is not None:
+            self.provider.context_source = None
+        if self.gatherer is not None:
+            self.gatherer.close()
+            self.gatherer = None
 
     # -- QGIS project --------------------------------------------------------------------------
     def _project_read(self, *_):
@@ -248,11 +266,15 @@ class WorkbenchPlugin:
         from .ui.context_dialog import ContextDialog
         if self.store is None:
             return
-        dialog = ContextDialog(self.iface, QgsProject.instance())
+        project = QgsProject.instance()
+        dialog = ContextDialog(self.iface, project)
         try:
-            dialog.exec()
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
         finally:
             dialog.deleteLater()
+        if accepted and self.provider is not None:
+            self.provider.near_miss = read_settings(project).near_miss
+            self.provider.notify_changed()               # redraw with the new layers now
 
     # -- actions -------------------------------------------------------------------------------
     def show_section_panel(self):

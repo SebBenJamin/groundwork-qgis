@@ -1,10 +1,12 @@
-"""Per-profile section data: meshes in chainage/elevation, styles, topography and stations.
+"""Per-profile section data: meshes in chainage/elevation, styles, topography, stations,
+context items and profile ties.
 
 QGIS-free. ``SectionDataProvider`` reads the project store and model files on the main
 thread; ``SectionSnapshot`` is the plain-data copy handed to profile-generator threads.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 from dataclasses import dataclass, replace
@@ -14,10 +16,13 @@ import numpy as np
 
 from .. import readers
 from ..core.colors import ColorScale
+from ..core.context import ContextItems
 from ..core.coverage import station_coverage
 from ..core.model import Dataset, Profile, StationSet, data_to_chainage
 from ..core.section_mesh import SectionMesh
+from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
+from .topography import TOPOGRAPHY_SOURCES, dem_line, station_line, topo_set
 
 #: reader_options keys applied by the provider, not passed to the reader as such
 WORKBENCH_KEYS = ("z_kind", "chainage_offset")
@@ -60,6 +65,8 @@ class SectionSnapshot:
     stations: list[tuple[float, str]]       # (chainage, label); label "" = tick only
     #: (min, max) station chainage over all station sets; None without stations
     coverage: tuple[float, float] | None = None
+    #: gathered context with the profile ties merged in; mirrored with the rest
+    context: ContextItems | None = None
 
 
 def _copy_style(style: LayerStyle) -> LayerStyle:
@@ -159,8 +166,29 @@ class SectionDataProvider:
         self.active_profile_id: str | None = None
         self._styles: dict[str, LayerStyle] = {}
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
+        self._gathered: dict[str, ContextItems] = {}            # profile id -> no ties
+        self._ties: dict[str, tuple[float, list[Tie]]] = {}     # id -> (near_miss, ties)
+        self._context_source: Callable[[Profile], ContextItems] | None = None
+        #: without a true crossing, profiles closer than this (metres) still tie
+        self.near_miss: float = 10.0
+
+    @property
+    def context_source(self) -> Callable[[Profile], ContextItems] | None:
+        """Gathers a profile's context in forward chainage; called on the main thread.
+        Setting it drops the cached context."""
+        return self._context_source
+
+    @context_source.setter
+    def context_source(self, source: Callable[[Profile], ContextItems] | None) -> None:
+        self._context_source = source
+        self._gathered.clear()
+        self._ties.clear()
 
     def notify_changed(self) -> None:
+        """Store, styles or context layers changed: drop the cached context and ties (they
+        depend on all three, and on the topography choice), then tell the listeners."""
+        self._gathered.clear()
+        self._ties.clear()
         for callback in list(self.on_change):
             callback()
 
@@ -197,24 +225,34 @@ class SectionDataProvider:
         self.notify_changed()
 
     # -- topography and stations -----------------------------------------------------------
-    @staticmethod
-    def _topo_set(sets: list[StationSet]) -> StationSet | None:
-        for s in sets:
-            if len(s.xyz) and np.isfinite(s.xyz[:, 2]).any():
-                return s
-        return None
-
-    @classmethod
-    def _topography_of(cls, sets: list[StationSet]) -> tuple[np.ndarray, np.ndarray] | None:
-        s = cls._topo_set(sets)
-        if s is None:
+    def _profile(self, profile_id: str) -> Profile | None:
+        try:
+            return self.store.profile(profile_id)
+        except KeyError:
             return None
-        ok = np.isfinite(s.xyz[:, 2]) & np.isfinite(s.chainage)
-        order = np.argsort(s.chainage[ok], kind="stable")
-        return s.chainage[ok][order].astype(float), s.xyz[ok, 2][order].astype(float)
+
+    def _chosen_topography(self, profile: Profile | None,
+                           sets: list[StationSet]) -> tuple[np.ndarray, np.ndarray] | None:
+        if profile is not None and profile.metadata.get("topography") == "dem":
+            line = dem_line(self._items(profile).dem)
+            if line is not None:
+                return line
+        return station_line(sets)
 
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
-        return self._topography_of(self.store.station_sets(profile_id))
+        """The surface depth models hang from: the DEM line when the profile's choice is
+        "dem" and the DEM has data along it, otherwise the station elevations."""
+        return self._chosen_topography(self._profile(profile_id),
+                                       self.store.station_sets(profile_id))
+
+    def set_topography_source(self, profile_id: str, source: str) -> None:
+        if source not in TOPOGRAPHY_SOURCES:
+            raise ValueError(f"topography source must be one of {TOPOGRAPHY_SOURCES}, "
+                             f"got {source!r}")
+        profile = self.store.profile(profile_id)
+        profile.metadata["topography"] = source
+        self.store.save_profile(profile)
+        self.notify_changed()
 
     def coverage(self, profile_id: str) -> tuple[float, float] | None:
         """(min, max) station chainage over the profile's station sets; beyond it a
@@ -275,7 +313,7 @@ class SectionDataProvider:
 
     def _assemble(self, profile_id: str):
         sets = self.store.station_sets(profile_id)
-        topo = self._topography_of(sets)
+        topo = self._chosen_topography(self._profile(profile_id), sets)
         by_id = {s.id: s for s in sets}
         layers = [self._layer(d, by_id, topo) for d in self.store.datasets(profile_id)]
         return layers, sets, topo
@@ -283,11 +321,46 @@ class SectionDataProvider:
     def layers(self, profile_id: str) -> list[SectionLayer]:
         return self._assemble(profile_id)[0]
 
+    # -- context and ties ------------------------------------------------------------------
+    def _items(self, profile: Profile) -> ContextItems:
+        """What ``context_source`` gathers for ``profile`` (no ties), cached until
+        ``notify_changed()``: the gatherer samples the DEM on every call."""
+        items = self._gathered.get(profile.id)
+        if items is None:
+            items = ContextItems()
+            if self._context_source is not None:
+                try:
+                    items = self._context_source(profile)
+                except Exception:               # a broken source must not break the section
+                    items = ContextItems()
+            self._gathered[profile.id] = items
+        return items
+
+    def ties(self, profile_id: str) -> list[Tie]:
+        """Ties with every other profile in the store, columns from that profile's visible
+        layers. Cached until ``notify_changed()`` or a new ``near_miss``."""
+        from .ties_data import build_ties       # ties_data imports this module
+        hit = self._ties.get(profile_id)
+        if hit is not None and hit[0] == self.near_miss:
+            return hit[1]
+        ties = build_ties(profile_id, self.store.profiles(), self.near_miss,
+                          lambda pid: self._assemble(pid)[0])
+        self._ties[profile_id] = (self.near_miss, ties)
+        return ties
+
+    def context(self, profile_id: str) -> ContextItems | None:
+        """Gathered context with the ties, in forward chainage; None for an unknown
+        profile. Shares the cached data: read-only."""
+        profile = self._profile(profile_id)
+        if profile is None:
+            return None
+        return replace(self._items(profile), ties=self.ties(profile_id))
+
     def snapshot(self, profile_id: str, reverse: bool = False) -> SectionSnapshot:
         """Detached plain-data copy for a generator thread. ``reverse`` mirrors chainage
         (s -> length - s) for a profile curve drawn end-to-start."""
         layers, sets, topo = self._assemble(profile_id)
-        station_set = self._topo_set(sets) or (sets[0] if sets else None)
+        station_set = topo_set(sets) or (sets[0] if sets else None)
         stations = []
         if station_set is not None:
             stations = list(zip(station_set.chainage.astype(float).tolist(),
@@ -297,6 +370,7 @@ class SectionDataProvider:
         layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
                   for la in layers]
         coverage = station_coverage(sets)
+        context = copy.deepcopy(self.context(profile_id))
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for la in layers:
@@ -307,7 +381,9 @@ class SectionDataProvider:
             stations = [(length - s, label) for s, label in stations]
             if coverage is not None:
                 coverage = (length - coverage[1], length - coverage[0])
-        return SectionSnapshot(profile_id, layers, topo, stations, coverage)
+            if context is not None:
+                context = context.mirrored(length)
+        return SectionSnapshot(profile_id, layers, topo, stations, coverage, context)
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
         """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and
