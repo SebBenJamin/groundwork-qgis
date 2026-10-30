@@ -23,7 +23,9 @@ class TopoSwitch:
         self.sync()
 
     def sync(self) -> None:
-        """Show the open profile's saved choice; disable DEM when it has no data."""
+        """Show the open profile's saved choice; disable DEM when it has no data. A saved
+        "dem" without DEM data shows "Stations", the surface actually used (the saved
+        choice is kept, so the DEM is used again once it has data)."""
         try:
             provider, profile = self.dock.provider, self.dock._profile
         except ReferenceError:                  # the dock is gone
@@ -36,6 +38,8 @@ class TopoSwitch:
                 choice = provider.store.profile(profile.id).metadata.get("topography", "stations")
             except KeyError:
                 pass
+        if choice == "dem" and not have_dem:
+            choice = "stations"
         self.combo.blockSignals(True)
         self.combo.model().item(1).setEnabled(have_dem)
         self.combo.setCurrentIndex(max(0, self.combo.findData(choice)))

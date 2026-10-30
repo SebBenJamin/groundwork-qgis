@@ -25,15 +25,23 @@ from .dem_sampling import sample_point, sample_profile
 LOG_TAG = "Geophysics Workbench"
 DEBOUNCE_MS = 300
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+_NUMBERS = re.compile(r"\d+(?:[.,]\d+)?(?:\s*;\s*\d+(?:[.,]\d+)?)*")   # "380000;110000"
+_VOLTAGE_FIELD = ("volt", "spannung")
 _GEOMETRY = {"line": Qgis.GeometryType.Line, "point": Qgis.GeometryType.Point,
              "polygon": Qgis.GeometryType.Polygon}
 _SIGNALS = ("featureAdded", "featureDeleted", "geometryChanged", "attributeValueChanged",
             "dataChanged")
 
 
-def voltage_label(value: str) -> str:
-    """'380000;110000' -> '380 kV' (first number; >= 1000 means volts). Not a number: as is."""
-    match = _NUMBER.match(value.strip())
+def voltage_label(value: str, field: str = "") -> str:
+    """'380000;110000' -> '380 kV' (first number; >= 1000 means volts). Only a value that
+    is a number, or numbers separated by ';', is read as a voltage, unless the ``field``
+    name says it holds one ("volt", "spannung"): then its first number. Else as is, so a
+    name like "4711 Nord" stays a name."""
+    text = value.strip()
+    if _NUMBERS.fullmatch(text) is None and not any(w in field.lower() for w in _VOLTAGE_FIELD):
+        return value
+    match = _NUMBER.search(text)
     if match is None:
         return value
     number = float(match.group().replace(",", "."))
@@ -237,7 +245,7 @@ class ContextGatherer:
         for feature, geom in self._features(layer, box, (setting.label_field,)):
             label = _text(feature[setting.label_field]) if setting.label_field else ""
             if setting.powerline and label:
-                label = voltage_label(label)
+                label = voltage_label(label, setting.label_field or "")
             kind = "powerline" if setting.powerline else "line"
             parts = geom.asMultiPolyline() if geom.isMultipart() else [geom.asPolyline()]
             for part in parts:
@@ -256,7 +264,10 @@ class ContextGatherer:
     def _point_features(self, layer, box, fields):
         out = []
         for feature, geom in self._features(layer, box, fields):
-            p = geom.asMultiPoint()[0] if geom.isMultipart() else geom.asPoint()
+            try:
+                p = geom.asMultiPoint()[0] if geom.isMultipart() else geom.asPoint()
+            except (IndexError, TypeError, ValueError):   # empty geometry: skip the feature
+                continue
             out.append((feature, (p.x(), p.y())))
         return out
 

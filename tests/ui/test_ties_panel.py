@@ -42,6 +42,12 @@ class FakeDock:
     def __init__(self):
         self.calls = []
 
+    def show(self):
+        self.calls.append(("show",))
+
+    def raise_(self):
+        self.calls.append(("raise",))
+
     def open_profile(self, pid):
         self.calls.append(("open", pid))
         return True
@@ -117,7 +123,30 @@ def test_show_in_section_opens_profile_and_cursor(make_panel, demo_like):
     panel, _prov, dock = make_panel(demo_like[0])
     panel.table.selectRow(1)
     panel.show_button.click()
-    assert dock.calls == [("open", demo_like[1].id), ("cursor", approx(8.0))]
+    assert dock.calls == [("show",), ("raise",), ("open", demo_like[1].id),
+                          ("cursor", approx(8.0))]
+
+
+def test_show_in_section_brings_a_closed_section_panel_back(qgis_app, fake_iface, demo_like):
+    """R19a: the section panel may have been closed; "Show in section" reopens it."""
+    from geophysics_workbench.plugin import WorkbenchPlugin
+    st, p1, _p2, _p3 = demo_like
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        next(a for a in plugin.actions if a.text() == "Profile ties…").trigger()
+        panel, dock = plugin.ties_panel, plugin.dock
+        dock.close()
+        qgis_app.processEvents()
+        assert dock.isHidden()
+        panel.table.selectRow(1)
+        panel.show_button.click()
+        qgis_app.processEvents()
+        assert not dock.isHidden()
+        assert dock.current_profile_id() == p1.id and dock.cursor_chainage() == approx(8.0)
+    finally:
+        plugin.unload()
 
 
 def test_plot_has_two_lines_and_log_axis(make_panel, demo_like):

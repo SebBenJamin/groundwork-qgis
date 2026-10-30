@@ -5,10 +5,11 @@ from geophysics_workbench.core.context_settings import ContextSettings
 
 def _tif(path):
     from osgeo import gdal
-    ds = gdal.GetDriverByName("GTiff").Create(str(path), 2, 2, 1, gdal.GDT_Float32)
-    ds.SetGeoTransform((0, 1, 0, 2, 0, -1))
-    ds.GetRasterBand(1).Fill(1.0)
-    ds = None
+    with gdal.ExceptionMgr(useExceptions=True):         # scoped: no global GDAL state
+        ds = gdal.GetDriverByName("GTiff").Create(str(path), 2, 2, 1, gdal.GDT_Float32)
+        ds.SetGeoTransform((0, 1, 0, 2, 0, -1))
+        ds.GetRasterBand(1).Fill(1.0)
+        ds = None
 
 
 def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_path):

@@ -11,7 +11,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QDockWidget, QHeaderView, QL
                                  QPushButton, QSplitter, QTableWidget, QTableWidgetItem,
                                  QVBoxLayout, QWidget)
 
-from ..core.ties import TieColumn, TieMismatch, mismatch_text, tie_mismatch
+from ..core.ties import TieColumn, TieMismatch, mismatch_text, shown_column, tie_mismatch
 from ..section.data import SectionDataProvider
 from .ties_plot import TiesPlot
 
@@ -65,12 +65,6 @@ class SortItem(QTableWidgetItem):
         return a < b
 
 
-def _topmost(columns: list[TieColumn]) -> TieColumn | None:
-    """Last column = last drawn layer (``build_ties`` keeps the layer order); a layer
-    without cells at the tie does not count."""
-    return next((c for c in reversed(columns) if c.values.size), None)
-
-
 def _mismatch(a: TieColumn | None, b: TieColumn | None) -> tuple[TieMismatch | None, str]:
     if a is None or b is None:
         return None, NO_MODEL
@@ -93,8 +87,8 @@ def build_rows(provider: SectionDataProvider) -> list[TieRow]:
             for t in mine:
                 back = min(theirs, default=None,
                            key=lambda u: (u.s_other - t.s) ** 2 + (u.s - t.s_other) ** 2)
-                col_a = _topmost(back.columns) if back is not None else None
-                col_b = _topmost(t.columns)
+                col_a = shown_column(back) if back is not None else None
+                col_b = shown_column(t)
                 m, text = _mismatch(col_a, col_b)
                 rows.append(TieRow(a.id, b.id, a.name, b.name, t.s, t.s_other, t.distance,
                                    col_a, col_b, m, text))
@@ -208,5 +202,7 @@ class TiesPanel(QDockWidget):
         row = self.selected_row()
         if row is None:
             return
+        self.section_dock.show()                # a hidden or closed section panel comes back
+        self.section_dock.raise_()
         self.section_dock.open_profile(row.a_id)
         self.section_dock.show_cursor(row.s_a)

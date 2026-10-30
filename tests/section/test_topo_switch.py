@@ -43,8 +43,15 @@ def test_topo_combo_reflects_saved_choice_and_disables_missing_dem(store_with_mo
     dock = make_dock(st)
     dock.provider.context_source = lambda profile: _items(with_dem=False)
     dock.open_profile(p.id)
-    assert dock.topo_combo.currentData() == "dem"
     assert _topo_texts(dock)[1] == ("DEM", "dem", False)
+    # R19d: saved "dem" without DEM data shows what is used, the stations; the saved
+    # choice is kept and the DEM shows again once it has data
+    assert dock.topo_combo.currentData() == "stations"
+    assert st.profile(p.id).metadata["topography"] == "dem"
+    dock.provider.context_source = lambda profile: _items()
+    dock.topo.sync()
+    assert dock.topo_combo.currentData() == "dem"
+    assert _topo_texts(dock)[1] == ("DEM", "dem", True)
 
 
 def test_readout_lists_context_lines(store_with_model, make_dock):

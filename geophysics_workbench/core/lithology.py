@@ -4,17 +4,21 @@ from __future__ import annotations
 import colorsys
 import hashlib
 
+ROCK = (170, 90, 80)
+
 # first match wins, so more specific terms come before the ones they contain
+# ("sandstein" before "sand")
 _TABLE: list[tuple[tuple[str, ...], tuple[int, int, int]]] = [
     (("torf", "peat"), (90, 60, 30)),
     (("mutterboden", "topsoil"), (110, 80, 50)),
     (("kies", "gravel"), (230, 160, 60)),
+    (("sandstein", "sandstone"), ROCK),
     (("sand",), (240, 220, 120)),
     (("schluff", "silt"), (200, 170, 120)),
     (("lehm", "loam", "geschiebemergel"), (170, 130, 90)),
     (("ton", "clay"), (120, 140, 170)),
     (("mergel", "marl"), (170, 180, 150)),
-    (("fels", "rock", "bedrock", "sandstein", "kalk"), (170, 90, 80)),
+    (("fels", "rock", "bedrock", "kalk"), ROCK),
 ]
 
 

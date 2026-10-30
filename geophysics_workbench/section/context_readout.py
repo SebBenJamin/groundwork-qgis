@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..core.context import ContextItems
+from ..core.ties import strip_column
 from .readout import format_value, unit_label
 
 MINUS = "\u2212"
@@ -92,9 +93,9 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
                 break
     for tie in items.ties:
         start = strip_start(items.points, tie.s, strip_width_s, column_half_width_s)
-        if not start <= s <= start + strip_width_s or not tie.columns:
+        col = strip_column(tie)                 # the drawn strip's column, or none drawn
+        if col is None or not start <= s <= start + strip_width_s:
             continue
-        col = tie.columns[0]
         for top, bot, v in zip(col.z_top, col.z_bottom, col.values):
             if bot <= z <= top and np.isfinite(v):
                 unit = unit_label(col.unit)

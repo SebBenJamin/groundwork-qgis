@@ -1,6 +1,7 @@
 """The readout lines for third-party context under the cursor, and the second readout line."""
 import numpy as np
 
+from geophysics_workbench.core.colors import ColorScale
 from geophysics_workbench.core.context import (BandSegment, ContextItems, Crossing, LogInterval,
                                                ProjectedPoint)
 from geophysics_workbench.core.ties import Tie, TieColumn
@@ -12,7 +13,7 @@ S = np.array([0.0, 100.0])
 
 def _items():
     col = TieColumn("P3 model", np.array([100.0, 95.0]), np.array([95.0, 90.0]),
-                    np.array([95.3, np.nan]), None, "resistivity", "ohm.m")
+                    np.array([95.3, np.nan]), ColorScale(), "resistivity", "ohm.m")
     return ContextItems(
         crossings=[Crossing(10.0, "380 kV", "powerline", 75.0)],
         points=[ProjectedPoint(20.0, 4.0, "B1", "borehole", 100.0,
@@ -49,6 +50,15 @@ def test_context_hits_band_crossing_borehole_tie_dem():
     assert up == ["DEM 61.2 m (stations +1.8 m)"]
     items.dem = (S, np.array([np.nan, np.nan]))
     assert context_hits(items, 35.0, 97.0, 1.0, 0.5) == []
+
+
+def test_no_tie_readout_where_no_strip_is_drawn():
+    """A column without a colour scale draws no strip, so the readout shows no value."""
+    items = _items()
+    kw = dict(tol_s=1.0, column_half_width_s=0.5, strip_width_s=1.5)
+    assert context_hits(items, 40.7, 97.0, **kw)[0] == "Tie P3: 95.3 Ω·m"
+    items.ties[0].columns[0].scale = None
+    assert not any(h.startswith("Tie") for h in context_hits(items, 40.7, 97.0, **kw))
 
 
 def test_borehole_without_top_hangs_from_the_surface():

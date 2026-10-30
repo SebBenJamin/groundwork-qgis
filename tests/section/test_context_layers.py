@@ -77,6 +77,19 @@ def test_voltage_labels(project, profile):
     assert voltage_label("high") == "high"
     assert voltage_label("UW Nord 2") == "UW Nord 2"
     assert voltage_label(" 380000 ") == "380 kV"
+    assert voltage_label("110000; 20000") == "110 kV"
+
+
+def test_voltage_label_leaves_names_with_numbers_alone(project, profile):
+    """R19c: only a plain number (or a ';' list of them) is a voltage, unless the field's
+    name says it holds one."""
+    from geophysics_workbench.section.context_layers import voltage_label
+    assert voltage_label("4711 Nord") == "4711 Nord"
+    assert voltage_label("4711 Nord", "name") == "4711 Nord"
+    assert voltage_label("Leitung 380000") == "Leitung 380000"
+    assert voltage_label("380 kV", "voltage") == "380 kV"
+    assert voltage_label("110000 V", "Spannung_V") == "110 kV"
+    assert voltage_label("high", "voltage") == "high"
 
 
 def test_line_without_label_field_uses_layer_name(project, profile):
@@ -87,6 +100,26 @@ def test_line_without_label_field_uses_layer_name(project, profile):
     items = g.items_for(profile)
     g.close()
     assert [(c.label, c.kind) for c in items.crossings] == [("Road", "line")]
+
+
+def test_empty_multipoint_skips_only_that_feature(project, profile, monkeypatch):
+    """R19e: an empty multipoint has no first point; that feature is skipped, the rest of
+    the layer is kept. (QGIS' own providers mostly drop empty geometries at the bbox
+    filter, so the features are fed in directly.)"""
+    from qgis.core import QgsFeature, QgsGeometry
+    from geophysics_workbench.core.context_settings import ContextSettings
+    g = _gatherer(project, ContextSettings())
+    try:
+        empty, good, single = QgsFeature(), QgsFeature(), QgsFeature()
+        feed = [(empty, QgsGeometry.fromWkt("MultiPoint EMPTY")),
+                (good, QgsGeometry.fromWkt("MultiPoint((40 5), (41 5))")),
+                (single, QgsGeometry.fromWkt("Point(60 -3)"))]
+        monkeypatch.setattr(g, "_features", lambda layer, box, fields: iter(feed))
+        found = g._point_features(None, None, ())
+    finally:
+        g.close()
+    assert [(f is good or f is single, xy) for f, xy in found] == [(True, (40.0, 5.0)),
+                                                                    (True, (60.0, -3.0))]
 
 
 def test_points_in_other_crs_are_transformed(project, profile):

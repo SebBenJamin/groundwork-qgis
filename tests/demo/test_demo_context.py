@@ -59,6 +59,11 @@ def _powerline() -> np.ndarray:
 
 def _boreholes():
     from osgeo import ogr
+    with ogr.ExceptionMgr(useExceptions=True):          # scoped: no global GDAL state
+        return _boreholes_raw(ogr)
+
+
+def _boreholes_raw(ogr):
     ds = ogr.Open(str(CONTEXT / "boreholes.gpkg"))
     points = {f.GetField("id"): (f.GetField("name"), f.GetGeometryRef().GetX(),
                                  f.GetGeometryRef().GetY(), f.GetField("elevation"))
@@ -296,16 +301,17 @@ def test_rebuild_is_deterministic(demo, tmp_path):
         assert (data / rel).read_bytes() == (DEMO / "data" / rel).read_bytes(), rel
     for rel in ("pylons.geojson", "geology.geojson"):
         assert (context / rel).read_bytes() == (CONTEXT / rel).read_bytes(), rel
-    new, old = gdal.Open(str(context / "dem.tif")), gdal.Open(str(CONTEXT / "dem.tif"))
-    assert new.GetGeoTransform() == old.GetGeoTransform()
-    np.testing.assert_array_equal(new.ReadAsArray(), old.ReadAsArray())
-    new = old = None
     from osgeo import ogr
+    with gdal.ExceptionMgr(useExceptions=True), ogr.ExceptionMgr(useExceptions=True):
+        new, old = gdal.Open(str(context / "dem.tif")), gdal.Open(str(CONTEXT / "dem.tif"))
+        assert new.GetGeoTransform() == old.GetGeoTransform()
+        np.testing.assert_array_equal(new.ReadAsArray(), old.ReadAsArray())
+        new = old = None
 
-    def rows(path):
-        ds = ogr.Open(str(path))
-        out = {name: [(f.items(), f.GetGeometryRef().ExportToWkt() if f.GetGeometryRef()
-                       else None) for f in ds.GetLayerByName(name)]
-               for name in ("boreholes", "borehole_logs")}
-        return out
-    assert rows(context / "boreholes.gpkg") == rows(CONTEXT / "boreholes.gpkg")
+        def rows(path):
+            ds = ogr.Open(str(path))
+            out = {name: [(f.items(), f.GetGeometryRef().ExportToWkt() if f.GetGeometryRef()
+                           else None) for f in ds.GetLayerByName(name)]
+                   for name in ("boreholes", "borehole_logs")}
+            return out
+        assert rows(context / "boreholes.gpkg") == rows(CONTEXT / "boreholes.gpkg")

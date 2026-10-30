@@ -29,6 +29,22 @@ class Tie:
     columns: list[TieColumn]
 
 
+def shown_column(tie: Tie) -> TieColumn | None:
+    """The one column a tie shows everywhere (the strip on the section, the hover readout,
+    the ties panel): the topmost visible model of the other profile that has cells at the
+    tie. ``build_ties`` keeps the layer drawing order, so the last column is on top."""
+    return next((c for c in reversed(tie.columns) if c.values.size), None)
+
+
+def strip_column(tie: Tie) -> TieColumn | None:
+    """``shown_column`` when a strip of it can be drawn (it has a colour scale and finite
+    values); the readout shows a value only over such a strip."""
+    col = shown_column(tie)
+    if col is None or col.scale is None or not np.isfinite(np.asarray(col.values, float)).any():
+        return None
+    return col
+
+
 @dataclass
 class TieMismatch:
     z: np.ndarray                       # common sample grid
