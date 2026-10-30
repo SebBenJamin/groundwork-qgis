@@ -52,6 +52,7 @@ class SectionDock(QDockWidget):
         self._profile = None
         self._layers = None                     # cached provider.layers() of the open profile
         self._topo = None
+        self._coverage = None                   # (min, max) station chainage, with _topo
         self._cursor_s = None
 
         self.profile_combo = QComboBox()
@@ -237,7 +238,7 @@ class SectionDock(QDockWidget):
         self._profile = None
         if self.provider is not None:
             self.provider.active_profile_id = None
-        self._layers = self._topo = None
+        self._layers = self._topo = self._coverage = None
         self.fit.reset()
         self.canvas.clear()
         self.layer_list.set_layers(self.provider, [])
@@ -251,6 +252,7 @@ class SectionDock(QDockWidget):
                 return []
             self._layers = self.provider.layers(self._profile.id)
             self._topo = self.provider.topography(self._profile.id)
+            self._coverage = self.provider.coverage(self._profile.id)
         return self._layers
 
     def _sync_layers(self) -> None:
@@ -336,7 +338,9 @@ class SectionDock(QDockWidget):
             if topo is not None and len(topo[0]) > 1 and topo[0][0] <= s <= topo[0][-1]:
                 depth = float(np.interp(s, *topo)) - z
             hits = identify_layers(layers, s, z)
-        self.readout.setText(format_readout(s, z, depth, xy, hits))
+        cover = self._coverage
+        beyond = cover is not None and not cover[0] <= s <= cover[1]
+        self.readout.setText(format_readout(s, z, depth, xy, hits, beyond))
 
     def show_cursor(self, s: float | None) -> None:
         """Vertical guide at forward chainage ``s``; ``None`` hides it."""

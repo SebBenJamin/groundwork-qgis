@@ -28,6 +28,8 @@ RESULTS_TYPE = "geophysics_workbench_section"
 CURVE_TOLERANCE = 1.0          # metres: end points and length of canvas curve vs profile
 _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z ranges
 _MM = Qgis.RenderUnit.Millimeters
+#: drawn over models beyond the station coverage: white at 55 %, marked but readable
+BEYOND_COLOUR = QColor(255, 255, 255, 140)
 
 
 def _log_failure(what: str, exc: BaseException) -> None:
@@ -55,12 +57,13 @@ def _path_from_elements(elems: np.ndarray) -> QPainterPath:
 
 class WorkbenchProfileResults(QgsAbstractProfileResults):
     def __init__(self, snapshot: SectionSnapshot | None, layers: list, z_range: tuple,
-                 station_z: np.ndarray | None = None):
+                 station_z: np.ndarray | None = None, s_range: tuple | None = None):
         super().__init__()
         self.snapshot = snapshot
         self._layers = layers          # [(opacity, [(QColor, QPainterPath), ...])] bottom first
         self._z = z_range
         self._station_z = station_z    # tick elevations, aligned with snapshot.stations
+        self._s = s_range              # (min, max) chainage of the drawn layers
         self.render_count = 0
 
     def type(self):
@@ -117,6 +120,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             try:
                 painter.setTransform(wt, True)      # draw in (chainage, elevation) space
                 self._draw_cells(painter)
+                self._draw_beyond_stations(painter)
                 self._draw_topography(painter, rc)
             finally:
                 painter.restore()
@@ -144,6 +148,25 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                     painter.setPen(pen)
                 painter.drawPath(path)
         painter.setOpacity(1.0)
+
+    def _beyond_rects(self) -> list[QRectF]:
+        """Chainage ranges of the drawn layers outside the station coverage, over the
+        drawn z range, as (chainage, elevation) rectangles."""
+        cover = self.snapshot.coverage
+        if cover is None or self._s is None or not self._layers:
+            return []
+        (s0, s1), (z0, z1) = self._s, self._z
+        spans = [(s0, cover[0]), (cover[1], s1)]
+        return [QRectF(QPointF(a, z0), QPointF(b, z1)).normalized() for a, b in spans if b > a]
+
+    def _draw_beyond_stations(self, painter):
+        rects = self._beyond_rects()
+        if not rects:
+            return
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(BEYOND_COLOUR))
+        for rect in rects:
+            painter.drawRect(rect)
 
     def _draw_topography(self, painter, rc):
         topo = self.snapshot.topo
@@ -209,7 +232,7 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
     def _generate(self) -> bool:
         # touch only the snapshot (plain data) and value-type Qt classes
         snap = self._snapshot
-        layers, zs, tops = [], [], []
+        layers, zs, tops, ss = [], [], [], []
         station_z = None
         if snap is not None:
             for layer in snap.layers:
@@ -220,7 +243,8 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
                 groups = [(QColor(*(int(c) for c in rgba)), _path_from_elements(elems))
                           for rgba, elems in cell_path_groups(layer.mesh, layer.style.scale)]
                 layers.append((float(layer.style.opacity), groups))
-                zmin, zmax = layer.mesh.bounds()[2:]
+                smin, smax, zmin, zmax = layer.mesh.bounds()
+                ss.extend((smin, smax))
                 zs.extend((zmin, zmax))
                 tops.append(zmax)
             s = np.array([st[0] for st in snap.stations], dtype=float)
@@ -230,7 +254,8 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
             elif tops:                                  # no topography: top of the meshes
                 station_z = np.full(len(s), max(tops))
         z_range = (min(zs), max(zs)) if zs else _EMPTY_Z
-        self._results = WorkbenchProfileResults(snap, layers, z_range, station_z)
+        s_range = (min(ss), max(ss)) if ss else None
+        self._results = WorkbenchProfileResults(snap, layers, z_range, station_z, s_range)
         return True
 
     def takeResults(self):

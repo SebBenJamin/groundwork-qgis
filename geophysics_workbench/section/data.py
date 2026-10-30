@@ -14,6 +14,7 @@ import numpy as np
 
 from .. import readers
 from ..core.colors import ColorScale
+from ..core.coverage import station_coverage
 from ..core.model import Dataset, Profile, StationSet, data_to_chainage
 from ..core.section_mesh import SectionMesh
 from ..store.gpkg_store import ProjectStore
@@ -48,6 +49,8 @@ class SectionSnapshot:
     layers: list[SectionLayer]
     topo: tuple[np.ndarray, np.ndarray] | None
     stations: list[tuple[float, str]]       # (chainage, label); label "" = tick only
+    #: (min, max) station chainage over all station sets; None without stations
+    coverage: tuple[float, float] | None = None
 
 
 def _copy_style(style: LayerStyle) -> LayerStyle:
@@ -204,6 +207,11 @@ class SectionDataProvider:
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
         return self._topography_of(self.store.station_sets(profile_id))
 
+    def coverage(self, profile_id: str) -> tuple[float, float] | None:
+        """(min, max) station chainage over the profile's station sets; beyond it a
+        model has no stations (and a depth model no measured surface)."""
+        return station_coverage(self.store.station_sets(profile_id))
+
     # -- layers ----------------------------------------------------------------------------
     def source_path(self, d: Dataset) -> str:
         """Absolute path of ``d``'s model file; a relative ``source_path`` is resolved
@@ -280,6 +288,7 @@ class SectionDataProvider:
             topo = (topo[0].copy(), topo[1].copy())
         layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
                   for la in layers]
+        coverage = station_coverage(sets)
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for la in layers:
@@ -288,7 +297,9 @@ class SectionDataProvider:
             if topo is not None:
                 topo = (length - topo[0][::-1], topo[1][::-1].copy())
             stations = [(length - s, label) for s, label in stations]
-        return SectionSnapshot(profile_id, layers, topo, stations)
+            if coverage is not None:
+                coverage = (length - coverage[1], length - coverage[0])
+        return SectionSnapshot(profile_id, layers, topo, stations, coverage)
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
         """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and
