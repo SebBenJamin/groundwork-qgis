@@ -24,6 +24,7 @@ from .layer_list import LayerList
 from .profile_source import SOURCE_ID
 from .readout import format_readout
 from .topo_switch import TopoSwitch
+from .view_extent import data_extent, headroom_px
 from .view_fit import ViewFitter
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
@@ -37,9 +38,6 @@ MISSING_PROFILE = "Profile not found in the workbench project; it may have been 
 def _registered_source_for(provider):
     source = QgsApplication.profileSourceRegistry().findSourceById(SOURCE_ID)
     return source if getattr(source, "provider", None) is provider else None
-
-
-HEADROOM = 0.22          # of the z extent above the data when context is drawn
 
 
 class SectionDock(QDockWidget):
@@ -87,7 +85,7 @@ class SectionDock(QDockWidget):
         self.canvas.setTool(self._pan_tool)
         self.canvas.canvasPointHovered.connect(self._hovered)
         self.fit = ViewFitter(self.canvas, self.ve_spin, self._fit_extent, self._update_guide,
-                              self)
+                              self, self._fit_headroom)
         self.canvas.activeJobCountChanged.connect(self._jobs_changed)
         self.canvas.plotAreaChanged.connect(self._update_guide)
         self.canvas.scaleChanged.connect(self._update_guide)
@@ -279,29 +277,13 @@ class SectionDock(QDockWidget):
         self.errors.setVisible(bool(lines))
 
     # -- view --------------------------------------------------------------------------------
-    def _data_extent(self) -> tuple[float, float, float, float]:
-        s = [0.0, self._profile.chainage.length]
-        z = []
-        for layer in self._current_layers():
-            if layer.mesh is not None:
-                s0, s1, z0, z1 = layer.mesh.bounds()
-                s += [s0, s1]
-                z += [z0, z1]
-        if self._topo is not None and len(self._topo[0]):
-            s += [float(self._topo[0].min()), float(self._topo[0].max())]
-            z += [float(self._topo[1].min()), float(self._topo[1].max())]
-        if not z:
-            z = [-10.0, 0.0]
-        zmin, zmax = min(z), max(z)
-        if zmax - zmin < 1.0:
-            zmin, zmax = zmin - 0.5, zmax + 0.5
-        ctx = self.provider.context(self._profile.id)
-        if ctx is not None and (ctx.band or ctx.crossings or ctx.points or ctx.ties):
-            zmax += HEADROOM * (zmax - zmin)    # room for the band and its label rows
-        return min(s), max(s), zmin, zmax
-
     def _fit_extent(self):
-        return None if self._profile is None else self._data_extent()
+        """Data, topography, station heights and context z (view_extent.data_extent)."""
+        return None if self._profile is None else data_extent(self)
+
+    def _fit_headroom(self) -> float:
+        """Pixels the band and label rows need above the data (view_extent.headroom_px)."""
+        return 0.0 if self._profile is None else headroom_px(self)
 
     def zoom_full(self) -> None:
         """Fit the data and topography at the current vertical exaggeration. The view keeps

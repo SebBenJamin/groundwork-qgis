@@ -22,6 +22,7 @@ from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPai
 
 from .context_render import context_z_values, draw_band, draw_over_stations
 from .data import SectionDataProvider, SectionSnapshot, cell_path_groups, identify_layers
+from .topography import measured_line
 
 SOURCE_ID = "geophysics_workbench"
 SOURCE_NAME = "Geophysics Workbench"
@@ -31,6 +32,8 @@ _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z 
 _MM = Qgis.RenderUnit.Millimeters
 #: drawn over models beyond the station coverage: white at 55 %, marked but readable
 BEYOND_COLOUR = QColor(255, 255, 255, 140)
+#: thin line through the measured station heights when the models hang from the DEM
+MEASURED_COLOUR = QColor(70, 70, 70)
 
 
 def _log_failure(what: str, exc: BaseException) -> None:
@@ -39,6 +42,18 @@ def _log_failure(what: str, exc: BaseException) -> None:
     QgsMessageLog.logMessage is safe to call from any thread."""
     QgsMessageLog.logMessage(f"Section {what} failed: {type(exc).__name__}: {exc}",
                              SOURCE_NAME, Qgis.MessageLevel.Critical)
+
+
+def _guarded(what: str, painter, draw, *args) -> None:
+    """One drawing step on its own: a failure in it is logged, and the painter state and
+    the other steps (the stations above all) survive it."""
+    painter.save()
+    try:
+        draw(painter, *args)
+    except Exception as exc:
+        _log_failure(f"drawing ({what})", exc)
+    finally:
+        painter.restore()
 
 
 def _path_from_elements(elems: np.ndarray) -> QPainterPath:
@@ -63,7 +78,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         self.snapshot = snapshot
         self._layers = layers          # [(opacity, [(QColor, QPainterPath), ...])] bottom first
         self._z = z_range
-        self._station_z = station_z    # tick elevations, aligned with snapshot.stations
+        self._station_z = station_z    # tick elevations, aligned with snapshot.stations:
+        #                                the measured height, else the surface (or mesh top)
         self._s = s_range              # (min, max) chainage of the drawn layers
         self.render_count = 0
 
@@ -124,16 +140,19 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 self._draw_cells(painter)
                 self._draw_beyond_stations(painter)
                 self._draw_topography(painter, rc)
+                self._draw_measured_line(painter, rc)
             finally:
                 painter.restore()
             ctx = self.snapshot.context
             if ctx is not None and topo is not None:
-                draw_band(painter, rc, wt, ctx, topo)
+                _guarded("geology band", painter, draw_band, rc, wt, ctx, topo)
             self._draw_stations(painter, rc, wt)
             if ctx is not None:
-                draw_over_stations(painter, rc, wt, ctx, self.snapshot.stations,
-                                   self._station_z, topo, (self._z[0], self._z[1]),
-                                   self.snapshot.layers)
+                heights = self.snapshot.station_heights
+                measured = self._station_z if heights is None else heights
+                _guarded("context", painter, draw_over_stations, rc, wt, ctx,
+                         self.snapshot.stations, measured, topo, (self._z[0], self._z[1]),
+                         self.snapshot.layers)
         finally:
             painter.restore()
 
@@ -188,6 +207,20 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.drawPolyline(QPolygonF([QPointF(s, z) for s, z in zip(*topo)]))
 
+    def _draw_measured_line(self, painter, rc):
+        """When the models hang from the DEM, a thin solid line joins the measured station
+        heights, so the two surfaces can be compared (spec 4.2: show both)."""
+        snap = self.snapshot
+        line = measured_line(snap.stations, snap.station_heights) if snap.dem_topo else None
+        if line is None:
+            return
+        pen = QPen(MEASURED_COLOUR, max(1.0, rc.convertToPainterUnits(0.15, _MM)))
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.drawPolyline(QPolygonF([QPointF(s, z) for s, z in zip(*line)]))
+
     def _draw_stations(self, painter, rc, wt):
         stations, z = self.snapshot.stations, self._station_z
         if not stations or z is None:
@@ -200,6 +233,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         painter.setPen(QPen(QColor(0, 0, 0), 1))
         painter.setBrush(QBrush(QColor(0, 0, 0)))
         for (si, label), zi in zip(stations, z.tolist()):
+            if not math.isfinite(zi):                   # no measured height and no surface
+                continue
             p = wt.map(QPointF(si, zi))
             x, y = p.x(), p.y()
             # apex on the surface, base above it
@@ -262,7 +297,14 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
                 station_z = np.interp(s, *snap.topo)
             elif tops:                                  # no topography: top of the meshes
                 station_z = np.full(len(s), max(tops))
-            zs.extend(context_z_values(snap))
+            heights = snap.station_heights
+            if heights is not None and len(heights) == len(s) and np.isfinite(heights).any():
+                # ticks at the measured heights, whatever surface the models hang from
+                measured = np.isfinite(heights)
+                station_z = np.where(measured, heights,
+                                     np.nan if station_z is None else station_z)
+                zs.extend(heights[measured].tolist())
+            zs.extend(context_z_values(snap.context, snap.topo))
         z_range = (min(zs), max(zs)) if zs else _EMPTY_Z
         s_range = (min(ss), max(ss)) if ss else None
         self._results = WorkbenchProfileResults(snap, layers, z_range, station_z, s_range)

@@ -28,6 +28,41 @@ def station_line(sets: list[StationSet]) -> tuple[np.ndarray, np.ndarray] | None
     return s.chainage[ok][order].astype(float), s.xyz[ok, 2][order].astype(float)
 
 
+def station_labels(numbers: np.ndarray) -> list[str]:
+    """Label the first station and every station whose number is a multiple of 10."""
+    numbers = np.asarray(numbers, dtype=int)
+    first = int(numbers.min()) if len(numbers) else None
+    return [str(n) if (n % 10 == 0 or n == first) else "" for n in numbers.tolist()]
+
+
+def station_marks(sets: list[StationSet]) -> tuple[list[tuple[float, str]], np.ndarray]:
+    """The station ticks of a section, from ``topo_set(sets)`` (else the first set):
+    ``[(chainage, label), ...]`` and the measured elevations aligned with them (nan where
+    a station has none). The ticks are drawn at the measured heights whatever surface the
+    models hang from, so a DEM that disagrees with them shows (spec 4.2)."""
+    st = topo_set(sets) or (sets[0] if sets else None)
+    if st is None:
+        return [], np.empty(0)
+    z = (st.xyz[:, 2].astype(float) if len(st.xyz) == len(st.chainage)
+         else np.full(len(st.chainage), np.nan))
+    return list(zip(st.chainage.astype(float).tolist(), station_labels(st.numbers))), z.copy()
+
+
+def measured_line(stations: list[tuple[float, str]], heights: np.ndarray | None
+                  ) -> tuple[np.ndarray, np.ndarray] | None:
+    """(s, z) of the ``stations`` (as in the snapshot) that have a measured height,
+    ascending; None with fewer than two."""
+    if heights is None or len(heights) != len(stations):
+        return None
+    s = np.array([st[0] for st in stations], dtype=float)
+    z = np.asarray(heights, dtype=float)
+    ok = np.isfinite(s) & np.isfinite(z)
+    if ok.sum() < 2:
+        return None
+    order = np.argsort(s[ok], kind="stable")
+    return s[ok][order], z[ok][order]
+
+
 def dem_line(dem: tuple[np.ndarray, np.ndarray] | None,
              stations: tuple[np.ndarray, np.ndarray] | None = None
              ) -> tuple[np.ndarray, np.ndarray] | None:

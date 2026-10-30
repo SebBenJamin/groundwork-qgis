@@ -14,6 +14,7 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 
 from ..core.lithology import lithology_colour
+from ..core.ties import strip_column
 
 _MM = Qgis.RenderUnit.Millimeters
 BAND_GAP = 1.5                          # mm between the station number labels and the band
@@ -40,9 +41,13 @@ def line_pen(rc, rgb, width_mm: float, dashed: bool = False) -> QPen:
     return pen
 
 
+def label_font_px(px_per_mm: float, size_mm: float = 2.6) -> int:
+    return max(9, round(px_per_mm * size_mm))
+
+
 def set_label_font(painter, rc, size_mm: float = 2.6) -> QFont:
     font = QFont(painter.font())
-    font.setPixelSize(max(9, round(mm(rc, size_mm))))
+    font.setPixelSize(label_font_px(mm(rc, 1.0), size_mm))
     painter.setFont(font)
     return font
 
@@ -81,10 +86,23 @@ def dem_at(dem, s) -> np.ndarray:
 def band_offsets(rc) -> tuple[float, float]:
     """Device offsets above the surface of the band's lower and upper edge: clear of the
     station triangles and their number labels (see ``WorkbenchProfileResults._draw_stations``)."""
-    half = max(3.0, mm(rc, 1.0))
-    number = max(10, round(mm(rc, 3.0)))
-    near = 2 * half + 1.6 * number + mm(rc, BAND_GAP)
-    return near, near + mm(rc, BAND_THICKNESS)
+    return band_offsets_px(mm(rc, 1.0))
+
+
+def band_offsets_px(px_per_mm: float) -> tuple[float, float]:
+    """``band_offsets`` for ``px_per_mm`` device pixels per millimetre."""
+    half = max(3.0, px_per_mm)
+    number = max(10, round(px_per_mm * 3.0))
+    near = 2 * half + 1.6 * number + px_per_mm * BAND_GAP
+    return near, near + px_per_mm * BAND_THICKNESS
+
+
+def context_headroom_px(px_per_mm: float, line_height: float, labels: bool = True) -> float:
+    """Device pixels the band and, with ``labels``, ``LABEL_ROWS`` rows of labels need
+    above the surface, as ``plan_labels`` places them; ``line_height`` is the label font's
+    height (``fontMetrics().height()``). The section panel fits its view with it."""
+    _, far = band_offsets_px(px_per_mm)
+    return far + px_per_mm * 1.0 + (LABEL_ROWS * (line_height + 1) if labels else 0.0)
 
 
 # -- geology band ------------------------------------------------------------------------------
@@ -116,7 +134,10 @@ def draw_band(painter, rc, wt, items, surface) -> None:
 
 
 # -- DEM line and flagged stations ---------------------------------------------------------------
-def draw_dem(painter, rc, wt, items, stations, station_z) -> None:
+def draw_dem(painter, rc, wt, items, stations, heights) -> None:
+    """Dashed DEM line, and a red triangle on each station whose measured height
+    (``heights``, aligned with ``stations``; nan = none) is off the DEM by more than the
+    tolerance, drawn at that measured height in either topography mode."""
     if items.dem is None:
         return
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -129,15 +150,15 @@ def draw_dem(painter, rc, wt, items, stations, station_z) -> None:
         if b - a >= 2:
             painter.drawPolyline(QPolygonF([wt.map(QPointF(float(ds[k]), float(dz[k])))
                                             for k in range(a, b)]))
-    if not stations or station_z is None:
+    if not stations or heights is None:
         return
     s = np.array([st[0] for st in stations], float)
     with np.errstate(invalid="ignore"):
-        flagged = np.abs(np.asarray(station_z, float) - dem_at(items.dem, s)) > items.dem_tolerance
+        flagged = np.abs(np.asarray(heights, float) - dem_at(items.dem, s)) > items.dem_tolerance
     half = max(3.0, mm(rc, 1.0))
     painter.setPen(QPen(QColor(*FLAG_COLOUR), 1))
     painter.setBrush(QBrush(QColor(*FLAG_COLOUR)))
-    for si, zi in zip(s[flagged], np.asarray(station_z, float)[flagged]):    # nan compares False
+    for si, zi in zip(s[flagged], np.asarray(heights, float)[flagged]):    # nan compares False
         p = wt.map(QPointF(float(si), float(zi)))
         x, y = p.x(), p.y()
         painter.drawPolygon(QPolygonF([QPointF(x, y), QPointF(x - half, y - 2 * half),
@@ -216,11 +237,8 @@ def draw_crossings(painter, rc, wt, items, z_range, plan=None) -> None:
 
 
 def tie_strip_column(tie):
-    """The one column drawn beside a tie line: the first, if it has a scale and values."""
-    col = tie.columns[0] if tie.columns else None
-    if col is None or col.scale is None or not np.isfinite(np.asarray(col.values, float)).any():
-        return None
-    return col
+    """The one column drawn beside a tie line (``core.ties.strip_column``)."""
+    return strip_column(tie)
 
 
 def strip_scale(col, host_layers):
@@ -278,13 +296,13 @@ def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> Non
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
 
-def context_z_values(snapshot) -> list[float]:
-    """Elevations the context needs on the z axis: borehole log bottoms and tie columns."""
-    items = snapshot.context
+def context_z_values(items, topo) -> list[float]:
+    """Elevations the context ``items`` need on the z axis: borehole log bottoms and the
+    drawn tie columns; ``topo`` is the surface a borehole without its own top hangs from.
+    Used by the generator's ``zRange`` and the section panel's "Zoom full"."""
     if items is None:
         return []
     out: list[float] = []
-    topo = snapshot.topo
     for p in items.points:
         if not p.log:
             continue
@@ -308,14 +326,15 @@ def draw_labels(painter, rc, items, plan: dict) -> None:
         draw_label(painter, lab.text, lab.x, lab.y, lab.rgb)
 
 
-def draw_over_stations(painter, rc, wt, items, stations, station_z, surface, z_range,
+def draw_over_stations(painter, rc, wt, items, stations, heights, surface, z_range,
                        host_layers=()) -> None:
     """Everything drawn after the stations: DEM, crossings, boreholes, ties, then labels.
-    ``host_layers`` are the viewed profile's snapshot layers (tie strips use their scale)."""
+    ``heights`` are the measured station heights; ``host_layers`` the viewed profile's
+    snapshot layers (tie strips use their scale)."""
     from .context_render_points import draw_points
 
     plan = plan_labels(painter, rc, wt, items, surface)
-    draw_dem(painter, rc, wt, items, stations, station_z)
+    draw_dem(painter, rc, wt, items, stations, heights)
     draw_crossings(painter, rc, wt, items, z_range, plan)
     draw_points(painter, rc, wt, items, surface)
     draw_ties(painter, rc, wt, items, z_range, plan, host_layers)

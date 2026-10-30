@@ -9,13 +9,16 @@ from typing import Callable
 from qgis.PyQt.QtCore import QTimer
 
 PAD = 0.06                      # fraction of the data extent added on each side by zoom_full
+MAX_HEADROOM = 0.6              # of the plot height at most goes to the room above the data
 
 Extent = tuple[float, float, float, float]
 
 
 class ViewFitter:
     """Fits ``canvas`` to ``extent()`` (``(s0, s1, z0, z1)``, or ``None`` when nothing is
-    open) at the exaggeration of ``ve_spin``; ``on_fitted`` runs after every fit.
+    open) at the exaggeration of ``ve_spin``, keeping ``headroom()`` pixels free above it
+    (for the geology band and the context labels, a fixed pixel height however tall the
+    plot is); ``on_fitted`` runs after every fit.
 
     Its timers are children of ``parent`` (the dock), and the dock forwards the canvas'
     active job count to ``jobs_changed``. The two callbacks are held weakly: a dock <-> fitter
@@ -23,10 +26,12 @@ class ViewFitter:
     still delivers events to it."""
 
     def __init__(self, canvas, ve_spin, extent: Callable[[], Extent | None],
-                 on_fitted: Callable[[], None], parent):
+                 on_fitted: Callable[[], None], parent,
+                 headroom: Callable[[], float] | None = None):
         self.canvas, self.ve_spin = canvas, ve_spin
         self._extent_ref = weakref.WeakMethod(extent)
         self._fitted_ref = weakref.WeakMethod(on_fitted)
+        self._headroom_ref = None if headroom is None else weakref.WeakMethod(headroom)
         self.pending = False                    # re-fit the view until the user navigates
         self.fit_view = None                    # visible range set by the last zoom_full
         self.jobs = 0
@@ -40,6 +45,10 @@ class ViewFitter:
     def _extent(self) -> Extent | None:
         extent = self._extent_ref()
         return None if extent is None else extent()
+
+    def _headroom(self) -> float:
+        headroom = None if self._headroom_ref is None else self._headroom_ref()
+        return 0.0 if headroom is None else max(0.0, float(headroom()))
 
     def _on_fitted(self) -> None:
         on_fitted = self._fitted_ref()
@@ -67,8 +76,9 @@ class ViewFitter:
         self.pending = True
         s0, s1, z0, z1 = extent
         ds, dz = (s1 - s0) * (1 + 2 * PAD), (z1 - z0) * (1 + 2 * PAD)
-        sc, zc = (s0 + s1) / 2, (z0 + z1) / 2
+        sc = (s0 + s1) / 2
         ve = self.ve_spin.value()
+        need = self._headroom()
         canvas = self.canvas
         canvas.setLockAxisScales(False)
         for _ in range(2):                      # the plot area depends on the axis labels
@@ -76,8 +86,11 @@ class ViewFitter:
             w, h = area.width(), area.height()
             if w < 20 or h < 20:
                 w, h = max(canvas.width() - 80.0, 200.0), max(canvas.height() - 40.0, 100.0)
-            epp = max(dz / h, ds / (w * ve))    # elevation per pixel; distance per pixel = ve * epp
+            room = min(need, MAX_HEADROOM * h)  # pixels kept free above the padded data
+            # elevation per pixel; distance per pixel = ve * epp
+            epp = max(dz / (h - room), ds / (w * ve))
             dpp = ve * epp
+            zc = (z0 + z1 + room * epp) / 2     # the padded data low, the room above it
             canvas.setVisiblePlotRange(sc - dpp * w / 2, sc + dpp * w / 2,
                                        zc - epp * h / 2, zc + epp * h / 2)
         canvas.setAxisScaleRatio(ve)

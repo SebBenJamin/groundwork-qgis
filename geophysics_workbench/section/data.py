@@ -23,7 +23,7 @@ from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
-from .topography import TOPOGRAPHY_SOURCES, dem_line, station_line, topo_set
+from .topography import TOPOGRAPHY_SOURCES, dem_line, station_line, station_marks
 
 #: reader_options keys applied by the provider, not passed to the reader as such
 WORKBENCH_KEYS = ("z_kind", "chainage_offset")
@@ -68,6 +68,10 @@ class SectionSnapshot:
     coverage: tuple[float, float] | None = None
     #: gathered context with the profile ties merged in; mirrored with the rest
     context: ContextItems | None = None
+    #: measured station elevations aligned with ``stations`` (nan where missing)
+    station_heights: np.ndarray | None = None
+    #: True when ``topo`` is the DEM line, not the station elevations
+    dem_topo: bool = False
 
 
 def _copy_style(style: LayerStyle) -> LayerStyle:
@@ -147,13 +151,6 @@ def matching_profiles(profiles: list[Profile], xy: np.ndarray,
             out.append(best)
     out.sort(key=lambda m: m[0])                # stable: (name, id) order on ties
     return out
-
-
-def station_labels(numbers: np.ndarray) -> list[str]:
-    """Label the first station and every station whose number is a multiple of 10."""
-    numbers = np.asarray(numbers, dtype=int)
-    first = int(numbers.min()) if len(numbers) else None
-    return [str(n) if (n % 10 == 0 or n == first) else "" for n in numbers.tolist()]
 
 
 class SectionDataProvider:
@@ -236,20 +233,20 @@ class SectionDataProvider:
         except KeyError:
             return None
 
-    def _chosen_topography(self, profile: Profile | None,
-                           sets: list[StationSet]) -> tuple[np.ndarray, np.ndarray] | None:
+    def _chosen_topography(self, profile: Profile | None, sets: list[StationSet]):
+        """(surface line or None, True when that line is the DEM)."""
         stations = station_line(sets)
         if profile is not None and profile.metadata.get("topography") == "dem":
             line = dem_line(self._items(profile).dem, stations)
             if line is not None:
-                return line
-        return stations
+                return line, True
+        return stations, False
 
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
         """The surface depth models hang from: the DEM line when the profile's choice is
         "dem" and the DEM has data along it, otherwise the station elevations."""
         return self._chosen_topography(self._profile(profile_id),
-                                       self.store.station_sets(profile_id))
+                                       self.store.station_sets(profile_id))[0]
 
     def set_topography_source(self, profile_id: str, source: str) -> None:
         if source not in TOPOGRAPHY_SOURCES:
@@ -319,10 +316,10 @@ class SectionDataProvider:
 
     def _assemble(self, profile_id: str):
         sets = self.store.station_sets(profile_id)
-        topo = self._chosen_topography(self._profile(profile_id), sets)
+        topo, dem_topo = self._chosen_topography(self._profile(profile_id), sets)
         by_id = {s.id: s for s in sets}
         layers = [self._layer(d, by_id, topo) for d in self.store.datasets(profile_id)]
-        return layers, sets, topo
+        return layers, sets, topo, dem_topo
 
     def layers(self, profile_id: str) -> list[SectionLayer]:
         return self._assemble(profile_id)[0]
@@ -361,12 +358,8 @@ class SectionDataProvider:
     def snapshot(self, profile_id: str, reverse: bool = False) -> SectionSnapshot:
         """Detached plain-data copy for a generator thread. ``reverse`` mirrors chainage
         (s -> length - s) for a profile curve drawn end-to-start."""
-        layers, sets, topo = self._assemble(profile_id)
-        station_set = topo_set(sets) or (sets[0] if sets else None)
-        stations = []
-        if station_set is not None:
-            stations = list(zip(station_set.chainage.astype(float).tolist(),
-                                station_labels(station_set.numbers)))
+        layers, sets, topo, dem_topo = self._assemble(profile_id)
+        stations, heights = station_marks(sets)     # heights: plain z, unchanged by mirroring
         if topo is not None:
             topo = (topo[0].copy(), topo[1].copy())
         layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
@@ -385,7 +378,8 @@ class SectionDataProvider:
                 coverage = (length - coverage[1], length - coverage[0])
             if context is not None:
                 context = context.mirrored(length)
-        return SectionSnapshot(profile_id, layers, topo, stations, coverage, context)
+        return SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
+                               dem_topo)
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
         """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and

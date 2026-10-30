@@ -257,6 +257,43 @@ def test_tie_strip_is_framed_in_the_tie_colour(qgis_app):
     assert not _close(img.pixel(_x(60.0) + round(_mm(img, 1.5)), _y(-0.5)), TIE_COLOUR, 40)
 
 
+def test_strip_readout_and_panel_show_the_same_topmost_column(qgis_app):
+    """Important 2: with two models on the other profile, the strip, the hover readout
+    and the ties panel all describe its topmost visible model that has cells at the tie
+    (the last column), whether the bottom model is empty there or not."""
+    from types import SimpleNamespace
+
+    from geophysics_workbench.core.colors import ColorScale
+    from geophysics_workbench.core.context import ContextItems
+    from geophysics_workbench.core.ties import Tie, TieColumn
+    from geophysics_workbench.section.context_readout import context_hits
+    from geophysics_workbench.ui.ties_panel import build_rows
+
+    scale = ColorScale("Spectral_r", 1.0, 1000.0, True)
+
+    def column(name, values):
+        n = len(values)
+        return TieColumn(name, -np.arange(n, dtype=float), -np.arange(1, n + 1, dtype=float),
+                         np.array(values, float), scale, "resistivity", "ohm.m")
+
+    top = column("P3 top", [10.0, 10.0])
+    for bottom in (column("P3 empty", []), column("P3 bottom", [500.0, 500.0])):
+        tie = Tie(60.0, "p3", "P3", 30.0, 0.0, [bottom, top])
+        items = ContextItems(ties=[tie])
+        img = _img(_results(items))                                 # strip
+        x = _x(60.0) + round(_mm(img, 1.5))
+        assert _close(img.pixel(x, _y(-0.5)), tuple(scale.rgba(10.0)[0][:3])), bottom.dataset_name
+        hits = context_hits(items, 60.5, -0.5, 0.1, 0.1, 1.0)       # readout
+        assert [h for h in hits if h.startswith("Tie")] == ["Tie P3: 10.0 Ω·m"]
+        back = Tie(30.0, "p1", "P1", 60.0, 0.0, [column("P1 model", [12.0, 12.0])])
+        provider = SimpleNamespace(                                  # panel
+            store=SimpleNamespace(profiles=lambda: [SimpleNamespace(id="p1", name="P1"),
+                                                    SimpleNamespace(id="p3", name="P3")]),
+            ties=lambda pid: {"p1": [tie], "p3": [back]}[pid])
+        [row] = build_rows(provider)
+        assert row.col_b is top
+
+
 def test_tie_without_scale_draws_no_strip(qgis_app):
     from geophysics_workbench.core.context import ContextItems
     from geophysics_workbench.core.ties import Tie, TieColumn

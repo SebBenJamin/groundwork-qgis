@@ -1,0 +1,53 @@
+"""What the section panel's "Zoom full" fits: the box of the data, topography, station
+heights and context (borehole logs, tie strips), and the pixels the geology band and the
+context labels need above it. The pixel figures come from ``context_render``, which draws
+them, so the view and the drawing cannot drift apart."""
+from __future__ import annotations
+
+import numpy as np
+from qgis.PyQt.QtGui import QFont, QFontMetrics
+
+from .context_render import context_headroom_px, context_z_values, label_font_px
+from .topography import station_line
+
+Extent = tuple[float, float, float, float]
+
+
+def data_extent(dock) -> Extent:
+    """(s0, s1, z0, z1) of the dock's open profile, in forward chainage and elevation."""
+    profile = dock._profile
+    s = [0.0, profile.chainage.length]
+    z = []
+    for layer in dock._current_layers():                 # also fills dock._topo
+        if layer.mesh is not None:
+            s0, s1, z0, z1 = layer.mesh.bounds()
+            s += [s0, s1]
+            z += [z0, z1]
+    topo = dock._topo
+    if topo is not None and len(topo[0]):
+        s += [float(topo[0].min()), float(topo[0].max())]
+        z += [float(topo[1].min()), float(topo[1].max())]
+    stations = station_line(dock.provider.store.station_sets(profile.id))
+    if stations is not None and len(stations[1]):        # the ticks sit at measured heights
+        z += [float(stations[1].min()), float(stations[1].max())]
+    z += context_z_values(dock.provider.context(profile.id), topo)
+    z = [v for v in z if np.isfinite(v)] or [-10.0, 0.0]
+    zmin, zmax = min(z), max(z)
+    if zmax - zmin < 1.0:
+        zmin, zmax = zmin - 0.5, zmax + 0.5
+    return min(s), max(s), zmin, zmax
+
+
+def headroom_px(dock) -> float:
+    """Pixels above the data top for the geology band and the label rows; 0 without
+    context to draw there."""
+    ctx = dock.provider.context(dock._profile.id)
+    if ctx is None:
+        return 0.0
+    labels = bool(ctx.crossings or ctx.points or ctx.ties)
+    if not (labels or ctx.band):
+        return 0.0
+    px_per_mm = dock.canvas.logicalDpiY() / 25.4
+    font = QFont(dock.canvas.font())
+    font.setPixelSize(label_font_px(px_per_mm))
+    return context_headroom_px(px_per_mm, QFontMetrics(font).height(), labels)
