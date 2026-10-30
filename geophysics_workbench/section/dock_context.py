@@ -13,7 +13,11 @@ def context_lines(dock, s: float, z: float) -> list[str]:
     """What third-party context lies under (s, z) of the dock's open profile; the canvas
     distance is forward chainage, as is the provider's context."""
     dock._current_layers()                  # fills the cached drawn topography
-    ctx = dock.provider.context(dock._profile.id)
+    if dock._ctx is None:                   # cached like _layers: no store reads per mouse move
+        pid = dock._profile.id
+        dock._ctx = (dock.provider.context(pid),
+                     station_line(dock.provider.store.station_sets(pid)))
+    ctx, stations = dock._ctx
     if ctx is None:
         return []
     rng, area = dock.canvas.visibleDistanceRange(), dock.canvas.plotArea()
@@ -21,6 +25,5 @@ def context_lines(dock, s: float, z: float) -> list[str]:
         return []
     per_px = (rng.upper() - rng.lower()) / area.width()
     per_mm = per_px * dock.logicalDpiX() / 25.4
-    stations = station_line(dock.provider.store.station_sets(dock._profile.id))
     return context_hits(ctx, s, z, TOLERANCE_PX * per_px, COLUMN_MM / 2 * per_mm,
                         STRIP_MM * per_mm, surface=dock._topo, stations=stations)

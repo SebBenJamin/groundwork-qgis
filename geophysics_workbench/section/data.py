@@ -345,6 +345,11 @@ class SectionDataProvider:
         self._ties[profile_id] = (self.near_miss, ties)
         return ties
 
+    def has_dem(self, profile_id: str) -> bool:
+        """True when the gathered context has a DEM; cheap (cached, no ties)."""
+        profile = self._profile(profile_id)
+        return profile is not None and self._items(profile).dem is not None
+
     def context(self, profile_id: str) -> ContextItems | None:
         """Gathered context with the ties, in forward chainage; None for an unknown
         profile. Shares the cached data: read-only."""

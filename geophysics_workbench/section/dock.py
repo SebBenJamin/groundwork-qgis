@@ -56,6 +56,7 @@ class SectionDock(QDockWidget):
         self._source = None
         self._profile = None
         self._layers = None                     # cached provider.layers() of the open profile
+        self._ctx = None                        # cached (context items, station line), dock_context
         self._topo = None
         self._coverage = None                   # (min, max) station chainage, with _topo
         self._cursor_s = None
@@ -168,7 +169,7 @@ class SectionDock(QDockWidget):
     def _refresh_now(self) -> None:
         if self.provider is None:
             return
-        self._layers = None
+        self._layers = self._ctx = None
         self._fill_combo()
         self.topo.sync()
         if self._profile is None:
@@ -226,7 +227,7 @@ class SectionDock(QDockWidget):
             return False
         self._profile = profile
         self.provider.active_profile_id = profile.id    # wins over profiles on the same line
-        self._layers = None
+        self._layers = self._ctx = None
         self._fill_combo()
         self.topo.sync()
         self.canvas.setCrs(QgsCoordinateReferenceSystem(self.provider.store.crs_authid))
@@ -249,7 +250,7 @@ class SectionDock(QDockWidget):
         self._profile = None
         if self.provider is not None:
             self.provider.active_profile_id = None
-        self._layers = self._topo = self._coverage = None
+        self._layers = self._topo = self._coverage = self._ctx = None
         self.fit.reset()
         self.canvas.clear()
         self.layer_list.set_layers(self.provider, [])

@@ -24,12 +24,14 @@ class TopoSwitch:
 
     def sync(self) -> None:
         """Show the open profile's saved choice; disable DEM when it has no data."""
-        provider, profile = self.dock.provider, self.dock._profile
+        try:
+            provider, profile = self.dock.provider, self.dock._profile
+        except ReferenceError:                  # the dock is gone
+            return
         have_dem = False
         choice = "stations"
         if provider is not None and profile is not None:
-            ctx = provider.context(profile.id)
-            have_dem = ctx is not None and ctx.dem is not None
+            have_dem = provider.has_dem(profile.id)
             try:                                # fresh: the dock's copy may predate a switch
                 choice = provider.store.profile(profile.id).metadata.get("topography", "stations")
             except KeyError:
@@ -41,7 +43,10 @@ class TopoSwitch:
         self.combo.blockSignals(False)
 
     def _changed(self, _index: int) -> None:
-        dock = self.dock
-        if dock.provider is None or dock._profile is None:
+        try:
+            dock = self.dock
+            if dock.provider is None or dock._profile is None:
+                return
+            dock.provider.set_topography_source(dock._profile.id, self.combo.currentData())
+        except ReferenceError:                  # the dock is gone
             return
-        dock.provider.set_topography_source(dock._profile.id, self.combo.currentData())

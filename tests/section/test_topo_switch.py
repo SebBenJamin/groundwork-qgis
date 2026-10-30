@@ -56,3 +56,43 @@ def test_readout_lists_context_lines(store_with_model, make_dock):
     lines = dock.readout.text().split("\n")
     assert lines[1].startswith("Surface geology: Talsand")
     assert "DEM 99.0 m (stations " in lines[1]
+
+
+def test_switch_fires_once_per_user_change_not_on_sync(store_with_model, make_dock, qgis_app):
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.provider.context_source = lambda profile: _items()
+    dock.open_profile(p.id)
+    calls = []
+    real = dock.provider.set_topography_source
+    dock.provider.set_topography_source = lambda pid, src: (calls.append((pid, src)), real(pid, src))
+    dock.topo.sync()
+    dock.topo.sync()
+    assert calls == []
+    dock.topo_combo.setCurrentIndex(1)
+    assert calls == [(p.id, "dem")]
+    qgis_app.processEvents()
+    dock.topo.sync()
+    assert calls == [(p.id, "dem")]
+
+
+def test_readout_does_not_read_the_store_per_mouse_move(store_with_model, make_dock, qgis_app):
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.provider.context_source = lambda profile: _items()
+    dock.open_profile(p.id)
+    qgis_app.processEvents()
+    dock._show_readout(25.0, 100.0)                     # fills the caches
+    counts = {"profile": 0, "station_sets": 0}
+    for name in counts:
+        real = getattr(st, name)
+        setattr(st, name, lambda *a, _r=real, _n=name, **k: (counts.__setitem__(_n, counts[_n] + 1),
+                                                           _r(*a, **k))[1])
+    for s in (10.0, 20.0, 30.0, 40.0):
+        dock._show_readout(s, 100.0)
+    assert counts == {"profile": 0, "station_sets": 0}
+    dock._refresh_now()                                 # a refresh re-reads, then it is cached again
+    dock._show_readout(25.0, 100.0)
+    after = dict(counts)
+    dock._show_readout(26.0, 100.0)
+    assert counts == after
