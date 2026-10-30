@@ -8,12 +8,16 @@ interface, opens each profile in the section panel and saves the panel as a PNG:
 writes <out_dir>/<version>-P1.png, -P2.png and -ties.png (version defaults to
 metadata.txt, out_dir to docs/releases). P1 is the R2 elevation model, P2 the Zond depth
 model (checks depth conversion against the topography). P2 is zoomed to its upper part
-from the powerline crossing on, at a higher vertical exaggeration, so the 2 m road
-embankment on the DEM line near s = 250 is visible. The ties panel is shown with the
-P1 x P3 row selected.
+from the powerline crossing on, at a higher vertical exaggeration, with Topography on DEM:
+the surface follows the 2 m road embankment near s = 250, while the stations stay at
+their measured heights (red) on a thin line of their own. The ties panel is shown with
+the P1 x P3 row selected. The demo is copied to a temporary folder first, so switching
+the topography never writes to the committed demo/demo_workbench.gpkg.
 """
 import os
+import shutil
 import sys
+import tempfile
 import time
 from configparser import ConfigParser
 from pathlib import Path
@@ -28,8 +32,9 @@ from qgis.core import QgsApplication, QgsProject  # noqa: E402
 from qgis.PyQt.QtCore import QCoreApplication, QEvent, QEventLoop, QTimer  # noqa: E402
 from qgis.PyQt.QtGui import QFont  # noqa: E402
 
-#: profile name -> (vertical exaggeration, zoom); zoom (s0, s1, z_top) or None = whole section
-PROFILES = {"P1": (2.0, None), "P2": (4.0, (125.0, 360.0, 77.0))}
+#: profile name -> (vertical exaggeration, zoom, topography); zoom (s0, s1, z_top) or
+#: None = whole section
+PROFILES = {"P1": (2.0, None, "stations"), "P2": (4.0, (125.0, 360.0, 77.0), "dem")}
 SIZE = (1400, 560)
 TIES_SIZE = (900, 720)
 TIES_ROW = "P1 × P3"
@@ -109,12 +114,12 @@ def version() -> str:
     return cp["general"]["version"]
 
 
-def render(out_dir: Path, ver: str) -> list[Path]:
+def render(out_dir: Path, ver: str, demo: Path) -> list[Path]:
     from geophysics_workbench.plugin import WorkbenchPlugin
 
     project = QgsProject.instance()
-    if not project.read(str(REPO / "demo" / "demo_project.qgz")):
-        raise RuntimeError("could not read demo/demo_project.qgz")
+    if not project.read(str(demo / "demo_project.qgz")):
+        raise RuntimeError(f"could not read {demo / 'demo_project.qgz'}")
     iface = FakeIface()
     plugin = WorkbenchPlugin(iface)
     plugin.initGui()                                 # attaches the demo's workbench store
@@ -129,8 +134,9 @@ def render(out_dir: Path, ver: str) -> list[Path]:
         app = QgsApplication.instance()
         app.processEvents()
         by_name = {p.name: p.id for p in plugin.store.profiles()}
-        for name, (ve, zoom) in PROFILES.items():
+        for name, (ve, zoom, topography) in PROFILES.items():
             dock.ve_spin.setValue(ve)
+            plugin.provider.set_topography_source(by_name[name], topography)
             dock.open_profile(by_name[name])
             wait_idle(app, dock)
             if zoom is not None:
@@ -183,7 +189,10 @@ def main() -> int:
     app.initQgis()
     app.setFont(QFont(UI_FONT, 9))   # offscreen Qt otherwise picks an odd fallback font
     try:
-        render(out_dir, ver)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            demo = Path(tmp) / "demo"
+            shutil.copytree(REPO / "demo", demo)
+            render(out_dir, ver, demo)
         return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
