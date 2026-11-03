@@ -40,6 +40,7 @@ class WorkbenchPlugin:
         self.ties_action = None
         self.ties_panel = None
         self._profile_dialog = None
+        self._context_dialog = None
         self._project_signals = []
 
     @property
@@ -90,6 +91,7 @@ class WorkbenchPlugin:
                 pass
         self._project_signals.clear()
         self._close_profile_dialog()
+        self._close_context_dialog()
         self._close_ties_panel()
         if self.map_link is not None:
             self.map_link.unload()
@@ -129,6 +131,7 @@ class WorkbenchPlugin:
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
         self._close_profile_dialog()
+        self._close_context_dialog()
         self._close_ties_panel()
         if self.dock is not None:
             self.dock.set_provider(None)
@@ -290,15 +293,34 @@ class WorkbenchPlugin:
         from .ui.context_dialog import ContextDialog
         if self.store is None:
             return
+        if self._context_dialog is not None:
+            self._context_dialog.show()
+            self._context_dialog.raise_()
+            self._context_dialog.activateWindow()
+            return
         project = QgsProject.instance()
-        dialog = ContextDialog(self.iface, project)
-        try:
-            accepted = dialog.exec() == QDialog.DialogCode.Accepted
-        finally:
-            dialog.deleteLater()
-        if accepted and self.provider is not None:
-            self.provider.near_miss = read_settings(project).near_miss
+        dialog = ContextDialog(self.iface, project,
+                               exclude=own_layer_ids(self.store, project))
+        dialog.applied.connect(self._context_applied)
+        dialog.finished.connect(lambda _r, d=dialog: self._context_finished(d))
+        self._context_dialog = dialog
+        dialog.show()                                    # non-modal: the map stays usable
+
+    def _context_applied(self):
+        if self.provider is not None:
+            self.provider.near_miss = read_settings(QgsProject.instance()).near_miss
             self.provider.notify_changed()               # redraw with the new layers now
+
+    def _context_finished(self, dialog):
+        if self._context_dialog is dialog:
+            self._context_dialog = None
+        dialog.deleteLater()
+
+    def _close_context_dialog(self):
+        dialog, self._context_dialog = self._context_dialog, None
+        if dialog is not None:
+            dialog.reject()
+            dialog.deleteLater()
 
     def show_ties_panel(self):
         from .ui.ties_panel import TiesPanel

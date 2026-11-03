@@ -239,3 +239,41 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     assert got.dem_layer_id == ""
     assert got.line_layers == saved.line_layers and got.borehole == saved.borehole
     assert got.band == saved.band
+
+
+def test_context_dialog_is_non_modal_and_apply_redraws(qgis_app, fake_iface, store_with_model):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench.plugin import WorkbenchPlugin
+    from geophysics_workbench.section.crossing_lines import own_layer_ids
+    from geophysics_workbench.ui.project_actions import add_store_layers
+
+    store = store_with_model[0]
+    project = QgsProject.instance()
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        add_store_layers(store, project)
+        plugin.set_store(store)
+        plugin.edit_context()
+        dlg = plugin._context_dialog
+        assert dlg.isVisible() and not dlg.isModal()
+        plugin.edit_context()
+        assert plugin._context_dialog is dlg
+        own = own_layer_ids(store, project)
+        assert own and not own & set(dlg.lines.rows) and not own & set(dlg.point_rows)
+        calls = []
+        plugin.provider.on_change.append(lambda: calls.append(1))
+        dlg.near_miss_spin.setValue(20)
+        dlg.apply_button.click()
+        assert plugin.provider.near_miss == 20
+        assert calls == [1]
+        assert dlg.isVisible()
+        plugin.set_store(None)
+        assert plugin._context_dialog is None
+    finally:
+        plugin.unload()
+        project.removeAllMapLayers()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
