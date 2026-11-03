@@ -15,7 +15,7 @@ def _items():
     col = TieColumn("P3 model", np.array([100.0, 95.0]), np.array([95.0, 90.0]),
                     np.array([95.3, np.nan]), ColorScale(), "resistivity", "ohm.m")
     return ContextItems(
-        crossings=[Crossing(10.0, "380 kV", "powerline", 75.0)],
+        crossings=[Crossing(10.0, "380 kV", "line", 75.0, (220, 0, 0), "Powerline (OSM)")],
         points=[ProjectedPoint(20.0, 4.0, "B1", "borehole", 100.0,
                                [LogInterval(0.0, 2.0, "Sand"), LogInterval(2.0, 6.5, "Ton")])],
         band=[BandSegment(0.0, 30.0, "Talsand")],
@@ -27,7 +27,7 @@ def test_context_hits_band_crossing_borehole_tie_dem():
     items, stations = _items(), (S, np.array([59.4, 59.4]))
     kw = dict(tol_s=1.0, column_half_width_s=0.5, strip_width_s=1.5, stations=stations)
     assert context_hits(items, 10.5, 99.0, **kw) == [
-        "Surface geology: Talsand", "Crossing: 380 kV (powerline, 75°)",
+        "Surface geology: Talsand", "Crossing: 380 kV · Powerline (OSM), 75°",
         "DEM 61.2 m (stations −1.8 m)"]
     assert context_hits(items, 20.2, 95.0, **kw) == [
         "Surface geology: Talsand", "Borehole B1 (+4 m): 2.0–6.5 m Ton",
@@ -106,3 +106,9 @@ def test_tie_readout_follows_the_strip_off_a_borehole_column():
     assert "Tie P3: 95.3 Ω·m" in context_hits(items, 39.0, 97.0, **kw)
     for s in (38.4, 40.7):
         assert not any(h.startswith("Tie") for h in context_hits(items, s, 97.0, **kw))
+
+
+def test_crossing_readout_omits_layer_when_same_as_label():
+    items = ContextItems(crossings=[Crossing(10.0, "Road", "line", 90.0, layer="Road")])
+    assert context_hits(items, 10.0, 0.0, tol_s=1.0, column_half_width_s=0.5) == [
+        "Crossing: Road, 90°"]

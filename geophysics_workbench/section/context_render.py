@@ -13,6 +13,7 @@ from qgis.core import Qgis
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 
+from ..core.context import DEFAULT_LINE_RGB
 from ..core.lithology import lithology_colour
 from ..core.ties import strip_column
 
@@ -23,8 +24,7 @@ LABEL_ROWS = 3
 BAND_OPACITY = 0.85
 DEM_COLOUR = (140, 90, 40)
 FLAG_COLOUR = (220, 30, 30)             # station whose height disagrees with the DEM
-POWERLINE_COLOUR = (255, 120, 0)
-LINE_COLOUR = (90, 90, 90)
+LINE_COLOUR = DEFAULT_LINE_RGB
 TIE_COLOUR = (30, 60, 160)
 TIE_STRIP_WIDTH = 3.0                   # mm
 
@@ -191,9 +191,7 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
     specs = []
     for c in items.crossings:
         if c.kind != "profile":                        # drawn as a tie
-            power = c.kind == "powerline"
-            specs.append((c, c.s, ("⚡ " if power else "") + c.label,
-                          POWERLINE_COLOUR if power else LINE_COLOUR))
+            specs.append((c, c.s, c.label, c.rgb))
     specs += [(t, t.s, tie_label(t), TIE_COLOUR) for t in items.ties]
     for p in items.points:
         text = (f"{p.label} {offset_text(p.offset)}".strip()
@@ -230,9 +228,7 @@ def draw_crossings(painter, rc, wt, items, z_range, plan=None) -> None:
     for c in items.crossings:
         if c.kind == "profile":
             continue
-        power = c.kind == "powerline"
-        painter.setPen(line_pen(rc, POWERLINE_COLOUR if power else LINE_COLOUR,
-                                0.6 if power else 0.3, dashed=True))
+        painter.setPen(line_pen(rc, c.rgb, 0.4, dashed=True))
         _vertical(painter, wt, c.s, z_range, (plan or {}).get(id(c)))
 
 

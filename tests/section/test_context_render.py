@@ -83,7 +83,7 @@ def test_crossing_label_lies_above_the_band(qgis_app):
     from geophysics_workbench.core.context import BandSegment, ContextItems, Crossing
 
     items = ContextItems(band=[BandSegment(50.0, 70.0, "Sand")],
-                         crossings=[Crossing(60.0, "HS 110 kV", "powerline", 90.0)])
+                         crossings=[Crossing(60.0, "HS 110 kV", "line", 90.0, rgb=(255, 120, 0))])
     img = _img(_results(items, topo_z=-1.0))
     near, far = _band_offsets(img)
     band_top = _y(-1.0) - far
@@ -95,23 +95,45 @@ def test_crossing_label_lies_above_the_band(qgis_app):
     assert max(hits) < band_top - 1, (max(hits), band_top)
 
 
-def _orange_in_column(img, s):
+def _has_colour(img, s, rgb, tol=30):
     from qgis.PyQt.QtGui import QColor
 
     for x in range(_x(s) - 3, _x(s) + 4):
         for y in range(img.height()):
             c = QColor(img.pixel(x, y))
-            if abs(c.red() - 255) < 30 and abs(c.green() - 120) < 30 and c.blue() < 40:
+            if all(abs(a - b) < tol for a, b in zip((c.red(), c.green(), c.blue()), rgb)):
                 return True
     return False
 
 
-def test_powerline_crossing_is_orange(qgis_app):
+def test_crossing_drawn_in_its_colour(qgis_app):
     from geophysics_workbench.core.context import ContextItems, Crossing
 
-    img = _img(_results(ContextItems(crossings=[Crossing(60.0, "HS 110 kV", "powerline", 90.0)])))
-    assert _orange_in_column(img, 60.0)
-    assert not _orange_in_column(img, 45.0)
+    img = _img(_results(ContextItems(
+        crossings=[Crossing(60.0, "HS 110 kV", "line", 90.0, rgb=(0, 0, 255))])))
+    assert _has_colour(img, 60.0, (0, 0, 255))
+    assert not _has_colour(img, 60.0, (255, 120, 0))
+    assert not _has_colour(img, 45.0, (0, 0, 255))
+
+
+def test_crossing_label_has_no_glyph(qgis_app):
+    from qgis.core import QgsRenderContext
+    from qgis.PyQt.QtGui import QImage, QPainter, QTransform
+
+    from geophysics_workbench.core.context import ContextItems, Crossing
+    from geophysics_workbench.section.context_render import plan_labels
+
+    c = Crossing(60.0, "380 kV", "line", 90.0, rgb=(0, 0, 255))
+    img = QImage(400, 200, QImage.Format.Format_ARGB32)
+    painter = QPainter(img)
+    try:
+        rc = QgsRenderContext.fromQPainter(painter)
+        labels = plan_labels(painter, rc, QTransform(), ContextItems(crossings=[c]),
+                             (np.array([0.0, 100.0]), np.array([0.0, 0.0])))
+    finally:
+        painter.end()
+    assert labels[id(c)].text == "380 kV"
+    assert labels[id(c)].rgb == (0, 0, 255)
 
 
 def test_borehole_column_colours_by_lithology(qgis_app):

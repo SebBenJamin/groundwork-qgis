@@ -74,8 +74,8 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
             break
     for c in items.crossings:
         if abs(s - c.s) <= tol_s:
-            kind = "powerline" if c.kind == "powerline" else "line"
-            lines.append(f"Crossing: {c.label} ({kind}, {c.angle_deg:.0f}\u00b0)")
+            source = f" \u00b7 {c.layer}" if c.layer and c.layer != c.label else ""
+            lines.append(f"Crossing: {c.label}{source}, {c.angle_deg:.0f}\u00b0")
     for p in items.points:
         if p.kind != "borehole" or abs(s - p.s) > column_half_width_s:
             continue

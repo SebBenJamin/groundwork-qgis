@@ -36,7 +36,7 @@ def test_headroom_covers_the_band_and_three_label_rows(qgis_app):
 
 
 def _context(profile):
-    return ContextItems(crossings=[Crossing(20.0, "HS 110 kV", "powerline", 90.0)],
+    return ContextItems(crossings=[Crossing(20.0, "HS 110 kV", "line", 90.0)],
                         points=[ProjectedPoint(30.0, 2.0, "BK1", "borehole", None,
                                                [LogInterval(0.0, 3.0, "Sand")])],
                         band=[BandSegment(0.0, 50.0, "Talsand")])

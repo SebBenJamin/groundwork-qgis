@@ -29,7 +29,7 @@ def _add_b(st, tmp_path):
 def _fake_items(dem_offset=0.0):
     s = np.linspace(0.0, 50.0, 11)
     return ContextItems(
-        crossings=[Crossing(10.0, "380 kV", "powerline", 90.0)],
+        crossings=[Crossing(10.0, "380 kV", "line", 90.0)],
         points=[ProjectedPoint(12.0, 3.0, "W1", "point")],
         band=[BandSegment(5.0, 15.0, "Sand")],
         dem=(s, np.interp(s, [0, 50], [100, 102]) + dem_offset))
