@@ -5,7 +5,8 @@ interface, opens each profile in the section panel and saves the panel as a PNG:
 
     python-qgis.bat scripts/render_demo_section.py [version] [out_dir]
 
-writes <out_dir>/<version>-P1.png, -P2.png and -ties.png (version defaults to
+writes <out_dir>/<version>-P1.png, -P2.png, -ties.png and -dialog.png (the open Context
+layers dialog) (version defaults to
 metadata.txt, out_dir to docs/releases). P1 is the R2 elevation model, P2 the Zond depth
 model (checks depth conversion against the topography). P2 is zoomed to its upper part
 from the powerline crossing on, at a higher vertical exaggeration, with Topography on DEM:
@@ -151,6 +152,7 @@ def render(out_dir: Path, ver: str, demo: Path) -> list[Path]:
             written.append(out)
             print(f"wrote {out}")
         written.append(render_ties(plugin, app, out_dir / f"{ver}-ties.png"))
+        written.append(render_dialog(plugin, app, out_dir / f"{ver}-dialog.png"))
     finally:
         plugin.unload()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
@@ -176,6 +178,21 @@ def render_ties(plugin, app, out: Path) -> Path:
     panel.plot.draw()
     app.processEvents()
     if not panel.grab().save(str(out)):
+        raise RuntimeError(f"could not write {out}")
+    print(f"wrote {out}")
+    return out
+
+
+def render_dialog(plugin, app, out: Path) -> Path:
+    """The non-modal Context layers dialog, left open as a user would, grabbed to a PNG."""
+    plugin.edit_context()
+    dialog = plugin._context_dialog
+    if dialog is None:
+        raise RuntimeError("the Context layers dialog did not open")
+    for _ in range(5):
+        app.processEvents()
+        time.sleep(0.05)
+    if not dialog.grab().save(str(out)):
         raise RuntimeError(f"could not write {out}")
     print(f"wrote {out}")
     return out
