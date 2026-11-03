@@ -526,3 +526,93 @@ def test_null_elevation_falls_back_to_dem(project, profile, tmp_path):
     items = g.items_for(profile)
     g.close()
     assert items.points[0].z_top == approx(float(arr[0, 20]), abs=1e-4)
+
+
+def _counting(project, profile, settings, exclude=lambda: set()):
+    from geophysics_workbench.section.context_layers import ContextGatherer
+    from geophysics_workbench.ui.context_dialog import write_settings
+    write_settings(project, settings)
+    calls = []
+    g = ContextGatherer(project, AUTH, lambda: calls.append(1), exclude=exclude)
+    g.items_for(profile)
+    return g, calls
+
+
+def test_selection_change_redraws_selected_only_layer(project, profile, qgis_app):
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    only = _layer(project, "LineString", "Only")
+    _add(only, "LINESTRING(30 -50, 30 50)")
+    plain = _layer(project, "LineString", "Plain")
+    _add(plain, "LINESTRING(60 -50, 60 50)")
+    g, calls = _counting(project, profile, ContextSettings(line_layers=[
+        LineLayerSetting(only.id(), selected_only=True, checked=True),
+        LineLayerSetting(plain.id(), checked=True)]))
+    try:
+        plain.selectByIds([f.id() for f in plain.getFeatures()])
+        _wait(qgis_app, 600)
+        assert calls == []
+        only.selectByIds([f.id() for f in only.getFeatures()])
+        _wait(qgis_app, 600)
+        assert calls == [1]
+    finally:
+        g.close()
+
+
+def test_renderer_change_redraws(project, profile, qgis_app):
+    from qgis.core import QgsLineSymbol, QgsSingleSymbolRenderer
+    from qgis.PyQt.QtGui import QColor
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    lines = _layer(project, "LineString", "Lines")
+    _add(lines, "LINESTRING(30 -50, 30 50)")
+    g, calls = _counting(project, profile, ContextSettings(line_layers=[
+        LineLayerSetting(lines.id(), checked=True)]))
+    try:
+        symbol = QgsLineSymbol.createSimple({})
+        symbol.setColor(QColor(0, 0, 255))
+        lines.setRenderer(QgsSingleSymbolRenderer(symbol))
+        _wait(qgis_app, 600)
+        assert calls == [1]
+        assert g.items_for(profile).crossings[0].rgb == (0, 0, 255)
+    finally:
+        g.close()
+
+
+def test_new_visible_line_layer_redraws(project, profile, qgis_app):
+    from geophysics_workbench.core.context_settings import ContextSettings
+    g, calls = _counting(project, profile, ContextSettings())
+    try:
+        _layer(project, "Point", "Pts")
+        _wait(qgis_app, 600)
+        assert calls == []
+        _layer(project, "LineString", "New")
+        _wait(qgis_app, 600)
+        assert calls == [1]
+    finally:
+        g.close()
+
+
+def test_hiding_auto_layer_redraws_but_not_explicit_one(project, profile, qgis_app):
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    auto = _layer(project, "LineString", "Auto")
+    explicit = _layer(project, "LineString", "Explicit")
+    g, calls = _counting(project, profile, ContextSettings(line_layers=[
+        LineLayerSetting(explicit.id(), checked=True)]))
+    root = project.layerTreeRoot()
+    try:
+        root.findLayer(explicit.id()).setItemVisibilityChecked(False)
+        _wait(qgis_app, 600)
+        assert calls == []
+        root.findLayer(auto.id()).setItemVisibilityChecked(False)
+        _wait(qgis_app, 600)
+        assert calls == [1]
+    finally:
+        g.close()
+
+
+def test_close_disconnects_project_signals(project, profile, qgis_app):
+    from geophysics_workbench.core.context_settings import ContextSettings
+    g, calls = _counting(project, profile, ContextSettings())
+    g.close()
+    _layer(project, "LineString", "New")
+    _wait(qgis_app, 600)
+    assert calls == []

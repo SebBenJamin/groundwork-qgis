@@ -31,6 +31,8 @@ _GEOMETRY = {"line": Qgis.GeometryType.Line, "point": Qgis.GeometryType.Point,
              "polygon": Qgis.GeometryType.Polygon}
 _SIGNALS = ("featureAdded", "featureDeleted", "geometryChanged", "attributeValueChanged",
             "dataChanged")
+_STYLE_SIGNALS = ["rendererChanged", "styleChanged"]
+_ALL_SIGNALS = _SIGNALS + ("selectionChanged",) + tuple(_STYLE_SIGNALS)
 
 
 def voltage_label(value: str, field: str) -> str:
@@ -72,17 +74,26 @@ class ContextGatherer:
         self._logged: set[tuple[str, str]] = set()
         self._watched: dict[str, QgsMapLayer] = {}
         self._drop_slots: dict[str, Callable[[], None]] = {}
+        self._watch_key: tuple = ()
+        self._last_settings = None
+        self._last_active: frozenset[str] | None = None
+        self._root = project.layerTreeRoot()
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.setInterval(DEBOUNCE_MS)
         self._timer.timeout.connect(self._fire)
         project.layersRemoved.connect(self._removed)
+        project.layersAdded.connect(self._active_set_maybe_changed)
+        self._root.visibilityChanged.connect(self._active_set_maybe_changed)
+        self._root.addedChildren.connect(self._active_set_maybe_changed)   # tree node may follow layersAdded
 
     # -- public ---------------------------------------------------------------------------
     def items_for(self, profile: Profile) -> ContextItems:
         settings = read_settings(self._project)
         active = active_line_settings(self._project, settings, self._exclude())
-        self._watch(settings, [layer.id() for layer, _s in active])
+        self._last_settings = settings
+        self._last_active = frozenset(layer.id() for layer, _s in active)
+        self._watch(settings, active)
         chain = profile.chainage
         xy = chain.xy
         pad = settings.buffer
@@ -96,7 +107,7 @@ class ContextGatherer:
                                                          self._project))
             if items.dem is None:
                 self._warn(settings.dem_layer_id, "DEM has no data along the profile")
-        for layer, s in active:
+        for _layer, s in active:
             items.crossings += self._try(s.layer_id, "line layer", lambda: self._lines(
                 s, xy, box)) or []
         for s in settings.point_layers:
@@ -121,15 +132,24 @@ class ContextGatherer:
             self._project.layersRemoved.disconnect(self._removed)
         except (TypeError, RuntimeError):
             pass
+        for signal in (self._project.layersAdded, self._root.visibilityChanged,
+                       self._root.addedChildren):
+            try:
+                signal.disconnect(self._active_set_maybe_changed)
+            except (TypeError, RuntimeError):
+                pass
 
     # -- change watching ------------------------------------------------------------------
-    def _watch(self, settings, line_ids=()) -> None:
+    def _watch(self, settings, active=()) -> None:
+        line_ids = [layer.id() for layer, _s in active]
+        selected = {layer.id() for layer, s in active if s.selected_only}
         wanted = {}
         for layer_id in _layer_ids(settings, line_ids):
             layer = self._project.mapLayer(layer_id)
             if layer is not None:
                 wanted[layer_id] = layer
-        if (set(wanted) == set(self._watched)
+        key = (frozenset(line_ids), frozenset(selected))
+        if (key == self._watch_key and set(wanted) == set(self._watched)
                 and all(wanted[k] is self._watched[k] for k in wanted)):
             return
         self._unwatch()
@@ -137,11 +157,17 @@ class ContextGatherer:
             slot = self._drop_slot(layer)
             layer.willBeDeleted.connect(slot)
             self._drop_slots[layer.id()] = slot
-            for name in _SIGNALS:
+            names = list(_SIGNALS)
+            if layer.id() in line_ids:
+                names += _STYLE_SIGNALS
+            if layer.id() in selected:
+                names.append("selectionChanged")
+            for name in names:
                 signal = getattr(layer, name, None)
                 if signal is not None:
                     signal.connect(self._kick)
         self._watched = wanted
+        self._watch_key = key
 
     def _unwatch(self) -> None:
         watched, self._watched = self._watched, {}
@@ -149,7 +175,7 @@ class ContextGatherer:
         for layer in watched.values():
             if sip.isdeleted(layer):
                 continue
-            for name, slot in [(n, self._kick) for n in _SIGNALS] + [
+            for name, slot in [(n, self._kick) for n in _ALL_SIGNALS] + [
                     ("willBeDeleted", slots.get(layer.id()))]:
                 try:
                     getattr(layer, name).disconnect(slot)
@@ -165,6 +191,15 @@ class ContextGatherer:
             self._drop_slots.pop(layer_id, None)
             self._kick()
         return drop
+
+    def _active_set_maybe_changed(self, *_args) -> None:
+        """A layer was added or a visibility toggled: redraw only if that changes which
+        line layers are active."""
+        if self._last_settings is None:
+            return
+        active = active_line_settings(self._project, self._last_settings, self._exclude())
+        if frozenset(layer.id() for layer, _s in active) != self._last_active:
+            self._kick()
 
     def _removed(self, layer_ids) -> None:
         if any(i in self._watched for i in layer_ids):
