@@ -1,4 +1,4 @@
-"""'Context layers' dialog: which ordinary QGIS layers supply crossing lines (powerline),
+"""'Context layers' dialog: which ordinary QGIS layers supply crossing lines,
 points, boreholes with a log table, the surface geology band and the DEM on a section.
 
 The choice is kept in the QGIS project as JSON (entry ``geophysics_workbench/context``)
@@ -6,18 +6,19 @@ because it refers to QGIS layer ids. ``read_settings`` / ``write_settings`` need
 from __future__ import annotations
 
 from qgis.core import QgsMapLayer, QgsProject, QgsVectorLayer, QgsWkbTypes
+from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                  QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox, QLabel,
                                  QScrollArea, QVBoxLayout, QWidget)
 
-from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings, LineLayerSetting,
+from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings,
                                      PointLayerSetting)
 from .borehole_mapping import (MISSING, BoreholeGroup, field_of, fill_field_combo,
                                fill_layer_combo, keep_missing)
+from .crossing_rows import CrossingLinesGroup
 from .project_actions import SCOPE
 
 KEY = "context"
-POWER_WORDS = ("power", "strom", "kv")
 
 
 def read_settings(project) -> ContextSettings:
@@ -40,32 +41,20 @@ def _geometry(layer) -> str:
     return "none"
 
 
-def looks_like_powerline(layer) -> bool:
-    names = [layer.name()] + layer.fields().names()
-    return any(word in name.lower() for name in names for word in POWER_WORDS)
-
-
 class LayerRow:
-    """One checkable layer with a label-field combo (and optionally a 'Powerline' box)."""
+    """One checkable point layer with a label-field combo."""
 
-    def __init__(self, layer, grid: QGridLayout, row: int, powerline: bool = False):
+    def __init__(self, layer, grid: QGridLayout, row: int):
         self.layer_id = layer.id()
         self.check = QCheckBox(layer.name())
         self.label = QComboBox()
         fill_field_combo(self.label, layer)
         grid.addWidget(self.check, row, 0)
         grid.addWidget(self.label, row, 1)
-        self.powerline = None
-        if powerline:
-            self.powerline = QCheckBox("Powerline")
-            self.powerline.setChecked(looks_like_powerline(layer))
-            grid.addWidget(self.powerline, row, 2)
 
-    def load(self, label_field: str, powerline: bool | None = None):
+    def load(self, label_field: str):
         self.check.setChecked(True)
         self.label.setCurrentIndex(max(0, self.label.findData(label_field)))
-        if self.powerline is not None and powerline is not None:
-            self.powerline.setChecked(powerline)
 
 
 def _spin(lo, hi, value, decimals=1) -> QDoubleSpinBox:
@@ -77,7 +66,10 @@ def _spin(lo, hi, value, decimals=1) -> QDoubleSpinBox:
 
 
 class ContextDialog(QDialog):
-    def __init__(self, iface, project: QgsProject | None = None, parent=None):
+    applied = pyqtSignal()                              # settings written (Apply or OK)
+
+    def __init__(self, iface, project: QgsProject | None = None, parent=None,
+                 exclude: set[str] = frozenset()):
         super().__init__(parent if parent is not None else iface.mainWindow())
         self.setWindowTitle("Context layers")
         self.iface = iface
@@ -85,14 +77,15 @@ class ContextDialog(QDialog):
         layers = sorted(self.project.mapLayers().values(), key=lambda lyr: lyr.name().lower())
         vectors = [lyr for lyr in layers if isinstance(lyr, QgsVectorLayer)]
         by_geom = {kind: [lyr for lyr in vectors if _geometry(lyr) == kind]
-                   for kind in ("line", "point", "polygon")}
+                   for kind in ("point", "polygon")}
         rasters = [lyr for lyr in layers if lyr.type() == QgsMapLayer.LayerType.RasterLayer]
 
         content = QWidget()
         outer = QVBoxLayout(content)
-        self.line_rows, box = self._layer_group("Crossing lines", by_geom["line"], True)
-        outer.addWidget(box)
-        self.point_rows, box = self._layer_group("Points near the line", by_geom["point"], False)
+        self.lines = CrossingLinesGroup(self.project, exclude)
+        outer.addWidget(self.lines)
+        self.point_rows, box = self._layer_group(
+            "Points near the line", [lyr for lyr in by_geom["point"] if lyr.id() not in exclude])
         outer.addWidget(box)
         self.borehole = BoreholeGroup(self.project, vectors, by_geom["point"])
         outer.addWidget(self.borehole)
@@ -126,8 +119,11 @@ class ContextDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Apply
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
+        self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+        self.apply_button.clicked.connect(lambda _checked=False: self.apply())
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
         layout.addWidget(scroll)
@@ -136,15 +132,15 @@ class ContextDialog(QDialog):
         self.note = QLabel()
         self.note.setStyleSheet("color: grey;")
         layout.insertWidget(1, self.note)
-        self.stale_lines, self.stale_points, self.loaded_band = [], [], None
+        self.stale_points, self.loaded_band = [], None
         self._load(read_settings(self.project))
 
-    def _layer_group(self, title, layers, powerline):
+    def _layer_group(self, title, layers):
         box = QGroupBox(title)
         grid = QGridLayout(box)
         rows = {}
         for i, layer in enumerate(layers):
-            rows[layer.id()] = LayerRow(layer, grid, i, powerline)
+            rows[layer.id()] = LayerRow(layer, grid, i)
         if not rows:
             grid.addWidget(QLabel("No matching layers in this project."), 0, 0)
         return rows, box
@@ -162,13 +158,10 @@ class ContextDialog(QDialog):
         self.dem_combo.setCurrentIndex(max(0, self.dem_combo.findData(layer_id)))
 
     def _load(self, s: ContextSettings) -> None:
-        for item in s.line_layers:
-            if item.layer_id in self.line_rows:
-                self.line_rows[item.layer_id].load(item.label_field)
+        self.lines.load(s.line_layers)
         for item in s.point_layers:
             if item.layer_id in self.point_rows:
                 self.point_rows[item.layer_id].load(item.label_field)
-        self.stale_lines = [i for i in s.line_layers if i.layer_id not in self.line_rows]
         self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
         self.borehole.load(s.borehole)
         self.loaded_band = s.band
@@ -177,7 +170,7 @@ class ContextDialog(QDialog):
             self.select_band(s.band.layer_id, s.band.label_field)
         keep_missing(self.dem_combo, self.project, s.dem_layer_id)
         self.select_dem(s.dem_layer_id)
-        missing = (len(self.stale_lines) + len(self.stale_points) + self.borehole.missing_count()
+        missing = (self.lines.stale_count() + len(self.stale_points) + self.borehole.missing_count()
                    + sum(c.currentText() == MISSING for c in (self.band_combo, self.dem_combo)))
         self.note.setText(f"{missing} saved layer(s) are not in this project; "
                           "their settings are kept." if missing else "")
@@ -193,9 +186,7 @@ class ContextDialog(QDialog):
                 and self.project.mapLayer(band_id) is None):
             band_label = old.label_field                # layer missing: keep its saved label
         return ContextSettings(
-            line_layers=[LineLayerSetting(r.layer_id, field_of(r.label), checked=True)
-                         for r in self.line_rows.values() if r.check.isChecked()]
-            + list(self.stale_lines),
+            line_layers=self.lines.settings(),
             point_layers=[PointLayerSetting(r.layer_id, field_of(r.label))
                           for r in self.point_rows.values() if r.check.isChecked()]
             + list(self.stale_points),
@@ -205,6 +196,14 @@ class ContextDialog(QDialog):
             buffer=self.buffer_spin.value(), near_miss=self.near_miss_spin.value(),
             dem_tolerance=self.dem_tolerance_spin.value())
 
-    def accept(self):
+    def apply(self) -> None:
         write_settings(self.project, self.settings())
+        self.applied.emit()
+
+    def accept(self):
+        self.apply()
         super().accept()
+
+    def done(self, result):
+        self.lines.detach()                             # a deleted dialog must get no signals
+        super().done(result)

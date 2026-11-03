@@ -15,10 +15,11 @@ def _tif(path):
 def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_path):
     from qgis.core import QgsProject, QgsRasterLayer, QgsVectorLayer
 
+    from geophysics_workbench.core.context_settings import LineLayerSetting
     from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
 
     prj = QgsProject()
-    line = QgsVectorLayer("LineString?crs=EPSG:25832&field=name:string", "Powerline (OSM)", "memory")
+    line = QgsVectorLayer("LineString?crs=EPSG:25832&field=name:string", "Lines (OSM)", "memory")
     other = QgsVectorLayer("LineString?crs=EPSG:25832&field=name:string", "Roads", "memory")
     pts = QgsVectorLayer("Point?crs=EPSG:25832&field=name:string", "Pipes", "memory")
     poly = QgsVectorLayer("Polygon?crs=EPSG:25832&field=unit:string", "Geology", "memory")
@@ -31,11 +32,10 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
         prj.addMapLayer(lyr)
 
     dlg = ContextDialog(fake_iface, prj)
-    assert set(dlg.line_rows) == {line.id(), other.id()}
+    assert set(dlg.lines.rows) == {line.id(), other.id()}
     assert set(dlg.point_rows) == {pts.id()}
-    assert dlg.line_rows[line.id()].powerline.isChecked()
-    assert not dlg.line_rows[other.id()].powerline.isChecked()
-    dlg.line_rows[line.id()].check.setChecked(True)
+    dlg.lines.rows[line.id()].label.setCurrentIndex(
+        dlg.lines.rows[line.id()].label.findData("name"))
     dlg.point_rows[pts.id()].check.setChecked(True)
     dlg.select_band(poly.id(), "unit")
     dlg.select_dem(dem.id())
@@ -45,13 +45,145 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     dlg.accept()
 
     got = read_settings(prj)
-    assert [(s.layer_id, s.checked) for s in got.line_layers] == [(line.id(), True)]
+    assert got.line_layers == [LineLayerSetting(line.id(), "name"), LineLayerSetting(other.id())]
     assert [s.layer_id for s in got.point_layers] == [pts.id()]
     assert got.band.layer_id == poly.id() and got.band.label_field == "unit"
     assert got.dem_layer_id == dem.id()
     assert got.borehole.layer_id == pts.id() and got.borehole.log_layer_id == table.id()
     assert got.buffer == 30.0 and got.near_miss == 10.0 and got.dem_tolerance == 1.0
     assert dlg.settings() == got
+
+
+@pytest.fixture
+def project(qgis_app):
+    from qgis.core import QgsProject
+    # QgsProject() kept alive in a fixture cache crashes QgsApplication.exitQgis
+    proj = QgsProject.instance()
+    proj.clear()
+    yield proj
+    proj.removeAllMapLayers()
+    proj.clear()
+
+
+def _line(project, name):
+    from qgis.core import QgsVectorLayer
+    layer = QgsVectorLayer("LineString?crs=EPSG:25832&field=name:string", name, "memory")
+    project.addMapLayer(layer)
+    return layer
+
+
+def _red(layer):
+    from qgis.core import QgsLineSymbol, QgsSingleSymbolRenderer
+    from qgis.PyQt.QtGui import QColor
+    symbol = QgsLineSymbol.createSimple({})
+    symbol.setColor(QColor(220, 0, 0))
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+
+def test_visible_rows_start_ticked_and_follow_the_map(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+
+    a, b = _line(project, "A"), _line(project, "B")
+    node_b = project.layerTreeRoot().findLayer(b.id())
+    node_b.setItemVisibilityChecked(False)
+    dlg = ContextDialog(fake_iface, project)
+    try:
+        rows = dlg.lines.rows
+        assert rows[a.id()].check.isChecked() and not rows[b.id()].check.isChecked()
+        node_b.setItemVisibilityChecked(True)
+        assert rows[b.id()].check.isChecked()
+        rows[b.id()].check.click()                      # the user's tick: B is now explicit
+        assert rows[b.id()].explicit and not rows[b.id()].check.isChecked()
+        node_b.setItemVisibilityChecked(False)
+        node_b.setItemVisibilityChecked(True)
+        assert not rows[b.id()].check.isChecked()
+        assert {s.layer_id: s.checked for s in dlg.lines.settings()} == {a.id(): None,
+                                                                         b.id(): False}
+    finally:
+        dlg.reject()
+
+
+def test_excluded_layers_not_listed(project, fake_iface):
+    from qgis.core import QgsVectorLayer
+
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+
+    line = _line(project, "Own profiles")
+    pts = QgsVectorLayer("Point?crs=EPSG:25832&field=name:string", "Own stations", "memory")
+    project.addMapLayer(pts)
+    dlg = ContextDialog(fake_iface, project, exclude={line.id(), pts.id()})
+    try:
+        assert line.id() not in dlg.lines.rows
+        assert pts.id() not in dlg.point_rows
+    finally:
+        dlg.reject()
+
+
+def test_row_colour_and_selection_saved(project, fake_iface):
+    from qgis.PyQt.QtGui import QColor
+
+    from geophysics_workbench.core.context_settings import LineLayerSetting
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+
+    lines = _line(project, "Red")
+    _red(lines)
+    dlg = ContextDialog(fake_iface, project)
+    row = dlg.lines.rows[lines.id()]
+    assert row.colour.color().name() == "#dc0000"
+    assert row.setting().colour == ""
+    row.colour.setColor(QColor("#0000ff"))
+    row.selected_only.click()
+    dlg.accept()
+    assert read_settings(project).line_layers == [
+        LineLayerSetting(lines.id(), colour="#0000ff", selected_only=True)]
+
+    dlg = ContextDialog(fake_iface, project)
+    try:
+        row = dlg.lines.rows[lines.id()]
+        assert row.colour.color().name() == "#0000ff"
+        assert row.selected_only.isChecked()
+    finally:
+        dlg.reject()
+
+
+def test_layer_added_and_removed_while_open(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+
+    a, b = _line(project, "A").id(), _line(project, "B").id()
+    dlg = ContextDialog(fake_iface, project)
+    try:
+        c = _line(project, "C").id()
+        assert dlg.lines.rows[c].check.isChecked()
+        dlg.lines.rows[a].check.click()                 # explicit: unticked
+        project.removeMapLayer(a)
+        assert a not in dlg.lines.rows and dlg.lines.stale_count() == 1
+        project.removeMapLayer(b)                       # automatic: dropped entirely
+        assert b not in dlg.lines.rows and dlg.lines.stale_count() == 1
+        dlg.apply()
+        assert [(s.layer_id, s.checked) for s in read_settings(project).line_layers] == [
+            (c, None), (a, False)]
+    finally:
+        dlg.reject()
+
+
+def test_apply_writes_and_stays_open(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+
+    dlg = ContextDialog(fake_iface, project)
+    fired = []
+    dlg.applied.connect(lambda: fired.append(True))
+    dlg.show()
+    try:
+        dlg.buffer_spin.setValue(40)
+        dlg.apply_button.click()
+        assert read_settings(project).buffer == 40.0
+        assert fired == [True]
+        assert dlg.isVisible()
+        dlg.buffer_spin.setValue(50)
+    finally:
+        dlg.reject()
+    assert read_settings(project).buffer == 40.0
+    assert fired == [True]
 
 
 def test_read_settings_empty_project(qgis_app):
