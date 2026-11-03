@@ -10,6 +10,7 @@ from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
 from .section.context_layers import ContextGatherer
+from .section.crossing_lines import own_layer_ids
 from .section.data import SectionDataProvider
 from .section.dock import SectionDock
 from .section.map_link import MapLink
@@ -138,7 +139,8 @@ class WorkbenchPlugin:
             self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
             self.gatherer = ContextGatherer(project, store.crs_authid,
-                                            on_change=self.provider.notify_changed)
+                                            on_change=self.provider.notify_changed,
+                                            exclude=lambda: own_layer_ids(store, project))
             self.provider.context_source = self.gatherer.items_for
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error

@@ -20,12 +20,12 @@ from ..core.context import (BandSegment, ContextItems, Crossing, LogInterval, Pr
                             line_crossings, polygon_intervals, project_points)
 from ..core.model import Profile
 from ..ui.context_dialog import read_settings
+from .crossing_lines import active_line_settings, line_colour
 from .dem_sampling import sample_point, sample_profile
 
 LOG_TAG = "Geophysics Workbench"
 DEBOUNCE_MS = 300
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
-_NUMBERS = re.compile(r"\d+(?:[.,]\d+)?(?:\s*;\s*\d+(?:[.,]\d+)?)*")   # "380000;110000"
 _VOLTAGE_FIELD = ("volt", "spannung")
 _GEOMETRY = {"line": Qgis.GeometryType.Line, "point": Qgis.GeometryType.Point,
              "polygon": Qgis.GeometryType.Polygon}
@@ -33,15 +33,13 @@ _SIGNALS = ("featureAdded", "featureDeleted", "geometryChanged", "attributeValue
             "dataChanged")
 
 
-def voltage_label(value: str, field: str = "") -> str:
-    """'380000;110000' -> '380 kV' (first number; >= 1000 means volts). Only a value that
-    is a number, or numbers separated by ';', is read as a voltage, unless the ``field``
-    name says it holds one ("volt", "spannung"): then its first number. Else as is, so a
-    name like "4711 Nord" stays a name."""
-    text = value.strip()
-    if _NUMBERS.fullmatch(text) is None and not any(w in field.lower() for w in _VOLTAGE_FIELD):
+def voltage_label(value: str, field: str) -> str:
+    """Only a field whose name holds "volt" or "spannung" is read as a voltage: its first
+    number becomes kV ('380000;110000' -> '380 kV'; >= 1000 means volts). Any other field,
+    or a value without a number, is returned unchanged."""
+    if not any(w in field.lower() for w in _VOLTAGE_FIELD):
         return value
-    match = _NUMBER.search(text)
+    match = _NUMBER.search(value)
     if match is None:
         return value
     number = float(match.group().replace(",", "."))
@@ -65,8 +63,10 @@ class _Skip(Exception):
 
 
 class ContextGatherer:
-    def __init__(self, project, crs_authid: str, on_change: Callable[[], None]):
+    def __init__(self, project, crs_authid: str, on_change: Callable[[], None],
+                 exclude: Callable[[], set[str]] = lambda: set()):
         self._project = project
+        self._exclude = exclude
         self._crs_authid = crs_authid
         self._on_change = on_change
         self._logged: set[tuple[str, str]] = set()
@@ -81,7 +81,8 @@ class ContextGatherer:
     # -- public ---------------------------------------------------------------------------
     def items_for(self, profile: Profile) -> ContextItems:
         settings = read_settings(self._project)
-        self._watch(settings)
+        active = active_line_settings(self._project, settings, self._exclude())
+        self._watch(settings, [layer.id() for layer, _s in active])
         chain = profile.chainage
         xy = chain.xy
         pad = settings.buffer
@@ -95,7 +96,7 @@ class ContextGatherer:
                                                          self._project))
             if items.dem is None:
                 self._warn(settings.dem_layer_id, "DEM has no data along the profile")
-        for s in settings.line_layers:
+        for layer, s in active:
             items.crossings += self._try(s.layer_id, "line layer", lambda: self._lines(
                 s, xy, box)) or []
         for s in settings.point_layers:
@@ -122,9 +123,9 @@ class ContextGatherer:
             pass
 
     # -- change watching ------------------------------------------------------------------
-    def _watch(self, settings) -> None:
+    def _watch(self, settings, line_ids=()) -> None:
         wanted = {}
-        for layer_id in _layer_ids(settings):
+        for layer_id in _layer_ids(settings, line_ids):
             layer = self._project.mapLayer(layer_id)
             if layer is not None:
                 wanted[layer_id] = layer
@@ -216,15 +217,18 @@ class ContextGatherer:
             raise _Skip(f"layer {layer_id} is not a valid raster layer")
         return layer
 
-    def _features(self, layer, box: QgsRectangle, fields: tuple, geometry: bool = True):
-        """Features whose bbox meets ``box`` (store CRS) with only ``fields`` read;
-        yields (feature, geometry in the store CRS)."""
+    def _features(self, layer, box: QgsRectangle, fields: tuple, fids: set[int] | None = None):
+        """Features whose bbox meets ``box`` (store CRS) with only ``fields`` read, and
+        whose id is in ``fids`` when that is given; yields (feature, geometry in the
+        store CRS)."""
         ct = self._to_store(layer)
         rect = box if ct is None else ct.transformBoundingBox(
             box, Qgis.TransformDirection.Reverse)
         request = QgsFeatureRequest().setFilterRect(rect)
         request.setSubsetOfAttributes([f for f in fields if f], layer.fields())
         for feature in layer.getFeatures(request):
+            if fids is not None and feature.id() not in fids:
+                continue
             geom = QgsGeometry(feature.geometry())
             if geom.isNull():
                 continue
@@ -241,17 +245,23 @@ class ContextGatherer:
     # -- one method per kind of layer -----------------------------------------------------
     def _lines(self, setting, xy, box) -> list[Crossing]:
         layer = self._vector(setting.layer_id, "line", (setting.label_field,))
+        fids = None
+        if setting.selected_only:
+            fids = set(layer.selectedFeatureIds())
+            if not fids:
+                return []
+        rgb = line_colour(setting, layer)
         out = []
-        for feature, geom in self._features(layer, box, (setting.label_field,)):
+        for feature, geom in self._features(layer, box, (setting.label_field,), fids):
             label = _text(feature[setting.label_field]) if setting.label_field else ""
             if label:
-                label = voltage_label(label, setting.label_field or "")
-            kind = "line"                           # Task 2 rewrites this method
+                label = voltage_label(label, setting.label_field)
             parts = geom.asMultiPolyline() if geom.isMultipart() else [geom.asPolyline()]
             for part in parts:
                 if len(part) >= 2:
                     pts = np.array([[p.x(), p.y()] for p in part])
-                    out += line_crossings(xy, pts, label or layer.name(), kind)
+                    out += line_crossings(xy, pts, label or layer.name(), "line", rgb,
+                                          layer.name())
         return out
 
     def _points(self, setting, xy, box, buffer) -> list[ProjectedPoint]:
@@ -332,8 +342,8 @@ def _project(xy, found, buffer):
     return [(found[i], (s, off)) for i, s, off in hits]
 
 
-def _layer_ids(settings) -> list[str]:
-    ids = [s.layer_id for s in settings.line_layers] + [s.layer_id for s in settings.point_layers]
+def _layer_ids(settings, line_ids=()) -> list[str]:
+    ids = list(line_ids) + [s.layer_id for s in settings.point_layers]
     if settings.borehole is not None:
         ids += [settings.borehole.layer_id, settings.borehole.log_layer_id]
     if settings.band is not None:

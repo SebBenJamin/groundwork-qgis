@@ -50,9 +50,18 @@ def _gatherer(project, settings, on_change=lambda: None):
     return ContextGatherer(project, AUTH, on_change)
 
 
-def test_powerline_crossing_with_voltage_label(project, profile):
+def _red(layer):
+    from qgis.core import QgsLineSymbol, QgsSingleSymbolRenderer
+    from qgis.PyQt.QtGui import QColor
+    symbol = QgsLineSymbol.createSimple({})
+    symbol.setColor(QColor(220, 0, 0))
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+
+def test_crossing_with_voltage_label_and_layer_colour(project, profile):
     from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines", "voltage:string")
+    _red(lines)
     _add(lines, "LINESTRING(30 -50, 30 50)", ["380000"])
     _add(lines, "LINESTRING(500 -50, 500 50)", ["110000"])
     g = _gatherer(project, ContextSettings(line_layers=[
@@ -63,40 +72,86 @@ def test_powerline_crossing_with_voltage_label(project, profile):
         g.close()
     assert len(items.crossings) == 1
     c = items.crossings[0]
-    assert (c.label, c.kind) == ("380 kV", "line")
+    assert (c.label, c.kind, c.rgb, c.layer) == ("380 kV", "line", (220, 0, 0), "Lines")
     assert c.s == approx(30) and c.angle_deg == approx(90)
     assert items.ties == [] and items.dem is None
 
 
-def test_voltage_labels(project, profile):
+def test_voltage_label_only_for_voltage_fields():
     from geophysics_workbench.section.context_layers import voltage_label
-    assert voltage_label("380000;110000") == "380 kV"
-    assert voltage_label("110000") == "110 kV"
-    assert voltage_label("20") == "20 kV"
-    assert voltage_label("62500") == "62.5 kV"
-    assert voltage_label("high") == "high"
-    assert voltage_label("UW Nord 2") == "UW Nord 2"
-    assert voltage_label(" 380000 ") == "380 kV"
-    assert voltage_label("110000; 20000") == "110 kV"
-
-
-def test_voltage_label_leaves_names_with_numbers_alone(project, profile):
-    """R19c: only a plain number (or a ';' list of them) is a voltage, unless the field's
-    name says it holds one."""
-    from geophysics_workbench.section.context_layers import voltage_label
-    assert voltage_label("4711 Nord") == "4711 Nord"
-    assert voltage_label("4711 Nord", "name") == "4711 Nord"
-    assert voltage_label("Leitung 380000") == "Leitung 380000"
-    assert voltage_label("380 kV", "voltage") == "380 kV"
+    assert voltage_label("380000;110000", "voltage") == "380 kV"
+    assert voltage_label("62500", "Spannung_V") == "62.5 kV"
     assert voltage_label("110000 V", "Spannung_V") == "110 kV"
+    assert voltage_label("380 kV", "voltage") == "380 kV"
     assert voltage_label("high", "voltage") == "high"
+    assert voltage_label("380000", "name") == "380000"
+    assert voltage_label("4711 Nord", "name") == "4711 Nord"
+
+
+def test_v1_powerline_entry_still_draws(project, profile):
+    import json
+    from geophysics_workbench.ui.context_dialog import KEY
+    from geophysics_workbench.ui.project_actions import SCOPE
+    lines = _layer(project, "LineString", "Lines", "voltage:string")
+    _red(lines)
+    _add(lines, "LINESTRING(30 -50, 30 50)", ["380000"])
+    project.writeEntry(SCOPE, KEY, json.dumps({"version": 1, "line_layers": [
+        {"layer_id": lines.id(), "label_field": "voltage", "powerline": True}]}))
+    from geophysics_workbench.section.context_layers import ContextGatherer
+    g = ContextGatherer(project, AUTH, lambda: None)
+    try:
+        items = g.items_for(profile)
+    finally:
+        g.close()
+    assert [(c.label, c.rgb) for c in items.crossings] == [("380 kV", (220, 0, 0))]
+
+
+def test_only_selected_uses_selection(project, profile):
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    lines = _layer(project, "LineString", "Lines")
+    _add(lines, "LINESTRING(30 -50, 30 50)")
+    _add(lines, "LINESTRING(60 -50, 60 50)")
+    g = _gatherer(project, ContextSettings(line_layers=[
+        LineLayerSetting(lines.id(), selected_only=True)]))
+    try:
+        assert g.items_for(profile).crossings == []
+        ids = sorted(f.id() for f in lines.getFeatures())
+        lines.selectByIds([ids[1]])
+        assert [c.s for c in g.items_for(profile).crossings] == [approx(60)]
+    finally:
+        g.close()
+
+
+def test_unsaved_visible_line_layer_is_gathered(project, profile):
+    from geophysics_workbench.core.context_settings import ContextSettings
+    lines = _layer(project, "LineString", "Road")
+    _add(lines, "LINESTRING(30 -50, 30 50)")
+    g = _gatherer(project, ContextSettings())
+    try:
+        assert [c.label for c in g.items_for(profile).crossings] == ["Road"]
+    finally:
+        g.close()
+
+
+def test_excluded_layer_is_not_gathered(project, profile):
+    from geophysics_workbench.core.context_settings import ContextSettings
+    from geophysics_workbench.section.context_layers import ContextGatherer
+    from geophysics_workbench.ui.context_dialog import write_settings
+    lines = _layer(project, "LineString", "Road")
+    _add(lines, "LINESTRING(30 -50, 30 50)")
+    write_settings(project, ContextSettings())
+    g = ContextGatherer(project, AUTH, lambda: None, exclude=lambda: {lines.id()})
+    try:
+        assert g.items_for(profile).crossings == []
+    finally:
+        g.close()
 
 
 def test_line_without_label_field_uses_layer_name(project, profile):
     from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Road")
     _add(lines, "LINESTRING(10 -5, 10 5)")
-    g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]))
+    g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id(), checked=True)]))
     items = g.items_for(profile)
     g.close()
     assert [(c.label, c.kind) for c in items.crossings] == [("Road", "line")]
@@ -277,7 +332,7 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
     g = _gatherer(project, ContextSettings(
         line_layers=[LineLayerSetting("gone-id", "voltage", checked=True),
                      LineLayerSetting(lines.id(), "voltage_old", checked=True),
-                     LineLayerSetting(good.id())],
+                     LineLayerSetting(good.id(), checked=True)],
         band=BandSetting(renamed.id(), "unit")))
     try:
         items = g.items_for(profile)
@@ -290,8 +345,8 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
     assert items.band == []
     warnings = [m for m, tag, level in got if tag == "Geophysics Workbench"
                 and level == Qgis.MessageLevel.Warning]
-    assert len(warnings) == 3
-    for needle in ("gone-id", "voltage_old", "'unit'"):
+    assert len(warnings) == 2                     # a stale entry is ignored silently
+    for needle in ("voltage_old", "'unit'"):
         assert sum(needle in w for w in warnings) == 1
     assert n_first == len(got)
 
@@ -389,11 +444,13 @@ def test_changed_settings_reconnect(project, profile, qgis_app):
     a = _layer(project, "LineString", "A")
     b = _layer(project, "LineString", "B")
     calls = []
-    g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(a.id())]),
+    g = _gatherer(project, ContextSettings(line_layers=[
+        LineLayerSetting(a.id(), checked=True), LineLayerSetting(b.id(), checked=False)]),
                   lambda: calls.append(1))
     try:
         g.items_for(profile)
-        write_settings(project, ContextSettings(line_layers=[LineLayerSetting(b.id())]))
+        write_settings(project, ContextSettings(line_layers=[
+            LineLayerSetting(a.id(), checked=False), LineLayerSetting(b.id(), checked=True)]))
         g.items_for(profile)
         a.startEditing()
         _add_edit(a, "LINESTRING(10 -5, 10 5)")
