@@ -45,7 +45,7 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     dlg.accept()
 
     got = read_settings(prj)
-    assert [(s.layer_id, s.powerline) for s in got.line_layers] == [(line.id(), True)]
+    assert [(s.layer_id, s.checked) for s in got.line_layers] == [(line.id(), True)]
     assert [s.layer_id for s in got.point_layers] == [pts.id()]
     assert got.band.layer_id == poly.id() and got.band.label_field == "unit"
     assert got.dem_layer_id == dem.id()
@@ -90,7 +90,7 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
                                                         write_settings)
 
     prj = QgsProject()
-    saved = ContextSettings(line_layers=[LineLayerSetting("gone_line", "name", True)],
+    saved = ContextSettings(line_layers=[LineLayerSetting("gone_line", "name", checked=True)],
                             borehole=BoreholeSetting("gone_bh", "id", "z", "gone_log", "hid",
                                                      "t", "b", "lith"),
                             band=BandSetting("gone_band", "unit"), dem_layer_id="gone_dem")

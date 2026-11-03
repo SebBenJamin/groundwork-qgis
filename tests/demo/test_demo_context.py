@@ -100,7 +100,7 @@ def test_earthing_artefact_near_powerline_on_p1(demo, profiles):
     from geophysics_workbench.core.context import line_crossings, project_points
 
     p1 = profiles["P1"]
-    [crossing] = line_crossings(_line(p1), _powerline(), "380 kV", "powerline")
+    [crossing] = line_crossings(_line(p1), _powerline(), "380 kV", "line")
     pylons = json.loads((CONTEXT / "pylons.geojson").read_text(encoding="utf-8"))
     near = project_points(_line(p1), np.array([f["geometry"]["coordinates"]
                                                for f in pylons["features"]]), 20.0)
@@ -259,7 +259,7 @@ def test_project_has_context_settings_and_relative_paths(qgis_app):
     assert entry is not None
     s = ContextSettings.from_json(entry.text)
     by_name = {name: lid for lid, (name, _src) in layers.items()}
-    assert [(x.layer_id, x.label_field, x.powerline) for x in s.line_layers] == [
+    assert [(x.layer_id, x.label_field, x.checked) for x in s.line_layers] == [
         (by_name["Powerline (OSM)"], "voltage", True)]
     assert [(x.layer_id, x.label_field) for x in s.point_layers] == [
         (by_name["Pylons (from OSM)"], "name")]

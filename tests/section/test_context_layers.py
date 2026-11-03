@@ -56,14 +56,14 @@ def test_powerline_crossing_with_voltage_label(project, profile):
     _add(lines, "LINESTRING(30 -50, 30 50)", ["380000"])
     _add(lines, "LINESTRING(500 -50, 500 50)", ["110000"])
     g = _gatherer(project, ContextSettings(line_layers=[
-        LineLayerSetting(lines.id(), "voltage", True)]))
+        LineLayerSetting(lines.id(), "voltage", checked=True)]))
     try:
         items = g.items_for(profile)
     finally:
         g.close()
     assert len(items.crossings) == 1
     c = items.crossings[0]
-    assert (c.label, c.kind) == ("380 kV", "powerline")
+    assert (c.label, c.kind) == ("380 kV", "line")
     assert c.s == approx(30) and c.angle_deg == approx(90)
     assert items.ties == [] and items.dem is None
 
@@ -275,8 +275,8 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
     _add(renamed, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["x"])
     got, stop = _capture_log(qgis_app)
     g = _gatherer(project, ContextSettings(
-        line_layers=[LineLayerSetting("gone-id", "voltage", True),
-                     LineLayerSetting(lines.id(), "voltage_old", True),
+        line_layers=[LineLayerSetting("gone-id", "voltage", checked=True),
+                     LineLayerSetting(lines.id(), "voltage_old", checked=True),
                      LineLayerSetting(good.id())],
         band=BandSetting(renamed.id(), "unit")))
     try:

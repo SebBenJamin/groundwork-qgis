@@ -164,7 +164,7 @@ class ContextDialog(QDialog):
     def _load(self, s: ContextSettings) -> None:
         for item in s.line_layers:
             if item.layer_id in self.line_rows:
-                self.line_rows[item.layer_id].load(item.label_field, item.powerline)
+                self.line_rows[item.layer_id].load(item.label_field)
         for item in s.point_layers:
             if item.layer_id in self.point_rows:
                 self.point_rows[item.layer_id].load(item.label_field)
@@ -193,7 +193,7 @@ class ContextDialog(QDialog):
                 and self.project.mapLayer(band_id) is None):
             band_label = old.label_field                # layer missing: keep its saved label
         return ContextSettings(
-            line_layers=[LineLayerSetting(r.layer_id, field_of(r.label), r.powerline.isChecked())
+            line_layers=[LineLayerSetting(r.layer_id, field_of(r.label), checked=True)
                          for r in self.line_rows.values() if r.check.isChecked()]
             + list(self.stale_lines),
             point_layers=[PointLayerSetting(r.layer_id, field_of(r.label))

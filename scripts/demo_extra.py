@@ -160,7 +160,7 @@ def add_context(project, context_dir: Path, powerline) -> None:
         root.insertLayer(index, layer)
     root.findLayer(dem.id()).setItemVisibilityChecked(False)
     write_settings(project, ContextSettings(
-        line_layers=[LineLayerSetting(powerline.id(), "voltage", powerline=True)],
+        line_layers=[LineLayerSetting(powerline.id(), "voltage", checked=True)],
         point_layers=[PointLayerSetting(pylons.id(), "name")],
         borehole=BoreholeSetting(boreholes.id(), "id", "elevation", logs.id(), "borehole_id",
                                  "top", "bottom", "lithology"),

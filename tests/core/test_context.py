@@ -8,9 +8,15 @@ BENT = np.array([[0.0, 0.0], [50.0, 0.0], [50.0, 50.0]])
 
 
 def test_line_crossing_chainage_and_angle():
-    c = line_crossings(L, np.array([[30.0, -10.0], [30.0, 10.0]]), "380 kV", "powerline")
+    c = line_crossings(L, np.array([[30.0, -10.0], [30.0, 10.0]]), "380 kV", "line")
     assert len(c) == 1 and c[0].s == pytest.approx(30.0)
-    assert c[0].angle_deg == pytest.approx(90.0) and c[0].kind == "powerline"
+    assert c[0].angle_deg == pytest.approx(90.0) and c[0].kind == "line"
+
+
+def test_line_crossing_carries_colour_and_layer():
+    [c] = line_crossings(L, np.array([[30.0, -10.0], [30.0, 10.0]]), "380 kV",
+                         rgb=(220, 0, 0), layer="Powerline (OSM)")
+    assert (c.rgb, c.layer, c.kind, c.label) == ((220, 0, 0), "Powerline (OSM)", "line", "380 kV")
 
 
 def test_line_crossing_multiple_and_at_vertex_no_duplicates():
@@ -82,7 +88,7 @@ def test_context_items_mirrored():
     from geophysics_workbench.core.ties import Tie
     col = object()
     items = ContextItems(
-        crossings=[Crossing(10, "a", "line", 30.0), Crossing(70, "b", "powerline", 80.0)],
+        crossings=[Crossing(10, "a", "line", 30.0), Crossing(70, "b", "line", 80.0, (1, 2, 3), "Lyr")],
         points=[ProjectedPoint(20, 5.0, "p", "borehole", 101.0, [LogInterval(0, 1, "sand")])],
         band=[BandSegment(0, 40, "x"), BandSegment(40, 100, "y")],
         ties=[Tie(25, "id", "other", 7.0, 0.0, [col])],
@@ -97,5 +103,6 @@ def test_context_items_mirrored():
     np.testing.assert_allclose(m.dem[0], 100.0 - items.dem[0][::-1])
     np.testing.assert_allclose(m.dem[1], [np.nan, 2.0, 1.0])
     assert m.dem_tolerance == 2.0
+    assert (m.crossings[0].rgb, m.crossings[0].layer) == ((1, 2, 3), "Lyr")
     assert items.crossings[0].s == 10                      # original untouched
     assert ContextItems().mirrored(10.0).dem is None

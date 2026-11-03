@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import asdict, dataclass, field, fields
 
-VERSION = 1
+VERSION = 2
 MAX_DISTANCE = 1e6                                     # metres; the dialog's spin boxes allow the same
 
 
@@ -17,7 +18,9 @@ MAX_DISTANCE = 1e6                                     # metres; the dialog's sp
 class LineLayerSetting:
     layer_id: str
     label_field: str = ""
-    powerline: bool = False
+    colour: str = ""                  # "#rrggbb"; "" = the layer's own symbol colour
+    selected_only: bool = False
+    checked: bool | None = None       # None = follow map visibility
 
 
 @dataclass
@@ -70,6 +73,10 @@ class ContextSettings:
             return cls()
         out = cls()
         out.line_layers = _items(data.get("line_layers"), LineLayerSetting)
+        version = data.get("version")
+        if not isinstance(version, int) or isinstance(version, bool) or version < 2:
+            for item in out.line_layers:                # 0.2.0: every saved line row was ticked
+                item.checked = True
         out.point_layers = _items(data.get("point_layers"), PointLayerSetting)
         out.borehole = _item(data.get("borehole"), BoreholeSetting)
         out.band = _item(data.get("band"), BandSetting)
@@ -91,6 +98,14 @@ def _item(data, kind):
     kwargs = {}
     for f in fields(kind):
         value = data.get(f.name)
+        if f.name == "checked":
+            if value is None or isinstance(value, bool):
+                kwargs[f.name] = value
+            continue
+        if f.name == "colour":
+            if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                kwargs[f.name] = value
+            continue
         want = bool if f.type in ("bool", bool) else str
         if isinstance(value, want):
             kwargs[f.name] = value

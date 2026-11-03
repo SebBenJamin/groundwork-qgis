@@ -97,7 +97,7 @@ def artefact_site(p1, powerline_xy, pylons):
             i, s, off = min(hits, key=lambda h: abs(h[2]))
             name, x, y = pylons[i]
             return x, y, f"under {name} ({abs(off):.1f} m off P1, s = {s:.1f} m)"
-    [crossing] = line_crossings(_line(p1), powerline_xy, "", "powerline")
+    [crossing] = line_crossings(_line(p1), powerline_xy, "", "line")
     x, y = p1.xy(crossing.s)
     return float(x), float(y), (f"no pylon within {PYLON_RADIUS:.0f} m of P1: at the P1 x "
                                 f"powerline crossing, s = {crossing.s:.1f} m")

@@ -244,9 +244,9 @@ class ContextGatherer:
         out = []
         for feature, geom in self._features(layer, box, (setting.label_field,)):
             label = _text(feature[setting.label_field]) if setting.label_field else ""
-            if setting.powerline and label:
+            if label:
                 label = voltage_label(label, setting.label_field or "")
-            kind = "powerline" if setting.powerline else "line"
+            kind = "line"                           # Task 2 rewrites this method
             parts = geom.asMultiPolyline() if geom.isMultipart() else [geom.asPolyline()]
             for part in parts:
                 if len(part) >= 2:
