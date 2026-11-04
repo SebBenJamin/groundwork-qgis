@@ -16,7 +16,7 @@ from qgis.PyQt.QtGui import QColor, QPainterPath, QPen
 from qgis.PyQt.QtWidgets import QGraphicsPathItem
 
 SKETCH_RGB = (170, 0, 140)
-MIN_POINTS = {"point": 1, "line": 2, "polygon": 3}
+from ..core.interpretation import MIN_VERTICES as MIN_POINTS  # noqa: E402
 
 
 class SketchItem:
@@ -137,3 +137,131 @@ def _dedup(points):
         if not out or out[-1] != p:
             out.append(p)
     return out
+
+
+class EditTool(QgsPlotTool):
+    """Select a piece (click), drag a vertex, click an edge to insert a vertex, drag inside a
+    polygon (or Shift+drag a line) to move it, Delete removes the selected vertex or the
+    piece, double-click edits the feature's attributes, Esc deselects (then leaves)."""
+
+    TOLERANCE_MM = 3.0
+
+    def __init__(self, canvas, ctl):
+        super().__init__(canvas, "interp-edit")
+        sip.transferto(self, canvas)
+        self.ctl = ctl
+        self.selected = None            # InterpPiece
+        self.vertex = None              # selected vertex index
+        self._drag = None               # ("vertex", index) | ("move", s0, z0)
+        self._preview = None
+        self.sketch = SketchItem(canvas)
+
+    # -- helpers ---------------------------------------------------------------------------
+    def _plot(self, pos):
+        pp = self.canvas().canvasPointToPlotPoint(QPointF(pos))
+        return None if pp.isEmpty() else (float(pp.distance()), float(pp.elevation()))
+
+    def _tolerance(self, pos):
+        px = self.TOLERANCE_MM * self.canvas().logicalDpiX() / 25.4
+        a = self.canvas().canvasPointToPlotPoint(QPointF(pos))
+        b = self.canvas().canvasPointToPlotPoint(QPointF(pos) + QPointF(px, px))
+        return (max(1e-9, abs(b.distance() - a.distance())),
+                max(1e-9, abs(b.elevation() - a.elevation())))
+
+    def _show(self, piece) -> None:
+        if piece is None:
+            self.sketch.clear()
+        else:
+            self.sketch.show(piece.vertices, piece.kind == "polygon")
+
+    def select(self, piece, vertex=None) -> None:
+        self.selected, self.vertex = piece, vertex
+        self._show(piece)
+
+    # -- events ----------------------------------------------------------------------------
+    def plotPressEvent(self, event):
+        from .interp_edit import insert_vertex, pick_piece
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        xy = self._plot(event.pos())
+        if xy is None:
+            return
+        event.accept()
+        pieces = self.ctl.current_pieces()
+        if self.selected is not None:
+            pieces = [p for p in pieces if p.id == self.selected.id] + \
+                     [p for p in pieces if p.id != self.selected.id]
+        hit = pick_piece(pieces, *xy, *self._tolerance(event.pos()))
+        if hit is None:
+            self.select(None)
+            return
+        if self.selected is None or hit.piece.id != self.selected.id:
+            self.select(hit.piece)
+            return
+        shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if hit.vertex is not None:
+            self.vertex = hit.vertex
+            self._drag = ("vertex", hit.vertex)
+        elif hit.edge is not None and not shift:
+            self._preview = insert_vertex(hit.piece, hit.edge, *xy)
+            self.vertex = hit.edge + 1
+            self._drag = ("vertex", hit.edge + 1)
+        elif hit.interior or shift:
+            self._drag = ("move", xy[0], xy[1])
+        self._base = self._preview or hit.piece
+
+    def plotMoveEvent(self, event):
+        from .interp_edit import move_piece, move_vertex
+        xy = self._plot(event.pos())
+        if xy is None:
+            return
+        pp = self.canvas().canvasPointToPlotPoint(QPointF(event.pos()))
+        self.ctl.hover(pp)
+        if self._drag is None:
+            return
+        if self._drag[0] == "vertex":
+            self._preview = move_vertex(self._base, self._drag[1], *xy)
+        else:
+            self._preview = move_piece(self._base, xy[0] - self._drag[1], xy[1] - self._drag[2])
+        self._show(self._preview)
+
+    def plotReleaseEvent(self, event):
+        if self._drag is None:
+            return
+        self._drag = None
+        new, self._preview = self._preview, None
+        if new is not None and self.selected is not None:
+            saved = self.ctl.replace_piece(self.selected, new)
+            self.select(saved, self.vertex)
+
+    def plotDoubleClickEvent(self, event):
+        event.accept()
+        if self.selected is not None:
+            self.ctl.edit_feature(self.selected.feature_id)
+
+    def keyPressEvent(self, event):
+        from .interp_edit import delete_vertex
+        key = event.key()
+        if key == Qt.Key.Key_Delete and self.selected is not None:
+            piece = self.selected
+            if self.vertex is not None:
+                rest = delete_vertex(piece, self.vertex)
+                if rest is not None:
+                    self.select(self.ctl.replace_piece(piece, rest))
+                    event.accept()
+                    return
+            if self.ctl.confirm("Delete this interpretation piece?"):
+                self.ctl.delete_piece(piece)
+                self.select(None)
+        elif key == Qt.Key.Key_Escape:
+            if self.selected is not None:
+                self.select(None)
+            else:
+                self.ctl.stop()
+        else:
+            return
+        event.accept()
+
+    def deactivate(self):
+        self.select(None)
+        super().deactivate()

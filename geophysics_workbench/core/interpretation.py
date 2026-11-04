@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 KINDS = ("line", "polygon", "point")
+MIN_VERTICES = {"point": 1, "line": 2, "polygon": 3}
 CONFIDENCE = ("certain", "probable", "uncertain")
 STARTER_TYPES = ["layer boundary", "top of bedrock", "water table", "fault", "anomaly", "body",
                  "unreliable", "artefact (3D effect)", "pick"]
