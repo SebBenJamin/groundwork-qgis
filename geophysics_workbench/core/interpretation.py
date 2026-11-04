@@ -145,3 +145,12 @@ def type_suggestions(used: list[str]) -> list[str]:
     for t in list(STARTER_TYPES) + [u for u in used if u and u.strip()]:
         seen.setdefault(t.strip().lower(), t.strip())
     return sorted(seen.values(), key=str.lower)
+
+
+def clamp_to_surface(vertices, surface) -> list[tuple[float, float]]:
+    """Vertices with every point above the ground line moved down onto it. ``surface`` is the
+    drawn topography ``(chainage array, elevation array)``; ``None`` leaves them as they are."""
+    if surface is None or len(surface[0]) == 0:
+        return [(float(s), float(z)) for s, z in vertices]
+    ss, zz = (np.asarray(a, float) for a in surface)
+    return [(float(s), min(float(z), float(np.interp(s, ss, zz)))) for s, z in vertices]

@@ -15,6 +15,7 @@ from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QPen
 from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
+                                 QToolTip,
                                  QHBoxLayout, QLabel, QSplitter, QToolButton, QVBoxLayout,
                                  QWidget)
 
@@ -58,6 +59,7 @@ class SectionDock(QDockWidget):
         self._topo = None
         self._coverage = None                   # (min, max) station chainage, with _topo
         self._cursor_s = None
+        self._click_pos = None
 
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
@@ -311,12 +313,34 @@ class SectionDock(QDockWidget):
                 self.cursor_left.emit()
             elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
                 self.fit.user_navigated()       # the user navigates: keep their view
+            if etype == QEvent.Type.MouseButtonPress and                     event.button() == Qt.MouseButton.LeftButton:
+                self._click_pos = event.position()
+            elif etype == QEvent.Type.MouseButtonRelease and self._click_pos is not None:
+                moved = event.position() - self._click_pos
+                self._click_pos = None
+                if abs(moved.x()) + abs(moved.y()) <= 4 and                         self.canvas.tool() is self._pan_tool:
+                    self.show_details(event.position(), event.globalPosition())
         elif obj is self.canvas:
             if etype == QEvent.Type.KeyPress:
                 self.fit.user_navigated()
             elif etype == QEvent.Type.Resize and self._profile is not None:
                 self.fit.schedule_refit()
         return super().eventFilter(obj, event)
+
+    def details_at(self, pos) -> list[str]:
+        """Borehole and interpretation details under canvas position ``pos``."""
+        if self._profile is None or self.provider is None:
+            return []
+        pp = self.canvas.canvasPointToPlotPoint(pos)
+        if pp.isEmpty():
+            return []
+        from .dock_context import click_details
+        return click_details(self, float(pp.distance()), float(pp.elevation()))
+
+    def show_details(self, pos, global_pos) -> None:
+        lines = self.details_at(pos)
+        if lines:
+            QToolTip.showText(global_pos.toPoint(), "\n".join(lines), self.canvas)
 
     # -- cursor ------------------------------------------------------------------------------
     def _hovered(self, _canvas_point, plot_point) -> None:

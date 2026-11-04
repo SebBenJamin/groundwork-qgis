@@ -27,3 +27,44 @@ def context_lines(dock, s: float, z: float) -> list[str]:
     per_mm = per_px * dock.logicalDpiX() / 25.4
     return context_hits(ctx, s, z, TOLERANCE_PX * per_px, COLUMN_MM / 2 * per_mm,
                         STRIP_MM * per_mm, surface=dock._topo, stations=stations)
+
+
+def click_details(dock, s: float, z: float) -> list[str]:
+    """What a click at (s, z) hits: a borehole column (full log) and interpretation pieces
+    (all attributes, including the user's own fields)."""
+    from .context_readout import borehole_details
+    from .interp_edit import pick_piece
+
+    lines: list[str] = []
+    rng, area = dock.canvas.visibleDistanceRange(), dock.canvas.plotArea()
+    erng = dock.canvas.visibleElevationRange()
+    if area.width() <= 0 or area.height() <= 0 or rng.upper() <= rng.lower():
+        return lines
+    per_px = (rng.upper() - rng.lower()) / area.width()
+    per_px_z = (erng.upper() - erng.lower()) / area.height()
+    per_mm = per_px * dock.logicalDpiX() / 25.4
+    context_lines(dock, s, z)                   # fills the cached context
+    if dock._ctx is not None and dock._ctx[0] is not None:
+        lines += borehole_details(dock._ctx[0], s, z, COLUMN_MM / 2 * per_mm, dock._topo)
+    store = dock.provider.store
+    version = dock.provider.shown_interp_version()
+    if version is not None:
+        pieces = store.pieces(version, dock._profile.id)
+        hit = pick_piece(pieces, s, z, 3 * per_px * dock.logicalDpiX() / 25.4,
+                         3 * per_px_z * dock.logicalDpiX() / 25.4)
+        if hit is not None:
+            feat = next((f for f in store.features(version) if f.id == hit.piece.feature_id),
+                        None)
+            if feat is not None:
+                if lines:
+                    lines.append("")
+                title = " · ".join(x for x in (feat.letter, feat.type) if x) or "(unnamed)"
+                lines.append(f"Interpretation {title} ({hit.piece.kind})")
+                for label, value in (("Confidence", feat.confidence), ("Note", feat.note),
+                                     ("Author", feat.author), ("Modified", feat.modified)):
+                    if value:
+                        lines.append(f"  {label}: {value}")
+                for k, v in feat.extra.items():
+                    if v not in (None, ""):
+                        lines.append(f"  {k}: {v}")
+    return lines

@@ -11,7 +11,8 @@ from qgis.core import QgsExpressionContextUtils, QgsProject
 from qgis.PyQt.QtCore import QObject
 from qgis.PyQt.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMessageBox, QToolButton
 
-from ..core.interpretation import InterpFeature, InterpPiece, new_id, normalise, type_suggestions
+from ..core.interpretation import (InterpFeature, InterpPiece, clamp_to_surface, new_id,
+                                   normalise, type_suggestions)
 from ..ui.interp_form import ask_feature
 from .interp_tools import DrawTool, EditTool
 from .interp_undo import InterpUndo
@@ -88,6 +89,14 @@ class InterpController(QObject):
             return True
         store = prov.store
         return not store.has_interpretation() or prov.interp_version_id ==             store.current_version().id
+
+    def surface(self):
+        """The drawn ground line of the open profile, or None."""
+        try:
+            self.dock._current_layers()         # fills the dock's cached topography
+        except Exception:                       # a broken layer must not block drawing
+            pass
+        return self.dock._topo
 
     def hover(self, plot_point) -> None:
         self.dock._hovered(None, plot_point)
@@ -169,6 +178,7 @@ class InterpController(QObject):
         store.ensure_interpretation()
         version = store.current_version()
         dataset, dversion = self._based_on(profile_id)
+        points = clamp_to_surface(points, self.surface())
         piece = normalise(InterpPiece(new_id(), version.id, "", profile_id, kind, points,
                                       based_on_dataset=dataset, based_on_version=dversion))
         feature = InterpFeature(new_id(), version.id, author=current_author())
@@ -201,7 +211,9 @@ class InterpController(QObject):
 
     def replace_piece(self, old, new):
         """Save ``new`` in place of ``old`` (undoable); returns the saved piece."""
-        from ..core.interpretation import normalise
+        import copy
+        new = copy.deepcopy(new)
+        new.vertices = clamp_to_surface(new.vertices, self.surface())
         new = normalise(new)
         self.undo.push("Edit piece", (None, old), (None, new))
         return new

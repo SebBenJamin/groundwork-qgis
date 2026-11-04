@@ -1,4 +1,5 @@
 """Drawing interpretation on the section: tools, form, saving."""
+import numpy as np
 import pytest
 from qgis.PyQt.QtCore import QEvent, QPoint, QPointF, Qt
 
@@ -115,3 +116,80 @@ def test_cancelled_form_discards_piece(qgis_app, dock):
     _click(qgis_app, dock.canvas, 400, 250)
     store = dock.provider.store
     assert not store.has_interpretation() or store.pieces(store.current_version().id) == []
+
+
+def test_sketch_mapping_outside_view_is_not_origin(qgis_app, dock):
+    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    dock.canvas.setVisiblePlotRange(0.0, 10.0, -5.0, 5.0)
+    qgis_app.processEvents()
+    from qgis.core import QgsProfilePoint
+    upper = dock.canvas.visibleDistanceRange().upper()      # locked axis scales widen ranges
+    inside = plot_to_canvas(dock.canvas, 5.0, 0.0)
+    ref = dock.canvas.plotPointToCanvasPoint(QgsProfilePoint(5.0, 0.0))
+    assert abs(inside.x() - ref.x()) < 1 and abs(inside.y() - ref.y()) < 1
+    outside = plot_to_canvas(dock.canvas, upper + 20.0, 0.0)
+    area = dock.canvas.plotArea()
+    assert area.contains(inside)
+    assert outside.x() > area.right() and abs(outside.y() - inside.y()) < 1
+
+
+def test_middle_drag_pans_while_drawing(qgis_app, dock):
+    from qgis.PyQt.QtGui import QMouseEvent
+    from geophysics_workbench.section.interp_tools import DrawTool
+    dock.fit.user_navigated()
+    dock.canvas.setVisiblePlotRange(0.0, 10.0, -5.0, 5.0)
+    qgis_app.processEvents()
+    tool = DrawTool(dock.canvas, "line", lambda pts: None)
+    dock.canvas.setTool(tool)
+    _click(qgis_app, dock.canvas, 300, 200)                       # a sketch in progress
+    vp = dock.canvas.viewport()
+    before = dock.canvas.visibleDistanceRange().lower()
+    for et, x, buttons in ((QEvent.Type.MouseButtonPress, 400, Qt.MouseButton.MiddleButton),
+                           (QEvent.Type.MouseMove, 300, Qt.MouseButton.MiddleButton),
+                           (QEvent.Type.MouseButtonRelease, 300, Qt.MouseButton.NoButton)):
+        vp_pos = QPointF(x, 220)
+        qgis_app.sendEvent(vp, QMouseEvent(et, vp_pos, QPointF(vp.mapToGlobal(QPoint(x, 220))),
+                                           Qt.MouseButton.MiddleButton, buttons,
+                                           Qt.KeyboardModifier.NoModifier))
+    assert dock.canvas.visibleDistanceRange().lower() > before   # dragged left: view moves right
+    assert len(tool.points) == 1                                 # the sketch survived
+    dock.canvas.setTool(dock._pan_tool)
+
+
+def test_drawn_vertices_above_ground_snap_to_it(qgis_app, dock):
+    from geophysics_workbench.core.interpretation import InterpFeature
+    ctl = dock.interp
+    ctl.form_factory = lambda feature, s, l: InterpFeature(feature.id, feature.version_id)
+    surface = ctl.surface()
+    assert surface is not None
+    s_mid = float(surface[0][len(surface[0]) // 2])
+    ground = float(np.interp(s_mid, *surface))
+    ctl._finished("line", [(s_mid, ground + 50.0), (s_mid + 2.0, ground - 3.0)])
+    store = dock.provider.store
+    [p] = store.pieces(store.current_version().id)
+    assert p.vertices[0][1] == pytest.approx(ground)
+    from qgis.core import QgsProject
+    QgsProject.instance().removeAllMapLayers()
+
+
+def test_click_shows_borehole_and_interpretation_details(qgis_app, dock):
+    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from geophysics_workbench.section.dock_context import click_details
+    dock.fit.user_navigated()
+    dock.canvas.setVisiblePlotRange(0.0, 20.0, -10.0, 5.0)
+    qgis_app.processEvents()
+    bh = ProjectedPoint(5.0, 1.5, "RK1", "borehole", 0.0,
+                        [LogInterval(0.0, 1.0, "peat"), LogInterval(1.0, 3.0, "sand")])
+    dock._ctx = (ContextItems(points=[bh]), None)
+    lines = click_details(dock, 5.0, -2.0)
+    assert lines[0].startswith("Borehole RK1") and any("sand" in x for x in lines)
+    store = dock.provider.store
+    store.ensure_interpretation()
+    v = store.current_version()
+    f = InterpFeature(new_id(), v.id, type="clay lens", letter="C", note="check")
+    store.save_feature(f)
+    store.save_piece(InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "polygon",
+                                 [(10, 0), (15, 0), (15, -5), (10, -5)]))
+    lines = click_details(dock, 12.0, -2.0)
+    assert lines[0] == "Interpretation C \u00b7 clay lens (polygon)" and "  Note: check" in lines

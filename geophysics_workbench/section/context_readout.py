@@ -106,3 +106,26 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
     if dem is not None:
         lines.append(dem)
     return lines
+
+
+def borehole_details(items: ContextItems, s: float, z: float, column_half_width_s: float,
+                     surface=None) -> list[str]:
+    """Full description of the borehole column under (s, z): name, offset, top and every
+    logged layer. Empty when no column is hit."""
+    for p in items.points:
+        if p.kind != "borehole" or abs(s - p.s) > column_half_width_s:
+            continue
+        if p.z_top is not None:
+            z_top = float(p.z_top)
+        elif surface is not None and len(surface[0]) > 0:
+            z_top = float(np.interp(p.s, *surface))
+        else:
+            continue
+        bottom = max((iv.bottom for iv in p.log), default=0.0)
+        if not z_top - bottom - 0.2 <= z <= z_top + 0.2:
+            continue
+        lines = [f"Borehole {p.label} ({p.offset:+.0f} m from the line)",
+                 f"Top {z_top:.2f} m, logged to {bottom:.2f} m depth"]
+        lines += [f"  {iv.top:.2f}–{iv.bottom:.2f} m  {iv.lithology}" for iv in p.log]
+        return lines
+    return []

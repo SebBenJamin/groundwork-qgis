@@ -7,8 +7,9 @@ can change, and the section draws with the same styles.
 """
 from __future__ import annotations
 
-from qgis.core import (QgsFillSymbol, QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings,
-                       QgsProject, QgsRuleBasedRenderer, QgsTextFormat, QgsVectorLayer,
+from qgis.core import (QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsLineSymbol,
+                       QgsMarkerSymbol, QgsPalLayerSettings, QgsProject, QgsProperty,
+                       QgsRendererCategory, QgsSymbolLayer, QgsTextFormat, QgsVectorLayer,
                        QgsVectorLayerSimpleLabeling, QgsWkbTypes)
 from qgis.PyQt.QtGui import QColor
 
@@ -25,36 +26,46 @@ TITLES = {"interp_features": "Interpretation features (attributes)",
           "interp_footprints": "Interpretation footprints"}
 # default look, written once into the layer styles (the user restyles in QGIS afterwards)
 DEFAULT_RGB = (170, 0, 140)
-DASHES = {"certain": "solid", "probable": "dash", "uncertain": "dot"}
+DEFAULT_HUE = 310
 
 
 def interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
     return find_store_layers(store, project, INTERP_NAMES)
 
 
+STROKE_BY_CONFIDENCE = ("CASE WHEN \"confidence\" = 'certain' THEN 'solid' "
+                        "WHEN \"confidence\" = 'uncertain' THEN 'dot' ELSE 'dash' END")
+
+
+def entity_label(feat) -> str:
+    return " · ".join(x for x in (feat.letter, feat.type) if x) or "(unnamed)"
+
+
+def _entity_symbol(geom, rgb):
+    """A symbol in ``rgb`` whose line style follows ``confidence`` (data-defined)."""
+    colour = ",".join(map(str, rgb))
+    if geom == QgsWkbTypes.GeometryType.PolygonGeometry:
+        sym = QgsFillSymbol.createSimple({"color": f"{colour},60", "outline_color": colour,
+                                          "outline_width": "0.6"})
+    elif geom == QgsWkbTypes.GeometryType.PointGeometry:
+        return QgsMarkerSymbol.createSimple({"name": "cross2", "color": colour,
+                                             "outline_color": colour, "size": "3"})
+    else:
+        sym = QgsLineSymbol.createSimple({"color": colour, "width": "0.6"})
+    sym.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.StrokeStyle,
+                                              QgsProperty.fromExpression(STROKE_BY_CONFIDENCE))
+    return sym
+
+
+def _entity_rgb(index: int) -> tuple[int, int, int]:
+    c = QColor.fromHsv((DEFAULT_HUE + index * 67) % 360, 200, 190)
+    return c.red(), c.green(), c.blue()
+
+
 def default_style(layer: QgsVectorLayer) -> None:
-    """Rule-based by ``confidence`` (solid / dashed / dotted, grey dashed when unset) and
-    ``letter`` labels."""
-    colour = ",".join(map(str, DEFAULT_RGB))
-    geom = layer.geometryType()
-
-    def symbol(style: str, rgb: str):
-        if geom == QgsWkbTypes.GeometryType.PolygonGeometry:
-            return QgsFillSymbol.createSimple({"color": f"{rgb},50", "outline_color": rgb,
-                                               "outline_width": "0.6", "outline_style": style})
-        if geom == QgsWkbTypes.GeometryType.PointGeometry:
-            return QgsMarkerSymbol.createSimple({"name": "cross2", "color": rgb,
-                                                 "outline_color": rgb, "size": "3"})
-        return QgsLineSymbol.createSimple({"color": rgb, "width": "0.6", "line_style": style})
-
-    root = QgsRuleBasedRenderer.Rule(None)
-    for value, style in DASHES.items():
-        root.appendChild(QgsRuleBasedRenderer.Rule(symbol(style, colour),
-                                                   filterExp=f"\"confidence\" = '{value}'",
-                                                   label=value))
-    root.appendChild(QgsRuleBasedRenderer.Rule(symbol("dash", "120,120,120"), elseRule=True,
-                                               label="not set"))
-    layer.setRenderer(QgsRuleBasedRenderer(root))
+    """One legend entry and colour per entity (``feature_id``); the line style follows
+    ``confidence``; ``letter`` labels. Categories are filled by ``sync_categories``."""
+    layer.setRenderer(QgsCategorizedSymbolRenderer("feature_id", []))
     settings = QgsPalLayerSettings()
     settings.fieldName = "letter"
     fmt = QgsTextFormat()
@@ -66,6 +77,26 @@ def default_style(layer: QgsVectorLayer) -> None:
     settings.setFormat(fmt)
     layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
     layer.setLabelsEnabled(True)
+
+
+def sync_categories(layer: QgsVectorLayer, features) -> None:
+    """Keep one category per entity: add new ones, relabel, drop deleted ones. Colours the
+    user changed stay; a renderer the user replaced is left alone."""
+    r = layer.renderer()
+    if not isinstance(r, QgsCategorizedSymbolRenderer) or r.classAttribute() != "feature_id":
+        return
+    wanted = {f.id: f for f in features}
+    for i in reversed(range(len(r.categories()))):
+        if r.categories()[i].value() not in wanted:
+            r.deleteCategory(i)
+    have = {c.value(): i for i, c in enumerate(r.categories())}
+    for fid, feat in wanted.items():
+        if fid in have:
+            r.updateCategoryLabel(have[fid], entity_label(feat))
+        else:
+            r.addCategory(QgsRendererCategory(fid, _entity_symbol(layer.geometryType(),
+                                                                  _entity_rgb(len(r.categories()))),
+                                              entity_label(feat)))
 
 
 def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
@@ -85,6 +116,7 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
             layer.setSubsetString(f"\"version_id\" = '{store.current_version().id}'")
         else:
             default_style(layer)
+            sync_categories(layer, store.features(store.current_version().id))
             layer.setReadOnly(True)
         project.addMapLayer(layer, False)
         group.addLayer(layer)
@@ -93,7 +125,11 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
 
 
 def reload_interp_layers(store: ProjectStore, project: QgsProject) -> None:
-    for layer in interp_layers(store, project).values():
+    features = store.features(store.current_version().id) if store.has_interpretation() else []
+    for name, layer in interp_layers(store, project).items():
+        if name != "interp_features":
+            sync_categories(layer, features)
+            layer.emitStyleChanged()            # the legend lists the entities
         layer.dataProvider().reloadData()
         layer.reload()
         layer.updateExtents()

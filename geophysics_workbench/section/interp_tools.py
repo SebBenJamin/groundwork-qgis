@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Callable
 
-from qgis.core import QgsProfilePoint
 from qgis.gui import QgsPlotTool
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QPointF, Qt
@@ -19,24 +18,78 @@ SKETCH_RGB = (170, 0, 140)
 from ..core.interpretation import MIN_VERTICES as MIN_POINTS  # noqa: E402
 
 
+def plot_to_canvas(canvas, s: float, z: float) -> QPointF:
+    """Canvas pixel of plot point (s, z), linear in the visible ranges, so points outside the
+    view map outside the plot area (``plotPointToCanvasPoint`` returns (0, 0) for them)."""
+    area = canvas.plotArea()
+    d, e = canvas.visibleDistanceRange(), canvas.visibleElevationRange()
+    dw, eh = d.upper() - d.lower(), e.upper() - e.lower()
+    if area.width() <= 0 or area.height() <= 0 or dw <= 0 or eh <= 0:
+        return QPointF(float("nan"), float("nan"))
+    x = area.left() + (s - d.lower()) / dw * area.width()
+    y = area.bottom() - (z - e.lower()) / eh * area.height()
+    return QPointF(x, y)
+
+
+class Panner:
+    """Middle-button drag pans the canvas, whatever tool is active."""
+
+    def __init__(self, canvas):
+        self.canvas, self.last = canvas, None
+
+    def press(self, event) -> bool:
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self.last = QPointF(event.pos())
+            event.accept()
+            return True
+        return False
+
+    def move(self, event) -> bool:
+        if self.last is None:
+            return False
+        pos = QPointF(event.pos())
+        delta = pos - self.last
+        self.canvas.panContentsBy(delta.x(), delta.y())
+        self.last = pos
+        event.accept()
+        return True
+
+    def release(self, event) -> bool:
+        if self.last is None or event.button() != Qt.MouseButton.MiddleButton:
+            return False
+        self.last = None
+        event.accept()
+        return True
+
+
 class SketchItem:
-    """A path over the plot, in canvas coordinates rebuilt from plot points."""
+    """A path over the plot, in canvas coordinates rebuilt from plot points; redrawn after
+    every zoom or pan."""
 
     def __init__(self, canvas):
         self.canvas = canvas
+        self._last = None
         self.item = QGraphicsPathItem()
         pen = QPen(QColor(*SKETCH_RGB), 1.5, Qt.PenStyle.DashLine)
         pen.setCosmetic(True)
         self.item.setPen(pen)
         self.item.setZValue(1001)
         canvas.scene().addItem(self.item)
+        canvas.scaleChanged.connect(self._redraw)
+        canvas.plotAreaChanged.connect(self._redraw)
+
+    def _redraw(self, *_args) -> None:
+        if self._last is not None and not sip.isdeleted(self.item):
+            self.show(*self._last)
 
     def show(self, points, closed: bool = False, extra=None) -> None:
+        self._last = (list(points), closed, extra)
         pts = list(points) + ([extra] if extra is not None else [])
         path = QPainterPath()
         for k, (s, z) in enumerate(pts):
-            q = self.canvas.plotPointToCanvasPoint(QgsProfilePoint(s, z))
-            pt = QPointF(q.x(), q.y())
+            pt = plot_to_canvas(self.canvas, s, z)
+            if pt.x() != pt.x():                # no plot area yet
+                continue
             if k == 0:
                 path.moveTo(pt)
                 path.addEllipse(pt, 2, 2)
@@ -48,7 +101,9 @@ class SketchItem:
         self.item.setPath(path)
 
     def clear(self) -> None:
-        self.item.setPath(QPainterPath())
+        self._last = None
+        if not sip.isdeleted(self.item):
+            self.item.setPath(QPainterPath())
 
     def remove(self) -> None:
         if self.item.scene() is not None:
@@ -70,6 +125,7 @@ class DrawTool(QgsPlotTool):
         self.on_finished, self.on_cancel, self.on_hover = on_finished, on_cancel, on_hover
         self.points: list[tuple[float, float]] = []
         self.sketch = SketchItem(canvas)
+        self.panner = Panner(canvas)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     def _plot(self, event):
@@ -77,7 +133,7 @@ class DrawTool(QgsPlotTool):
         return None if pp.isEmpty() else (float(pp.distance()), float(pp.elevation())), pp
 
     def plotPressEvent(self, event):
-        if event.button() != Qt.MouseButton.LeftButton:
+        if self.panner.press(event) or event.button() != Qt.MouseButton.LeftButton:
             return
         xy, _ = self._plot(event)
         if xy is None:
@@ -89,7 +145,12 @@ class DrawTool(QgsPlotTool):
         else:
             self.sketch.show(self.points, self.kind == "polygon")
 
+    def plotReleaseEvent(self, event):
+        self.panner.release(event)
+
     def plotMoveEvent(self, event):
+        if self.panner.move(event):
+            return
         xy, pp = self._plot(event)
         if self.on_hover is not None and xy is not None:
             self.on_hover(pp)
@@ -155,6 +216,7 @@ class EditTool(QgsPlotTool):
         self._drag = None               # ("vertex", index) | ("move", s0, z0)
         self._preview = None
         self.sketch = SketchItem(canvas)
+        self.panner = Panner(canvas)
 
     # -- helpers ---------------------------------------------------------------------------
     def _plot(self, pos):
@@ -181,7 +243,7 @@ class EditTool(QgsPlotTool):
     # -- events ----------------------------------------------------------------------------
     def plotPressEvent(self, event):
         from .interp_edit import insert_vertex, pick_piece
-        if event.button() != Qt.MouseButton.LeftButton:
+        if self.panner.press(event) or event.button() != Qt.MouseButton.LeftButton:
             return
         xy = self._plot(event.pos())
         if xy is None:
@@ -212,6 +274,8 @@ class EditTool(QgsPlotTool):
 
     def plotMoveEvent(self, event):
         from .interp_edit import move_piece, move_vertex
+        if self.panner.move(event):
+            return
         xy = self._plot(event.pos())
         if xy is None:
             return
@@ -226,7 +290,7 @@ class EditTool(QgsPlotTool):
         self._show(self._preview)
 
     def plotReleaseEvent(self, event):
-        if self._drag is None:
+        if self.panner.release(event) or self._drag is None:
             return
         self._drag = None
         new, self._preview = self._preview, None

@@ -51,20 +51,33 @@ def test_interp_layers_are_not_crossing_line_candidates(qgis_app, interp_store):
     prj.clear()
 
 
-def test_default_style_dash_by_confidence(qgis_app, interp_store):
-    from qgis.core import QgsProject
-    from qgis.PyQt.QtCore import Qt
+def test_style_groups_by_entity_with_confidence_line_style(qgis_app, interp_store):
+    from qgis.core import QgsProject, QgsSymbolLayer
 
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from geophysics_workbench.ui.interp_layers import add_interp_layers, reload_interp_layers
 
     prj = QgsProject()
-    lines = add_interp_layers(interp_store, prj)["interp_lines_3d"]
-    rules = {r.label(): r for r in lines.renderer().rootRule().children()}
-    pen = rules["probable"].symbol().symbolLayer(0).penStyle()
-    assert pen == Qt.PenStyle.DashLine
-    assert rules["certain"].symbol().symbolLayer(0).penStyle() == Qt.PenStyle.SolidLine
-    assert rules["uncertain"].symbol().symbolLayer(0).penStyle() == Qt.PenStyle.DotLine
-    assert lines.labelsEnabled()
+    polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+    r = polys.renderer()
+    assert r.classAttribute() == "feature_id"
+    assert [c.label() for c in r.categories()] == ["A · anomaly"]
+    cats = r.categories()                         # keep the copies alive while reading them
+    sym = cats[0].symbol()
+    prop = sym.symbolLayer(0).dataDefinedProperties().property(
+        QgsSymbolLayer.Property.StrokeStyle)
+    assert "confidence" in prop.expressionString()
+    v = interp_store.current_version()
+    f = InterpFeature(new_id(), v.id, type="clay lens", letter="B")
+    interp_store.save_feature(f)
+    interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
+                                        [(0, 0), (5, 0), (5, -2)]))
+    reload_interp_layers(interp_store, prj)
+    assert sorted(c.label() for c in polys.renderer().categories()) == [
+        "A · anomaly", "B · clay lens"]
+    interp_store.delete_feature(f.id)
+    reload_interp_layers(interp_store, prj)
+    assert [c.label() for c in polys.renderer().categories()] == ["A · anomaly"]
     prj.clear()
 
 

@@ -79,3 +79,11 @@ def test_type_suggestions_merge_case_insensitive():
     assert "Clay lens" in got and [t.lower() for t in got].count("anomaly") == 1
     assert set(STARTER_TYPES) <= set(got)
     assert got == sorted(got, key=str.lower)
+
+
+def test_clamp_to_surface_moves_points_above_ground_down():
+    from geophysics_workbench.core.interpretation import clamp_to_surface
+    surface = (np.array([0.0, 10.0]), np.array([5.0, 7.0]))
+    assert clamp_to_surface([(0, 6), (5, 2), (10, 9)], surface) == [(0.0, 5.0), (5.0, 2.0),
+                                                                    (10.0, 7.0)]
+    assert clamp_to_surface([(1, 9)], None) == [(1.0, 9.0)]
