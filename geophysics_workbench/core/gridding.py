@@ -46,14 +46,15 @@ def _longest_edges(mesh) -> np.ndarray:
 
 
 def grid_shape(mesh, cell: float | None, max_nodes: int = 250_000) -> tuple[int, int]:
-    """(nx, nz) of a grid over the mesh. The automatic cell is the median edge of the 5 %
-    smallest mesh cells, at least 1/400 of the mesh width; the node count is capped by
-    enlarging the cell."""
+    """(nx, nz) of a grid over the mesh. The automatic cell is a quarter of the median
+    longest edge of the 5 % smallest mesh cells, at least 1/1500 of the mesh width; the node
+    count is capped by enlarging the cell."""
     smin, smax, zmin, zmax = mesh.bounds()
     width, height = max(smax - smin, 1e-9), max(zmax - zmin, 1e-9)
     if cell is None or cell <= 0:
         size = np.sort(_longest_edges(mesh))
-        cell = max(float(np.median(size[:max(1, len(size) // 20)])), width / 400)
+        # finer than the mesh, so the field looks smooth; never absurdly fine
+        cell = max(float(np.median(size[:max(1, len(size) // 20)])) / 4, width / 1500)
     nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
     while nx * nz > max_nodes:
         cell *= np.sqrt(nx * nz / max_nodes) * 1.01

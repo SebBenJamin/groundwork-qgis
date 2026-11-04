@@ -21,7 +21,7 @@ from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPai
                              QPolygonF)
 
 from .context_render import context_z_values, draw_band, draw_over_stations
-from .data import SectionDataProvider, SectionSnapshot, cell_path_groups, identify_layers
+from .data import SectionDataProvider, SectionSnapshot, identify_layers
 from .topography import measured_line
 
 SOURCE_ID = "geophysics_workbench"
@@ -76,7 +76,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                  station_z: np.ndarray | None = None, s_range: tuple | None = None):
         super().__init__()
         self.snapshot = snapshot
-        self._layers = layers          # [(opacity, [(QColor, QPainterPath), ...])] bottom first
+        self._layers = layers          # [display_render.LayerDrawing] bottom first
+        self._contour_px = 1.0
         self._z = z_range
         self._station_z = station_z    # tick elevations, aligned with snapshot.stations:
         #                                the measured height, else the surface (or mesh top)
@@ -137,12 +138,15 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             painter.save()
             try:
                 painter.setTransform(wt, True)      # draw in (chainage, elevation) space
+                from .display_render import CONTOUR_PEN_MM
+                self._contour_px = max(1.0, rc.convertToPainterUnits(CONTOUR_PEN_MM, _MM))
                 self._draw_cells(painter)
                 self._draw_beyond_stations(painter)
                 self._draw_topography(painter, rc)
                 self._draw_measured_line(painter, rc)
             finally:
                 painter.restore()
+            _guarded("contour labels", painter, self._draw_contour_labels, rc, wt)
             ctx = self.snapshot.context
             if ctx is not None and topo is not None:
                 _guarded("geology band", painter, draw_band, rc, wt, ctx, topo)
@@ -174,17 +178,83 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         engine = painter.paintEngine()
         vector = engine is not None and engine.type() != QPaintEngine.Type.Raster
-        for opacity, groups in self._layers:
+        for drawing in self._layers:
+            opacity = drawing.opacity
             painter.setOpacity(opacity)
             outline = vector and opacity >= 1.0     # translucent outlines would double-blend
             painter.setPen(Qt.PenStyle.NoPen)
-            for colour, path in groups:
+            for colour, path in drawing.groups:
                 painter.setBrush(QBrush(colour))
                 if outline:
                     pen = QPen(colour, 0)
                     pen.setCosmetic(True)
                     painter.setPen(pen)
                 painter.drawPath(path)
+            if drawing.field is not None:
+                image, rect = drawing.field
+                painter.save()
+                if drawing.clip is not None:
+                    painter.setClipPath(drawing.clip, Qt.ClipOperation.IntersectClip)
+                painter.drawImage(rect, image)
+                painter.restore()
+            if drawing.contours:
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                for colour, path, _lines, _text in drawing.contours:
+                    pen = QPen(colour, self._contour_px)
+                    pen.setCosmetic(True)
+                    painter.setPen(pen)
+                    painter.drawPath(path)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setOpacity(1.0)
+
+    def _draw_contour_labels(self, painter, rc, wt):
+        """One label per contour polyline, at its mid-length on screen, along the line, with
+        a halo in the palette's base colour; skipped on lines too short for it."""
+        from qgis.PyQt.QtGui import QFontMetricsF, QGuiApplication, QPalette
+
+        from .display_render import LABEL_MM
+        drawings = [d for d in self._layers if d.contours]
+        if not drawings:
+            return
+        font = QFont(painter.font())
+        font.setPixelSize(max(8, round(rc.convertToPainterUnits(LABEL_MM, _MM))))
+        metrics = QFontMetricsF(font)
+        halo = QGuiApplication.palette().color(QPalette.ColorRole.Base)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for drawing in drawings:
+            painter.setOpacity(drawing.opacity)
+            for colour, _path, lines, text in drawing.contours:
+                width = metrics.horizontalAdvance(text)
+                for line in lines:
+                    pts = [wt.map(QPointF(float(s), float(z))) for s, z in line]
+                    seg = np.array([[b.x() - a.x(), b.y() - a.y()] for a, b in zip(pts, pts[1:])])
+                    if not len(seg):
+                        continue
+                    lengths = np.hypot(seg[:, 0], seg[:, 1])
+                    total = float(lengths.sum())
+                    if total < 3 * width:
+                        continue
+                    i = int(np.searchsorted(np.cumsum(lengths), total / 2))
+                    i = min(i, len(seg) - 1)
+                    dx, dy = seg[i]
+                    angle = float(np.degrees(np.arctan2(dy, dx)))
+                    if angle > 90 or angle < -90:           # keep text upright
+                        angle += 180
+                    mid = QPointF((pts[i].x() + pts[i + 1].x()) / 2,
+                                  (pts[i].y() + pts[i + 1].y()) / 2)
+                    label = QPainterPath()
+                    label.addText(QPointF(-width / 2, metrics.ascent() / 2 - 1), font, text)
+                    painter.save()
+                    painter.translate(mid)
+                    painter.rotate(angle)
+                    painter.setPen(QPen(halo, 3))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawPath(label)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QBrush(colour))
+                    painter.drawPath(label)
+                    painter.restore()
         painter.setOpacity(1.0)
 
     def _beyond_rects(self) -> list[QRectF]:
@@ -294,9 +364,8 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
                     return False
                 if layer.mesh is None or not layer.style.visible or layer.style.scale is None:
                     continue
-                groups = [(QColor(*(int(c) for c in rgba)), _path_from_elements(elems))
-                          for rgba, elems in cell_path_groups(layer.mesh, layer.style.scale)]
-                layers.append((float(layer.style.opacity), groups))
+                from .display_render import build_drawing
+                layers.append(build_drawing(layer, snap.topo))
                 smin, smax, zmin, zmax = layer.mesh.bounds()
                 ss.extend((smin, smax))
                 zs.extend((zmin, zmax))

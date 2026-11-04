@@ -126,13 +126,16 @@ def identify_layers(layers: list[SectionLayer], s: float, z: float) -> list[dict
     return out
 
 
-def cell_path_groups(mesh: SectionMesh, scale: ColorScale) -> list[tuple[np.ndarray, np.ndarray]]:
+def cell_path_groups(mesh: SectionMesh, scale: ColorScale,
+                     alpha: np.ndarray | None = None) -> list[tuple[np.ndarray, np.ndarray]]:
     """Cells grouped by colour as ``[(rgba uint8 (4,), PATH_ELEMENT array), ...]``.
 
     Each cell becomes a closed ring of 5 path elements (MoveTo + 4 LineTo), so a group's
     array serialises straight into one QPainterPath. Transparent (nan) cells are dropped.
     Fully vectorised: the only Python loop is over the (<= ~256) distinct colours."""
     rgba = scale.rgba(mesh.values)
+    if alpha is not None:                       # coverage fade: per-cell alpha factor
+        rgba[:, 3] = (rgba[:, 3] * np.asarray(alpha, float)).astype(np.uint8)
     keep = rgba[:, 3] > 0
     if not keep.any():
         return []

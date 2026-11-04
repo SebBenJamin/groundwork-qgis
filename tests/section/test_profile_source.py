@@ -243,7 +243,8 @@ def test_callback_failures_are_logged_not_raised(qgis_app, store_with_model, mon
             raise MemoryError("simulated")
 
         # generateProfile (worker thread in the canvas) returns False instead of raising
-        monkeypatch.setattr(ps, "cell_path_groups", boom)
+        from geophysics_workbench.section import display_render
+        monkeypatch.setattr(display_render, "build_drawing", boom)
         gen = source.createProfileGenerator(_request(p.xy, st.crs_authid))
         assert gen.generateProfile() is False
         assert gen.takeResults() is None
