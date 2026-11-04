@@ -6,6 +6,17 @@ from dataclasses import dataclass
 import numpy as np
 
 
+FADE_ALPHA = 0.25
+
+
+def coverage_alpha(coverage, threshold: float, mode: str) -> np.ndarray:
+    """Per-cell alpha factor: 1 where coverage >= threshold (or unknown), else 0.25 for
+    "fade" and 0 for "blank"."""
+    c = np.asarray(coverage, float)
+    low = np.isfinite(c) & (c < threshold)
+    return np.where(low, 0.0 if mode == "blank" else FADE_ALPHA, 1.0)
+
+
 def default_threshold(coverage) -> float:
     """Default coverage threshold: the 10th percentile of the finite values (0.0 if none)."""
     c = np.asarray(coverage, float)

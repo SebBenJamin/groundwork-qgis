@@ -82,6 +82,9 @@ class SectionMesh:
     values: np.ndarray              # (m,)
     quantity: str = "resistivity"
     unit: str = "ohm.m"
+    #: per-cell coverage or sensitivity from the inversion (as in the file, often log10);
+    #: None when the file has none. Display only (coverage fade), never a model value.
+    coverage: np.ndarray | None = field(default=None, repr=False, compare=False)
     _bbox: np.ndarray | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -94,6 +97,11 @@ class SectionMesh:
             raise ValueError(f"cells must have shape (m, 4), got {self.cells.shape}")
         if self.values.shape != (self.cells.shape[0],):
             raise ValueError(f"values must have shape ({self.cells.shape[0]},), got {self.values.shape}")
+        if self.coverage is not None:
+            self.coverage = np.asarray(self.coverage, dtype=float)
+            if self.coverage.shape != self.values.shape:
+                raise ValueError(f"coverage must have shape {self.values.shape}, "
+                                 f"got {self.coverage.shape}")
 
     # -- construction ---------------------------------------------------
     @classmethod

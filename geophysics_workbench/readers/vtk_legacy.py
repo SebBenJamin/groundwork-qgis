@@ -138,14 +138,30 @@ class VtkLegacyReader(Reader):
         i, j = axes
         verts = points[:, [i, j]]
         is_res = "resist" in chosen.lower() and "log" not in chosen.lower()
+        cov_name = options.get("coverage_array")
+        if cov_name is None:                    # BERT coverage(log10), ResIPy Sensitivity(log10)
+            cov_name = next((n for n in names if n != chosen and (
+                "coverage" in n.lower() or "sensitivity" in n.lower())), None)
+        elif cov_name == "":                    # explicitly none
+            cov_name = None
+        elif cov_name not in arrays:
+            raise ValueError(f"{path.name}: coverage array {cov_name!r} not found; "
+                             f"available: {', '.join(names)}")
+        coverage = None
+        if cov_name is not None and len(arrays[cov_name]) == len(cells):
+            raw = arrays[cov_name]
+            coverage = np.where(fill_mask(raw), np.nan, raw)
+        else:
+            cov_name = None
         mesh = SectionMesh(verts, conn, values,
                            quantity="resistivity" if is_res else chosen,
-                           unit="ohm.m" if is_res else "")
+                           unit="ohm.m" if is_res else "", coverage=coverage)
         return ReaderResult(mesh, "elevation", {
             "reader": self.name,
             "source_name": path.name,
             "array_names": names,
             "array": chosen,
+            "coverage_array": cov_name,
             "axes": (int(i), int(j)),
             "n_cells": int(len(cells)),
             "n_masked": int(masked.sum()),

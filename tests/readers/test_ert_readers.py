@@ -169,3 +169,34 @@ def test_vtk_prefers_linear_resistivity_over_log(tmp_path):
     assert r.mesh.quantity == "resistivity" and r.mesh.unit == "ohm.m"
     only_log = readers.read(p, array="Resistivity(log10)")
     assert only_log.mesh.quantity == "Resistivity(log10)" and only_log.mesh.unit == ""
+
+
+def test_vtk_keeps_coverage_per_cell():
+    r = readers.read(F / "f001_res.vtk")
+    assert r.provenance["coverage_array"] == "Sensitivity(log10)"
+    assert r.mesh.coverage is not None and len(r.mesh.coverage) == len(r.mesh.values)
+    moved = r.mesh.with_x(lambda x: x + 1)
+    assert moved.coverage is r.mesh.coverage or np.array_equal(moved.coverage, r.mesh.coverage)
+
+
+def test_vtk_without_coverage_and_override(tmp_path):
+    r = readers.read(F / "f001_res.vtk", coverage_array="")
+    assert r.mesh.coverage is None and r.provenance["coverage_array"] is None
+    r2 = readers.read(F / "f001_res.dat")
+    assert r2.mesh.coverage is None
+
+
+def test_guelpe_bert_coverage():
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "demo_guelpe/data/ert/T1/dcinv.result.vtk"
+    r = readers.read(path, reader="vtk_legacy")
+    assert r.provenance["coverage_array"] == "coverage(log10)"
+    assert len(r.mesh.coverage) == len(r.mesh.values) and np.isfinite(r.mesh.coverage).any()
+
+
+def test_coverage_alpha_and_threshold():
+    from geophysics_workbench.core.gridding import coverage_alpha, default_threshold
+    cov = np.array([-3.0, -1.0, np.nan, 0.5])
+    assert coverage_alpha(cov, -2.0, "fade").tolist() == [0.25, 1.0, 1.0, 1.0]
+    assert coverage_alpha(cov, -2.0, "blank").tolist() == [0.0, 1.0, 1.0, 1.0]
+    assert default_threshold(np.arange(11.0)) == 1.0
