@@ -109,26 +109,6 @@ def test_finished_polygon_saved_and_shown(qgis_app, dock):
     QgsProject.instance().removeAllMapLayers()
 
 
-def test_finished_piece_joins_existing_feature(qgis_app, dock):
-    from geophysics_workbench.core.interpretation import InterpFeature, new_id
-
-    ctl = dock.interp
-    store = dock.provider.store
-    store.ensure_interpretation()
-    v = store.current_version().id
-    a = InterpFeature(new_id(), v, type="anomaly", letter="A")
-    store.save_feature(a)
-    seen = []
-    ctl.form_factory = lambda f, s, letters, existing: (seen.append(existing), existing[0])[1]
-    ctl._finished("line", [(1.0, 90.0), (5.0, 89.0)])
-    ctl._finished("line", [(10.0, 90.0), (15.0, 89.0)])
-    assert [f.id for f in seen[0]] == [a.id]
-    assert [f.id for f in store.features(v)] == [a.id]
-    assert {p.feature_id for p in store.pieces(v)} == {a.id} and len(store.pieces(v)) == 2
-    from qgis.core import QgsProject
-    QgsProject.instance().removeAllMapLayers()
-
-
 def test_cancelled_form_discards_piece(qgis_app, dock):
     ctl = dock.interp
     ctl.form_factory = lambda feature, suggestions, letters, existing=(): None

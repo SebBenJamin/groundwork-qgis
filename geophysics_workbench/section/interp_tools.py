@@ -259,8 +259,11 @@ class EditTool(QgsPlotTool):
         """(label, callable or submenu list) for the right-click menu on ``piece``."""
         from ..ui.interp_layers import entity_label
         ctl = self.ctl
-        feats = ctl.dock.provider.store.features(piece.version_id)
-        others = sorted((f for f in feats if f.id != piece.feature_id),
+        store = ctl.dock.provider.store
+        # interpretation stays per profile: only features with a piece on this profile
+        here = {p.feature_id for p in store.pieces(piece.version_id, piece.profile_id)}
+        feats = store.features(piece.version_id)
+        others = sorted((f for f in feats if f.id != piece.feature_id and f.id in here),
                         key=lambda f: (f.letter.lower(), f.type.lower()))
 
         def then_deselect(fn):

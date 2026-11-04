@@ -45,11 +45,10 @@ class InterpController(QObject):
         self.tool = None
         self._sync = None
         self._targets = None                    # (exclude, SnapTargets): no store reads per move
-        #: (feature, type suggestions, letters in use, existing features to join) ->
-        #: edited feature (an existing id joins that feature) or None (cancel)
-        self.form_factory = lambda f, s, letters, existing=(): ask_feature(
-            self.dock, f, s, letters, existing,
-            self.feature_details(f.version_id) if existing else None)
+        #: (feature, type suggestions, letters in use) -> edited feature or None (cancel).
+        #: Every drawn piece starts its own feature: interpretation stays per profile;
+        #: linking across profiles is a separate, deliberate step.
+        self.form_factory = lambda f, s, letters: ask_feature(self.dock, f, s, letters)
         self.bar = QHBoxLayout()
         self.bar.addWidget(QLabel("Interpretation"))
         self.buttons: dict[str, QToolButton] = {}
@@ -238,24 +237,6 @@ class InterpController(QObject):
             pass
         return "", ""
 
-    def feature_details(self, version_id: str) -> dict[str, str]:
-        """feature id -> where its pieces are, e.g. "Transect 3 (here), Transect 2 · 2
-        pieces", so features can be told apart in the form."""
-        store = self.dock.provider.store
-        names = {p.id: p.name for p in store.profiles()}
-        here = self.dock.current_profile_id()
-        by_feature: dict[str, list[str]] = {}
-        for p in store.pieces(version_id):
-            by_feature.setdefault(p.feature_id, []).append(p.profile_id)
-        out = {}
-        for fid, profiles in by_feature.items():
-            order = sorted(set(profiles), key=lambda pid: (pid != here, names.get(pid, "")))
-            where = ", ".join(names.get(pid, "?") + (" (here)" if pid == here else "")
-                              for pid in order)
-            n = len(profiles)
-            out[fid] = f"{where} · {n} piece{'s' if n != 1 else ''}"
-        return out
-
     def chainages(self) -> dict:
         return {p.id: p.chainage for p in self.dock.provider.store.profiles()}
 
@@ -271,10 +252,8 @@ class InterpController(QObject):
         piece = normalise(InterpPiece(new_id(), version.id, "", profile_id, kind, points,
                                       based_on_dataset=dataset, based_on_version=dversion))
         feature = InterpFeature(new_id(), version.id, author=current_author())
-        existing = store.features(version.id)
-        letters = {f.letter for f in existing if f.letter}
-        edited = self.form_factory(feature, type_suggestions(store.used_types()), letters,
-                                   existing)
+        letters = {f.letter for f in store.features(version.id) if f.letter}
+        edited = self.form_factory(feature, type_suggestions(store.used_types()), letters)
         if edited is None:
             return
         edited.author = edited.author or feature.author

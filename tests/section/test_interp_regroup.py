@@ -154,11 +154,9 @@ def test_undo_split_keeps_a_piece_drawn_into_the_new_feature(two):
     ctl, store, v, a, b, _pa1, pa2, _pb = two
     ctl.move_piece_to(pa2, None)
     new = next(f for f in store.features(v) if f.id not in (a.id, b.id))
-    ctl.form_factory = lambda f, s, letters, existing=(): next(x for x in existing
-                                                               if x.id == new.id)
-    ctl._finished("line", [(30.0, 90.0), (35.0, 89.0)])
-    drawn = [p for p in store.pieces(v) if p.vertices[0] == (30.0, 90.0)]
-    assert len(drawn) == 1
+    prof = store.profiles()[0].id                   # a piece later linked to the new feature
+    drawn = [store.save_piece(InterpPiece(new_id(), v, new.id, prof, "line",
+                                          [(30.0, 90.0), (35.0, 89.0)]))]
     ctl.undo.stack.undo()
     assert drawn[0].id in {p.id for p in store.pieces(v)}           # never silently lost
     assert _owner(store, v, pa2) == a.id
@@ -175,8 +173,16 @@ def test_snap_targets_hang_boreholes_without_collar_from_ground(two):
     assert (10.0, pytest.approx(ground - 2.0)) in ctl.snap_targets().boundaries
 
 
-def test_feature_details_name_profiles_and_pieces(two):
-    ctl, store, v, a, b, *_ = two
-    details = ctl.feature_details(v)
-    assert details[a.id] == "P1 (here) · 2 pieces"
-    assert details[b.id] == "P1 (here) · 1 piece"
+def test_menu_offers_only_features_on_this_profile(two):
+    from geophysics_workbench.core.model import profile_from_stations
+    from geophysics_workbench.section.interp_tools import EditTool
+    ctl, store, v, _a, _b, pa1, *_ = two
+    p2, s2 = profile_from_stations("P2", "EPSG:25832", np.array([[0, 10, 100], [50, 10, 100.0]]))
+    store.save_profile(p2)
+    store.save_station_set(s2)
+    c = InterpFeature(new_id(), v, type="elsewhere", letter="C")
+    store.save_feature(c)
+    store.save_piece(InterpPiece(new_id(), v, c.id, p2.id, "point", [(3, 99)]))
+    actions = dict(EditTool(ctl.dock.canvas, ctl).menu_actions(pa1))
+    assert [label for label, _ in actions["Move piece to"]] == ["New feature", "B · clay"]
+    assert [label for label, _ in actions["Merge this feature into"]] == ["B · clay"]
