@@ -213,6 +213,14 @@ class InterpStoreMixin:
                     self._delete_where(pl, f"id = {_q(pid)}")
         return len(gone)
 
+    def type_counts(self, version_id: str) -> dict[str, int]:
+        """Features per non-empty type in ``version_id``."""
+        out: dict[str, int] = {}
+        for f in self.features(version_id):
+            if f.type:
+                out[f.type] = out.get(f.type, 0) + 1
+        return out
+
     def used_types(self) -> list[str]:
         with self._ds() as ds:
             return sorted({f["type"] for f in ds.GetLayerByName("interp_features")

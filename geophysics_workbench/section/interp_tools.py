@@ -203,7 +203,8 @@ def _dedup(points):
 class EditTool(QgsPlotTool):
     """Select a piece (click), drag a vertex, click an edge to insert a vertex, drag inside a
     polygon (or Shift+drag a line) to move it, Delete removes the selected vertex or the
-    piece, double-click edits the feature's attributes, Esc deselects (then leaves)."""
+    piece, double-click edits the feature's attributes, right-click regroups (move the piece
+    to another feature, merge features), Esc deselects (then leaves)."""
 
     TOLERANCE_MM = 3.0
 
@@ -241,9 +242,69 @@ class EditTool(QgsPlotTool):
         self._show(piece)
 
     # -- events ----------------------------------------------------------------------------
+    def menu_actions(self, piece) -> list:
+        """(label, callable or submenu list) for the right-click menu on ``piece``."""
+        from ..ui.interp_layers import entity_label
+        ctl = self.ctl
+        feats = ctl.dock.provider.store.features(piece.version_id)
+        others = sorted((f for f in feats if f.id != piece.feature_id),
+                        key=lambda f: (f.letter.lower(), f.type.lower()))
+
+        def then_deselect(fn):
+            return lambda: (fn(), self.select(None))
+
+        move = [("New feature", then_deselect(lambda: ctl.move_piece_to(piece, None)))]
+        move += [(entity_label(f), then_deselect(lambda f=f: ctl.move_piece_to(piece, f.id)))
+                 for f in others]
+        merge = [(entity_label(f),
+                  then_deselect(lambda f=f: ctl.merge_features(piece.feature_id, f.id)))
+                 for f in others]
+        return [("Attributes…", lambda: ctl.edit_feature(piece.feature_id)),
+                ("Move piece to", move),
+                ("Merge this feature into", merge),
+                ("Delete piece", lambda: self._delete_piece(piece))]
+
+    def _delete_piece(self, piece) -> None:
+        if self.ctl.confirm("Delete this interpretation piece?"):
+            self.ctl.delete_piece(piece)
+            self.select(None)
+
+    def _context_menu(self, event, xy) -> None:
+        from qgis.PyQt.QtWidgets import QMenu
+
+        from .interp_edit import pick_piece
+        hit = pick_piece(self.ctl.current_pieces(), *xy, *self._tolerance(event.pos()))
+        if hit is None:
+            return
+        self.select(hit.piece)
+        enabled = self.ctl.writable()
+
+        def fill(menu, actions):
+            for label, target in actions:
+                if isinstance(target, list):
+                    sub = menu.addMenu(label)
+                    sub.setEnabled(enabled and bool(target))
+                    fill(sub, target)
+                else:
+                    act = menu.addAction(label)
+                    act.setEnabled(enabled)
+                    act.triggered.connect(lambda _=False, fn=target: fn())
+
+        menu = QMenu(self.canvas())
+        fill(menu, self.menu_actions(hit.piece))
+        menu.exec(self.canvas().mapToGlobal(event.pos()))
+
     def plotPressEvent(self, event):
         from .interp_edit import insert_vertex, pick_piece
-        if self.panner.press(event) or event.button() != Qt.MouseButton.LeftButton:
+        if self.panner.press(event):
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            xy = self._plot(event.pos())
+            if xy is not None:
+                event.accept()
+                self._context_menu(event, xy)
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
             return
         xy = self._plot(event.pos())
         if xy is None:
@@ -314,9 +375,7 @@ class EditTool(QgsPlotTool):
                     self.select(self.ctl.replace_piece(piece, rest))
                     event.accept()
                     return
-            if self.ctl.confirm("Delete this interpretation piece?"):
-                self.ctl.delete_piece(piece)
-                self.select(None)
+            self._delete_piece(piece)
         elif key == Qt.Key.Key_Escape:
             if self.selected is not None:
                 self.select(None)

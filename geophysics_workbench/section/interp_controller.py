@@ -69,6 +69,12 @@ class InterpController(QObject):
             signal.connect(b.setEnabled)
             self.bar.addWidget(b)
             self.buttons[text.lower()] = b
+        b = QToolButton()
+        b.setText("Types…")
+        b.setToolTip("Rename or merge interpretation types")
+        b.clicked.connect(self.show_types)
+        self.bar.addWidget(b)
+        self.buttons["types"] = b
         self.bar.addStretch(1)
         from .interp_versions import VersionBar
         self.versions = VersionBar(self)
@@ -254,6 +260,15 @@ class InterpController(QObject):
         if piece is not None:
             store.save_piece(copy.deepcopy(piece))
         self.changed(version)
+
+    def show_types(self) -> None:
+        from ..ui.interp_types import TypesDialog
+        store = self.dock.provider.store
+        if not self.writable():
+            return
+        store.ensure_interpretation()
+        TypesDialog(self.dock, lambda: store.type_counts(store.current_version().id),
+                    self.rename_type).exec()
 
     # -- regrouping (one undo step each) -----------------------------------------------------
     def _apply_rows(self, state: tuple, other: tuple) -> None:

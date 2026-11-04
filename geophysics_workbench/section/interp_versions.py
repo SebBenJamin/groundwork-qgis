@@ -5,7 +5,7 @@ from __future__ import annotations
 from qgis.PyQt.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QMessageBox,
                                  QPushButton, QWidget)
 
-DRAW_KEYS = ("line", "polygon", "point", "edit", "undo", "redo")
+DRAW_KEYS = ("line", "polygon", "point", "edit", "undo", "redo", "types")
 
 
 class VersionBar:

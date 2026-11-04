@@ -106,3 +106,25 @@ def test_regroup_refused_on_frozen_version(two):
         ctl.move_piece_to(p, None)
     with pytest.raises(PermissionError):
         ctl.merge_features(store.features(frozen.id)[0].id, store.features(frozen.id)[1].id)
+
+
+def test_edit_tool_menu_lists_other_features(two):
+    from geophysics_workbench.section.interp_tools import EditTool
+    ctl, _store, _v, _a, _b, pa1, *_ = two
+    tool = EditTool(ctl.dock.canvas, ctl)
+    actions = tool.menu_actions(pa1)
+    assert [label for label, _ in actions] == ["Attributes…", "Move piece to",
+                                               "Merge this feature into", "Delete piece"]
+    move = dict(actions)["Move piece to"]
+    assert [label for label, _ in move] == ["New feature", "B · clay"]
+    assert [label for label, _ in dict(actions)["Merge this feature into"]] == ["B · clay"]
+    dict(move)["B · clay"]()
+    assert _owner(ctl.dock.provider.store, _v, pa1) == _b.id
+
+
+def test_types_button_disabled_on_frozen_version(two):
+    ctl, store, *_ = two
+    r1 = store.freeze_current("R1")
+    ctl.versions.refresh(r1.id)
+    assert not ctl.buttons["types"].isEnabled()
+    assert store.type_counts(store.current_version().id) == {"Clay lens": 1, "clay": 1}
