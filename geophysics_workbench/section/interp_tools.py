@@ -31,6 +31,15 @@ def plot_to_canvas(canvas, s: float, z: float) -> QPointF:
     return QPointF(x, y)
 
 
+def plot_tolerance(canvas, pos, mm: float = 3.0) -> tuple[float, float]:
+    """(chainage, elevation) extent of ``mm`` millimetres on screen at canvas pixel ``pos``."""
+    px = mm * canvas.logicalDpiX() / 25.4
+    a = canvas.canvasPointToPlotPoint(QPointF(pos))
+    b = canvas.canvasPointToPlotPoint(QPointF(pos) + QPointF(px, px))
+    return (max(1e-9, abs(b.distance() - a.distance())),
+            max(1e-9, abs(b.elevation() - a.elevation())))
+
+
 class Panner:
     """Middle-button drag pans the canvas, whatever tool is active."""
 
@@ -116,13 +125,16 @@ class DrawTool(QgsPlotTool):
 
     def __init__(self, canvas, kind: str, on_finished: Callable[[list], None],
                  on_cancel: Callable[[], None] | None = None,
-                 on_hover: Callable[[object], None] | None = None):
+                 on_hover: Callable[[object], None] | None = None,
+                 snap: Callable[[float, float, object], tuple] | None = None):
         super().__init__(canvas, f"interp-{kind}")
         # the canvas owns its tools: without this a late Python garbage collection deletes a
         # tool the canvas already deleted with itself (hard crash at teardown)
         sip.transferto(self, canvas)
         self.kind = kind
         self.on_finished, self.on_cancel, self.on_hover = on_finished, on_cancel, on_hover
+        #: (s, z, canvas pos) -> snapped (s, z)
+        self.snap = snap
         self.points: list[tuple[float, float]] = []
         self.sketch = SketchItem(canvas)
         self.panner = Panner(canvas)
@@ -130,7 +142,12 @@ class DrawTool(QgsPlotTool):
 
     def _plot(self, event):
         pp = self.canvas().canvasPointToPlotPoint(QPointF(event.pos()))
-        return None if pp.isEmpty() else (float(pp.distance()), float(pp.elevation())), pp
+        if pp.isEmpty():
+            return None, pp
+        xy = (float(pp.distance()), float(pp.elevation()))
+        if self.snap is not None:
+            xy = self.snap(*xy, event.pos())
+        return xy, pp
 
     def plotPressEvent(self, event):
         if self.panner.press(event) or event.button() != Qt.MouseButton.LeftButton:
@@ -225,11 +242,7 @@ class EditTool(QgsPlotTool):
         return None if pp.isEmpty() else (float(pp.distance()), float(pp.elevation()))
 
     def _tolerance(self, pos):
-        px = self.TOLERANCE_MM * self.canvas().logicalDpiX() / 25.4
-        a = self.canvas().canvasPointToPlotPoint(QPointF(pos))
-        b = self.canvas().canvasPointToPlotPoint(QPointF(pos) + QPointF(px, px))
-        return (max(1e-9, abs(b.distance() - a.distance())),
-                max(1e-9, abs(b.elevation() - a.elevation())))
+        return plot_tolerance(self.canvas(), pos, self.TOLERANCE_MM)
 
     def _show(self, piece) -> None:
         if piece is None:
@@ -345,6 +358,7 @@ class EditTool(QgsPlotTool):
         if self._drag is None:
             return
         if self._drag[0] == "vertex":
+            xy = self.ctl.snap(*xy, *self._tolerance(event.pos()), exclude=self._base.id)
             self._preview = move_vertex(self._base, self._drag[1], *xy)
         else:
             self._preview = move_piece(self._base, xy[0] - self._drag[1], xy[1] - self._drag[2])

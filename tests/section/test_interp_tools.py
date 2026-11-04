@@ -213,3 +213,47 @@ def test_click_shows_borehole_and_interpretation_details(qgis_app, dock):
                                  [(10, 0), (15, 0), (15, -5), (10, -5)]))
     lines = click_details(dock, 12.0, -2.0)
     assert lines[0] == "Interpretation C \u00b7 clay lens (polygon)" and "  Note: check" in lines
+
+
+def _below_ground_point(dock):
+    rng, erng = dock.canvas.visibleDistanceRange(), dock.canvas.visibleElevationRange()
+    return ((rng.lower() + rng.upper()) / 2,
+            erng.lower() + 0.2 * (erng.upper() - erng.lower()))
+
+
+def test_draw_tool_snaps_to_existing_vertex(qgis_app, dock):
+    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from geophysics_workbench.section.interp_tools import plot_to_canvas
+
+    store = dock.provider.store
+    store.ensure_interpretation()
+    v = store.current_version().id
+    f = InterpFeature(new_id(), v, type="x")
+    store.save_feature(f)
+    s0, z0 = _below_ground_point(dock)
+    store.save_piece(InterpPiece(new_id(), v, f.id, dock.current_profile_id(), "line",
+                                 [(s0, z0), (s0 + 5, z0)]))
+    ctl = dock.interp
+    ctl.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
+        feature.id, feature.version_id)
+    ctl.start("point")
+    px = plot_to_canvas(dock.canvas, s0, z0)
+    _click(qgis_app, dock.canvas, int(px.x()) + 2, int(px.y()) + 1)
+    new = [p for p in store.pieces(v) if p.kind == "point"]
+    assert len(new) == 1 and new[0].vertices[0] == pytest.approx((s0, z0))
+    ctl.buttons["snap"].setChecked(False)
+    assert ctl.snap(s0 + 0.01, z0, 1.0, 1.0) == (s0 + 0.01, z0)
+    ctl.stop()
+    from qgis.core import QgsProject
+    QgsProject.instance().removeAllMapLayers()
+
+
+def test_snap_targets_include_borehole_boundaries(qgis_app, dock):
+    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+
+    bh = ProjectedPoint(12.0, 1.0, "B1", "borehole", z_top=100.0,
+                        log=[LogInterval(0.0, 2.5, "sand"), LogInterval(2.5, 6.0, "clay")])
+    dock.provider.context_source = lambda profile: ContextItems(points=[bh])
+    t = dock.interp.snap_targets()
+    assert {(12.0, 100.0), (12.0, 97.5), (12.0, 94.0)} <= set(t.boundaries)
+    assert t.ground is not None

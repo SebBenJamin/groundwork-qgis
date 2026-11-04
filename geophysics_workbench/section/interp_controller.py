@@ -14,7 +14,7 @@ from qgis.PyQt.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMessageBox, 
 from ..core.interpretation import (InterpFeature, InterpPiece, clamp_to_surface, new_id,
                                    normalise, type_suggestions)
 from ..ui.interp_form import ask_feature
-from .interp_tools import DrawTool, EditTool
+from .interp_tools import DrawTool, EditTool, plot_tolerance
 from .interp_undo import InterpUndo
 
 TOOLS = (("pan", "Pan"), ("line", "Line"), ("polygon", "Polygon"), ("point", "Point"),
@@ -42,6 +42,7 @@ class InterpController(QObject):
         self._dock = weakref.ref(dock)
         self.tool = None
         self._sync = None
+        self._targets = None                    # (exclude, SnapTargets): no store reads per move
         #: (feature, type suggestions, letters in use, existing features to join) ->
         #: edited feature (an existing id joins that feature) or None (cancel)
         self.form_factory = lambda f, s, letters, existing=(): ask_feature(
@@ -59,6 +60,14 @@ class InterpController(QObject):
             self.group.addButton(b)
             self.bar.addWidget(b)
             self.buttons[key] = b
+        b = QToolButton()
+        b.setText("Snap")
+        b.setCheckable(True)
+        b.setChecked(True)
+        b.setToolTip("Snap to vertices of drawn pieces, borehole layer boundaries and the "
+                     "ground line")
+        self.bar.addWidget(b)
+        self.buttons["snap"] = b
         self.undo = InterpUndo(self, self._apply, self._apply_rows)
         for text, slot, signal in (("Undo", self.undo.stack.undo, self.undo.stack.canUndoChanged),
                                    ("Redo", self.undo.stack.redo, self.undo.stack.canRedoChanged)):
@@ -106,6 +115,36 @@ class InterpController(QObject):
             pass
         return self.dock._topo
 
+    def snap_targets(self, exclude: str | None = None):
+        """Vertices of the open profile's current pieces (all features, but not the piece
+        ``exclude`` being edited), borehole layer boundaries, and the ground line."""
+        from ..core.interp_snap import SnapTargets
+        if self._targets is not None and self._targets[0] == exclude:
+            return self._targets[1]
+        verts = [v for p in self.current_pieces() if p.id != exclude for v in p.vertices]
+        bounds = []
+        try:
+            ctx = self.dock.provider.context(self.dock.current_profile_id())
+        except Exception:                       # broken context must not block drawing
+            ctx = None
+        for p in (ctx.points if ctx is not None else []):
+            if p.kind != "borehole" or p.z_top is None:
+                continue
+            for iv in p.log:
+                bounds += [(p.s, p.z_top - iv.top), (p.s, p.z_top - iv.bottom)]
+        targets = SnapTargets(verts, sorted(set(bounds)), self.surface())
+        self._targets = (exclude, targets)
+        return targets
+
+    def snap(self, s: float, z: float, tol_s: float, tol_z: float,
+             exclude: str | None = None) -> tuple[float, float]:
+        """(s, z) snapped to the nearest target when snapping is on; else unchanged."""
+        from ..core.interp_snap import snap
+        if not self.buttons["snap"].isChecked():
+            return s, z
+        hit = snap(s, z, self.snap_targets(exclude), tol_s, tol_z)
+        return (s, z) if hit is None else hit
+
     def hover(self, plot_point) -> None:
         self.dock._hovered(None, plot_point)
 
@@ -116,6 +155,7 @@ class InterpController(QObject):
         return store.pieces(store.current_version().id, self.dock.current_profile_id())
 
     def start(self, kind: str) -> None:
+        self._targets = None
         if (self.dock.provider is None or self.dock.current_profile_id() is None
                 or not self.writable()):
             self.stop()
@@ -126,9 +166,12 @@ class InterpController(QObject):
             self.buttons["edit"].setChecked(True)
             self.dock.canvas.setFocus()
             return
-        self.tool = DrawTool(self.dock.canvas, kind, lambda pts, k=kind: self._finished(k, pts),
+        canvas = self.dock.canvas
+        self.tool = DrawTool(canvas, kind, lambda pts, k=kind: self._finished(k, pts),
                              on_cancel=self.stop,
-                             on_hover=lambda pp: self.dock._hovered(None, pp))
+                             on_hover=lambda pp: self.dock._hovered(None, pp),
+                             snap=lambda s, z, pos: self.snap(s, z,
+                                                              *plot_tolerance(canvas, pos)))
         self.dock.canvas.setTool(self.tool)
         self.buttons[kind].setChecked(True)
         self.dock.canvas.setFocus()
@@ -152,6 +195,7 @@ class InterpController(QObject):
                                 chainages=lambda: {p.id: p.chainage for p in store.profiles()})
 
     def _profile_changed(self, *_args) -> None:
+        self._targets = None
         self.ensure_sync()
         self.stop()
         self.undo.clear()
@@ -206,6 +250,7 @@ class InterpController(QObject):
         """Rebuild the derived layers from the current version (map and 3D never show a
         frozen one), add them if new, redraw the section (which shows the chosen version)."""
         from ..ui.interp_layers import add_interp_layers, reload_interp_layers
+        self._targets = None
         store = self.dock.provider.store
         project = QgsProject.instance()
         add_interp_layers(store, project)
