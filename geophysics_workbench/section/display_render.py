@@ -64,7 +64,7 @@ def _next_to_empty(grid, mesh) -> np.ndarray:
     would reach half a grid cell into it, so they are left out (the field stops just short
     of empty space instead of overshooting into it). The ground is handled by the clip."""
     cell = grid.cell
-    empty = (cell < 0) | ~np.isfinite(mesh.values[np.maximum(cell, 0)])
+    empty = (cell == -1) | ((cell >= 0) & ~np.isfinite(mesh.values[np.maximum(cell, 0)]))
     pad = np.pad(empty, 1, constant_values=True)
     near = pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]
     return near & ~empty
@@ -105,10 +105,11 @@ def _gridded(layer, topo, threshold):
         if hit is not None:
             _cache.move_to_end(key)
             return hit
-    grid = grid_model(mesh, topo, shape, scale.log)
+    grid = grid_model(mesh, topo, shape, scale.log, fill_to_ground=True)
     low = None
     if threshold is not None:
-        cov = grid_model(mesh, topo, shape, False, values=mesh.coverage)
+        cov = grid_model(mesh, topo, shape, False, values=mesh.coverage,
+                         fill_to_ground=True)
         low = coverage_alpha(cov.values, threshold, st.fade_mode) < 1.0
     image = None
     if st.mode in ("smooth", "smooth+contours"):

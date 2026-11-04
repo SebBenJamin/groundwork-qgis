@@ -136,3 +136,10 @@ def test_field_does_not_overshoot_empty_cells(qgis_app):
     layer = SectionLayer(layer.dataset, replace(layer.mesh, values=vals), layer.style, None)
     img = _img(_results(layer))
     assert (_rgb(img, _x(61.8), _y(-1.5)) == 255).all()             # node 62.22 overshoots
+
+
+def test_smooth_field_fills_up_to_a_higher_ground(qgis_app):
+    res = _results(_layer("smooth"), topo=(np.array([0.0, 200.0]), np.array([0.6, 0.6])))
+    img = _img(res)
+    assert np.abs(_rgb(img, _x(60.5), _y(0.3)) - _expected(60.5)).max() <= 12   # mesh top is 0
+    assert (_rgb(img, _x(60.5), _y(0.8)) == 255).all()                          # above ground

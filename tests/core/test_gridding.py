@@ -118,3 +118,20 @@ def test_levels_capped():
     assert len(default_levels(ColorScale(vmin=0, vmax=5000, log=False), 0.001)) <= 100
     assert len(default_levels(ColorScale(vmin=300, vmax=5000, log=False), 0.25)) <= 100
     assert len(default_levels(ColorScale(vmin=1, vmax=1e6, log=True), 0.001)) <= 100
+
+
+def test_field_reaches_up_to_the_ground_over_a_stepped_mesh_top():
+    """Flat-topped cells leave steps under a sloping ground: the field fills them up to the
+    ground, from the top cell of each column (never above the ground, never past the mesh
+    ends)."""
+    mesh = regular_mesh(10, 3, fn=lambda s, z: s, z0=-3.0)          # top at z = 0
+    topo = (np.array([0.0, 10.0]), np.array([0.0, 2.0]))           # ground rises to 2 m
+    g = grid_model(mesh, topo, (21, 11), log=False, fill_to_ground=True)
+    s, z = np.meshgrid(g.s, g.z)
+    ground = np.interp(s, *topo)
+    between = (z > 0.01) & (z <= ground - 1e-9)
+    assert between.any() and np.isfinite(g.values[between]).all()
+    assert np.isnan(g.values[z > ground + 1e-9]).all()
+    assert (g.cell[between] >= 0).all()                             # treated as inside
+    plain = grid_model(mesh, topo, (21, 11), log=False)
+    assert plain.z.max() == pytest.approx(0.0)                      # off by default: mesh only

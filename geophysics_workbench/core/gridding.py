@@ -24,12 +24,17 @@ def default_threshold(coverage) -> float:
     return float(np.percentile(c, 10)) if c.size else 0.0
 
 
+#: ``Grid.cell`` of nodes above the ground (masked by the topography, not "outside")
+ABOVE_GROUND = -2
+
+
 @dataclass
 class Grid:
     s: np.ndarray           # (nx,) chainage of the grid columns
     z: np.ndarray           # (nz,) elevation of the grid rows, ascending
     values: np.ndarray      # (nz, nx) model values, nan where nothing is drawn
-    cell: np.ndarray        # (nz, nx) mesh cell under each node, -1 outside the mesh
+    cell: np.ndarray        # (nz, nx) mesh cell under each node, -1 outside the mesh,
+    #                         ABOVE_GROUND above the topography
 
 
 def _longest_edges(mesh) -> np.ndarray:
@@ -83,7 +88,8 @@ def _to_log(v: np.ndarray) -> np.ndarray:
     return np.log10(np.where(v > 0, v, np.nan))
 
 
-def grid_model(mesh, topo, shape, log: bool, values=None) -> Grid:
+def grid_model(mesh, topo, shape, log: bool, values=None,
+               fill_to_ground: bool = False) -> Grid:
     """The mesh's values (or ``values`` per cell) on a regular grid. Cell values are
     averaged onto the mesh vertices and interpolated linearly inside each cell (in log10
     when ``log``). Nodes outside every cell, in a cell without a value, or above ``topo``
@@ -92,7 +98,18 @@ def grid_model(mesh, topo, shape, log: bool, values=None) -> Grid:
 
     nx, nz = shape
     smin, smax, zmin, zmax = mesh.bounds()
-    s, z = np.linspace(smin, smax, nx), np.linspace(zmin, zmax, nz)
+    s = np.linspace(smin, smax, nx)
+    has_topo = topo is not None and len(topo[0]) >= 2
+    if has_topo:
+        ts, tz = np.asarray(topo[0], float), np.asarray(topo[1], float)
+    top = zmax
+    if fill_to_ground and has_topo:     # room for the field between mesh top and ground
+        top = max(zmax, float(np.interp(s, ts, tz).max()))
+    dz = (zmax - zmin) / max(nz - 1, 1)
+    if top > zmax and dz > 0:
+        nz += int(np.ceil((top - zmax) / dz))
+        top = zmin + dz * (nz - 1)
+    z = np.linspace(zmin, top, nz)
     S, Z = np.meshgrid(s, z)
     verts, c = _merged(mesh)
     quad = c[:, 3] >= 0
@@ -139,9 +156,23 @@ def grid_model(mesh, topo, shape, log: bool, values=None) -> Grid:
     bad = corner_nan[np.maximum(t.reshape(S.shape)[inside], 0)]
     out[inside] = np.where(bad, own, out[inside])          # next to empty cells: own value
     out[inside] = np.where(np.isfinite(own), out[inside], np.nan)      # empty cells stay empty
-    if topo is not None and len(topo[0]) >= 2:
-        out[Z > np.interp(S, np.asarray(topo[0], float), np.asarray(topo[1], float)) + 1e-9] = \
-            np.nan
+    if fill_to_ground and has_topo:
+        # flat-topped cells leave steps under the ground line: fill each column upward from
+        # its top valid node to the ground (the surface layer reaches the surface)
+        valid = np.isfinite(out) & (cell >= 0)
+        rows = np.arange(len(z))[:, None]
+        top_row = np.where(valid.any(axis=0), np.max(np.where(valid, rows, -1), axis=0), -1)
+        ground = np.interp(S, ts, tz)
+        cols = np.arange(len(s))
+        src_val = out[np.maximum(top_row, 0), cols]
+        src_cell = cell[np.maximum(top_row, 0), cols]
+        fill = (rows > top_row[None, :]) & (top_row[None, :] >= 0) & (Z <= ground + 1e-9)
+        out = np.where(fill, src_val[None, :], out)
+        cell = np.where(fill, src_cell[None, :], cell)
+    if has_topo:
+        above = Z > np.interp(S, ts, tz) + 1e-9
+        out[above] = np.nan
+        cell = np.where(above, ABOVE_GROUND, cell)
     if log:
         out = np.power(10.0, out)
     return Grid(s, z, out, cell)
