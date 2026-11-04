@@ -18,9 +18,14 @@ Requires QGIS 4.2 or newer.
 
 ## Open the demo
 
-Unzip `geophysics_workbench-demo-0.2.1.zip` into any folder and open `demo_project.qgz`
+Unzip `geophysics_workbench-demo-0.2.2.zip` into any folder and open `demo_project.qgz`
 in it (**Project → Open…**). Then **Geophysics Workbench → Pick profile on map** and click
 the P1 line to show its section.
+
+**Real data:** `geophysics_workbench-demo-guelpe-0.2.2.zip` holds open ERT, core and state
+survey data from Gülpe (Havel, Brandenburg). Open `guelpe_project.qgz`; the live state layers
+need internet. Sources and licences are in its `ATTRIBUTION.md`. To rebuild it, run
+`scripts/fetch_demo_guelpe.py` and then `scripts/build_demo_guelpe.py`.
 
 ## What 0.1.0 (M1) does
 
