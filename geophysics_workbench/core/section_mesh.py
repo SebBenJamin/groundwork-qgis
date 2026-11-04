@@ -85,6 +85,10 @@ class SectionMesh:
     #: per-cell coverage or sensitivity from the inversion (as in the file, often log10);
     #: None when the file has none. Display only (coverage fade), never a model value.
     coverage: np.ndarray | None = field(default=None, repr=False, compare=False)
+    #: readings of a pseudosection (core.readings.Readings), one per vertex, and the value
+    #: shown for each; None for model meshes
+    readings: object | None = field(default=None, repr=False, compare=False)
+    point_values: np.ndarray | None = field(default=None, repr=False, compare=False)
     _bbox: np.ndarray | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -168,7 +172,8 @@ class SectionMesh:
     def with_x(self, fn: Callable[[np.ndarray], np.ndarray]) -> "SectionMesh":
         verts = self.vertices.copy()
         verts[:, 0] = fn(verts[:, 0])
-        return replace(self, vertices=verts)
+        readings = None if self.readings is None else self.readings.with_x(fn)
+        return replace(self, vertices=verts, readings=readings)
 
     def depth_to_elevation(self, surface_s, surface_z) -> "SectionMesh":
         """z_elev = interp(x, surface_s, surface_z) - |z|. Beyond the ends of the
