@@ -31,6 +31,8 @@ from fetch_demo_guelpe import CACHE, ERT_FILES, TRANSECTS_BBOX, dgm_tiles
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO_GUELPE = ROOT / "demo_guelpe"
+#: our pyGIMLi response for transect 3 (not in the raw cache: made once by invert_guelpe.py)
+MISFIT_INPUTS = ROOT / "scripts" / "data" / "guelpe"
 CRS = "EPSG:25833"
 STORE_NAME, PROJECT_NAME = "guelpe_workbench.gpkg", "guelpe_project.qgz"
 SPACING = {1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0}
@@ -98,6 +100,12 @@ def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
                                          SPACING[i])
             guelpe_data.write_stations_csv(out / f"data/stations/T{i}_electrodes.csv",
                                            numbers, xyz)
+        # transect 3: the authors' measured data, and the response of our one-off pyGIMLi
+        # inversion of it (scripts/invert_guelpe.py; committed under scripts/data/guelpe)
+        with zipfile.ZipFile(cache / "ert" / ERT_FILES[3]) as zf:
+            _unzip_member(zf, "_topo.data", out / "data/ert/T3/T3_measured.data")
+        for name in ("T3_response.vector", "T3_pygimli.json"):
+            shutil.copy(MISFIT_INPUTS / name, out / "data/ert/T3" / name)
     sites, logs = guelpe_data.parse_cores((cache / "cores.tab").read_text(encoding="utf-8"))
     guelpe_data.write_cores_gpkg(out / "context/cores.gpkg", sites, logs)
     guelpe_data.mosaic_dgm([cache / "dgm" / f"{t}.zip" for t in dgm_tiles(TRANSECTS_BBOX)],
@@ -144,6 +152,16 @@ def build_workbench(out: Path = DEMO_GUELPE) -> Path:
                                        {"z_kind": "elevation", "chainage_offset": 0.0},
                                        result.provenance,
                                        name=f"Transect {i} (Pohle et al. 2025, BERT)"))
+            if i == 3:
+                rel = "data/ert/T3/T3_measured.data"
+                opts = {"response": "T3_response.vector", "z_kind": "depth",
+                        "chainage_offset": 0.0}
+                result = readers.read(out / rel, reader="bert_data", response=opts["response"])
+                mtime, sha1 = file_fingerprint(str(out / rel))
+                store.save_dataset(Dataset("T3_misfit", profile.id, stations.id, "ert_misfit",
+                                           rel, mtime, sha1, "bert_data", opts,
+                                           result.provenance, quantity="misfit", unit="%",
+                                           name="Transect 3 misfit (pyGIMLi re-inversion)"))
     return path
 
 

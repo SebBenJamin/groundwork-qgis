@@ -100,3 +100,26 @@ def test_live_layers_send_no_renderer_filter(qgis_app):
             assert lyr.renderer().filter(lyr.fields()) == "", lyr.name()
             assert "pageSize='500'" in lyr.source() or "pageSize=500" in lyr.source()
     prj.clear()
+
+
+def test_build_adds_transect3_misfit(tmp_path, qgis_app):
+    """The demo build adds T3's measured data with our pyGIMLi response as a misfit layer
+    (built here into a temporary folder; the committed demo is rebuilt by the user)."""
+    if not (CACHE / "ert").exists():
+        pytest.skip("raw cache missing: run scripts/fetch_demo_guelpe.py")
+    import json
+
+    import build_demo_guelpe
+
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    build_demo_guelpe.build_data(out=tmp_path)
+    path = build_demo_guelpe.build_workbench(out=tmp_path)
+    st = ProjectStore.open(path)
+    [p3] = [p for p in st.profiles() if p.name == "Transect 3"]
+    ds = {d.id: d for d in st.datasets(p3.id)}
+    assert ds["T3_misfit"].kind == "ert_misfit"
+    layer = next(la for la in SectionDataProvider(st).layers(p3.id) if la.dataset.id == "T3_misfit")
+    assert layer.error is None, layer.error
+    info = json.loads((tmp_path / "data/ert/T3/T3_pygimli.json").read_text())
+    assert layer.mesh.readings.rms_percent() == pytest.approx(info["rms_percent"], rel=1e-6)

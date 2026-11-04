@@ -57,8 +57,12 @@ def run_pygimli() -> None:
 
 
 def run_r2() -> None:
+    import resipy.Survey
     from resipy import Project
 
+    # ResIPy's compiled reciprocal search fails with recent numpy ("buffer source array is
+    # read-only"); its pure-pandas fallback gives the same pairs
+    sys.modules["resipy.Survey"].recipCalc_installed = False    # the module, not the class
     work = OUT / "r2_work"
     if work.exists():
         shutil.rmtree(work)
