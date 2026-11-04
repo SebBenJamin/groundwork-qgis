@@ -225,6 +225,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         for drawing in drawings:
             painter.setOpacity(drawing.opacity)
             for colour, _path, lines, text in drawing.contours:
+                if not text:
+                    continue
                 width = metrics.horizontalAdvance(text)
                 for line in lines:
                     pts = [wt.map(QPointF(float(s), float(z))) for s, z in line]

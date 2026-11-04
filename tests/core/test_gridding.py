@@ -112,3 +112,9 @@ def test_ungriddable_mesh_raises_value_error():
     mesh = SectionMesh(verts, np.array([[0, 1, 2, -1]]), np.array([1.0]), quantity="x", unit="")
     with pytest.raises(ValueError):
         grid_model(mesh, None, (5, 5), log=False)
+
+
+def test_levels_capped():
+    assert len(default_levels(ColorScale(vmin=0, vmax=5000, log=False), 0.001)) <= 100
+    assert len(default_levels(ColorScale(vmin=300, vmax=5000, log=False), 0.25)) <= 100
+    assert len(default_levels(ColorScale(vmin=1, vmax=1e6, log=True), 0.001)) <= 100

@@ -259,3 +259,35 @@ def test_snap_targets_include_coverage_edge(qgis_app, dock):
     ctl._targets = None
     lines = ctl.snap_targets().lines
     assert lines and all(len(x) >= 2 for x in lines)
+
+
+def test_coverage_edge_failure_and_cache(qgis_app, dock, monkeypatch):
+    from dataclasses import replace
+    from geophysics_workbench.core import gridding
+    prov = dock.provider
+    [layer] = prov.layers(dock.current_profile_id())
+    orig = prov._load_mesh
+    prov._load_mesh = lambda *a, **k: replace(orig(*a, **k), coverage=np.zeros(
+        len(orig(*a, **k).values)))
+    prov.set_style(layer.dataset.id, replace(prov.style(layer.dataset.id), fade_coverage=True,
+                                             coverage_threshold=-1.0))
+    calls = []
+    real = gridding.grid_model
+
+    def counting(*a, **k):
+        calls.append(1)
+        return real(*a, **k)
+    monkeypatch.setattr(gridding, "grid_model", counting)
+    ctl = dock.interp
+    for _ in range(3):
+        ctl._targets = None
+        ctl.snap_targets()
+    assert len(calls) == 1                                          # memoised
+
+    def boom(*a, **k):
+        raise ValueError("cannot grid")
+    monkeypatch.setattr(gridding, "grid_model", boom)
+    prov.set_style(layer.dataset.id, replace(prov.style(layer.dataset.id),
+                                             coverage_threshold=-2.0))
+    ctl._targets = None
+    assert ctl.snap_targets().lines == []                           # no exception

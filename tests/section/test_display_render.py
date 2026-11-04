@@ -116,3 +116,23 @@ def test_readout_uses_mesh_value_in_smooth_mode(qgis_app):
     layer = _layer("smooth")
     [hit] = identify_layers([layer], 60.2, -1.5)
     assert hit["value"] == pytest.approx(60.5)                      # the cell's value, not 60.2
+
+
+def test_blank_removes_contours_in_low_coverage(qgis_app):
+    cov = lambda m: np.where(m.vertices[m.cells[:, 0], 0] < 65.0, -5.0, 0.0)   # noqa: E731
+    res = _results(_layer("smooth+contours", coverage=cov, contour_step=10.0,
+                          fade_coverage=True, coverage_threshold=-2.0, fade_mode="blank"))
+    img = _img(res)
+    assert (_rgb(img, _x(60), _y(-2.5)) == 255).all()               # line at 60: blanked
+    assert (_rgb(img, _x(70), _y(-2.5)) < 200).any()                # line at 70: drawn
+
+
+def test_field_does_not_overshoot_empty_cells(qgis_app):
+    from geophysics_workbench.section.data import SectionLayer
+    layer = _layer("smooth", grid_cell=1.5)
+    vals = layer.mesh.values.copy()
+    x0 = layer.mesh.vertices[layer.mesh.cells[:, 0], 0]
+    vals[(x0 >= 59.0) & (x0 < 62.0)] = np.nan                       # empty cells s 59..62
+    layer = SectionLayer(layer.dataset, replace(layer.mesh, values=vals), layer.style, None)
+    img = _img(_results(layer))
+    assert (_rgb(img, _x(61.8), _y(-1.5)) == 255).all()             # node 62.22 overshoots

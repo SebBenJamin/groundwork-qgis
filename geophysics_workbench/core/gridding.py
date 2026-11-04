@@ -155,14 +155,19 @@ def _nice(x: float) -> float:
     return float(10 ** (e + 1))
 
 
+MAX_LEVELS = 100
+
+
 def default_levels(scale, step: float | None) -> list[float]:
     """Contour levels inside the scale's range: 1-2-5 per decade (log) or about eight nice
-    steps (linear); ``step`` overrides (decades on a log scale, units otherwise)."""
+    steps (linear); ``step`` overrides (decades on a log scale, units otherwise). Never more
+    than MAX_LEVELS: a too small step is widened (a tiny step would stall drawing)."""
     lo, hi = scale.vmin, scale.vmax
     eps = 1e-9
     if scale.log:
         a, b = np.log10(lo), np.log10(hi)
         if step:
+            step = max(step, (b - a) / (MAX_LEVELS - 1))
             ks = range(int(np.ceil(a / step - eps)), int(np.floor(b / step + eps)) + 1)
             return [float(10 ** (k * step)) for k in ks]
         out = []
@@ -173,6 +178,7 @@ def default_levels(scale, step: float | None) -> list[float]:
                     out.append(float(v))
         return out
     step = step or _nice((hi - lo) / 8)
+    step = max(step, (hi - lo) / (MAX_LEVELS - 1))
     ks = range(int(np.ceil(lo / step - eps)), int(np.floor(hi / step + eps)) + 1)
     return [float(round(k * step, 12)) for k in ks]
 

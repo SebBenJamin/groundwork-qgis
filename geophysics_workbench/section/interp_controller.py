@@ -41,6 +41,10 @@ def _icon_button(icon_name: str, text: str) -> QToolButton:
     return b
 
 
+#: coverage-edge snap lines per (layer, settings): computing them grids the coverage
+_EDGE_CACHE: dict = {}
+
+
 def current_author() -> str:
     scope = QgsExpressionContextUtils.globalScope()
     for name in ("user_full_name", "user_account_name"):
@@ -79,7 +83,8 @@ class InterpController(QObject):
             self.bar.addWidget(b)
             self.buttons[key] = b
         b = _icon_button(ICONS["snap"], "Snap to vertices of drawn pieces, borehole layer "
-                                        "boundaries and the ground line")
+                                        "boundaries, the coverage fade edge and the ground "
+                                        "line")
         b.setCheckable(True)
         b.setChecked(True)
         self.bar.addWidget(b)
@@ -179,8 +184,9 @@ class InterpController(QObject):
 
     def _coverage_edges(self, surface) -> list:
         """The faded edge (coverage threshold contour) of every visible layer with its
-        coverage fade on: the user draws "unreliable" zones along it by hand."""
-        from ..core.gridding import contour_lines, default_threshold, grid_model, grid_shape
+        coverage fade on: the user draws "unreliable" zones along it by hand. Memoised per
+        layer and settings; a mesh that cannot be gridded gives no edge."""
+        from ..core import gridding
         prov = self.dock.provider
         out = []
         try:
@@ -194,11 +200,25 @@ class InterpController(QObject):
                 continue
             thr = st.coverage_threshold
             if thr is None:
-                thr = default_threshold(mesh.coverage)
-            grid = grid_model(mesh, surface, grid_shape(mesh, st.grid_cell), False,
-                              values=mesh.coverage)
-            for _level, lines in contour_lines(grid, [thr], False):
-                out += lines
+                thr = gridding.default_threshold(mesh.coverage)
+            topo_key = None if surface is None else (np.asarray(surface[0]).tobytes(),
+                                                     np.asarray(surface[1]).tobytes())
+            key = (layer.dataset.id, hash(mesh.vertices.tobytes()),
+                   hash(mesh.coverage.tobytes()), thr, st.grid_cell, topo_key)
+            lines = _EDGE_CACHE.get(key)
+            if lines is None:
+                try:
+                    grid = gridding.grid_model(mesh, surface,
+                                               gridding.grid_shape(mesh, st.grid_cell),
+                                               False, values=mesh.coverage)
+                    lines = [x for _lv, ls in gridding.contour_lines(grid, [thr], False)
+                             for x in ls]
+                except ValueError:              # cannot be gridded: drawn as cells, no edge
+                    lines = []
+                _EDGE_CACHE[key] = lines
+                while len(_EDGE_CACHE) > 8:
+                    _EDGE_CACHE.pop(next(iter(_EDGE_CACHE)))
+            out += lines
         return out
 
     def snap(self, s: float, z: float, tol_s: float, tol_z: float,

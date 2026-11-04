@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
 
 import numpy as np
 from qgis.PyQt.QtCore import QPointF, QRectF
 from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 
-from ..core.gridding import (contour_lines, coverage_alpha, default_levels, default_threshold,
-                             grid_model, grid_shape)
+from ..core.gridding import (FADE_ALPHA, contour_lines, coverage_alpha, default_levels,
+                             default_threshold, grid_model, grid_shape)
 
 CONTOUR_PEN_MM = 0.25
 CONTOUR_DARKER = 167            # QColor.darker factor: about 40 % darker than the scale colour
@@ -59,6 +59,17 @@ def _key(layer, topo, shape):
             st.fade_coverage, st.coverage_threshold, st.fade_mode)
 
 
+def _next_to_empty(grid, mesh) -> np.ndarray:
+    """Nodes next to a node outside the mesh or in a cell without a value: their pixel
+    would reach half a grid cell into it, so they are left out (the field stops just short
+    of empty space instead of overshooting into it). The ground is handled by the clip."""
+    cell = grid.cell
+    empty = (cell < 0) | ~np.isfinite(mesh.values[np.maximum(cell, 0)])
+    pad = np.pad(empty, 1, constant_values=True)
+    near = pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]
+    return near & ~empty
+
+
 def _field_image(grid, rgba) -> tuple[QImage, QRectF]:
     nz, nx = grid.values.shape
     img = QImage(np.ascontiguousarray(rgba).tobytes(), nx, nz, nx * 4,
@@ -95,17 +106,32 @@ def _gridded(layer, topo, threshold):
             _cache.move_to_end(key)
             return hit
     grid = grid_model(mesh, topo, shape, scale.log)
+    low = None
+    if threshold is not None:
+        cov = grid_model(mesh, topo, shape, False, values=mesh.coverage)
+        low = coverage_alpha(cov.values, threshold, st.fade_mode) < 1.0
     image = None
     if st.mode in ("smooth", "smooth+contours"):
         nz, nx = grid.values.shape
         rgba = scale.rgba(grid.values.ravel()).reshape(nz, nx, 4).copy()
-        if threshold is not None:
-            cov = grid_model(mesh, topo, shape, False, values=mesh.coverage)
-            a = coverage_alpha(cov.values, threshold, st.fade_mode)
-            rgba[..., 3] = (rgba[..., 3] * a).astype(np.uint8)
+        if low is not None:
+            factor = 0.0 if st.fade_mode == "blank" else FADE_ALPHA
+            rgba[..., 3] = np.where(low, rgba[..., 3] * factor, rgba[..., 3]).astype(np.uint8)
+        rgba[..., 3] = np.where(_next_to_empty(grid, mesh), 0, rgba[..., 3])
         image = _field_image(grid, rgba)
-    contours = (_contours(grid, scale, st.contour_step)
-                if st.mode in ("contours", "smooth+contours") else [])
+    contours = []
+    if st.mode in ("contours", "smooth+contours"):
+        if low is None:
+            contours = _contours(grid, scale, st.contour_step)
+        else:                           # the low-coverage part blanked, or faded
+            good = replace(grid, values=np.where(low, np.nan, grid.values))
+            contours = _contours(good, scale, st.contour_step)
+            if st.fade_mode != "blank":
+                faint = replace(grid, values=np.where(low, grid.values, np.nan))
+                for colour, path, lines, _text in _contours(faint, scale, st.contour_step):
+                    colour = QColor(colour)
+                    colour.setAlphaF(FADE_ALPHA)
+                    contours.append((colour, path, lines, ""))     # no labels in the fade
     entry = (image, contours)
     with _lock:
         _cache[key] = entry

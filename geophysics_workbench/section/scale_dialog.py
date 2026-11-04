@@ -183,7 +183,13 @@ class DisplayDialog(ColorScaleDialog):
         self.step_spin.setDecimals(3)
         self.step_spin.setToolTip("On a logarithmic scale in decades (0.25 = four lines per "
                                   "decade), otherwise in the layer's unit")
-        self.step_spin.setValue(style.contour_step or 0.25)
+        if style.contour_step is not None:
+            self.step_spin.setValue(style.contour_step)
+        else:                       # a sensible start: 4 per decade, or about 8 steps
+            from ..core.gridding import _nice
+            sc = style.scale
+            self.step_spin.setValue(0.25 if sc is None or sc.log
+                                    else _nice((sc.vmax - sc.vmin) / 8))
         self.auto_step.setChecked(style.contour_step is None)
         self.auto_step.toggled.connect(lambda on: self.step_spin.setEnabled(not on))
         self.step_spin.setEnabled(style.contour_step is not None)
