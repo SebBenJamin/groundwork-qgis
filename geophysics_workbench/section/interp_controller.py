@@ -57,7 +57,7 @@ class InterpController(QObject):
             self.group.addButton(b)
             self.bar.addWidget(b)
             self.buttons[key] = b
-        self.undo = InterpUndo(self, self._apply)
+        self.undo = InterpUndo(self, self._apply, self._apply_rows)
         for text, slot, signal in (("Undo", self.undo.stack.undo, self.undo.stack.canUndoChanged),
                                    ("Redo", self.undo.stack.redo, self.undo.stack.canRedoChanged)):
             b = QToolButton()
@@ -250,3 +250,91 @@ class InterpController(QObject):
         if piece is not None:
             store.save_piece(copy.deepcopy(piece))
         self.changed(version)
+
+    # -- regrouping (one undo step each) -----------------------------------------------------
+    def _apply_rows(self, state: tuple, other: tuple) -> None:
+        import copy
+        store = self.dock.provider.store
+        feats, pieces = state
+        ofeats, opieces = other
+        for f in feats:
+            store.save_feature(copy.deepcopy(f))
+        for p in pieces:
+            store.save_piece(copy.deepcopy(p))
+        keep_p = {p.id for p in pieces}
+        for p in opieces:
+            if p.id not in keep_p:
+                store.delete_piece(p.id)
+        keep_f = {f.id for f in feats}
+        for f in ofeats:
+            if f.id not in keep_f:
+                store.delete_feature(f.id)
+        self.changed()
+
+    def move_piece_to(self, piece, feature_id: str | None) -> None:
+        """Give ``piece`` to feature ``feature_id``; ``None`` splits it off as a new feature
+        with the old one's attributes (no letter). A feature left without pieces goes."""
+        import copy
+        store = self.dock.provider.store
+        store._writable(piece.version_id)
+        if feature_id == piece.feature_id:
+            return
+        feats = {f.id: f for f in store.features(piece.version_id)}
+        if feature_id is not None and feature_id not in feats:
+            raise KeyError(feature_id)
+        old = feats.get(piece.feature_id)
+        before_f, after_f = ([old] if old else []), []
+        if feature_id is None:
+            new = InterpFeature(new_id(), piece.version_id, author=current_author())
+            if old is not None:
+                new.type, new.confidence, new.note = old.type, old.confidence, old.note
+                new.extra = copy.deepcopy(old.extra)
+            after_f.append(new)
+            feature_id = new.id
+        moved = copy.deepcopy(piece)
+        moved.feature_id = feature_id
+        if old is not None and any(p.feature_id == old.id and p.id != piece.id
+                                   for p in store.pieces(piece.version_id)):
+            after_f.append(old)
+        self.undo.push_rows("Move piece", (before_f, [piece]), (after_f, [moved]))
+
+    def merge_features(self, gone_id: str, keep_id: str) -> None:
+        """All pieces of ``gone_id`` join ``keep_id``; ``gone_id`` is deleted."""
+        import copy
+        store = self.dock.provider.store
+        feats = {}
+        for v in store.versions():
+            feats.update({f.id: f for f in store.features(v.id)})
+        gone, keep = feats.get(gone_id), feats.get(keep_id)
+        if gone is None or keep is None:
+            raise KeyError(gone_id if gone is None else keep_id)
+        store._writable(gone.version_id)
+        if gone_id == keep_id:
+            return
+        if keep.version_id != gone.version_id:
+            raise ValueError("features of different versions cannot be merged")
+        pieces = [p for p in store.pieces(gone.version_id) if p.feature_id == gone_id]
+        moved = [copy.deepcopy(p) for p in pieces]
+        for p in moved:
+            p.feature_id = keep_id
+        self.undo.push_rows("Merge features", ([gone], pieces), ([], moved))
+
+    def rename_type(self, old: str, new: str) -> int:
+        """Every current feature of type ``old`` (any case) gets ``new``; a type already used
+        with ``new``'s spelling in another case is taken over, which merges the two."""
+        import copy
+        store = self.dock.provider.store
+        if not store.has_interpretation() or not new.strip():
+            return 0
+        feats = store.features(store.current_version().id)
+        targets = [f for f in feats if f.type.strip().lower() == old.strip().lower()]
+        spelling = next((f.type for f in feats if f not in targets
+                         and f.type.strip().lower() == new.strip().lower()), new.strip())
+        before = [f for f in targets if f.type != spelling]
+        if not before:
+            return 0
+        after = [copy.deepcopy(f) for f in before]
+        for f in after:
+            f.type = spelling
+        self.undo.push_rows("Rename type", (before, []), (after, []))
+        return len(after)

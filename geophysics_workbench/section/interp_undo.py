@@ -1,4 +1,5 @@
-"""Undo/redo for interpretation edits: each command stores (feature, piece) before and after.
+"""Undo/redo for interpretation edits: each command stores (feature, piece) before and after,
+or, for regrouping, lists of features and pieces (``push_rows``).
 
 ``None`` for a piece means "no piece" (created or deleted); a feature in a state is saved when
 the state is applied, which restores attributes and brings back a feature deleted with its
@@ -24,12 +25,19 @@ class _Command(QUndoCommand):
 
 
 class InterpUndo:
-    def __init__(self, parent, apply):
+    def __init__(self, parent, apply, apply_rows=None):
         self.stack = QUndoStack(parent)
         self._apply = apply
+        self._apply_rows = apply_rows
 
     def push(self, text: str, before: tuple, after: tuple) -> None:
         self.stack.push(_Command(self._apply, text, copy.deepcopy(before),
+                                 copy.deepcopy(after)))
+
+    def push_rows(self, text: str, before: tuple, after: tuple) -> None:
+        """Several rows at once: ``(features, pieces)`` before and after. Applying a state
+        saves its rows and deletes the rows only the other state has."""
+        self.stack.push(_Command(self._apply_rows, text, copy.deepcopy(before),
                                  copy.deepcopy(after)))
 
     def clear(self) -> None:
