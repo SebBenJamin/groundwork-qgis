@@ -42,8 +42,10 @@ class InterpController(QObject):
         self._dock = weakref.ref(dock)
         self.tool = None
         self._sync = None
-        #: (feature, type suggestions, letters in use) -> edited feature or None (cancel)
-        self.form_factory = lambda f, s, letters: ask_feature(self.dock, f, s, letters)
+        #: (feature, type suggestions, letters in use, existing features to join) ->
+        #: edited feature (an existing id joins that feature) or None (cancel)
+        self.form_factory = lambda f, s, letters, existing=(): ask_feature(
+            self.dock, f, s, letters, existing)
         self.bar = QHBoxLayout()
         self.bar.addWidget(QLabel("Interpretation"))
         self.buttons: dict[str, QToolButton] = {}
@@ -182,8 +184,10 @@ class InterpController(QObject):
         piece = normalise(InterpPiece(new_id(), version.id, "", profile_id, kind, points,
                                       based_on_dataset=dataset, based_on_version=dversion))
         feature = InterpFeature(new_id(), version.id, author=current_author())
-        letters = {f.letter for f in store.features(version.id) if f.letter}
-        edited = self.form_factory(feature, type_suggestions(store.used_types()), letters)
+        existing = store.features(version.id)
+        letters = {f.letter for f in existing if f.letter}
+        edited = self.form_factory(feature, type_suggestions(store.used_types()), letters,
+                                   existing)
         if edited is None:
             return
         edited.author = edited.author or feature.author

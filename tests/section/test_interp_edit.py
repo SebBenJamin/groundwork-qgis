@@ -85,7 +85,7 @@ def test_delete_piece_then_undo_brings_it_back(ctl):
 def test_edit_attributes_with_undo(ctl):
     c, store, p = ctl
     [f] = store.features(p.version_id)
-    c.form_factory = lambda feature, s, letters: InterpFeature(
+    c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
         feature.id, feature.version_id, type="fault", letter="F", author=feature.author)
     c.edit_feature(f.id)
     assert store.features(p.version_id)[0].letter == "F"
