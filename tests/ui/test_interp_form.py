@@ -39,3 +39,18 @@ def test_form_without_existing_has_no_picker(qgis_app):
 
     form = InterpForm(None, InterpFeature("f", "v"), [], set())
     assert not form.feature_combo.isVisibleTo(form)
+
+
+def test_existing_features_are_identifiable(qgis_app):
+    from geophysics_workbench.core.interpretation import InterpFeature
+    from geophysics_workbench.ui.interp_form import InterpForm
+
+    a = InterpFeature("fa", "v", type="sand", note="clay loam")
+    form = InterpForm(None, InterpFeature("new", "v"), [], set(), existing=[a],
+                      details={"fa": "Transect 3 (here), Transect 2 · 2 pieces"})
+    assert form.feature_combo.itemText(1) == "sand  —  Transect 3 (here), Transect 2 · 2 pieces"
+    assert not form.join_hint.isVisibleTo(form)
+    form.feature_combo.setCurrentIndex(1)
+    hint = form.join_hint.text()
+    assert form.join_hint.isVisibleTo(form)
+    assert "sand" in hint and "clay loam" in hint and "all its pieces" in hint

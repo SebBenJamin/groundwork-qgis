@@ -173,3 +173,10 @@ def test_snap_targets_hang_boreholes_without_collar_from_ground(two):
     ctl._targets = None
     ground = float(np.interp(10.0, *ctl.surface()))
     assert (10.0, pytest.approx(ground - 2.0)) in ctl.snap_targets().boundaries
+
+
+def test_feature_details_name_profiles_and_pieces(two):
+    ctl, store, v, a, b, *_ = two
+    details = ctl.feature_details(v)
+    assert details[a.id] == "P1 (here) · 2 pieces"
+    assert details[b.id] == "P1 (here) · 1 piece"

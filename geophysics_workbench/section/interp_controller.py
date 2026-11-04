@@ -48,7 +48,8 @@ class InterpController(QObject):
         #: (feature, type suggestions, letters in use, existing features to join) ->
         #: edited feature (an existing id joins that feature) or None (cancel)
         self.form_factory = lambda f, s, letters, existing=(): ask_feature(
-            self.dock, f, s, letters, existing)
+            self.dock, f, s, letters, existing,
+            self.feature_details(f.version_id) if existing else None)
         self.bar = QHBoxLayout()
         self.bar.addWidget(QLabel("Interpretation"))
         self.buttons: dict[str, QToolButton] = {}
@@ -236,6 +237,24 @@ class InterpController(QObject):
         except Exception:                   # a broken layer must not block saving
             pass
         return "", ""
+
+    def feature_details(self, version_id: str) -> dict[str, str]:
+        """feature id -> where its pieces are, e.g. "Transect 3 (here), Transect 2 · 2
+        pieces", so features can be told apart in the form."""
+        store = self.dock.provider.store
+        names = {p.id: p.name for p in store.profiles()}
+        here = self.dock.current_profile_id()
+        by_feature: dict[str, list[str]] = {}
+        for p in store.pieces(version_id):
+            by_feature.setdefault(p.feature_id, []).append(p.profile_id)
+        out = {}
+        for fid, profiles in by_feature.items():
+            order = sorted(set(profiles), key=lambda pid: (pid != here, names.get(pid, "")))
+            where = ", ".join(names.get(pid, "?") + (" (here)" if pid == here else "")
+                              for pid in order)
+            n = len(profiles)
+            out[fid] = f"{where} · {n} piece{'s' if n != 1 else ''}"
+        return out
 
     def chainages(self) -> dict:
         return {p.id: p.chainage for p in self.dock.provider.store.profiles()}
