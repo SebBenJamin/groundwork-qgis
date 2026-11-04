@@ -139,7 +139,7 @@ class InterpController(QObject):
             return
         store = prov.store
         # the derived (map/3D) layers always hold the current version; bound to this store
-        self._sync = InterpSync(store, QgsProject.instance(), prov.notify_changed,
+        self._sync = InterpSync(store, QgsProject.instance(), prov.notify_redraw,
                                 version_id=lambda: store.current_version().id,
                                 chainages=lambda: {p.id: p.chainage for p in store.profiles()})
 
@@ -202,7 +202,7 @@ class InterpController(QObject):
         self.ensure_sync()
         store.rebuild_derived(store.current_version().id, self.chainages())
         reload_interp_layers(store, project)
-        self.dock.provider.notify_changed()
+        self.dock.provider.notify_redraw()
 
     # -- edits (through the undo stack) ------------------------------------------------------
     def _feature(self, piece):

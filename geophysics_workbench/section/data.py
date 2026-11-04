@@ -203,6 +203,15 @@ class SectionDataProvider:
         for callback in list(self.on_change):
             callback()
 
+    def notify_redraw(self, ties: bool = False) -> None:
+        """Only what is drawn changed (a style, the interpretation): keep the gathered
+        context (DEM, boreholes, crossings), drop the ties only when ``ties`` (they depend
+        on visible layers), then tell the listeners."""
+        if ties:
+            self._ties.clear()
+        for callback in list(self.on_change):
+            callback()
+
     # -- profiles --------------------------------------------------------------------------
     def match_curve(self, xy: np.ndarray, tol: float = 1.0) -> tuple[Profile, bool] | None:
         """(profile, reversed) whose end points and length match ``xy`` within ``tol``.
@@ -225,7 +234,7 @@ class SectionDataProvider:
 
     def set_style(self, dataset_id: str, style: LayerStyle) -> None:
         self._styles[dataset_id] = style
-        self.notify_changed()
+        self.notify_redraw(ties=True)
 
     def remove_dataset(self, dataset_id: str) -> None:
         """Delete ``dataset_id`` from the store (the model file stays), forget its style
@@ -245,7 +254,9 @@ class SectionDataProvider:
     def _chosen_topography(self, profile: Profile | None, sets: list[StationSet]):
         """(surface line or None, True when that line is the DEM)."""
         stations = station_line(sets)
-        if profile is not None and profile.metadata.get("topography") == "dem":
+        if profile is not None and (stations is None
+                                    or profile.metadata.get("topography") == "dem"):
+            # the chosen DEM, or the only surface there is when the stations have no heights
             line = dem_line(self._items(profile).dem, stations)
             if line is not None:
                 return line, True
