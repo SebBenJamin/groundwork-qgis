@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 import numpy as np
@@ -72,6 +72,11 @@ class SectionSnapshot:
     station_heights: np.ndarray | None = None
     #: True when ``topo`` is the DEM line, not the station elevations
     dem_topo: bool = False
+    #: interpretation pieces of the shown version on this profile (mirrored with the rest),
+    #: their features by id and their cloned layer symbols by piece id
+    interpretation: list = field(default_factory=list)
+    interp_features: dict = field(default_factory=dict)
+    interp_symbols: dict = field(default_factory=dict)
 
 
 def _copy_style(style: LayerStyle) -> LayerStyle:
@@ -172,6 +177,10 @@ class SectionDataProvider:
         self.context_errors: dict[str, str] = self._gathered.errors
         #: called as (profile_id, message) when ``context_source`` raises
         self.on_context_error: Callable[[str, str], None] | None = None
+        #: interpretation version shown on the section; None = the current one
+        self.interp_version_id: str | None = None
+        #: returns the derived interpretation layers (name -> layer) whose styles are used
+        self.interp_layers: Callable[[], dict] | None = None
 
     @property
     def context_source(self) -> Callable[[Profile], ContextItems] | None:
@@ -378,8 +387,32 @@ class SectionDataProvider:
                 coverage = (length - coverage[1], length - coverage[0])
             if context is not None:
                 context = context.mirrored(length)
-        return SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
+        snap = SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
                                dem_topo)
+        self._add_interpretation(snap, profile_id, reverse)
+        return snap
+
+    def shown_interp_version(self) -> str | None:
+        if not self.store.has_interpretation():
+            return None
+        return self.interp_version_id or self.store.current_version().id
+
+    def _add_interpretation(self, snap: SectionSnapshot, profile_id: str, reverse: bool) -> None:
+        version = self.shown_interp_version()
+        if version is None:
+            return
+        pieces = self.store.pieces(version, profile_id)
+        if not pieces:
+            return
+        from .interp_render import piece_symbols
+        features = {f.id: f for f in self.store.features(version)}
+        layers = self.interp_layers() if self.interp_layers is not None else {}
+        snap.interp_symbols = piece_symbols(pieces, features, layers)
+        if reverse:
+            length = self.store.profile(profile_id).chainage.length
+            for p in pieces:
+                p.vertices = [(length - s, z) for s, z in p.vertices]
+        snap.interpretation, snap.interp_features = pieces, features
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
         """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and

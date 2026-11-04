@@ -17,6 +17,7 @@ from .section.map_link import MapLink
 from .section.profile_source import register_source, unregister_source
 from .ui import project_actions
 from .ui.context_dialog import read_settings
+from .ui.interp_layers import interp_layers
 
 MENU_TITLE = "Geophysics Workbench"
 _ICON_DIR = Path(__file__).parent / "icons"
@@ -145,6 +146,7 @@ class WorkbenchPlugin:
                                             on_change=self.provider.notify_changed,
                                             exclude=lambda: own_layer_ids(store, project))
             self.provider.context_source = self.gatherer.items_for
+            self.provider.interp_layers = lambda: interp_layers(store, project)
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error
             self._context_logged.clear()
