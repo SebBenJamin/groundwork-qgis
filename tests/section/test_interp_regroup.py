@@ -1,5 +1,6 @@
 """Regrouping interpretation: move pieces between features, merge/split features, rename
 types. Every operation is one undo step."""
+import numpy as np
 import pytest
 from qgis.PyQt.QtCore import QEvent
 
@@ -147,3 +148,28 @@ def test_export_button_writes_selected_feature_or_all(two, tmp_path):
     ctl.ask_path = lambda: None
     assert ctl.export() == 0
     ctl.stop()
+
+
+def test_undo_split_keeps_a_piece_drawn_into_the_new_feature(two):
+    ctl, store, v, a, b, _pa1, pa2, _pb = two
+    ctl.move_piece_to(pa2, None)
+    new = next(f for f in store.features(v) if f.id not in (a.id, b.id))
+    ctl.form_factory = lambda f, s, letters, existing=(): next(x for x in existing
+                                                               if x.id == new.id)
+    ctl._finished("line", [(30.0, 90.0), (35.0, 89.0)])
+    drawn = [p for p in store.pieces(v) if p.vertices[0] == (30.0, 90.0)]
+    assert len(drawn) == 1
+    ctl.undo.stack.undo()
+    assert drawn[0].id in {p.id for p in store.pieces(v)}           # never silently lost
+    assert _owner(store, v, pa2) == a.id
+
+
+def test_snap_targets_hang_boreholes_without_collar_from_ground(two):
+    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+    ctl = two[0]
+    bh = ProjectedPoint(10.0, 1.0, "B2", "borehole", z_top=None,
+                        log=[LogInterval(0.0, 2.0, "sand")])
+    ctl.dock.provider.context_source = lambda profile: ContextItems(points=[bh])
+    ctl._targets = None
+    ground = float(np.interp(10.0, *ctl.surface()))
+    assert (10.0, pytest.approx(ground - 2.0)) in ctl.snap_targets().boundaries

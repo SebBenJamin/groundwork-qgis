@@ -67,6 +67,8 @@ def export_pieces(store, version_id: str, feature_ids: set[str] | None, path: st
     ext = os.path.splitext(path)[1].lower()
     if ext not in (".gpkg", ".dxf"):
         raise ValueError(f"export to .gpkg or .dxf, not {ext or 'no extension'}")
+    if os.path.exists(path) and os.path.samefile(path, store.path):
+        raise ValueError("that is the project's workbench GeoPackage; choose another file")
     version = next((v for v in store.versions() if v.id == version_id), None)
     version_name = version.name if version is not None else ""
     rows = list(_rows(store, version_id, feature_ids))

@@ -73,3 +73,11 @@ def test_dxf_layer_names_are_safe():
     assert dxf_layer_name(InterpFeature("f", "v", type="Lösslehm")) == "Loesslehm"
     assert dxf_layer_name(InterpFeature("f", "v", type="Kies (é)")) == "Kies (_)"
     assert dxf_layer_name(None) == "unnamed"
+
+
+def test_export_refuses_the_workbench_geopackage(two):
+    from geophysics_workbench.ui.interp_export import export_pieces
+    st, v, *_ = two
+    with pytest.raises(ValueError):
+        export_pieces(st, v, None, str(st.path))
+    assert st.pieces(v)                                     # store untouched

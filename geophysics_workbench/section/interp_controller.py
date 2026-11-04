@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import weakref
 
+import numpy as np
+
 from qgis.core import QgsExpressionContextUtils, QgsProject
 from qgis.PyQt.QtCore import QObject
 from qgis.PyQt.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMessageBox, QToolButton
@@ -137,12 +139,18 @@ class InterpController(QObject):
             ctx = self.dock.provider.context(self.dock.current_profile_id())
         except Exception:                       # broken context must not block drawing
             ctx = None
+        surface = self.surface()
         for p in (ctx.points if ctx is not None else []):
-            if p.kind != "borehole" or p.z_top is None:
+            if p.kind != "borehole":
+                continue
+            top = p.z_top
+            if top is None and surface is not None and len(surface[0]):
+                top = float(np.interp(p.s, *surface))   # hung from the ground, as drawn
+            if top is None:
                 continue
             for iv in p.log:
-                bounds += [(p.s, p.z_top - iv.top), (p.s, p.z_top - iv.bottom)]
-        targets = SnapTargets(verts, sorted(set(bounds)), self.surface())
+                bounds += [(p.s, top - iv.top), (p.s, top - iv.bottom)]
+        targets = SnapTargets(verts, sorted(set(bounds)), surface)
         self._targets = (exclude, targets)
         return targets
 
@@ -369,9 +377,14 @@ class InterpController(QObject):
             if p.id not in keep_p:
                 store.delete_piece(p.id)
         keep_f = {f.id for f in feats}
-        for f in ofeats:
-            if f.id not in keep_f:
-                store.delete_feature(f.id)
+        gone = [f for f in ofeats if f.id not in keep_f]
+        if gone:
+            # a feature still holding a piece drawn after this step stays: deleting it would
+            # take that piece with it (delete_feature cascades)
+            used = {p.feature_id for p in store.pieces(gone[0].version_id)}
+            for f in gone:
+                if f.id not in used:
+                    store.delete_feature(f.id)
         self.changed()
 
     def move_piece_to(self, piece, feature_id: str | None) -> None:
