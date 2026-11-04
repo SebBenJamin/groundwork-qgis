@@ -102,3 +102,30 @@ def test_sync_detached_when_store_has_no_interpretation(bar, tmp_path):
     dock.provider = SectionDataProvider(other)
     ctl.ensure_sync()
     assert ctl._sync is None
+
+
+def test_compare_combo_lists_frozen_and_sets_provider(bar):
+    vb, store, dock = bar
+    vb.ask_name = lambda title: "R1"
+    vb.freeze()
+    r1 = next(v for v in store.versions() if v.frozen)
+    assert [vb.compare.itemText(i).split(" (")[0] for i in range(vb.compare.count())] == [
+        "(none)", "R1"]
+    vb.compare.setCurrentIndex(1)
+    assert dock.provider.interp_compare_version_id == r1.id
+    snap = dock.provider.snapshot(dock.current_profile_id())
+    assert {p.version_id for p in snap.interp_compare} == {r1.id}
+    assert all(p.id in snap.interp_symbols for p in snap.interp_compare)
+    vb.combo.setCurrentIndex(1)                      # showing R1 itself: nothing to compare
+    assert dock.provider.snapshot(dock.current_profile_id()).interp_compare == []
+    vb.combo.setCurrentIndex(0)
+    vb.compare.setCurrentIndex(0)
+    assert dock.provider.interp_compare_version_id is None
+    assert dock.provider.snapshot(dock.current_profile_id()).interp_compare == []
+
+
+def test_compare_unknown_version_resets(bar):
+    vb, store, dock = bar
+    dock.provider.interp_compare_version_id = "gone"
+    vb.refresh()
+    assert vb.compare.currentIndex() == 0 and dock.provider.interp_compare_version_id is None

@@ -80,6 +80,8 @@ class SectionSnapshot:
     #: (tie chainage, [CrossMark]) where a crossing profile carries interpretation; the
     #: marks' symbols and features are in ``interp_symbols`` / ``interp_features``
     interp_crossings: list = field(default_factory=list)
+    #: pieces of a frozen version drawn faintly behind, for comparison (mirrored too)
+    interp_compare: list = field(default_factory=list)
 
 
 def _copy_style(style: LayerStyle) -> LayerStyle:
@@ -182,6 +184,8 @@ class SectionDataProvider:
         self.on_context_error: Callable[[str, str], None] | None = None
         #: interpretation version shown on the section; None = the current one
         self.interp_version_id: str | None = None
+        #: frozen version drawn faintly behind the shown one; None = no comparison
+        self.interp_compare_version_id: str | None = None
         #: returns the derived interpretation layers (name -> layer) whose styles are used
         self.interp_layers: Callable[[], dict] | None = None
 
@@ -428,21 +432,28 @@ class SectionDataProvider:
             marks = crossing_marks(others[tie.other_id], tie.s_other, self.near_miss)
             if marks:
                 crossings.append((tie.s, marks))
-        if not pieces and not crossings:
+        compare_id = self.interp_compare_version_id
+        compare = []
+        if compare_id and compare_id != version and any(
+                v.id == compare_id for v in self.store.versions()):
+            compare = self.store.pieces(compare_id, profile_id)
+        if not pieces and not crossings and not compare:
             return
         marked = {m.piece_id for _s, marks in crossings for m in marks}
         other_pieces = [p for ps in others.values() for p in ps if p.id in marked]
         from .interp_render import piece_symbols
         features = {f.id: f for f in self.store.features(version)}
+        if compare:
+            features.update({f.id: f for f in self.store.features(compare_id)})
         layers = self.interp_layers() if self.interp_layers is not None else {}
-        snap.interp_symbols = piece_symbols(pieces + other_pieces, features, layers)
+        snap.interp_symbols = piece_symbols(pieces + other_pieces + compare, features, layers)
         if reverse:
             length = self.store.profile(profile_id).chainage.length
-            for p in pieces:
+            for p in pieces + compare:
                 p.vertices = [(length - s, z) for s, z in p.vertices]
             crossings = [(length - s, marks) for s, marks in crossings]
         snap.interpretation, snap.interp_features = pieces, features
-        snap.interp_crossings = crossings
+        snap.interp_crossings, snap.interp_compare = crossings, compare
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
         """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and

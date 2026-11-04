@@ -57,7 +57,23 @@ def piece_symbols(pieces, features, layers: dict) -> dict:
     return out
 
 
-def draw_interpretation(painter, rc, wt, pieces, features, symbols) -> None:
+COMPARE_OPACITY = 0.35
+
+
+def draw_interpretation(painter, rc, wt, pieces, features, symbols, compare=None) -> None:
+    """``pieces`` with their symbols and letters; ``compare`` (a frozen version's pieces)
+    first, faint and without letters."""
+    if compare:
+        painter.save()
+        painter.setOpacity(COMPARE_OPACITY)
+        try:
+            _draw_pieces(painter, rc, wt, compare, {}, symbols)
+        finally:
+            painter.restore()
+    _draw_pieces(painter, rc, wt, pieces, features, symbols)
+
+
+def _draw_pieces(painter, rc, wt, pieces, features, symbols) -> None:
     for p in pieces:
         entry = symbols.get(p.id)
         if entry is None:

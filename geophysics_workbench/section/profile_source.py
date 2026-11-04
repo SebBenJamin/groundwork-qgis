@@ -153,11 +153,11 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 _guarded("context", painter, draw_over_stations, rc, wt, ctx,
                          self.snapshot.stations, measured, topo, (self._z[0], self._z[1]),
                          self.snapshot.layers)
-            if self.snapshot.interpretation:
+            if self.snapshot.interpretation or self.snapshot.interp_compare:
                 from .interp_render import draw_interpretation
                 _guarded("interpretation", painter, draw_interpretation, rc, wt,
                          self.snapshot.interpretation, self.snapshot.interp_features,
-                         self.snapshot.interp_symbols)
+                         self.snapshot.interp_symbols, self.snapshot.interp_compare)
             if self.snapshot.interp_crossings:
                 from .interp_render import draw_crossing_marks
                 _guarded("crossing interpretation", painter, draw_crossing_marks, rc, wt,

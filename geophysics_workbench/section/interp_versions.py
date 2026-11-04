@@ -26,8 +26,12 @@ class VersionBar:
         self.readonly_label = QLabel("Viewing frozen version – read-only")
         self.readonly_label.setStyleSheet("color: grey;")
         self.readonly_label.hide()
-        for w in (self.freeze_button, self.restore_button, self.readonly_label):
+        self.compare = QComboBox()
+        self.compare.setToolTip("Show a frozen version faintly behind, for comparison")
+        for w in (self.freeze_button, self.restore_button, self.readonly_label,
+                  QLabel("Compare"), self.compare):
             row.addWidget(w)
+        self.compare.currentIndexChanged.connect(self._compare_selected)
         self.freeze_button.clicked.connect(self.freeze)
         self.restore_button.clicked.connect(self.start_from)
         self.combo.currentIndexChanged.connect(self._selected)
@@ -52,7 +56,31 @@ class VersionBar:
             self.combo.setCurrentIndex(max(0, self.combo.findData(select or "")))
         finally:
             self.combo.blockSignals(False)
+        self._refresh_compare(store)
         self._apply_selection()
+
+    def _refresh_compare(self, store) -> None:
+        prov = self.ctl.dock.provider
+        wanted = prov.interp_compare_version_id if prov is not None else None
+        self.compare.blockSignals(True)
+        try:
+            self.compare.clear()
+            self.compare.addItem("(none)", "")
+            for i in range(1, self.combo.count()):
+                self.compare.addItem(self.combo.itemText(i), self.combo.itemData(i))
+            index = self.compare.findData(wanted) if wanted else 0
+            self.compare.setCurrentIndex(max(0, index))
+        finally:
+            self.compare.blockSignals(False)
+        if prov is not None and wanted and index < 0:
+            prov.interp_compare_version_id = None       # deleted or unknown: no comparison
+
+    def _compare_selected(self, _index: int) -> None:
+        prov = self.ctl.dock.provider
+        if prov is None:
+            return
+        prov.interp_compare_version_id = self.compare.currentData() or None
+        prov.notify_redraw()
 
     def _selected(self, _index: int) -> None:
         self.ctl.stop()

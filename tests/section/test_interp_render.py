@@ -141,3 +141,17 @@ def test_snapshot_has_crossing_marks_mirrored(qgis_app, store_with_model):
     length = p1.chainage.length
     (s_rev, _m), = prov.snapshot(p1.id, reverse=True).interp_crossings
     assert s_rev == pytest.approx(length - 20.0)
+
+
+def test_compare_pieces_drawn_faint(qgis_app):
+    from qgis.PyQt.QtGui import QColor
+    from test_context_render import _img, _x, _y
+
+    from geophysics_workbench.core.interpretation import InterpPiece, normalise
+
+    old = normalise(InterpPiece("old", "r1", "f1", "prof", "polygon",
+                                [(50, 0.5), (70, 0.5), (70, -2), (50, -2)]))
+    res = _snapshot_results([], {}, {"old": _poly_symbol((0, 0, 200))})
+    res.snapshot.interp_compare = [old]
+    c = QColor(_img(res).pixel(_x(60), _y(-1)))
+    assert c.blue() > c.red() + 40 and c.red() > 100           # blue, but faint
