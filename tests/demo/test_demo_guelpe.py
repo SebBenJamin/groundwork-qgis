@@ -89,3 +89,14 @@ def test_build_twice_same_content(tmp_path):
     for rel in files:
         if rel.suffix in (".csv", ".gpkg", ".vtk"):
             assert (a / rel).read_bytes() == (b / rel).read_bytes(), rel
+
+
+def test_live_layers_send_no_renderer_filter(qgis_app):
+    """A categorised WFS layer without a catch-all category makes QGIS send every category
+    as a server-side filter; Brandenburg rejects that URL with HTTP 400."""
+    prj = _project()
+    for lyr in prj.mapLayers().values():
+        if lyr.providerType() == "WFS":
+            assert lyr.renderer().filter(lyr.fields()) == "", lyr.name()
+            assert "pageSize='500'" in lyr.source() or "pageSize=500" in lyr.source()
+    prj.clear()

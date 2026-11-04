@@ -150,7 +150,7 @@ def build_workbench(out: Path = DEMO_GUELPE) -> Path:
 # ---------------------------------------------------------------- QGIS project
 def _wfs(typename: str, url: str, name: str):
     from qgis.core import QgsVectorLayer
-    uri = (f"pagingEnabled='true' restrictToRequestBBOX='1' srsname='{CRS}' "
+    uri = (f"pagingEnabled='true' pageSize='500' restrictToRequestBBOX='1' srsname='{CRS}' "
            f"typename='{typename}' url='{url}' version='auto'")
     return QgsVectorLayer(uri, name, "WFS")
 
@@ -194,7 +194,10 @@ def _geology(project):
         sym.setColor(__import__("qgis.PyQt.QtGui", fromlist=["QColor"]).QColor.fromHsv(
             (k * 67) % 360, 90, 230))
         cats.append(QgsRendererCategory(v, sym, v))
-    layer.setRenderer(QgsCategorizedSymbolRenderer(field, cats))
+    other = QgsSymbol.defaultSymbol(layer.geometryType())
+    other.setColor(other.color().fromRgb(200, 200, 200))
+    cats.append(QgsRendererCategory(None, other, "other"))   # catch-all: else QGIS sends every
+    layer.setRenderer(QgsCategorizedSymbolRenderer(field, cats))   # unit name as a WFS filter (HTTP 400)
     layer.setOpacity(0.4)
     return layer, field
 
