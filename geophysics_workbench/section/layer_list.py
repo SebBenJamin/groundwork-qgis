@@ -19,8 +19,9 @@ MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip),
 REMOVE_TEXT = "Remove from profile…"
 #: style fields the Display dialog edits
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "grid_cell", "fade_coverage",
-                  "coverage_threshold", "fade_mode")
+                  "coverage_threshold", "fade_mode", "shown")
 DISPLAY_TEXT = "Display…"
+MISFIT_TEXT = "Misfit summary…"
 
 
 def _scale_text(layer: SectionLayer) -> str:
@@ -219,6 +220,11 @@ class LayerList(QWidget):
         """Context menu of a row (the caller shows and owns it)."""
         menu = QMenu(self)
         menu.addAction(DISPLAY_TEXT).triggered.connect(lambda: self.edit_scale(dataset_id))
+        layer = self._layers.get(dataset_id)
+        readings = None if layer is None or layer.mesh is None else layer.mesh.readings
+        if readings is not None and readings.has_calculated:
+            menu.addAction(MISFIT_TEXT).triggered.connect(
+                lambda: self.show_misfit(dataset_id))
         menu.addSeparator()
         menu.addAction(REMOVE_TEXT).triggered.connect(lambda: self.remove_dataset(dataset_id))
         return menu
@@ -250,6 +256,18 @@ class LayerList(QWidget):
             f: getattr(style, f) for f in DISPLAY_FIELDS}))
         dialog.exec()
         dialog.deleteLater()
+
+    def show_misfit(self, dataset_id: str) -> None:
+        """Open (or bring forward) the misfit summary for this layer."""
+        from ..ui.misfit_panel import MisfitSummary
+        layer = self._layers.get(dataset_id)
+        if layer is None or layer.mesh is None or layer.mesh.readings is None:
+            return
+        if getattr(self, "_misfit", None) is None:
+            self._misfit = MisfitSummary(self)
+        self._misfit.show_layer(layer)
+        self._misfit.show()
+        self._misfit.raise_()
 
     def set_display(self, dataset_id: str, **changes) -> None:
         """Change how a layer is drawn (scale, mode, contours, coverage fade)."""

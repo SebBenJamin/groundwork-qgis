@@ -132,7 +132,11 @@ class ColorScaleDialog(QDialog):
             super().accept()
 
 
-MODE_TEXT = {"cells": "Cells (as inverted)", "smooth": "Smooth colour field",
+SHOWN_TEXT = {"misfit": "Misfit (calculated − measured) / measured",
+              "measured": "Measured apparent resistivity",
+              "calculated": "Calculated apparent resistivity (model response)"}
+MODE_TEXT = {"points": "Points (one per reading)", "cells": "Cells (as inverted)",
+             "smooth": "Smooth colour field",
              "contours": "Contours", "smooth+contours": "Smooth field + contours"}
 
 
@@ -144,7 +148,7 @@ class DisplayDialog(ColorScaleDialog):
 
     def __init__(self, parent, layer):
         from ..core.gridding import default_threshold
-        from .data import DISPLAY_MODES, layer_name
+        from .data import DISPLAY_MODES, READINGS_MODES, layer_name
         from .readout import unit_label
         mesh = layer.mesh
         super().__init__(layer.style.scale, None if mesh is None else mesh.values,
@@ -154,10 +158,28 @@ class DisplayDialog(ColorScaleDialog):
         style = layer.style
         coverage = None if mesh is None else getattr(mesh, "coverage", None)
 
+        readings = None if mesh is None else getattr(mesh, "readings", None)
+        self._readings = readings
         display = QGroupBox("Display")
         form = QFormLayout(display)
+        self.shown_combo = QComboBox()
+        self._shown_before = None
+        if readings is not None:
+            for key in ("misfit", "measured", "calculated"):
+                self.shown_combo.addItem(SHOWN_TEXT[key], key)
+                if key != "measured" and not readings.has_calculated:
+                    self.shown_combo.model().item(self.shown_combo.count() - 1).setEnabled(False)
+            shown = style.shown
+            if shown not in ("misfit", "measured", "calculated") or (
+                    shown != "measured" and not readings.has_calculated):
+                shown = "misfit" if readings.has_calculated else "measured"
+            self._shown_before = shown
+            self.shown_combo.setCurrentIndex(self.shown_combo.findData(shown))
+        form.addRow("Show", self.shown_combo)
+        if readings is None:
+            form.setRowVisible(self.shown_combo, False)
         self.mode_combo = QComboBox()
-        for mode in DISPLAY_MODES:
+        for mode in (READINGS_MODES if readings is not None else DISPLAY_MODES):
             self.mode_combo.addItem(MODE_TEXT[mode], mode)
         self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(style.mode)))
         form.addRow("Draw as", self.mode_combo)
@@ -229,8 +251,13 @@ class DisplayDialog(ColorScaleDialog):
     def style(self):
         """The edited LayerStyle; raises ``ValueError`` when the scale is not valid."""
         from dataclasses import replace
+        shown = self.shown_combo.currentData() if self._readings is not None else \
+            self._style.shown
+        changed = self._readings is not None and shown != self._shown_before
         return replace(
-            self._style, scale=self.scale(), mode=self.mode_combo.currentData(),
+            self._style, shown=shown,
+            scale=None if changed else self.scale(),      # a new value: automatic scale
+            mode=self.mode_combo.currentData(),
             grid_cell=None if self.auto_cell.isChecked() else self.cell_spin.value(),
             contour_step=None if self.auto_step.isChecked() else self.step_spin.value(),
             fade_coverage=self.fade_check.isChecked() and self.coverage_group.isEnabled(),
