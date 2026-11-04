@@ -70,12 +70,12 @@ def _blend(rgb, alpha):
 
 def test_band_colour_appears_above_surface(qgis_app):
     from geophysics_workbench.core.context import BandSegment, ContextItems
-    from geophysics_workbench.core.lithology import lithology_colour
+    from geophysics_workbench.core.lithology import label_colour
 
     img = _img(_results(ContextItems(band=[BandSegment(50.0, 70.0, "Sand")])))
     near, far = _band_offsets(img)
     x, y = _x(55.0), _y(0.0) - round(0.5 * (near + far))
-    assert _close(img.pixel(x, y), _blend(lithology_colour("Sand"), 0.85))
+    assert _close(img.pixel(x, y), _blend(label_colour("Sand"), 0.85))
     assert img.pixel(_x(45.0), y) == 0xFFFFFFFF            # outside the segment
 
 
@@ -365,3 +365,16 @@ def test_point_with_depth_draws_stick(qgis_app):
     assert _close(img.pixel(_x(50.0), _y(-2.3)), STICK_RGB, tol=40)
     assert img.pixel(_x(50.0), _y(-2.8)) == 0xFFFFFFFF          # stops at the depth
     assert img.pixel(_x(70.0), _y(-1.5)) == 0xFFFFFFFF          # no depth: no stick
+
+
+def test_band_draws_segment_rgb_and_distinct_label_colours(qgis_app):
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from geophysics_workbench.core.lithology import label_colour
+
+    assert label_colour("Sand, fein") != label_colour("Sand, grob")
+    img = _img(_results(ContextItems(band=[BandSegment(50.0, 60.0, "Sand", rgb=(10, 20, 200)),
+                                           BandSegment(60.0, 70.0, "Sand, grob")])))
+    near, far = _band_offsets(img)
+    y = _y(0.0) - round(0.5 * (near + far))
+    assert _close(img.pixel(_x(51.0), y), _blend((10, 20, 200), 0.85))           # off the text
+    assert _close(img.pixel(_x(69.0), y), _blend(label_colour("Sand, grob"), 0.85))

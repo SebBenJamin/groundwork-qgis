@@ -29,6 +29,14 @@ def lithology_colour(name: str) -> tuple[int, int, int]:
     for words, rgb in _TABLE:
         if any(w in low for w in words):
             return rgb
+    return label_colour(name)
+
+
+def label_colour(name: str) -> tuple[int, int, int]:
+    """A pastel that depends only on the lower-cased text: different texts get different
+    colours (unlike ``lithology_colour``, which gives every "…sand…" the same yellow), and
+    the same text the same colour in every run and on every profile."""
+    low = name.lower()
     h = hashlib.md5(low.encode("utf-8")).digest()
     r, g, b = colorsys.hls_to_rgb(h[0] / 255.0, 0.78, 0.45 + 0.2 * h[1] / 255.0)
     return int(round(r * 255)), int(round(g * 255)), int(round(b * 255))

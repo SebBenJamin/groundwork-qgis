@@ -16,6 +16,7 @@ from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransfor
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QTimer
 
+from ..core.lithology import label_colour
 from ..core.context import (BandSegment, ContextItems, Crossing, LogInterval, ProjectedPoint,
                             line_crossings, polygon_intervals, project_points)
 from ..core.model import Profile
@@ -168,7 +169,8 @@ class ContextGatherer:
             layer.willBeDeleted.connect(slot)
             self._drop_slots[layer.id()] = slot
             names = list(_SIGNALS)
-            if layer.id() in line_ids:
+            band_id = settings.band.layer_id if settings.band is not None else None
+            if layer.id() in line_ids or layer.id() == band_id:     # colours come from styles
                 names += _STYLE_SIGNALS
             if layer.id() in selected:
                 names.append("selectionChanged")
@@ -375,16 +377,47 @@ class ContextGatherer:
         return sorted(rows, key=lambda r: (r.top, r.bottom))
 
     def _band(self, setting, xy, box) -> list[BandSegment]:
+        """Units along the profile. Colours come from the band layer's own style, so the band
+        matches the map; a single-symbol style says nothing about units, so each label then
+        gets its own colour. Only features near the profile are read (never the whole
+        layer: a WFS would download it all)."""
+        from qgis.core import QgsExpressionContextUtils, QgsRenderContext
         layer = self._vector(setting.layer_id, "polygon", (setting.label_field,))
-        polygons, labels = [], []
-        for feature, geom in self._features(layer, box, (setting.label_field,)):
-            label = _text(feature[setting.label_field]) or layer.name()
-            for poly in (geom.asMultiPolygon() if geom.isMultipart() else [geom.asPolygon()]):
-                rings = [np.array([[p.x(), p.y()] for p in ring]) for ring in poly if len(ring) >= 3]
-                if rings:
-                    polygons.append((rings[0], rings[1:]))
-                    labels.append(label)
-        return polygon_intervals(xy, polygons, labels) if polygons else []
+        renderer = layer.renderer()
+        styled = renderer is not None and renderer.type() != "singleSymbol"
+        ctx = QgsRenderContext()
+        fields = [setting.label_field]
+        if styled:
+            ctx.expressionContext().appendScopes(
+                QgsExpressionContextUtils.globalProjectLayerScopes(layer))
+            renderer = renderer.clone()
+            renderer.startRender(ctx, layer.fields())
+            fields += sorted(renderer.usedAttributes(ctx))
+        polygons, labels, colours = [], [], {}
+        try:
+            for feature, geom in self._features(layer, box, tuple(fields)):
+                label = _text(feature[setting.label_field]) or layer.name()
+                if styled and label not in colours:     # first feature of a label decides
+                    ctx.expressionContext().setFeature(feature)
+                    symbols = renderer.symbolsForFeature(feature, ctx)
+                    if symbols:
+                        c = symbols[0].color()
+                        colours[label] = (c.red(), c.green(), c.blue())
+                for poly in (geom.asMultiPolygon() if geom.isMultipart() else [geom.asPolygon()]):
+                    rings = [np.array([[p.x(), p.y()] for p in ring]) for ring in poly
+                             if len(ring) >= 3]
+                    if rings:
+                        polygons.append((rings[0], rings[1:]))
+                        labels.append(label)
+        finally:
+            if styled:
+                renderer.stopRender(ctx)
+        if not polygons:
+            return []
+        segments = polygon_intervals(xy, polygons, labels)
+        for seg in segments:
+            seg.rgb = colours.get(seg.label) or label_colour(seg.label)
+        return segments
 
 
 def _project(xy, found, buffer):

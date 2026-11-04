@@ -14,7 +14,7 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 
 from ..core.context import DEFAULT_LINE_RGB
-from ..core.lithology import lithology_colour
+from ..core.lithology import label_colour
 from ..core.ties import strip_column
 
 _MM = Qgis.RenderUnit.Millimeters
@@ -119,7 +119,7 @@ def draw_band(painter, rc, wt, items, surface) -> None:
         pts = [wt.map(QPointF(float(x), float(np.interp(x, *surface)))) for x in xs]
         poly = QPolygonF([QPointF(p.x(), p.y() - near) for p in pts]
                          + [QPointF(p.x(), p.y() - far) for p in reversed(pts)])
-        r, g, b = lithology_colour(seg.label)
+        r, g, b = seg.rgb or label_colour(seg.label)
         painter.setBrush(QBrush(QColor(r, g, b, round(255 * BAND_OPACITY))))
         painter.setPen(line_pen(rc, (60, 60, 60), 0.15))
         painter.drawPolygon(poly)

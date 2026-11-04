@@ -650,3 +650,45 @@ def test_point_depth_field_read_and_bad_values_ignored(project, profile):
     items = g.items_for(prof)
     g.close()
     assert {p.label: p.depth for p in items.points} == {"a": 3.5, "b": None, "c": None}
+
+
+def test_band_colours_follow_the_layer_style(project, profile):
+    """A categorized style on the band layer gives the band the same colours as the map;
+    a single-symbol style gives each label its own colour."""
+    from qgis.core import (QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsRendererCategory)
+
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    geo = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Sand, grob"])
+    _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand, fein"])
+    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    single = {b.label: b.rgb for b in g.items_for(profile).band}
+    g.close()
+    assert single["Sand, fein"] != single["Sand, grob"]                 # not one "sand" yellow
+    cats = [QgsRendererCategory("Sand, fein", QgsFillSymbol.createSimple({"color": "10,20,200"}),
+                                "fein"),
+            QgsRendererCategory("Sand, grob", QgsFillSymbol.createSimple({"color": "200,20,10"}),
+                                "grob")]
+    geo.setRenderer(QgsCategorizedSymbolRenderer("unit", cats))
+    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    styled = {b.label: b.rgb for b in g.items_for(profile).band}
+    g.close()
+    assert styled == {"Sand, fein": (10, 20, 200), "Sand, grob": (200, 20, 10)}
+
+
+def test_restyling_the_band_layer_redraws(project, profile, qgis_app):
+    from qgis.core import QgsCategorizedSymbolRenderer
+
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    geo = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
+    calls = []
+    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")),
+                  lambda: calls.append(1))
+    try:
+        g.items_for(profile)
+        geo.setRenderer(QgsCategorizedSymbolRenderer("unit", []))
+        _wait(qgis_app, 700)
+        assert calls == [1]
+    finally:
+        g.close()

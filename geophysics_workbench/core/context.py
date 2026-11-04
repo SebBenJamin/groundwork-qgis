@@ -50,6 +50,9 @@ class BandSegment:
     s0: float
     s1: float
     label: str
+    #: fill colour: the band layer's own style for this unit, or a colour per label;
+    #: None = derived from the label when drawn
+    rgb: tuple | None = None
 
 
 @dataclass
@@ -73,7 +76,7 @@ class ContextItems:
             crossings=sorted((replace(c, s=length - c.s) for c in self.crossings),
                              key=lambda c: c.s),
             points=sorted((replace(p, s=length - p.s) for p in self.points), key=lambda p: p.s),
-            band=sorted((BandSegment(length - b.s1, length - b.s0, b.label) for b in self.band),
+            band=sorted((BandSegment(length - b.s1, length - b.s0, b.label, b.rgb) for b in self.band),
                         key=lambda b: b.s0),
             ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
             dem=dem, dem_tolerance=self.dem_tolerance)
