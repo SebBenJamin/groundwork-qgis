@@ -39,3 +39,30 @@ def test_add_action_adds_to_menu(fake_iface):
     a.trigger()
     assert hits == [1]
     p.unload()
+
+
+def test_package_builds_guelpe_demo_zip(tmp_path):
+    import shutil
+    import sys
+    import zipfile
+    from pathlib import Path
+
+    import pytest
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "scripts"))
+    import package
+
+    zips = package.build(tmp_path)
+    assert len(zips) == 3
+    guelpe = zips[2]
+    assert guelpe.name.startswith("geophysics_workbench-demo-guelpe-")
+    names = zipfile.ZipFile(guelpe).namelist()
+    for need in ("guelpe_project.qgz", "guelpe_workbench.gpkg", "ATTRIBUTION.md",
+                 "context/cores.gpkg", "data/ert/T1/dcinv.result.vtk"):
+        assert need in names
+    assert not any(".cache" in n for n in names)
+    copy = tmp_path / "copy"
+    shutil.copytree(root / "demo_guelpe", copy)
+    (copy / "guelpe_project.qgz").unlink()
+    with pytest.raises(RuntimeError):
+        package._demo_zip(copy, "x", "guelpe_project.qgz", tmp_path)

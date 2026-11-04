@@ -6,6 +6,7 @@ dist/geophysics_workbench-<version>.zip       the plugin, top folder geophysics_
                                               (what Plugins > Install from ZIP expects)
 dist/geophysics_workbench-demo-<version>.zip  the contents of demo/: unzip anywhere and open
                                               demo_project.qgz
+dist/geophysics_workbench-demo-guelpe-<version>.zip  the real-data demo (demo_guelpe/); open guelpe_project.qgz
 
 The version comes from geophysics_workbench/metadata.txt. Byte caches, editor or SQLite
 side files and GDAL .aux.xml statistics are left out; so are tests, spikes and the demo
@@ -22,6 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "geophysics_workbench"
 DEMO = REPO / "demo"
+DEMO_GUELPE = REPO / "demo_guelpe"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 EXCLUDE_FILES = ("*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
@@ -63,14 +65,21 @@ def build(dist: Path = DIST) -> tuple[Path, Path]:
     if not (PLUGIN / "LICENSE").exists():
         plugin_entries.append((REPO / "LICENSE", f"{PLUGIN.name}/LICENSE"))
     plugin_zip = write_zip(dist / f"{PLUGIN.name}-{ver}.zip", plugin_entries)
-    demo_entries = [(p, p.relative_to(DEMO).as_posix()) for p in files_under(DEMO)]
-    if not any(arc == "demo_project.qgz" for _, arc in demo_entries):
-        raise RuntimeError("demo/demo_project.qgz is missing; run scripts/build_demo.py")
-    demo_zip = write_zip(dist / f"{PLUGIN.name}-demo-{ver}.zip", demo_entries)
+    demo_zip = _demo_zip(DEMO, f"{PLUGIN.name}-demo-{ver}", "demo_project.qgz", dist)
+    guelpe_zip = _demo_zip(DEMO_GUELPE, f"{PLUGIN.name}-demo-guelpe-{ver}", "guelpe_project.qgz",
+                           dist)
     size = plugin_zip.stat().st_size
     if size >= MAX_PLUGIN_BYTES:
         raise RuntimeError(f"{plugin_zip.name} is {size} bytes (limit {MAX_PLUGIN_BYTES})")
-    return plugin_zip, demo_zip
+    return plugin_zip, demo_zip, guelpe_zip
+
+
+def _demo_zip(src: Path, name: str, project: str, dist: Path) -> Path:
+    """``dist/<name>.zip`` of the files under ``src``; ``project`` must be among them."""
+    entries = [(p, p.relative_to(src).as_posix()) for p in files_under(src)]
+    if not any(arc == project for _, arc in entries):
+        raise RuntimeError(f"{src.name}/{project} is missing; run its build script first")
+    return write_zip(dist / f"{name}.zip", entries)
 
 
 def main() -> int:
