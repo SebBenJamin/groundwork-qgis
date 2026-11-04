@@ -117,9 +117,13 @@ class CrossingLinesGroup(QGroupBox):
         for item in items:
             if item.layer_id in self.rows:
                 self.rows[item.layer_id].load(item)
-            elif self.project.mapLayer(item.layer_id) is None:
-                self.stale.append(item)                   # truly missing; excluded or
-                                                          # non-line layers are just ignored
+            elif not self._valid_layer(item.layer_id):
+                self.stale.append(item)                   # missing or unavailable: keep it;
+                                                          # excluded or non-line layers are dropped
+
+    def _valid_layer(self, layer_id: str) -> bool:
+        layer = self.project.mapLayer(layer_id)
+        return layer is not None and layer.isValid()
 
     def stale_count(self) -> int:
         return len(self.stale)

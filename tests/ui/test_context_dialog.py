@@ -313,3 +313,25 @@ def test_group_slots_survive_a_failing_project(project, fake_iface, monkeypatch)
     finally:
         monkeypatch.undo()
         dlg.reject()
+
+
+def test_saved_entry_for_unavailable_layer_survives_apply(project, fake_iface):
+    from qgis.core import QgsVectorLayer
+
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+                                                        write_settings)
+
+    gone = QgsVectorLayer("does_not_exist_anywhere.shp", "Pipeline (drive offline)", "ogr")
+    assert not gone.isValid()
+    project.addMapLayer(gone)
+    real = _line(project, "Roads")
+    kept = LineLayerSetting(gone.id(), "voltage", "#123456", True, True)
+    write_settings(project, ContextSettings(line_layers=[kept, LineLayerSetting(real.id())]))
+    dlg = ContextDialog(fake_iface, project)
+    try:
+        assert gone.id() not in dlg.lines.rows and dlg.lines.stale_count() == 1
+        dlg.apply()
+        assert kept in read_settings(project).line_layers
+    finally:
+        dlg.reject()
