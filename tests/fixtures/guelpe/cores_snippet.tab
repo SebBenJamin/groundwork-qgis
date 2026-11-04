@@ -1,0 +1,68 @@
+/* DATA DESCRIPTION:
+Citation:	Köhler, Anne; Kaniecki, Marie; Schneider, Birgit; Zielhofer, Christoph (2025): Field based and laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe, Brandenburg (Germany) [dataset]. PANGAEA, https://doi.org/10.1594/PANGAEA.983887, 
+	In: Köhler, Anne; Pohle, Marco; Bauckholt, Matteo; Birnstengel, Susann; Kaniecki, Marie; Schneider, Birgit; Werban, Ulrike; Zielhofer, Christoph (2025): Geophysical, Sedimentological and Geochemical Data from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany) [dataset publication series]. PANGAEA, https://doi.org/10.1594/PANGAEA.983208
+Abstract:	Sediment cores were recovered using a hand-held Cobra Pro (Atlas Copco) core drilling system with a 60 mm diameter open corer. One-meter segments were retrieved and assessed in the field for sedimentological features, including estimations of grain size, carbonate content, humus content, and redox features (AG Boden 2005, 2024). Colour descriptions were carried out using the Munsell Soil Color Chart. The exact positions of the drilling points were recorded using a differential GPS device (TOPCON HiPer II). The cores were photographed, documented and sampled at 5–10 cm intervals for subsequent laboratory analyses.
+	Bulk samples from five selected cores (RK1, RK3, RK13, RK15, RK17) were freeze-dried, sieved (2 mm), and weighed. Total carbon (TC), total nitrogen (TN), and total sulfur (TS) contents were measured using a CNS analyzer (Vario EL cube, Elementar). Inorganic carbon (TIC) was determined using calcimeter measurements (Scheibler method, Eijkelkamp). Organic carbon (TOC) was calculated as TOC = TC − TIC.
+	For the grain size analyses, sediment samples were first sieved to <2 mm and subsamples of 10 g were treated with 50 ml of 35% hydrogen peroxide (H₂O₂) and gently heated to remove organic matter. Following this, 10 ml of 0.4 N sodium pyrophosphate solution (Na₄P₂O₇) was added to disperse the particles, and the suspension was subjected to ultrasonic treatment for 45 minutes. The sand fraction was analysed by dry sieving and classified into four size classes: coarse sand (2000–630 µm), medium sand (630–200 µm), fine sand (200–125 µm), and very fine sand (125–63 µm). Finer fractions were determined using X-ray granulometry (XRG) with a SediGraph III 5120 (Micromeritics). These included coarse silt (63–20 µm), medium silt (20–6.3 µm), fine silt (6.3–2.0 µm), coarse clay (2.0–0.6 µm), medium clay (0.6–0.2 µm), and fine clay (<0.2 µm).
+Keyword(s):	Brandenburg; Driving cores; floodplain; Grain Size; Grain-size analyses; Lake Gülpe; TC; TOC
+References:	Ad-hoc-Arbeitsgruppe Boden (2005): Bodenkundliche Kartieranleitung (KA5), 5th edition. Bundesanstalt für Geowissenschaften und Rohstoffe, Hannover, Germany, https://www.bafg.de/SharedDocs/Downloads/DE/baggergut/kartieranleitung.pdf?__blob=publicationFile&v=1
+	Ad-hoc-Arbeitsgruppe Boden (2024): Bodenkundliche Kartieranleitung (KA6) in 2 Bänden. Bundesanstalt für Geowissenschaften und Rohstoffe, Hannover, Germany
+Coverage:	MEDIAN LATITUDE: 52.731767 * MEDIAN LONGITUDE: 12.214707 * SOUTH-BOUND LATITUDE: 52.728008 * WEST-BOUND LONGITUDE: 12.210629 * NORTH-BOUND LATITUDE: 52.735885 * EAST-BOUND LONGITUDE: 12.218466
+	DATE/TIME START: 2023-06-13T00:00:00 * DATE/TIME END: 2025-07-14T12:03:27
+	MINIMUM ELEVATION: 24.2 m * MAXIMUM ELEVATION: 26.2 m
+Event(s):	RK1 (Guelpe_2023_transect-1) * LATITUDE: 52.735016 * LONGITUDE: 12.212089 * DATE/TIME: 2023-06-13T00:00:00 * ELEVATION: 24.4 m * METHOD/DEVICE: Cobra percussion corer (CPERC) * COMMENT: 300 m
+	RK5 (Guelpe_2023_transect-2) * LATITUDE: 52.734792 * LONGITUDE: 12.218106 * DATE/TIME: 2023-06-15T00:00:00 * ELEVATION: 24.2 m * METHOD/DEVICE: Cobra percussion corer (CPERC) * COMMENT: 200 m
+	RK10 (Guelpe_2023_transect-3) * LATITUDE: 52.729489 * LONGITUDE: 12.215643 * DATE/TIME: 2024-06-04T00:00:00 * ELEVATION: 24.9 m * METHOD/DEVICE: Cobra percussion corer (CPERC) * COMMENT: 100 m
+Parameter(s):	Event label (Event)
+	Penetration depth [m] (Penetr depth) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Depth, top/min [m] (Depth top) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Depth, bottom/max [m] (Depth bot) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Texture (Texture) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * COMMENT: field-based grain size analysis according to AG Boden, 2024 (Fig. C11, p.255)
+	Grain size classification (Grain size class) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * COMMENT: field-based grain size class
+	Color code HLS-system (Color HLS) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * METHOD/DEVICE: Munsell soil color charts (Munsell Color., 2010)
+	Color code HLS-system (Color HLS) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * METHOD/DEVICE: Munsell soil color charts (Munsell Color., 2010) * COMMENT: Munsell text format
+	Carbonates (Carb) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * COMMENT: estimated carbonat content according to AG Boden 2024 (Tab. C61, p. 272)
+	Humus content (Hum) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * COMMENT: estimated humus content according to AG Boden 2024 (Tab. C32, p. 221)
+	Redoximorphic features (RMF) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Comment (Comment) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * COMMENT: further information and details about the layers
+	Soil horizon (Soil hori) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de) * COMMENT: Classification according to Ad-Hoc-AG Boden 2005 (KA5)
+	Sample ID (Sample ID) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Depth, top/min [m] (Depth top) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Depth, bottom/max [m] (Depth bot) * PI: Köhler, Anne (https://orcid.org/0000-0002-8511-4407, anne.koehler@uni-leipzig.de)
+	Nitrogen, total [%] (TN) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Carbon and nitrogen and sulfur (CNS) element analyzer, Elementar, Vario EL Cube
+	Carbon, total [%] (TC) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Carbon and nitrogen and sulfur (CNS) element analyzer, Elementar, Vario EL Cube
+	Carbon, inorganic, total [%] (TIC) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Calcimeter, Royal Eijkelkamp, 08.53
+	Carbon, organic, total [%] (TOC) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * COMMENT: Ct - Canorg
+	Sulfur, total [%] (TS) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Carbon and nitrogen and sulfur (CNS) element analyzer, Elementar, Vario EL Cube
+	Size fraction 2.000-0.630 mm, coarse sand [%] (2000-630 µm cS) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Dry sieving
+	Size fraction 0.630-0.200 mm, medium sand [%] (630-200 µm mS) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Dry sieving
+	Size fraction 0.200-0.125 mm, fine sand [%] (200-125 µm) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Dry sieving
+	Size fraction 0.125-0.064 mm [%] (125-64 µm) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Dry sieving
+	Size fraction 0.063-0.020 mm, coarse silt [%] (63-20 µm gU) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120
+	Size fraction 0.020-0.0063 mm, medium silt [%] (20-6.3 µm mU) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120
+	Size fraction 0.0063-0.002 mm, fine silt [%] (6.3-2 µm fU) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120
+	Size fraction 2-0.63 µm, coarse clay [%] (2-0.63 µm cC) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120
+	Size fraction 0.63-0.2 µm, medium clay [%] (0.63-0.2 µm mC) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120
+	Size fraction < 0.2 µm, fine clay [%] (<0.2 µm fC) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120
+	Error, relative [%] (Error r) * PI: Schneider, Birgit (bschneid@rz.uni-leipzig.de) * METHOD/DEVICE: Particle Size Analyser, Micrometrics, SEDIGRAPH III 5120 * COMMENT: error grainsize
+License:	Creative Commons Attribution 4.0 International (CC-BY-4.0) (URI: https://creativecommons.org/licenses/by/4.0/)
+Status:	Curation Level: Enhanced curation (URI: https://wiki.pangaea.de/wiki/Curation_levels)
+Size:	3523 data points
+*/
+Event	Penetr depth [m]	Depth top [m]	Depth bot [m]	Texture (field-based grain size analys...)	Grain size class (field-based grain size class)	Color HLS (Munsell soil color charts (Mu...)	Color HLS (Munsell text format, Munsell ...)	Carb (estimated carbonat content ac...)	Hum (estimated humus content accor...)	RMF	Comment (further information and detai...)	Soil hori (Classification according to A...)	Sample ID	Depth top [m]	Depth bot [m]	TN [%] (Carbon and nitrogen and sulfu...)	TC [%] (Carbon and nitrogen and sulfu...)	TIC [%] (Calcimeter, Royal Eijkelkamp,...)	TOC [%] (Ct - Canorg)	TS [%] (Carbon and nitrogen and sulfu...)	2000-630 µm cS [%] (Dry sieving)	630-200 µm mS [%] (Dry sieving)	200-125 µm [%] (Dry sieving)	125-64 µm [%] (Dry sieving)	63-20 µm gU [%] (Particle Size Analyser, Micro...)	20-6.3 µm mU [%] (Particle Size Analyser, Micro...)	6.3-2 µm fU [%] (Particle Size Analyser, Micro...)	2-0.63 µm cC [%] (Particle Size Analyser, Micro...)	0.63-0.2 µm mC [%] (Particle Size Analyser, Micro...)	<0.2 µm fC [%] (Particle Size Analyser, Micro...)	Error r [%] (error grainsize, Particle Siz...)
+RK1	300	0.000	0.220								offset																				
+RK1	300	0.220	0.300									Oh																			
+RK1	300	0.300	0.410	Tu3	clay	10YR 3/3	dark brown	0	3-4			M/Ah	G_RK1_1	0.300	0.410	0.6066	9.2090	0.0000	9.2090	0.4352	0.2	1.6	3.5	12.6	9.9	8.2	12.4	16.7	14.6	18.6	1.8
+RK1	300	0.410	0.600	Tu2	clay	10YR 3/2	very dark grayish brown	0	3-4			M/fAh	G_RK1_2	0.410	0.600	0.3672	4.9650	0.0046	4.9604	0.2643	0.4	1.6	1.1	1.2	2.7	7.5	15.4	20.8	17.3	30.5	1.4
+RK1	300	0.600	0.680	Lts	loam	10YR 3/2	very dark grayish brown	0	3-4			M/Gr	G_RK1_3	0.600	0.680	0.0376	0.5360	0.0059	0.5301	0.1789	0.6	17.4	20.4	12.1	4.8	5.9	5.2	4.6	4.0	24.6	0.4
+RK5	200	0.000	0.170								offset																				
+RK5	200	0.170	0.345			10YR 2/2	very dark brown	0	>4		peat, drier and more decomposed towards the bottom	H																			
+RK5	200	0.345	0.440	Tu2	clay	10YR 3/2	very dark grayish brown	0	3-4	Fe along roots and plant remains	muddy	F																			
+RK5	200	0.440	0.525			10YR 3/3	dark brown	0	>4	slight signs of oxidation	highly decomposed peat	H																			
+RK5	200	0.525	0.770	Tl	clay	[Gley1] 10Y 5/1	greenish gray	0	1	reduced, some oxidised spots	sand lens at 71cm	M/Gor																			
+RK5	200	0.770	1.000	Tl	clay	5Y 5/1	gray	0	1	reduced	sand lenses at 78cm, 80cm, 82cm and 87cm, plant remains	M/Gr																			
+RK10	100	0.000	0.220								offset																				
+RK10	100	0.220	0.320	Lt3	clay	10YR 2/2	very dark brown	0	>4		roots	Ah																			
+RK10	100	0.320	0.610	Sl4	loam	10YR 3/3	dark brown	0	3	oxidised and reduced	roots	M																			
+RK10	100	0.610	0.710	St3	loam	7.5YR 5/2	brown	0	1	reduced	some small sand lenses	M																			
+RK10	100			St3	loam	7.5YR 5/2	brown	0	1	reduced	some small sand lenses	M																			
