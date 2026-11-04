@@ -4,3 +4,4 @@ __pycache__/
 .testlibs/
 dist/
 demo/**/*.aux.xml
+.cache/
