@@ -49,10 +49,11 @@ def read(path, reader: str | None = None, **options) -> ReaderResult:
 
 
 def _register_builtins() -> None:
+    from .bert_data import BertDataReader
     from .r2_res import R2ResReader
     from .vtk_legacy import VtkLegacyReader
     from .zondres import ZondResReader
-    for cls in (R2ResReader, VtkLegacyReader, ZondResReader):   # most specific first
+    for cls in (BertDataReader, R2ResReader, VtkLegacyReader, ZondResReader):   # most specific first
         register(cls())
 
 
