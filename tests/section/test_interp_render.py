@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -93,3 +94,50 @@ def test_letter_opaque_on_translucent_fill(qgis_app):
     strong = sum(1 for x in range(_x(60) - 5, _x(60) + 30) for y in range(_y(-1) - 30, _y(-1) + 5)
                  if QColor(img.pixel(x, y)).blue() > 200 and QColor(img.pixel(x, y)).red() < 60)
     assert strong > 5
+
+
+def test_crossing_marks_drawn_at_tie_strip(qgis_app):
+    from test_context_render import _close, _img, _x, _y
+
+    from geophysics_workbench.core.interp_cross import CrossMark
+    from geophysics_workbench.core.interpretation import InterpFeature
+
+    res = _snapshot_results([], {"f1": InterpFeature("f1", "v", letter="A")},
+                            {"p9": _poly_symbol((0, 200, 0))})
+    res.snapshot.interp_crossings = [(60.0, [CrossMark("f1", "polygon", 0.0, -3.0, "p9")])]
+    img = _img(res)
+    from qgis.PyQt.QtGui import QColor
+
+    def greenish(x, y):                  # the bar is translucent over the strip
+        c = QColor(img.pixel(x, y))
+        return c.green() > c.red() + 50 and c.green() > c.blue() + 50
+    assert greenish(_x(60) + 3, _y(-1.5))
+    assert not greenish(_x(40), _y(-1.5))
+
+
+def test_snapshot_has_crossing_marks_mirrored(qgis_app, store_with_model):
+    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from geophysics_workbench.core.model import profile_from_stations
+    from geophysics_workbench.section.data import SectionDataProvider
+
+    store, p1, _ = store_with_model
+    p2, s2 = profile_from_stations("P2", "EPSG:25832",
+                                   np.array([[20, -20, 100], [20, 20, 100.0]]))
+    store.save_profile(p2)
+    store.save_station_set(s2)
+    store.ensure_interpretation()
+    v = store.current_version().id
+    f = InterpFeature(new_id(), v, letter="A")
+    store.save_feature(f)
+    store.save_piece(InterpPiece(new_id(), v, f.id, p2.id, "polygon",
+                                 [(15, 100), (25, 100), (25, 95), (15, 95), (15, 100)]))
+    prov = SectionDataProvider(store)
+    snap = prov.snapshot(p1.id)
+    assert snap.interpretation == []                 # P1 has no pieces of its own
+    (s, marks), = snap.interp_crossings
+    assert s == pytest.approx(20.0) and marks[0].feature_id == f.id
+    assert (marks[0].z_top, marks[0].z_bottom) == pytest.approx((100.0, 95.0))
+    assert marks[0].piece_id in snap.interp_symbols and f.id in snap.interp_features
+    length = p1.chainage.length
+    (s_rev, _m), = prov.snapshot(p1.id, reverse=True).interp_crossings
+    assert s_rev == pytest.approx(length - 20.0)

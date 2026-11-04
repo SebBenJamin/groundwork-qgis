@@ -95,3 +95,68 @@ def draw_interpretation(painter, rc, wt, pieces, features, symbols) -> None:
             painter.setPen(QPen(colour, 1))
             painter.drawText(at + QPointF(3, -3), feat.letter)
             painter.restore()
+
+
+CROSS_FILL_ALPHA = 110          # polygon bars stay translucent over the tie strip
+CROSS_POINT_MM = 1.6
+
+
+def _mark_colour(symbols, piece_id: str) -> QColor | None:
+    entry = symbols.get(piece_id)
+    if entry is None:
+        return None
+    sym = entry[0] if isinstance(entry, tuple) else entry
+    colour = QColor(sym.color())
+    colour.setAlpha(255)
+    return colour
+
+
+def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols) -> None:
+    """A crossing profile's interpretation at the tie, over its strip (``strip_start``, as
+    ``draw_ties``): polygons as bars, lines as ticks, points as diamonds, with letters."""
+    from qgis.PyQt.QtCore import QRectF, Qt
+    from qgis.PyQt.QtGui import QBrush, QPainter
+
+    from .context_readout import strip_start
+    from .context_render import TIE_STRIP_WIDTH, mm
+    from .context_render_points import COLUMN_WIDTH
+
+    width = mm(rc, TIE_STRIP_WIDTH)
+    px_per_m = abs(wt.map(QPointF(1.0, 0.0)).x() - wt.map(QPointF(0.0, 0.0)).x()) or 1.0
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    font = QFont(painter.font())
+    font.setBold(True)
+    font.setPixelSize(max(8, round(mm(rc, LETTER_SIZE_MM * 0.8))))
+    painter.setFont(font)
+    for s, marks in crossings:
+        start = strip_start(points, s, width / px_per_m, mm(rc, COLUMN_WIDTH) / 2 / px_per_m)
+        x0 = wt.map(QPointF(start, 0.0)).x()
+        x1 = x0 + width
+        for m in marks:
+            colour = _mark_colour(symbols, m.piece_id)
+            if colour is None:
+                continue
+            y0 = wt.map(QPointF(s, m.z_top)).y()
+            y1 = wt.map(QPointF(s, m.z_bottom)).y()
+            pen = QPen(colour, max(1.0, mm(rc, 0.5)))
+            painter.setPen(pen)
+            if m.kind == "polygon":
+                fill = QColor(colour)
+                fill.setAlpha(CROSS_FILL_ALPHA)
+                painter.setBrush(QBrush(fill))
+                painter.drawRect(QRectF(QPointF(x0, min(y0, y1)), QPointF(x1, max(y0, y1))))
+            elif m.kind == "line":
+                ext = mm(rc, 1.0)
+                painter.drawLine(QPointF(x0 - ext, y0), QPointF(x1 + ext, y0))
+            else:
+                r = mm(rc, CROSS_POINT_MM) / 2
+                cx = (x0 + x1) / 2
+                painter.setBrush(QBrush(colour))
+                painter.drawPolygon(QPolygonF([QPointF(cx, y0 - r), QPointF(cx + r, y0),
+                                               QPointF(cx, y0 + r), QPointF(cx - r, y0)]))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            feat = features.get(m.feature_id)
+            if feat is not None and feat.letter:
+                painter.drawText(QPointF(x1 + 2, min(y0, y1) + font.pixelSize()), feat.letter)
+    painter.restore()

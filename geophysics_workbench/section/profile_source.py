@@ -158,6 +158,11 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 _guarded("interpretation", painter, draw_interpretation, rc, wt,
                          self.snapshot.interpretation, self.snapshot.interp_features,
                          self.snapshot.interp_symbols)
+            if self.snapshot.interp_crossings:
+                from .interp_render import draw_crossing_marks
+                _guarded("crossing interpretation", painter, draw_crossing_marks, rc, wt,
+                         self.snapshot.interp_crossings, ctx.points if ctx is not None else [],
+                         self.snapshot.interp_features, self.snapshot.interp_symbols)
         finally:
             painter.restore()
 

@@ -77,6 +77,9 @@ class SectionSnapshot:
     interpretation: list = field(default_factory=list)
     interp_features: dict = field(default_factory=dict)
     interp_symbols: dict = field(default_factory=dict)
+    #: (tie chainage, [CrossMark]) where a crossing profile carries interpretation; the
+    #: marks' symbols and features are in ``interp_symbols`` / ``interp_features``
+    interp_crossings: list = field(default_factory=list)
 
 
 def _copy_style(style: LayerStyle) -> LayerStyle:
@@ -412,18 +415,34 @@ class SectionDataProvider:
         version = self.shown_interp_version()
         if version is None:
             return
+        from ..core.interp_cross import crossing_marks
         pieces = self.store.pieces(version, profile_id)
-        if not pieces:
+        crossings, others = [], {}
+        try:
+            ties = self.ties(profile_id)
+        except Exception:                       # ties must never block the section
+            ties = []
+        for tie in ties:
+            if tie.other_id not in others:
+                others[tie.other_id] = self.store.pieces(version, tie.other_id)
+            marks = crossing_marks(others[tie.other_id], tie.s_other, self.near_miss)
+            if marks:
+                crossings.append((tie.s, marks))
+        if not pieces and not crossings:
             return
+        marked = {m.piece_id for _s, marks in crossings for m in marks}
+        other_pieces = [p for ps in others.values() for p in ps if p.id in marked]
         from .interp_render import piece_symbols
         features = {f.id: f for f in self.store.features(version)}
         layers = self.interp_layers() if self.interp_layers is not None else {}
-        snap.interp_symbols = piece_symbols(pieces, features, layers)
+        snap.interp_symbols = piece_symbols(pieces + other_pieces, features, layers)
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for p in pieces:
                 p.vertices = [(length - s, z) for s, z in p.vertices]
+            crossings = [(length - s, marks) for s, marks in crossings]
         snap.interpretation, snap.interp_features = pieces, features
+        snap.interp_crossings = crossings
 
     def identify(self, profile_id: str, s: float, z: float) -> list[dict]:
         """Values at forward profile chainage ``s`` (0 at the profile's first vertex) and
