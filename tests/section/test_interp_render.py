@@ -77,3 +77,19 @@ def test_frozen_version_shown_when_selected(qgis_app, store_with_model):
     snap = prov.snapshot(pid)
     assert len(snap.interpretation) == 1
     assert snap.interp_features[snap.interpretation[0].feature_id].letter == "OLD"
+
+
+def test_letter_opaque_on_translucent_fill(qgis_app):
+    from qgis.core import QgsFillSymbol
+    from qgis.PyQt.QtGui import QColor
+    from test_context_render import _img, _x, _y
+
+    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, normalise
+
+    p = normalise(InterpPiece("p1", "v", "f1", "prof", "polygon",
+                              [(50, 0.5), (70, 0.5), (70, -2.5), (50, -2.5)]))
+    sym = QgsFillSymbol.createSimple({"color": "0,0,255,20", "outline_style": "no"})
+    img = _img(_snapshot_results([p], {"f1": InterpFeature("f1", "v", letter="W")}, {"p1": sym}))
+    strong = sum(1 for x in range(_x(60) - 5, _x(60) + 30) for y in range(_y(-1) - 30, _y(-1) + 5)
+                 if QColor(img.pixel(x, y)).blue() > 200 and QColor(img.pixel(x, y)).red() < 60)
+    assert strong > 5

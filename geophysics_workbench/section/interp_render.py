@@ -9,7 +9,7 @@ from __future__ import annotations
 from qgis.core import (Qgis, QgsFeature, QgsField, QgsFields, QgsFillSymbol, QgsLineSymbol,
                        QgsMarkerSymbol, QgsRenderContext, QgsSymbol)
 from qgis.PyQt.QtCore import QMetaType, QPointF
-from qgis.PyQt.QtGui import QFont, QPen, QPolygonF
+from qgis.PyQt.QtGui import QColor, QFont, QPen, QPolygonF
 
 from ..core.interpretation import label_point
 
@@ -80,6 +80,8 @@ def draw_interpretation(painter, rc, wt, pieces, features, symbols) -> None:
                                                                     Qgis.RenderUnit.Millimeters))))
             painter.save()
             painter.setFont(font)
-            painter.setPen(QPen(sym.color(), 1))
+            colour = QColor(sym.color())
+            colour.setAlpha(255)                    # fills are translucent, letters never
+            painter.setPen(QPen(colour, 1))
             painter.drawText(at + QPointF(3, -3), feat.letter)
             painter.restore()

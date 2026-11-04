@@ -40,6 +40,7 @@ class InterpController(QObject):
         # wrapper outlives its C++ object and a late garbage collection deletes it twice
         self._dock = weakref.ref(dock)
         self.tool = None
+        self._sync = None
         #: (feature, type suggestions, letters in use) -> edited feature or None (cancel)
         self.form_factory = lambda f, s, letters: ask_feature(self.dock, f, s, letters)
         self.bar = QHBoxLayout()
@@ -115,7 +116,22 @@ class InterpController(QObject):
         self.buttons[kind].setChecked(True)
         self.dock.canvas.setFocus()
 
+    def ensure_sync(self) -> None:
+        """Rebuild the derived layers when attributes are edited in QGIS's own tools."""
+        from ..ui.interp_layers import InterpSync, interp_layers
+        prov = self.dock.provider
+        if prov is None or not prov.store.has_interpretation():
+            return
+        layer = interp_layers(prov.store, QgsProject.instance()).get("interp_features")
+        if layer is None or (self._sync is not None and self._sync._layer is layer):
+            return
+        if self._sync is not None:
+            self._sync.detach()
+        self._sync = InterpSync(prov.store, QgsProject.instance(), prov.notify_changed,
+                                version_id=prov.shown_interp_version, chainages=self.chainages)
+
     def _profile_changed(self, *_args) -> None:
+        self.ensure_sync()
         self.stop()
         self.undo.clear()
         self.versions.refresh(self.versions.combo.currentData() or "")
@@ -168,6 +184,7 @@ class InterpController(QObject):
         store = self.dock.provider.store
         project = QgsProject.instance()
         add_interp_layers(store, project)
+        self.ensure_sync()
         store.rebuild_derived(version_id, self.chainages())
         reload_interp_layers(store, project)
         self.dock.provider.notify_changed()

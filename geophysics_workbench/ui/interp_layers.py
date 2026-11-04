@@ -80,7 +80,10 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
         layer = QgsVectorLayer(store.layer_uri(name), TITLES[name], "ogr")
         if not layer.isValid():
             raise ValueError(f"QGIS cannot load layer {name!r} from {store.path}")
-        if name != "interp_features":
+        if name == "interp_features":
+            # only the current version is editable here; frozen copies stay out of reach
+            layer.setSubsetString(f"\"version_id\" = '{store.current_version().id}'")
+        else:
             default_style(layer)
             layer.setReadOnly(True)
         project.addMapLayer(layer, False)

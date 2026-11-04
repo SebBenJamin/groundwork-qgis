@@ -89,3 +89,16 @@ def test_feature_edit_rebuilds_derived(qgis_app, interp_store):
     assert calls == [1]
     sync.detach()
     prj.clear()
+
+
+def test_features_layer_hides_frozen_versions(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.interp_layers import add_interp_layers
+
+    interp_store.freeze_current("R1")                      # a second copy of every feature
+    prj = QgsProject()
+    feats = add_interp_layers(interp_store, prj)["interp_features"]
+    cur = interp_store.current_version().id
+    assert [f["version_id"] for f in feats.getFeatures()] == [cur]
+    prj.clear()
