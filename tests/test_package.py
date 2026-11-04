@@ -19,7 +19,7 @@ def test_metadata_targets_qgis4():
     assert g["name"] == "Geophysics Workbench"
     assert g["qgisMinimumVersion"] == "4.2"
     assert g["supportsQt6"] == "True"
-    assert g["version"] == "0.3.0"
+    assert g["version"] == "0.3.5"
 
 
 def test_plugin_loads_and_unloads(fake_iface):
@@ -66,3 +66,27 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     (copy / "guelpe_project.qgz").unlink()
     with pytest.raises(RuntimeError):
         package._demo_zip(copy, "x", "guelpe_project.qgz", tmp_path)
+
+
+def test_zips_take_committed_content_of_modified_files(tmp_path):
+    """Local edits (e.g. drawings made while testing in QGIS) never ship in a demo zip."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import package
+
+    assert package.GIT is not None, "git is needed to keep local edits out of the zips"
+
+    def git(*args):
+        subprocess.run([package.GIT, "-C", str(tmp_path), *args], check=True, capture_output=True)
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "a.gpkg").write_bytes(b"clean")
+    git("add", "a.gpkg")
+    git("commit", "-q", "-m", "a")
+    (tmp_path / "a.gpkg").write_bytes(b"my test drawings")
+    (tmp_path / "new.txt").write_bytes(b"untracked")
+    assert package.entry_bytes(tmp_path / "a.gpkg", tmp_path) == b"clean"
+    assert package.entry_bytes(tmp_path / "new.txt", tmp_path) == b"untracked"

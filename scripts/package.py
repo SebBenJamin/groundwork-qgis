@@ -48,12 +48,49 @@ def files_under(root: Path) -> list[Path]:
     return out
 
 
+def _find_git() -> str | None:
+    """git on PATH, else Git for Windows' usual place (QGIS's Python has a short PATH)."""
+    import os
+    import shutil
+    found = shutil.which("git")
+    if found:
+        return found
+    for base in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 os.environ.get("LOCALAPPDATA", "") + r"\Programs"):
+        exe = Path(base) / "Git" / "cmd" / "git.exe"
+        if exe.is_file():
+            return str(exe)
+    return None
+
+
+GIT = _find_git()
+
+
+def entry_bytes(path: Path, repo: Path = REPO) -> bytes:
+    """The committed content of ``path`` when git tracks it and it has local changes (for
+    example drawings made while testing the demo in QGIS), otherwise the file on disk."""
+    import subprocess
+    if GIT is None:
+        return path.read_bytes()
+    rel = path.resolve().relative_to(repo.resolve()).as_posix()
+    try:
+        changed = subprocess.run([GIT, "-C", str(repo), "diff", "--quiet", "HEAD", "--", rel],
+                                 capture_output=True).returncode == 1
+        if changed:
+            return subprocess.run([GIT, "-C", str(repo), "show", f"HEAD:{rel}"],
+                                  capture_output=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        pass                                    # no git: ship what is on disk
+    return path.read_bytes()
+
+
 def write_zip(target: Path, entries: list[tuple[Path, str]]) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(".zip.part")
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for src, arcname in entries:
-            zf.write(src, arcname)
+            zf.writestr(zipfile.ZipInfo.from_file(src, arcname), entry_bytes(src),
+                        compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
     tmp.replace(target)
     return target
 
@@ -83,6 +120,9 @@ def _demo_zip(src: Path, name: str, project: str, dist: Path) -> Path:
 
 
 def main() -> int:
+    if GIT is None:
+        print("warning: git not found; files with local changes ship as they are on disk",
+              file=sys.stderr)
     try:
         zips = build()
     except Exception as exc:
