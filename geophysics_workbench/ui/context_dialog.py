@@ -13,7 +13,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 
 from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings,
                                      PointLayerSetting)
-from .borehole_mapping import (MISSING, BoreholeGroup, field_of, fill_field_combo,
+from .borehole_mapping import (MISSING, NONE, BoreholeGroup, field_of, fill_field_combo,
                                fill_layer_combo, keep_missing)
 from .crossing_rows import CrossingLinesGroup
 from .project_actions import SCOPE
@@ -42,19 +42,28 @@ def _geometry(layer) -> str:
 
 
 class LayerRow:
-    """One checkable point layer with a label-field combo."""
+    """One checkable point layer with a label-field combo and an optional numeric depth
+    field (drawn as a stick down to that depth)."""
 
     def __init__(self, layer, grid: QGridLayout, row: int):
         self.layer_id = layer.id()
         self.check = QCheckBox(layer.name())
         self.label = QComboBox()
         fill_field_combo(self.label, layer)
+        self.depth = QComboBox()
+        self.depth.setToolTip("Depth field: draw the point as a stick down to this depth (m)")
+        self.depth.addItem(NONE, "")
+        for f in layer.fields():
+            if f.isNumeric():
+                self.depth.addItem(f.name(), f.name())
         grid.addWidget(self.check, row, 0)
         grid.addWidget(self.label, row, 1)
+        grid.addWidget(self.depth, row, 2)
 
-    def load(self, label_field: str):
+    def load(self, label_field: str, depth_field: str = ""):
         self.check.setChecked(True)
         self.label.setCurrentIndex(max(0, self.label.findData(label_field)))
+        self.depth.setCurrentIndex(max(0, self.depth.findData(depth_field)))
 
 
 def _spin(lo, hi, value, decimals=1) -> QDoubleSpinBox:
@@ -161,7 +170,7 @@ class ContextDialog(QDialog):
         self.lines.load(s.line_layers)
         for item in s.point_layers:
             if item.layer_id in self.point_rows:
-                self.point_rows[item.layer_id].load(item.label_field)
+                self.point_rows[item.layer_id].load(item.label_field, item.depth_field)
         self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
         self.borehole.load(s.borehole)
         self.loaded_band = s.band
@@ -187,7 +196,7 @@ class ContextDialog(QDialog):
             band_label = old.label_field                # layer missing: keep its saved label
         return ContextSettings(
             line_layers=self.lines.settings(),
-            point_layers=[PointLayerSetting(r.layer_id, field_of(r.label))
+            point_layers=[PointLayerSetting(r.layer_id, field_of(r.label), field_of(r.depth))
                           for r in self.point_rows.values() if r.check.isChecked()]
             + list(self.stale_points),
             borehole=self.borehole.setting(),

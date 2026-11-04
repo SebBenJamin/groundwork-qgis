@@ -352,3 +352,16 @@ def test_zrange_includes_borehole_bottom(qgis_app):
     gen = WorkbenchProfileGenerator(SectionSnapshot("p1", [], topo, [], None, items), Owner())
     assert gen.generateProfile()
     assert gen.takeResults().zRange().lower() == pytest.approx(-19.0)
+
+
+def test_point_with_depth_draws_stick(qgis_app):
+    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
+    from geophysics_workbench.section.context_render_points import STICK_RGB
+
+    deep = ProjectedPoint(50.0, 2.0, "Ig 1", "point", depth=2.5)
+    flat = ProjectedPoint(70.0, 2.0, "Ig 2", "point")
+    img = _img(_results(ContextItems(points=[deep, flat])))
+    assert _close(img.pixel(_x(50.0), _y(-1.5)), STICK_RGB, tol=40)
+    assert _close(img.pixel(_x(50.0), _y(-2.3)), STICK_RGB, tol=40)
+    assert img.pixel(_x(50.0), _y(-2.8)) == 0xFFFFFFFF          # stops at the depth
+    assert img.pixel(_x(70.0), _y(-1.5)) == 0xFFFFFFFF          # no depth: no stick

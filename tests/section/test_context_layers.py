@@ -635,3 +635,18 @@ def test_active_set_check_and_close_do_not_raise(qgis_app, monkeypatch):
     monkeypatch.setattr(cl, "active_line_settings", boom)
     gatherer._active_set_maybe_changed()                 # must not raise
     gatherer.close()
+
+
+def test_point_depth_field_read_and_bad_values_ignored(project, profile):
+    from geophysics_workbench.core.context_settings import ContextSettings, PointLayerSetting
+    pts = _layer(project, "Point", "Holes", "name:string&field=depth:string")
+    _add(pts, f"POINT({500000.0 + 20} {5400000.0 + 2})", ["a", "3.5"])
+    _add(pts, f"POINT({500000.0 + 50} {5400000.0 + 2})", ["b", "deep"])
+    _add(pts, f"POINT({500000.0 + 70} {5400000.0 + 2})", ["c", "-1"])
+    from geophysics_workbench.core.model import Profile
+    prof = Profile("p", "P", np.array([[500000.0, 5400000.0], [500100.0, 5400000.0]]), AUTH)
+    g = _gatherer(project, ContextSettings(
+        point_layers=[PointLayerSetting(pts.id(), "name", "depth")]))
+    items = g.items_for(prof)
+    g.close()
+    assert {p.label: p.depth for p in items.points} == {"a": 3.5, "b": None, "c": None}

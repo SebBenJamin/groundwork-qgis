@@ -10,6 +10,8 @@ from .context_render import line_pen, mm
 
 COLUMN_WIDTH = 2.5          # mm
 DIAMOND_HALF = 1.2          # mm
+STICK_RGB = (60, 60, 60)    # point with a depth field: a stick down to that depth
+STICK_WIDTH = 0.6           # mm
 
 
 def _diamond(painter, x: float, y: float, half: float) -> None:
@@ -39,4 +41,8 @@ def draw_points(painter, rc, wt, items, surface) -> None:
                                         QPointF(x + width / 2, max(y0, y1))))
         else:
             y = wt.map(QPointF(p.s, z_surf)).y()
+            if p.depth:
+                painter.setPen(line_pen(rc, STICK_RGB, STICK_WIDTH))
+                bottom = wt.map(QPointF(p.s, z_surf - p.depth)).y()
+                painter.drawLine(QPointF(x, y), QPointF(x, bottom))
             _diamond(painter, x, y, half)

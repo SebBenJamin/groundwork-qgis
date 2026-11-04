@@ -42,6 +42,7 @@ class ProjectedPoint:
     kind: str          # "point" or "borehole"
     z_top: float | None = None
     log: list[LogInterval] = field(default_factory=list)
+    depth: float | None = None    # plain points: stick depth below the surface (m)
 
 
 @dataclass

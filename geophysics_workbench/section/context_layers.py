@@ -60,6 +60,12 @@ def _number(value) -> float | None:
     return out if np.isfinite(out) else None
 
 
+def _depth(value) -> float | None:
+    """A usable stick depth: a positive finite number, else ``None`` (NULL, text, <= 0)."""
+    out = None if QgsVariantUtils.isNull(value) else _number(value)
+    return out if out is not None and out > 0 else None
+
+
 class _Skip(Exception):
     """A layer cannot be used; the message is logged once and the layer skipped."""
 
@@ -309,10 +315,13 @@ class ContextGatherer:
         return out
 
     def _points(self, setting, xy, box, buffer) -> list[ProjectedPoint]:
-        layer = self._vector(setting.layer_id, "point", (setting.label_field,))
-        found = self._point_features(layer, box, (setting.label_field,))
+        names = (setting.label_field, setting.depth_field)
+        layer = self._vector(setting.layer_id, "point", names)
+        found = self._point_features(layer, box, names)
         return [ProjectedPoint(s, off, _text(f[setting.label_field]) if setting.label_field
-                               and _text(f[setting.label_field]) else layer.name(), "point")
+                               and _text(f[setting.label_field]) else layer.name(), "point",
+                               depth=_depth(f[setting.depth_field]) if setting.depth_field
+                               else None)
                 for (f, _p), (s, off) in _project(xy, found, buffer)]
 
     def _point_features(self, layer, box, fields):

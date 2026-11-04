@@ -335,3 +335,26 @@ def test_saved_entry_for_unavailable_layer_survives_apply(project, fake_iface):
         assert kept in read_settings(project).line_layers
     finally:
         dlg.reject()
+
+
+def test_point_row_depth_combo_saves(project, fake_iface):
+    from qgis.core import QgsVectorLayer
+
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+
+    pts = QgsVectorLayer("Point?crs=EPSG:25832&field=name:string&field=Teufe:double",
+                         "Holes", "memory")
+    project.addMapLayer(pts)
+    dlg = ContextDialog(fake_iface, project)
+    try:
+        row = dlg.point_rows[pts.id()]
+        assert [row.depth.itemData(i) for i in range(row.depth.count())] == ["", "Teufe"]
+        row.check.setChecked(True)
+        row.depth.setCurrentIndex(row.depth.findData("Teufe"))
+        dlg.apply()
+        assert read_settings(project).point_layers[0].depth_field == "Teufe"
+        dlg2 = ContextDialog(fake_iface, project)
+        assert dlg2.point_rows[pts.id()].depth.currentData() == "Teufe"
+        dlg2.reject()
+    finally:
+        dlg.reject()

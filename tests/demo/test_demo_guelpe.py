@@ -52,7 +52,7 @@ def test_guelpe_settings_reference_project_layers(qgis_app):
     assert s.band is None or "Geology" in layer(s.band.layer_id).name()
     assert layer(s.dem_layer_id).name() == "DGM1 (LGB)"
     assert any(ls.checked for ls in s.line_layers)
-    assert [p.label_field for p in s.point_layers] == ["Bohrungsname"]
+    assert [(p.label_field, p.depth_field) for p in s.point_layers] == [("Bohrungsname", "Teufe_in_m")]
     assert "bpk_m_sch" in layer(s.point_layers[0].layer_id).source()
     assert s.buffer == 5.0
     prj.clear()

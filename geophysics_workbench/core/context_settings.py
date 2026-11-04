@@ -27,6 +27,7 @@ class LineLayerSetting:
 class PointLayerSetting:
     layer_id: str
     label_field: str = ""
+    depth_field: str = ""               # numeric field: draw a stick this deep (m)
 
 
 @dataclass

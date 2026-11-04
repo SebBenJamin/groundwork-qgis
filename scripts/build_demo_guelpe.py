@@ -267,7 +267,7 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
             root.findLayer(hidden.id()).setItemVisibilityChecked(False)
         write_settings(project, ContextSettings(
             line_layers=[LineLayerSetting(water.id(), "name", checked=True)],
-            point_layers=[PointLayerSetting(bpk.id(), "Bohrungsname")],
+            point_layers=[PointLayerSetting(bpk.id(), "Bohrungsname", "Teufe_in_m")],
             borehole=BoreholeSetting(cores.id(), "id", "elevation", logs.id(), "core_id",
                                      "top", "bottom", "lithology"),
             band=BandSetting(geology.id(), geology_field) if geology_field else None,

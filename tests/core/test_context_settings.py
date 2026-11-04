@@ -56,3 +56,13 @@ def test_bad_line_fields_fall_back():
     assert load(checked=None).checked is None
     assert load(selected_only="1").selected_only is False
     assert load(checked=False).checked is False
+
+
+def test_point_setting_depth_roundtrip_and_old_json():
+    import json
+
+    from geophysics_workbench.core.context_settings import ContextSettings, PointLayerSetting
+    s = ContextSettings(point_layers=[PointLayerSetting("p", "name", "Teufe_in_m")])
+    assert ContextSettings.from_json(s.to_json()).point_layers == s.point_layers
+    old = json.dumps({"version": 2, "point_layers": [{"layer_id": "p", "label_field": "n"}]})
+    assert ContextSettings.from_json(old).point_layers[0].depth_field == ""
