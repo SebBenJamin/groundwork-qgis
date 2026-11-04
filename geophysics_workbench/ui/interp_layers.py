@@ -112,6 +112,7 @@ class InterpSync:
 
     def _committed(self) -> None:
         try:
+            self.store.drop_orphan_pieces(self.version_id())
             self.store.rebuild_derived(self.version_id(), self.chainages())
         finally:
             reload_interp_layers(self.store, self.project)

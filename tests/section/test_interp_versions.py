@@ -61,3 +61,44 @@ def test_start_from_version_with_freeze_first(bar):
     assert sorted(v.name for v in store.versions() if v.frozen) == ["Before restore", "Old"]
     assert [x.letter for x in store.features(cur)] == ["A"]
     assert vb.combo.currentIndex() == 0 and dock.provider.interp_version_id is None
+
+
+def test_start_from_clears_undo(bar):
+    vb, store, dock = bar
+    ctl = dock.interp
+    vb.ask_name = lambda title: "Old"
+    vb.freeze()
+    [p] = store.pieces(store.current_version().id)
+    from geophysics_workbench.section.interp_edit import move_vertex
+    ctl.replace_piece(p, move_vertex(p, 0, 2.0, -0.5))
+    assert ctl.undo.stack.count() == 1
+    vb.combo.setCurrentIndex(1)
+    vb.ask_restore = lambda: "replace"
+    vb.start_from()
+    assert ctl.undo.stack.count() == 0
+
+
+def test_viewing_frozen_keeps_derived_layers_current(bar):
+    from osgeo import ogr
+    vb, store, dock = bar
+    vb.ask_name = lambda title: "Old"
+    vb.freeze()
+    dock.interp.changed(store.current_version().id)
+    vb.combo.setCurrentIndex(1)                           # view the frozen version
+    ds = ogr.Open(str(store.path))
+    ids = {f["version_id"] for f in ds.GetLayerByName("interp_lines_3d")}
+    ds = None
+    assert ids == {store.current_version().id}
+
+
+def test_sync_detached_when_store_has_no_interpretation(bar, tmp_path):
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    vb, store, dock = bar
+    ctl = dock.interp
+    ctl.changed(store.current_version().id)
+    assert ctl._sync is not None
+    other = ProjectStore.create(tmp_path / "other.gpkg", store.crs_authid)
+    dock.provider = SectionDataProvider(other)
+    ctl.ensure_sync()
+    assert ctl._sync is None

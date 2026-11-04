@@ -120,15 +120,19 @@ class InterpController(QObject):
         """Rebuild the derived layers when attributes are edited in QGIS's own tools."""
         from ..ui.interp_layers import InterpSync, interp_layers
         prov = self.dock.provider
-        if prov is None or not prov.store.has_interpretation():
+        layer = None
+        if prov is not None and prov.store.has_interpretation():
+            layer = interp_layers(prov.store, QgsProject.instance()).get("interp_features")
+        if self._sync is not None and (layer is None or self._sync._layer is not layer):
+            self._sync.detach()                 # another store, or none: never act on it again
+            self._sync = None
+        if layer is None or self._sync is not None:
             return
-        layer = interp_layers(prov.store, QgsProject.instance()).get("interp_features")
-        if layer is None or (self._sync is not None and self._sync._layer is layer):
-            return
-        if self._sync is not None:
-            self._sync.detach()
-        self._sync = InterpSync(prov.store, QgsProject.instance(), prov.notify_changed,
-                                version_id=prov.shown_interp_version, chainages=self.chainages)
+        store = prov.store
+        # the derived (map/3D) layers always hold the current version; bound to this store
+        self._sync = InterpSync(store, QgsProject.instance(), prov.notify_changed,
+                                version_id=lambda: store.current_version().id,
+                                chainages=lambda: {p.id: p.chainage for p in store.profiles()})
 
     def _profile_changed(self, *_args) -> None:
         self.ensure_sync()
@@ -178,14 +182,15 @@ class InterpController(QObject):
         store.save_piece(piece)
         self.changed(version.id)
 
-    def changed(self, version_id: str) -> None:
-        """Rebuild the derived layers of ``version_id``, add them if new, redraw."""
+    def changed(self, _version_id: str | None = None) -> None:
+        """Rebuild the derived layers from the current version (map and 3D never show a
+        frozen one), add them if new, redraw the section (which shows the chosen version)."""
         from ..ui.interp_layers import add_interp_layers, reload_interp_layers
         store = self.dock.provider.store
         project = QgsProject.instance()
         add_interp_layers(store, project)
         self.ensure_sync()
-        store.rebuild_derived(version_id, self.chainages())
+        store.rebuild_derived(store.current_version().id, self.chainages())
         reload_interp_layers(store, project)
         self.dock.provider.notify_changed()
 

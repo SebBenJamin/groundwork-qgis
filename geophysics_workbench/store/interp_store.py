@@ -192,10 +192,26 @@ class InterpStoreMixin:
 
     def restore_from(self, version_id: str) -> None:
         cur = self.current_version()
+        source = next((v for v in self.versions() if v.id == version_id), None)
+        if source is None or not source.frozen:
+            raise ValueError(f"can only start from a frozen version, not {version_id!r}")
         with self._tx() as ds:
             for name in ("interp_features", "interp_pieces"):
                 self._delete_where(ds.GetLayerByName(name), f"version_id = {_q(cur.id)}")
             self._copy_into(ds, version_id, cur.id)
+
+    def drop_orphan_pieces(self, version_id: str) -> int:
+        """Delete pieces whose feature no longer exists (e.g. deleted in QGIS's attribute
+        table); returns how many were removed."""
+        self._writable(version_id)
+        feats = {f.id for f in self.features(version_id)}
+        gone = [p.id for p in self.pieces(version_id) if p.feature_id not in feats]
+        if gone:
+            with self._tx() as ds:
+                pl = ds.GetLayerByName("interp_pieces")
+                for pid in gone:
+                    self._delete_where(pl, f"id = {_q(pid)}")
+        return len(gone)
 
     def used_types(self) -> list[str]:
         with self._ds() as ds:

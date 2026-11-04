@@ -102,3 +102,23 @@ def test_features_layer_hides_frozen_versions(qgis_app, interp_store):
     cur = interp_store.current_version().id
     assert [f["version_id"] for f in feats.getFeatures()] == [cur]
     prj.clear()
+
+
+def test_feature_deleted_in_table_removes_its_pieces(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.interp_layers import InterpSync, add_interp_layers
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    sync = InterpSync(interp_store, prj, lambda: None,
+                      version_id=lambda: interp_store.current_version().id,
+                      chainages=lambda: {"prof": BENT})
+    feats = layers["interp_features"]
+    feats.startEditing()
+    feats.deleteFeature(next(feats.getFeatures()).id())
+    assert feats.commitChanges()
+    assert interp_store.pieces(interp_store.current_version().id) == []
+    assert layers["interp_polygons_3d"].featureCount() == 0
+    sync.detach()
+    prj.clear()

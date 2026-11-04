@@ -129,3 +129,12 @@ def test_rebuild_derived_geometry(store):
     assert ds.GetLayerByName("interp_lines_3d").GetFeatureCount() == 1
     assert ds.GetLayerByName("interp_points_3d").GetFeatureCount() == 1
     assert ds.GetLayerByName("interp_footprints").GetFeatureCount() == 2   # line + polygon
+
+
+def test_restore_from_rejects_current_or_unknown(store):
+    f, p = _add(store)
+    cur = store.current_version().id
+    for bad in (cur, "no-such-version"):
+        with pytest.raises(ValueError):
+            store.restore_from(bad)
+    assert len(store.pieces(cur)) == 1
