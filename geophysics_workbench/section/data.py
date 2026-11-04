@@ -44,6 +44,10 @@ _RING_TYPES = [0, 1, 1, 1, 1]               # MoveTo, LineTo x 4
 
 
 DISPLAY_MODES = ("cells", "smooth", "contours", "smooth+contours")
+#: readings layers (measured / misfit pseudosections) also draw one marker per reading
+READINGS_MODES = ("points",) + DISPLAY_MODES
+#: misfit colour map: diverging, centred on 0 (from the existing COLORMAPS)
+MISFIT_CMAP = "RdYlBu_r"
 
 
 @dataclass
@@ -62,6 +66,9 @@ class LayerStyle:
     fade_coverage: bool = False
     coverage_threshold: float | None = None     # None = 10th percentile of the coverage
     fade_mode: str = "fade"                     # "fade" or "blank"
+    #: readings layers: "misfit", "measured" or "calculated"; None = misfit when the file
+    #: has calculated values, else measured
+    shown: str | None = None
 
 
 @dataclass
@@ -110,12 +117,57 @@ def layer_name(dataset: Dataset) -> str:
     return dataset.name or os.path.basename(dataset.source_path)
 
 
+def _auto_scale(mesh: SectionMesh, d: Dataset) -> ColorScale:
+    """Misfit: diverging, symmetric about 0 (98th percentile of |misfit|); readings'
+    resistivities: log; models: as before."""
+    if mesh.readings is not None:
+        v = np.asarray(mesh.point_values, float)
+        v = v[np.isfinite(v)]
+        if mesh.quantity == "misfit":
+            m = float(np.percentile(np.abs(v), 98)) if v.size else 1.0
+            m = m if m > 0 else 1.0
+            return ColorScale(MISFIT_CMAP, -m, m, False)
+        return ColorScale.auto(v[v > 0] if v.size else np.array([1.0, 10.0]), log=True)
+    return ColorScale.auto(mesh.values, log=(d.quantity == "resistivity"))
+
+
+def _reading_hit(layer: SectionLayer, s: float, z: float) -> dict | None:
+    """The reading nearest to (s, z) when the point lies on the pseudosection or close to a
+    reading (1.5 x the median distance between readings)."""
+    mesh = layer.mesh
+    pts = mesh.vertices
+    d2 = (pts[:, 0] - s) ** 2 + (pts[:, 1] - z) ** 2
+    i = int(np.argmin(d2))
+    tri = mesh.cells[:, :3]
+    edges = np.hypot(*(pts[tri[:, 0]] - pts[tri[:, 1]]).T)
+    near = np.sqrt(d2[i]) <= 1.5 * float(np.median(edges)) if len(edges) else False
+    if not near and not np.isfinite(mesh.value_at(s, z)):
+        return None
+    r = mesh.readings
+    value = float(mesh.point_values[i])
+    if not np.isfinite(value):
+        return None
+    mis = r.misfit_percent()
+    d = layer.dataset
+    return {"name": layer_name(d), "value": value, "unit": mesh.unit, "version": d.version,
+            "quantity": mesh.quantity, "dataset_id": d.id, "s": float(s), "z": float(z),
+            "reading": {k: float(np.asarray(getattr(r, k))[i]) for k in
+                        ("a", "b", "m", "n", "measured", "calculated")}
+            | {"misfit": float(mis[i]),
+               "error": None if r.error is None else float(r.error[i])}}
+
+
 def identify_layers(layers: list[SectionLayer], s: float, z: float) -> list[dict]:
     """Values under (s, z), topmost (last drawn) layer first. Hidden layers, layers
     with errors and cells without a value are skipped."""
     out = []
     for layer in reversed(layers):
         if not layer.style.visible or layer.error is not None or layer.mesh is None:
+            continue
+        if layer.mesh.readings is not None:
+            hit = _reading_hit(layer, s, z)
+            if hit is not None:
+                out.append(hit)
             continue
         value = layer.mesh.value_at(s, z)
         if not np.isfinite(value):
@@ -190,6 +242,8 @@ class SectionDataProvider:
         #: Set and read on the main thread only (snapshots stay plain data).
         self.active_profile_id: str | None = None
         self._styles: dict[str, LayerStyle] = {}
+        self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
+        self._readings_seen: set[str] = set()
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
         self._gathered = GatheredContext()
         self._ties: dict[str, tuple[float, list[Tie]]] = {}     # id -> (near_miss, ties)
@@ -334,19 +388,47 @@ class SectionDataProvider:
         if station_set is None:
             raise ValueError(f"station set {d.station_set_id} not found")
         result = self._read(d)
-        mesh = result.mesh.with_x(lambda x: data_to_chainage(x, station_set, d))
+        base = result.mesh
+        if base.readings is not None:
+            base = self._shown_mesh(d, base)
+        mesh = base.with_x(lambda x: data_to_chainage(x, station_set, d))
         if d.reader_options.get("z_kind", result.z_kind) == "depth":
             if topo is None:
                 raise ValueError(DEPTH_NEEDS_TOPO)
             mesh = mesh.depth_to_elevation(*topo)
         return mesh
 
+    def shown_value(self, d: Dataset, readings) -> str:
+        """What a readings layer shows: the style's choice when the file has it, else misfit
+        when it has calculated values, else measured."""
+        wanted = self.style(d.id).shown
+        if wanted in ("misfit", "calculated") and not readings.has_calculated:
+            wanted = None
+        if wanted in ("misfit", "measured", "calculated"):
+            return wanted
+        return "misfit" if readings.has_calculated else "measured"
+
+    def _shown_mesh(self, d: Dataset, base: SectionMesh) -> SectionMesh:
+        """The readings' pseudosection with the chosen value (cached per read result)."""
+        from ..core.readings import readings_mesh
+        shown = self.shown_value(d, base.readings)
+        key = (d.id, id(base), shown)
+        hit = self._shown_meshes.get(key)
+        if hit is None:
+            for k in [k for k in self._shown_meshes if k[0] == d.id and k[1] != id(base)]:
+                del self._shown_meshes[k]              # an older read of this dataset
+            hit = self._shown_meshes[key] = (base, readings_mesh(base.readings, shown))
+        return hit[1]
+
     def _layer(self, d: Dataset, sets: dict[str, StationSet], topo) -> SectionLayer:
         style = self.style(d.id)
         try:
             mesh = self._load_mesh(d, sets.get(d.station_set_id), topo)
+            if mesh.readings is not None and d.id not in self._readings_seen:
+                self._readings_seen.add(d.id)
+                style.mode = "points"              # a pseudosection: one marker per reading
             if style.scale is None:
-                style.scale = ColorScale.auto(mesh.values, log=(d.quantity == "resistivity"))
+                style.scale = _auto_scale(mesh, d)
         except FileNotFoundError:
             return SectionLayer(d, None, style, f"source missing: {self.source_path(d)}")
         except ValueError as exc:

@@ -38,7 +38,16 @@ def format_readout(s: float, z: float | None = None, depth: float | None = None,
         parts.append(f"X {xy[0]:.1f} Y {xy[1]:.1f}")
     for hit in hits:
         unit = unit_label(hit.get("unit", ""))
-        parts.append(f"{hit['name']}: {format_value(hit['value'])}" + (f" {unit}" if unit else ""))
+        text = f"{hit['name']}: {format_value(hit['value'])}" + (f" {unit}" if unit else "")
+        reading = hit.get("reading")
+        if reading:
+            abmn = " ".join(f"{k.upper()} {reading[k]:.1f}" for k in "abmn"
+                            if reading[k] == reading[k])          # skip absent poles (NaN)
+            vals = f"meas {format_value(reading['measured'])}"
+            if reading["calculated"] == reading["calculated"]:
+                vals += f" · calc {format_value(reading['calculated'])}"
+            text += f" ({abmn} · {vals} {unit_label('ohm.m')})"
+        parts.append(text)
     if beyond:
         parts.append(BEYOND)
     text = SEP.join(parts)

@@ -147,6 +147,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             finally:
                 painter.restore()
             _guarded("contour labels", painter, self._draw_contour_labels, rc, wt)
+            _guarded("reading markers", painter, self._draw_markers, rc, wt)
             ctx = self.snapshot.context
             if ctx is not None and topo is not None:
                 _guarded("geology band", painter, draw_band, rc, wt, ctx, topo)
@@ -206,6 +207,27 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                     painter.setPen(pen)
                     painter.drawPath(path)
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setOpacity(1.0)
+
+    def _draw_markers(self, painter, rc, wt):
+        """Readings layers in Points mode: a filled dot of MARKER_MM per reading, one path per
+        colour (thousands of readings draw in a few calls)."""
+        from .display_render import MARKER_MM
+        drawings = [d for d in self._layers if d.markers]
+        if not drawings:
+            return
+        r = max(1.5, rc.convertToPainterUnits(MARKER_MM, _MM) / 2)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for drawing in drawings:
+            painter.setOpacity(drawing.opacity)
+            for colour, pts in drawing.markers:
+                path = QPainterPath()
+                for s, z in pts:
+                    c = wt.map(QPointF(float(s), float(z)))
+                    path.addEllipse(c, r, r)
+                painter.setBrush(QBrush(colour))
+                painter.drawPath(path)
         painter.setOpacity(1.0)
 
     def _draw_contour_labels(self, painter, rc, wt):

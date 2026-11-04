@@ -22,6 +22,7 @@ from ..core.gridding import (FADE_ALPHA, contour_lines, coverage_alpha, default_
 CONTOUR_PEN_MM = 0.25
 CONTOUR_DARKER = 167            # QColor.darker factor: about 40 % darker than the scale colour
 LABEL_MM = 2.6
+MARKER_MM = 1.2                 # reading markers (Points mode)
 _CACHE_SIZE = 8
 _cache: OrderedDict = OrderedDict()
 _lock = threading.Lock()
@@ -34,6 +35,7 @@ class LayerDrawing:
     field: tuple | None = None                      # (QImage, QRectF in s/z) smooth field
     clip: QPainterPath | None = None                # below the topography, in s/z
     contours: list = dc_field(default_factory=list)    # [(QColor, QPainterPath, [lines], text)]
+    markers: list = dc_field(default_factory=list)     # [(QColor, (k, 2) s/z points)]
 
 
 def _fade(layer):
@@ -153,6 +155,17 @@ def build_drawing(layer, topo) -> LayerDrawing:
     st = layer.style
     threshold = _fade(layer)
     drawing = LayerDrawing(float(st.opacity))
+    pv = getattr(layer.mesh, "point_values", None)
+    if st.mode == "points" and pv is not None:          # one marker per reading
+        rgba = st.scale.rgba(pv)
+        keep = rgba[:, 3] > 0
+        packed = rgba[keep].astype(np.uint32) @ np.array([1 << 24, 1 << 16, 1 << 8, 1],
+                                                         dtype=np.uint32)
+        pts = layer.mesh.vertices[keep]
+        for code in np.unique(packed):
+            c = [(int(code) >> sh) & 255 for sh in (24, 16, 8, 0)]
+            drawing.markers.append((QColor(*c), pts[packed == code]))
+        return drawing
     if st.mode == "cells" or st.mode not in ("smooth", "contours", "smooth+contours"):
         alpha = (None if threshold is None
                  else coverage_alpha(layer.mesh.coverage, threshold, st.fade_mode))
