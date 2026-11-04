@@ -79,9 +79,45 @@ def run_r2() -> None:
     print("r2 done:", sorted(p.name for p in OUT.glob("r2_*")))
 
 
+def subset_file(n_electrodes: int = 80) -> Path:
+    """The first ``n_electrodes`` of transect 3 and the readings that use only them: a small
+    real dataset that R2 inverts in minutes (for a test fixture of its f001_err.dat)."""
+    lines = data_file().read_text().splitlines()
+    n_el = int(lines[0].split()[0])
+    el_rows = lines[2:2 + n_el]
+    n_d = int(lines[2 + n_el].split()[0])
+    head = lines[3 + n_el]
+    rows = [r for r in lines[4 + n_el:4 + n_el + n_d]
+            if all(0 < int(float(v)) <= n_electrodes for v in r.split()[:4])]
+    out = OUT / "T3_first80.data"
+    out.write_text("\n".join([str(n_electrodes), lines[1], *el_rows[:n_electrodes],
+                              str(len(rows)), head, *rows, "0"]) + "\n")
+    return out
+
+
+def run_r2_small() -> None:
+    from resipy import Project
+
+    sys.modules["resipy.Survey"].recipCalc_installed = False    # see run_r2
+    work = OUT / "r2s_work"
+    if work.exists():
+        shutil.rmtree(work)
+    k = Project(dirname=str(work), typ="R2")
+    k.createSurvey(str(subset_file()), ftype="BERT")
+    k.createMesh("quad")
+    k.invert()
+    inv = work / "invdir"
+    for name in ("f001_err.dat", "electrodes.dat", "R2.out", "protocol.dat"):
+        if (inv / name).exists():
+            shutil.copy(inv / name, OUT / f"r2s_{name}")
+    print("r2 small done:", sorted(p.name for p in OUT.glob("r2s_*")))
+
+
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "both"
     if which in ("pygimli", "both"):
         run_pygimli()
     if which in ("r2", "both"):
         run_r2()
+    if which == "r2small":
+        run_r2_small()

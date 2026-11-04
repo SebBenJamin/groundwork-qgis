@@ -42,3 +42,19 @@ def test_electrode_number_out_of_range(tmp_path):
     (tmp_path / "electrodes.dat").write_text("0 25 0\n2 25 0\n4 25 0\n")
     with pytest.raises(ValueError, match="out of range"):
         readers.read(p)
+
+
+def test_real_r2_run_on_guelpe_matches_r2s_final_rms():
+    """A real R2 run (via ResIPy, 80 electrodes of Gülpe transect 3, CC BY 4.0;
+    scripts/invert_guelpe.py r2small): sqrt(chi2) from R2's normalised misfit must equal R2's
+    own final RMS (1.00), and the electrodes come from ResIPy's electrodes.dat."""
+    import re
+    from pathlib import Path
+    d = Path(__file__).resolve().parents[1] / "fixtures" / "ert" / "r2_guelpe_t3"
+    r = readers.read(d / "f001_err.dat")
+    rd = r.mesh.readings
+    final = float(re.findall(r"Final RMS Misfit:\s+([0-9.]+)", (d / "R2.out").read_text())[-1])
+    assert len(rd) == 1642
+    assert np.sqrt(rd.chi2()) == pytest.approx(final, abs=0.02)
+    assert np.nanmax(np.r_[rd.a, rd.b, rd.m, rd.n]) <= 79.0          # 80 electrodes, 1 m
+    assert 0 < rd.rms_percent() < 20
