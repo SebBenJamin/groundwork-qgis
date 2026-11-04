@@ -14,12 +14,29 @@ from ..core.model import x_to_chainage
 from .project_actions import add_model
 
 Z_ITEMS = [("Choose…", None), ("Elevation", "elevation"), ("Depth below surface", "depth")]
-FILE_FILTER = "Model files (*.dat *.txt *.xyz *.vtk);;All files (*)"
+FILE_FILTER = ("Model and data files (*.dat *.txt *.xyz *.vtk *.data *.ohm);;"
+               "All files (*)")
+#: readers whose files hold readings and take a model-response file
+RESPONSE_READERS = ("bert_data",)
+#: response files looked for next to a data file
+RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response",
+                  "dcinv.response")
 
 
 def describe(result: readers.ReaderResult, z_kind: str | None) -> str:
     """One-line summary of a reader result for the preview label."""
     mesh = result.mesh
+    r = getattr(mesh, "readings", None)
+    if r is not None:
+        x0, x1 = float(np.nanmin(r.a)), float(np.nanmax(np.r_[r.b, r.m, r.n]))
+        text = f"{len(r)} readings, electrodes x {x0:.1f} – {x1:.1f} m"
+        if r.has_calculated:
+            rms, chi2 = r.rms_percent(), r.chi2()
+            text += f" · misfit RMS {rms:.1f} %" if rms is not None else ""
+            text += f", χ² {chi2:.2f}" if chi2 is not None else ""
+        else:
+            text += " · measured data only (add a response file for the misfit)"
+        return text
     xmin, xmax, zmin, zmax = mesh.bounds()
     values = mesh.values[np.isfinite(mesh.values)]
     z_word = {"elevation": "elevation", "depth": "depth"}.get(z_kind, "Z meaning not set")
@@ -75,6 +92,18 @@ class AddModelDialog(QDialog):
             self._sets[s.id] = s
             self.set_combo.addItem(s.name or s.id, s.id)
         self.set_combo.currentIndexChanged.connect(lambda _i: self._update_preview())
+        self.response_edit = QLineEdit()
+        self.response_edit.setPlaceholderText("optional: calculated values of the inversion")
+        self.response_edit.setToolTip("Model response (one calculated value per reading), "
+                                      "e.g. BERT's response.vector or a pyGIMLi response: "
+                                      "with it the layer shows the misfit")
+        self.response_edit.editingFinished.connect(self._response_changed)
+        response_browse = QPushButton("Browse…")
+        response_browse.clicked.connect(self._browse_response)
+        self.response_row = QHBoxLayout()
+        self.response_row.addWidget(self.response_edit)
+        self.response_row.addWidget(response_browse)
+        self._response_browse = response_browse
         self.name_edit = QLineEdit()
         self.preview = QLabel("Choose a model file.")
         self.preview.setWordWrap(True)
@@ -86,6 +115,8 @@ class AddModelDialog(QDialog):
         form = QFormLayout()
         form.addRow("File", file_row)
         form.addRow("Format", self.reader_combo)
+        form.addRow("Response file", self.response_row)
+        self._form = form
         form.addRow("Z means", self.z_combo)
         form.addRow("Chainage offset", self.offset_spin)
         form.addRow("Station set", self.set_combo)
@@ -100,6 +131,37 @@ class AddModelDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
         self.resize(560, self.sizeHint().height())
+
+    def _response_visible(self) -> bool:
+        return self.reader_combo.currentData() in RESPONSE_READERS
+
+    def _sync_response_row(self) -> None:
+        self._form.setRowVisible(self.response_row, self._response_visible())
+
+    def _guess_response(self, path: str) -> str:
+        data = Path(path)
+        for pattern in RESPONSE_NAMES:
+            candidate = data.parent / pattern.format(stem=data.stem)
+            if candidate.is_file():
+                return str(candidate)
+        return ""
+
+    def _browse_response(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Model response file", "",
+                                              "Response (*.vector *.response *.txt);;"
+                                              "All files (*)")
+        if path:
+            self.response_edit.setText(path)
+            self._response_changed()
+
+    def _response_changed(self) -> None:
+        self._key = None                            # the response changes what is read
+        self._update_preview()
+
+    def _reader_options(self) -> dict:
+        if self._response_visible() and self.response_edit.text().strip():
+            return {"response": self.response_edit.text().strip()}
+        return {}
 
     # -- file and preview --------------------------------------------------------------------
     def _browse(self):
@@ -116,12 +178,16 @@ class AddModelDialog(QDialog):
                 self.reader_combo.blockSignals(True)
                 self.reader_combo.setCurrentIndex(max(0, self.reader_combo.findData(found[0])))
                 self.reader_combo.blockSignals(False)
+            self.response_edit.setText(self._guess_response(path)
+                                       if self.reader_combo.currentData() in RESPONSE_READERS
+                                       else "")
             if self.name_edit.text() in ("", self._auto_name):
                 self._auto_name = Path(path).stem
                 self.name_edit.setText(self._auto_name)
         self._update_preview()
 
     def _update_preview(self) -> None:
+        self._sync_response_row()
         path, reader = self.file_edit.text().strip(), self.reader_combo.currentData()
         self._set_warning("")
         if not path:
@@ -147,6 +213,7 @@ class AddModelDialog(QDialog):
         are not cached, so the next preview reads again)."""
         self._key, self._result = None, None
         options = {"z_kind": z_kind} if z_kind else {}
+        options.update(self._reader_options())
         try:
             self._result = readers.read(path, reader=reader, **options)
         except FileNotFoundError:
@@ -193,6 +260,11 @@ class AddModelDialog(QDialog):
                     QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                 return
             options = {"chainage_offset": self.offset_spin.value()}
+            response = self._reader_options().get("response")
+            if response:                    # stored next to the data file when it is there
+                resp, data = Path(response), Path(path)
+                options["response"] = (resp.name if resp.parent.resolve() ==
+                                       data.parent.resolve() else str(resp))
             if self.z_combo.currentData():
                 options["z_kind"] = self.z_combo.currentData()
             self.dataset = add_model(self.store, self.profile_id, self.set_combo.currentData(),

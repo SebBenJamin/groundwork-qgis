@@ -229,7 +229,8 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
                          "a station file with a Z column, or choose Z means Elevation.")
     opts["z_kind"] = z_kind
     mtime, sha1 = file_fingerprint(str(path))
-    dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id, "ert_model",
+    dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
+                      result.provenance.get("kind", "ert_model"),
                       model_source_path(store, path),
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
                       dict(result.provenance), name=name or path.stem,
