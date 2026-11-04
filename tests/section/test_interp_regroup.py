@@ -128,3 +128,22 @@ def test_types_button_disabled_on_frozen_version(two):
     ctl.versions.refresh(r1.id)
     assert not ctl.buttons["types"].isEnabled()
     assert store.type_counts(store.current_version().id) == {"Clay lens": 1, "clay": 1}
+
+
+def test_export_button_writes_selected_feature_or_all(two, tmp_path):
+    from osgeo import ogr
+    ctl, _store, _v, a, _b, pa1, *_ = two
+    out = tmp_path / "all.gpkg"
+    ctl.ask_path = lambda: str(out)
+    ctl.info = lambda text: None
+    assert ctl.export() == 3
+    ctl.start("edit")
+    ctl.tool.select(pa1)
+    out2 = tmp_path / "a.gpkg"
+    ctl.ask_path = lambda: str(out2)
+    assert ctl.export() == 2
+    ds = ogr.Open(str(out2))
+    assert {f["letter"] for f in ds.GetLayer(0)} == {"A"}
+    ctl.ask_path = lambda: None
+    assert ctl.export() == 0
+    ctl.stop()

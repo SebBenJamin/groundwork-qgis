@@ -84,6 +84,16 @@ class InterpController(QObject):
         b.clicked.connect(self.show_types)
         self.bar.addWidget(b)
         self.buttons["types"] = b
+        b = QToolButton()
+        b.setText("Export…")
+        b.setToolTip("Export the selected feature's 3D pieces (in Edit), or all features of "
+                     "the shown version, to GeoPackage or DXF")
+        b.clicked.connect(self.export)
+        self.bar.addWidget(b)
+        self.buttons["export"] = b
+        #: asks for the export file (None cancels) and reports the result; tests replace them
+        self.ask_path = self._ask_path
+        self.info = lambda text: QMessageBox.information(self.dock, "Interpretation", text)
         self.bar.addStretch(1)
         from .interp_versions import VersionBar
         self.versions = VersionBar(self)
@@ -314,6 +324,35 @@ class InterpController(QObject):
         store.ensure_interpretation()
         TypesDialog(self.dock, lambda: store.type_counts(store.current_version().id),
                     self.rename_type).exec()
+
+    def _ask_path(self) -> str | None:
+        from qgis.PyQt.QtWidgets import QFileDialog
+        path, _f = QFileDialog.getSaveFileName(self.dock, "Export interpretation", "",
+                                               "GeoPackage (*.gpkg);;DXF (*.dxf)")
+        return path or None
+
+    def export(self) -> int:
+        """Export the selected piece's feature (Edit tool) or every feature of the shown
+        version; returns the number of pieces written."""
+        from ..ui.interp_export import export_pieces
+        prov = self.dock.provider
+        version = None if prov is None else prov.shown_interp_version()
+        if version is None:
+            return 0
+        selected = getattr(self.tool, "selected", None)
+        ids = None if selected is None else {selected.feature_id}
+        path = self.ask_path()
+        if not path:
+            return 0
+        if not path.lower().endswith((".gpkg", ".dxf")):
+            path += ".gpkg"
+        try:
+            n = export_pieces(prov.store, version, ids, path)
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.info(f"Export failed: {exc}")
+            return 0
+        self.info(f"Exported {n} piece{'s' if n != 1 else ''} to {path}")
+        return n
 
     # -- regrouping (one undo step each) -----------------------------------------------------
     def _apply_rows(self, state: tuple, other: tuple) -> None:
