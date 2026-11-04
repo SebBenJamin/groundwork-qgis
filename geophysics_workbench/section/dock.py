@@ -128,6 +128,9 @@ class SectionDock(QDockWidget):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addLayout(top)
+        from .interp_controller import InterpController
+        self.interp = InterpController(self)
+        layout.addLayout(self.interp.bar)
         layout.addWidget(splitter, 1)
         layout.addWidget(self.readout)
         layout.addWidget(self.errors)
