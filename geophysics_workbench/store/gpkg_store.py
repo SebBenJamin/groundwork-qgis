@@ -17,6 +17,7 @@ import numpy as np
 from osgeo import gdal, ogr, osr
 
 from ..core.model import Dataset, Profile, StationSet
+from .interp_store import InterpStoreMixin
 
 SCHEMA_VERSION = 1
 
@@ -83,7 +84,7 @@ def _make_layer(ds, name, fields, geom=ogr.wkbNone, srs=None):
     return lyr
 
 
-class ProjectStore:
+class ProjectStore(InterpStoreMixin):
     def __init__(self, path: Path, crs_authid: str):
         self.path = Path(path)
         self.crs_authid = crs_authid
