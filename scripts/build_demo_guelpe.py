@@ -1,0 +1,303 @@
+"""Build the Gülpe real-data demo (demo_guelpe/) from the raw downloads in .cache/guelpe/
+(scripts/fetch_demo_guelpe.py). Needs QGIS's Python; online, because the live Brandenburg
+layers are checked while the project is written.
+
+Run: python-qgis.bat scripts/build_demo_guelpe.py
+
+Writes under demo_guelpe/:
+  data/ert/T{1..4}/dcinv.result.vtk   the authors' BERT inversions, byte-for-byte
+  data/stations/T{1..4}_electrodes.csv all DGPS points (number,x,y,z), checked against the
+                                      BERT electrode file (guelpe_data.match_electrodes)
+  context/cores.gpkg                  the 24 cores (layer cores, table core_logs)
+  context/dgm1.tif                    DGM1 cropped to the transects + 100 m
+  guelpe_workbench.gpkg               workbench store: Transect 1-4, one model each
+  guelpe_project.qgz                  QGIS project (EPSG:25833), every path relative
+  ATTRIBUTION.md                      sources and licences
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+import numpy as np
+
+import demo_extra
+import guelpe_data
+from fetch_demo_guelpe import CACHE, ERT_FILES, TRANSECTS_BBOX, dgm_tiles
+
+ROOT = Path(__file__).resolve().parent.parent
+DEMO_GUELPE = ROOT / "demo_guelpe"
+CRS = "EPSG:25833"
+STORE_NAME, PROJECT_NAME = "guelpe_workbench.gpkg", "guelpe_project.qgz"
+SPACING = {1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0}
+MAX_CHAINAGE_MISFIT = 0.5             # m, station chainage against the model's electrode x
+OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
+BPK_WFS = "https://inspire.brandenburg.de/services/bpk_wfs"
+GUEK_WFS = "https://inspire.brandenburg.de/services/ge-core_guek300_wfs"
+GUEK_WMS = "https://inspire.brandenburg.de/services/ge-core_guek300_wms"
+DOP_WMS = "https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms"
+TITLE = "Geophysics Workbench real-data demo: Gülpe (Havel)"
+ATTRIBUTION = """# Sources and licences
+
+This demo uses only open data. Files marked *derived* were converted from the source
+without changing its values.
+
+## Research data (CC BY 4.0)
+- **ERT**: Pohle, M.; Birnstengel, S.; Werban, U. (2025): 2D-ERT data measured in June 2023 and
+  June 2024 in the Lower Havel Inner Delta near Lake Gülpe, Brandenburg (Germany). PANGAEA,
+  https://doi.org/10.1594/PANGAEA.983478. `data/ert/T*/dcinv.result.vtk` are the authors' BERT
+  inversion results, unchanged; `data/stations/*.csv` are their DGPS electrode positions
+  (*derived*: reformatted).
+- **Cores**: Köhler, A.; Kaniecki, M.; Schneider, B.; Zielhofer, C. (2025): Field based and
+  laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
+  https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =
+  grain-size class and texture code; core-loss rows marked "offset" left out).
+- Both are part of: Köhler, A. et al. (2025): Geophysical, Sedimentological and Geochemical Data
+  from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
+  https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
+  https://doi.org/10.1016/j.dib.2025.112372.
+- Licence: https://creativecommons.org/licenses/by/4.0/
+
+## State data (Datenlizenz Deutschland Namensnennung 2.0, https://www.govdata.de/dl-de/by-2-0)
+- **Boreholes** (live WFS Bohrpunktkarte): © LBGR, dl-de/by-2-0
+- **Geology** GÜK300 (live {geology_kind}): © LBGR, dl-de/by-2-0
+- **DGM1** `context/dgm1.tif` (*derived*: tiles merged and cropped): © GeoBasis-DE/LGB, dl-de/by-2-0
+- **Aerial images** DOP20 (live WMS): © GeoBasis-DE/LGB, dl-de/by-2-0
+
+## OpenStreetMap (ODbL)
+- `context/waterways.geojson` (*derived*: reprojected) and the background map:
+  © OpenStreetMap contributors, ODbL, https://www.openstreetmap.org/copyright
+"""
+
+
+# ---------------------------------------------------------------- data files
+def _unzip_member(zf: zipfile.ZipFile, suffix: str, target: Path) -> Path:
+    name = next(n for n in zf.namelist() if n.endswith(suffix))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(zf.read(name))
+    return target
+
+
+def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
+    """Models, stations, cores and DGM1 from the cache (no QGIS)."""
+    for sub in ("data", "context/cores.gpkg", "context/dgm1.tif"):
+        p = out / sub
+        shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, name in ERT_FILES.items():
+            with zipfile.ZipFile(cache / "ert" / name) as zf:
+                _unzip_member(zf, "dcinv.result.vtk", out / f"data/ert/T{i}/dcinv.result.vtk")
+                dgps = _unzip_member(zf, f"DGPS_Transect{i}.txt", Path(tmp) / f"dgps{i}.txt")
+                topo = _unzip_member(zf, "_topo.data", Path(tmp) / f"topo{i}.data")
+            numbers, xyz = guelpe_data.read_dgps(dgps)
+            guelpe_data.match_electrodes(guelpe_data.read_topo_electrodes(topo), numbers, xyz,
+                                         SPACING[i])
+            guelpe_data.write_stations_csv(out / f"data/stations/T{i}_electrodes.csv",
+                                           numbers, xyz)
+    sites, logs = guelpe_data.parse_cores((cache / "cores.tab").read_text(encoding="utf-8"))
+    guelpe_data.write_cores_gpkg(out / "context/cores.gpkg", sites, logs)
+    guelpe_data.mosaic_dgm([cache / "dgm" / f"{t}.zip" for t in dgm_tiles(TRANSECTS_BBOX)],
+                           TRANSECTS_BBOX, out / "context/dgm1.tif")
+
+
+def read_stations(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    a = np.loadtxt(path, delimiter=",", skiprows=1)
+    return a[:, 0].astype(int), a[:, 1:4]
+
+
+# ---------------------------------------------------------------- workbench store
+def build_workbench(out: Path = DEMO_GUELPE) -> Path:
+    sys.path.insert(0, str(ROOT))
+    from geophysics_workbench import readers
+    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+                                                 profile_from_stations, x_to_chainage)
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+
+    path = out / STORE_NAME
+    path.unlink(missing_ok=True)
+    store = ProjectStore.create(path, CRS)
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, name in ERT_FILES.items():
+            numbers, xyz = read_stations(out / f"data/stations/T{i}_electrodes.csv")
+            profile, stations = profile_from_stations(f"Transect {i}", CRS, xyz, numbers)
+            with zipfile.ZipFile(CACHE / "ert" / name) as zf:
+                topo = _unzip_member(zf, "_topo.data", Path(tmp) / f"topo{i}.data")
+            el = guelpe_data.read_topo_electrodes(topo)
+            matched = guelpe_data.match_electrodes(el, numbers, xyz, SPACING[i])
+            s_station = profile.chainage.project(xyz[:, :2])[0]
+            by_number = dict(zip(numbers, s_station))
+            misfit = np.abs(np.array([by_number[n] for n in matched])
+                            - x_to_chainage(el[:, 0], stations))
+            if misfit.max() > MAX_CHAINAGE_MISFIT:
+                raise RuntimeError(f"Transect {i}: chainage misfit {misfit.max():.2f} m")
+            store.save_profile(profile)
+            store.save_station_set(stations)
+            rel = f"data/ert/T{i}/dcinv.result.vtk"
+            result = readers.read(out / rel, reader="vtk_legacy")
+            mtime, sha1 = file_fingerprint(str(out / rel))
+            store.save_dataset(Dataset(f"T{i}_model", profile.id, stations.id, "ert_model", rel,
+                                       mtime, sha1, "vtk_legacy",
+                                       {"z_kind": "elevation", "chainage_offset": 0.0},
+                                       result.provenance,
+                                       name=f"Transect {i} (Pohle et al. 2025, BERT)"))
+    return path
+
+
+# ---------------------------------------------------------------- QGIS project
+def _wfs(typename: str, url: str, name: str):
+    from qgis.core import QgsVectorLayer
+    uri = (f"pagingEnabled='true' restrictToRequestBBOX='1' srsname='{CRS}' "
+           f"typename='{typename}' url='{url}' version='auto'")
+    return QgsVectorLayer(uri, name, "WFS")
+
+
+def _wms(url: str, layer: str, name: str):
+    from qgis.core import QgsRasterLayer
+    uri = f"contextualWMSLegend=0&crs={CRS}&format=image/png&layers={layer}&styles=&url={url}"
+    return QgsRasterLayer(uri, name, "wms")
+
+
+def _symbol(layer, kind: str, props: dict) -> None:
+    from qgis.core import (QgsFillSymbol, QgsLineSymbol, QgsMarkerSymbol,
+                           QgsSingleSymbolRenderer)
+    cls = {"marker": QgsMarkerSymbol, "line": QgsLineSymbol, "fill": QgsFillSymbol}[kind]
+    layer.setRenderer(QgsSingleSymbolRenderer(cls.createSimple(props)))
+
+
+def _log_action(layer) -> None:
+    from qgis.core import QgsAction
+    action = QgsAction(QgsAction.ActionType.OpenUrl, "Open layer log",
+                       '[% "Schichtenverzeichnis_grafisch" %]', "", False, "Open layer log",
+                       {"Field", "Canvas", "Feature"})
+    layer.actions().addAction(action)
+
+
+def _geology(project):
+    """Live GÜK300 WFS with a usable unit-name field, else the WMS (map only)."""
+    from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory, QgsSymbol
+
+    layer = _wfs("ge:MappedFeature", GUEK_WFS, "Geology GÜK300 (LBGR, live)")
+    field = None
+    if layer.isValid():
+        names = [f.name() for f in layer.fields()]
+        field = next((n for n in ("name", "gml_name", "gml:name") if n in names), None)
+    if field is None:
+        return _wms(GUEK_WMS, "GE.GeologicUnit", "Geology GÜK300 (LBGR, live)"), None
+    values = sorted({str(v) for v in layer.uniqueValues(layer.fields().indexOf(field))})
+    cats = []
+    for k, v in enumerate(values):
+        sym = QgsSymbol.defaultSymbol(layer.geometryType())
+        sym.setColor(__import__("qgis.PyQt.QtGui", fromlist=["QColor"]).QColor.fromHsv(
+            (k * 67) % 360, 90, 230))
+        cats.append(QgsRendererCategory(v, sym, v))
+    layer.setRenderer(QgsCategorizedSymbolRenderer(field, cats))
+    layer.setOpacity(0.4)
+    return layer, field
+
+
+def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
+    """guelpe_project.qgz; returns its path and how geology was added ("WFS" or "WMS")."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    sys.path.insert(0, str(ROOT))
+    from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsProject,
+                           QgsRasterLayer, QgsRectangle, QgsReferencedRectangle, QgsVectorLayer)
+
+    app = None
+    if QgsApplication.instance() is None:
+        app = QgsApplication([], False)
+        app.initQgis()
+    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+                                                            ContextSettings, LineLayerSetting,
+                                                            PointLayerSetting)
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from geophysics_workbench.ui.context_dialog import write_settings
+    from geophysics_workbench.ui.project_actions import use_store
+
+    path = out / PROJECT_NAME
+    path.unlink(missing_ok=True)
+    project = QgsProject()
+    try:
+        project.setFileName(str(path))
+        project.setTitle(TITLE)
+        demo_extra.set_author(project)
+        md = project.metadata()
+        md.setAbstract("Real, openly published data from Gülpe (Lower Havel, Brandenburg). "
+                       "Sources and licences: ATTRIBUTION.md next to this project.")
+        project.setMetadata(md)
+        crs = QgsCoordinateReferenceSystem(CRS)
+        project.setCrs(crs)
+        project.writeEntryBool("Paths", "/Absolute", False)
+        ctx = out / "context"
+        cores = QgsVectorLayer(f"{ctx / 'cores.gpkg'}|layername=cores",
+                               "Cores (Köhler et al. 2025)", "ogr")
+        _symbol(cores, "marker", {"name": "circle", "color": "255,255,255",
+                                  "outline_color": "20,20,20", "size": "2.6"})
+        demo_extra._labels(cores, '"id"', 8.0, (20, 20, 20))
+        logs = QgsVectorLayer(f"{ctx / 'cores.gpkg'}|layername=core_logs", "Core logs", "ogr")
+        bpk = _wfs("app:bpk_m_sch", BPK_WFS, "State boreholes with log (LBGR, live)")
+        _symbol(bpk, "marker", {"name": "diamond", "color": "200,30,30",
+                                "outline_color": "60,0,0", "size": "2.8"})
+        demo_extra._labels(bpk, '"Bohrungsname"', 8.0, (120, 0, 0))
+        _log_action(bpk)
+        bpk_o = _wfs("app:bpk_o_sch", BPK_WFS, "State boreholes without log (LBGR, live)")
+        _symbol(bpk_o, "marker", {"name": "diamond", "color": "240,170,170",
+                                  "outline_color": "120,60,60", "size": "2.2"})
+        water = QgsVectorLayer(str(ctx / "waterways.geojson"), "Waterways (OSM)", "ogr")
+        _symbol(water, "line", {"color": "30,110,200", "width": "0.6"})
+        demo_extra._labels(water, '"name"', 8.0, (20, 70, 150), line=True)
+        geology, geology_field = _geology(project)
+        dem = QgsRasterLayer(str(ctx / "dgm1.tif"), "DGM1 (LGB)", "gdal")
+        dop = _wms(DOP_WMS, "bebb_dop20c", "Aerial images DOP20 (LGB, live)")
+        osm = QgsRasterLayer(OSM_URI, "OpenStreetMap", "wms")
+        offline = (cores, logs, water, dem, osm)
+        for layer in offline:
+            if not layer.isValid():
+                raise RuntimeError(f"demo layer {layer.name()} is not valid")
+        root = project.layerTreeRoot()
+        for layer in (cores, logs, bpk, bpk_o, water, geology, dem, dop, osm):
+            if not layer.isValid() and layer not in offline:
+                print(f"warning: live layer {layer.name()} is not reachable now")
+            project.addMapLayer(layer, False)
+            root.addLayer(layer)
+        for hidden in (bpk_o, dem, dop):
+            root.findLayer(hidden.id()).setItemVisibilityChecked(False)
+        write_settings(project, ContextSettings(
+            line_layers=[LineLayerSetting(water.id(), "name", checked=True)],
+            point_layers=[PointLayerSetting(bpk.id(), "Bohrungsname")],
+            borehole=BoreholeSetting(cores.id(), "id", "elevation", logs.id(), "core_id",
+                                     "top", "bottom", "lithology"),
+            band=BandSetting(geology.id(), geology_field) if geology_field else None,
+            dem_layer_id=dem.id(), buffer=5.0, near_miss=10.0, dem_tolerance=0.5))
+        store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top
+        xy = np.vstack([p.xy for p in store.profiles()])
+        (x0, y0), (x1, y1) = xy.min(axis=0) - 150.0, xy.max(axis=0) + 150.0
+        project.viewSettings().setDefaultViewExtent(
+            QgsReferencedRectangle(QgsRectangle(x0, y0, x1, y1), crs))
+        if not project.write():
+            raise RuntimeError(f"cannot write {path}: {project.error()}")
+        demo_extra.strip_save_user(path)
+    finally:
+        project.clear()
+        del project
+        if app is not None:
+            app.exitQgis()
+    (out / "context" / "dgm1.tif.aux.xml").unlink(missing_ok=True)
+    return path, "WFS" if geology_field else "WMS"
+
+
+def main() -> int:
+    build_data()
+    build_workbench()
+    _, geology_kind = build_qgis_project()
+    (DEMO_GUELPE / "ATTRIBUTION.md").write_text(ATTRIBUTION.format(geology_kind=geology_kind),
+                                                encoding="utf-8", newline="\n")
+    print(f"demo_guelpe built; geology via {geology_kind}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
