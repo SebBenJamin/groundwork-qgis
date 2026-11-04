@@ -66,6 +66,9 @@ class InterpController(QObject):
             self.bar.addWidget(b)
             self.buttons[text.lower()] = b
         self.bar.addStretch(1)
+        from .interp_versions import VersionBar
+        self.versions = VersionBar(self)
+        self.bar.addWidget(self.versions.widget)
         self.buttons["pan"].setChecked(True)
         #: asks the user to confirm a deletion; tests replace it
         self.confirm = lambda text: QMessageBox.question(
@@ -115,6 +118,7 @@ class InterpController(QObject):
     def _profile_changed(self, *_args) -> None:
         self.stop()
         self.undo.clear()
+        self.versions.refresh(self.versions.combo.currentData() or "")
 
     def stop(self) -> None:
         dock = self.dock
