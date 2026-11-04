@@ -82,13 +82,19 @@ def _same_file(a: str, b: Path) -> bool:
 
 def store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
     """The project's layers showing ``store``'s ``profiles`` / ``stations`` tables."""
+    return find_store_layers(store, project, LAYER_NAMES)
+
+
+def find_store_layers(store: ProjectStore, project: QgsProject,
+                      names) -> dict[str, QgsVectorLayer]:
+    """The project's layers showing the tables ``names`` of ``store``."""
     out = {}
     for layer in project.mapLayers().values():
         if not isinstance(layer, QgsVectorLayer) or layer.providerType() != "ogr":
             continue
         parts = QgsProviderRegistry.instance().decodeUri("ogr", layer.source())
         name = parts.get("layerName")
-        if name in LAYER_NAMES and _same_file(parts.get("path", ""), store.path):
+        if name in names and _same_file(parts.get("path", ""), store.path):
             out.setdefault(name, layer)
     return out
 
@@ -160,6 +166,9 @@ def refresh_layers(store: ProjectStore, project: QgsProject) -> None:
 # -- projects ------------------------------------------------------------------------------
 def use_store(store: ProjectStore, project: QgsProject) -> ProjectStore:
     add_store_layers(store, project)
+    if store.has_interpretation():
+        from .interp_layers import add_interp_layers
+        add_interp_layers(store, project)
     write_store_entry(project, store.path)
     return store
 

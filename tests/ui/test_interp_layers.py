@@ -1,0 +1,91 @@
+"""Interpretation layers in the QGIS project: added once, styled, kept in step with edits."""
+import numpy as np
+import pytest
+
+from geophysics_workbench.core.chainage import Chainage
+from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+
+BENT = Chainage(np.array([[0.0, 0.0], [50.0, 0.0], [50.0, 50.0]]))
+
+
+@pytest.fixture
+def interp_store(tmp_path):
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
+    st.ensure_interpretation()
+    v = st.current_version()
+    f = InterpFeature(new_id(), v.id, type="anomaly", letter="A")
+    st.save_feature(f)
+    st.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
+                              [(40, 0), (60, 0), (60, -5), (40, -5)]))
+    st.rebuild_derived(v.id, {"prof": BENT})
+    return st
+
+
+def test_add_interp_layers_once(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.interp_layers import INTERP_GROUP, add_interp_layers
+
+    prj = QgsProject()
+    a = add_interp_layers(interp_store, prj)
+    b = add_interp_layers(interp_store, prj)
+    assert set(a) == set(b) and len(a) == 5 and len(prj.mapLayers()) == 5
+    group = prj.layerTreeRoot().findGroup(INTERP_GROUP)
+    assert group is not None and len(group.findLayers()) == 5
+    assert not a["interp_features"].readOnly()
+    assert all(a[n].readOnly() for n in a if n != "interp_features")
+    prj.clear()
+
+
+def test_interp_layers_are_not_crossing_line_candidates(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.section.crossing_lines import own_layer_ids
+    from geophysics_workbench.ui.interp_layers import add_interp_layers
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    own = own_layer_ids(interp_store, prj)
+    assert layers["interp_lines_3d"].id() in own and layers["interp_footprints"].id() in own
+    prj.clear()
+
+
+def test_default_style_dash_by_confidence(qgis_app, interp_store):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import Qt
+
+    from geophysics_workbench.ui.interp_layers import add_interp_layers
+
+    prj = QgsProject()
+    lines = add_interp_layers(interp_store, prj)["interp_lines_3d"]
+    rules = {r.label(): r for r in lines.renderer().rootRule().children()}
+    pen = rules["probable"].symbol().symbolLayer(0).penStyle()
+    assert pen == Qt.PenStyle.DashLine
+    assert rules["certain"].symbol().symbolLayer(0).penStyle() == Qt.PenStyle.SolidLine
+    assert rules["uncertain"].symbol().symbolLayer(0).penStyle() == Qt.PenStyle.DotLine
+    assert lines.labelsEnabled()
+    prj.clear()
+
+
+def test_feature_edit_rebuilds_derived(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.ui.interp_layers import InterpSync, add_interp_layers
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    calls = []
+    sync = InterpSync(interp_store, prj, lambda: calls.append(1),
+                      version_id=lambda: interp_store.current_version().id,
+                      chainages=lambda: {"prof": BENT})
+    feats = layers["interp_features"]
+    feats.startEditing()
+    f = next(feats.getFeatures())
+    feats.changeAttributeValue(f.id(), feats.fields().indexOf("letter"), "Q")
+    assert feats.commitChanges()
+    poly = layers["interp_polygons_3d"]
+    assert [g["letter"] for g in poly.getFeatures()] == ["Q"]
+    assert calls == [1]
+    sync.detach()
+    prj.clear()

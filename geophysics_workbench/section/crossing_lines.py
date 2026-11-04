@@ -13,8 +13,11 @@ from ..ui import project_actions
 
 
 def own_layer_ids(store, project) -> set[str]:
-    """Ids of the store's own ``profiles`` / ``stations`` layers in ``project``."""
-    return {layer.id() for layer in project_actions.store_layers(store, project).values()}
+    """Ids of the store's own layers in ``project``: profiles, stations, interpretation."""
+    from ..ui.interp_layers import interp_layers
+    own = list(project_actions.store_layers(store, project).values())
+    own += list(interp_layers(store, project).values())
+    return {layer.id() for layer in own}
 
 
 def candidate_line_layers(project, exclude: set[str]) -> list[QgsVectorLayer]:
