@@ -89,3 +89,44 @@ def test_real_guelpe_t3_misfit_matches_pygimli():
     info = json.loads((d / "T3_pygimli.json").read_text())
     assert len(r.mesh.readings) == info["n"] == 4524
     assert r.mesh.readings.rms_percent() == pytest.approx(info["rms_percent"], rel=1e-6)
+
+
+def test_unit_suffixes_are_applied_not_misread(tmp_path):
+    text = DATA.replace("# a b m n rhoa err", "# a b m n rhoa/Ohmm err/% i/mA").replace(
+        " 0.03\n", " 3.0 100\n")
+    rd = readers.read(_write(tmp_path, text)).mesh.readings
+    assert np.allclose(rd.error, 0.03)                       # percent -> fraction
+    assert np.allclose(rd.a, [0, 1, 2, 0, 0])                # 'i/A'-style tokens never clobber a
+
+
+def test_unknown_unit_on_a_used_column_fails(tmp_path):
+    text = DATA.replace("# a b m n rhoa err", "# a b m n rhoa/kOhmm err")
+    with pytest.raises(ValueError, match="unit"):
+        readers.read(_write(tmp_path, text))
+
+
+def test_more_tokens_than_columns_is_a_readable_error(tmp_path):
+    text = DATA.replace("# a b m n rhoa err", "# a b m n rhoa err k u")
+    with pytest.raises(ValueError):
+        readers.read(_write(tmp_path, text))
+
+
+def test_xyz_2d_with_elevation_in_y_uses_x_and_3d_fails(tmp_path):
+    rows = "\n".join(f"{x} {10 + 0.1 * x} 0" for x in range(6))
+    text = DATA.replace("# x z\n0 10.0\n1 10.1\n2 10.2\n3 10.3\n4 10.4\n5 10.5",
+                        "# x y z\n" + rows)
+    rd = readers.read(_write(tmp_path, text)).mesh.readings
+    assert np.allclose(rd.a, [0, 1, 2, 0, 0])                # x as given, no slope distance
+    rows3d = "\n".join(f"{x} {0.5 * x} {10 + 0.1 * x}" for x in range(6))
+    text3d = DATA.replace("# x z\n0 10.0\n1 10.1\n2 10.2\n3 10.3\n4 10.4\n5 10.5",
+                          "# x y z\n" + rows3d)
+    with pytest.raises(ValueError, match="3D"):
+        readers.read(_write(tmp_path, text3d, "b.data"))
+
+
+def test_remote_electrode_counts_as_a_pole(tmp_path):
+    text = DATA.replace("5 10.5", "100000 10.5")              # electrode 6 far away (remote)
+    rd = readers.read(_write(tmp_path, text)).mesh.readings
+    assert rd.b[1] == 4.0                                     # reading 2: B = electrode 5
+    assert np.isnan(rd.b[2]) and np.isnan(rd.b[3])           # readings 3, 4: B = electrode 6
+    assert np.nanmax(np.r_[rd.a, rd.m, rd.n]) <= 4.0

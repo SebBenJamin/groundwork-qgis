@@ -43,7 +43,9 @@ def build_ties(profile_id: str, profiles: list[Profile], near_miss: float,
         hits = profile_ties(profile.xy, other.xy, near_miss)
         if not hits:
             continue
-        layers = [la for la in layers_of(other.id) if la.style.visible and la.mesh is not None]
+        # models only: measured data and misfit pseudosections are not ground columns
+        layers = [la for la in layers_of(other.id) if la.style.visible and la.mesh is not None
+                  and la.mesh.readings is None]
         for s, s_other, distance in hits:
             out.append(Tie(s, other.id, other.name, s_other, distance,
                            [tie_column(la, s_other) for la in layers]))

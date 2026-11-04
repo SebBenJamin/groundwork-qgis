@@ -78,3 +78,34 @@ def test_points_mode_draws_markers(qgis_app, misfit_store):
     drawing = build_drawing(layer, None)
     assert drawing.markers and not drawing.groups and drawing.field is None
     assert sum(len(pts) for _c, pts in drawing.markers) == len(layer.mesh.point_values)
+
+
+def test_readings_layers_are_not_tie_columns(qgis_app, misfit_store):
+    from geophysics_workbench.core.model import profile_from_stations
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.section.ties_data import build_ties
+    st, p = misfit_store
+    prov = SectionDataProvider(st)
+    layers = prov.layers(p.id)
+    other, _s = profile_from_stations("X", "EPSG:25832",
+                                      np.array([[25, -20, 100], [25, 20, 100.0]]))
+    ties = build_ties(other.id, [other, p], 10.0, lambda pid: layers)
+    assert ties and all(c.dataset_name != "T misfit" for t in ties for c in t.columns)
+    assert all(len(t.columns) == 1 for t in ties)               # the model only
+
+
+def test_rewritten_response_is_read_again(qgis_app, misfit_store, tmp_path):
+    import os
+    import time
+
+    from geophysics_workbench.section.data import SectionDataProvider
+    st, p = misfit_store
+    prov = SectionDataProvider(st)
+    before = _readings_layer(prov, p).mesh.readings.calculated.copy()
+    d = next(d for d in st.datasets(p.id) if d.id == "dm")
+    resp = Path(d.source_path).parent / "resp.vector"
+    resp.write_text("\n".join(str(v) for v in (200, 200, 200, 200, 200)))
+    later = time.time() + 5
+    os.utime(resp, (later, later))
+    after = _readings_layer(prov, p).mesh.readings.calculated
+    assert not np.allclose(before, after) and np.allclose(after, 200)

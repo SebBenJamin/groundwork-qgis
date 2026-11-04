@@ -117,6 +117,17 @@ def layer_name(dataset: Dataset) -> str:
     return dataset.name or os.path.basename(dataset.source_path)
 
 
+def _companion_mtime(path: str, options: dict) -> float | None:
+    """Modification time of a file read together with the data file (a model response):
+    re-inverting rewrites it, and the misfit must follow."""
+    response = (options or {}).get("response")
+    if not response:
+        return None
+    resp = response if os.path.isabs(response) else os.path.join(os.path.dirname(path),
+                                                                  response)
+    return os.stat(resp).st_mtime if os.path.isfile(resp) else -1.0
+
+
 def _auto_scale(mesh: SectionMesh, d: Dataset) -> ColorScale:
     """Misfit: diverging, symmetric about 0 (98th percentile of |misfit|); readings'
     resistivities: log; models: as before."""
@@ -375,7 +386,7 @@ class SectionDataProvider:
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
         key = (d.id, os.stat(path).st_mtime, json.dumps(d.reader_options, sort_keys=True),
-               path, d.reader)
+               path, d.reader, _companion_mtime(path, d.reader_options))
         hit = self._cache.get(d.id)
         if hit is not None and hit[0] == key:
             return hit[1]

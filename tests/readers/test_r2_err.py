@@ -58,3 +58,27 @@ def test_real_r2_run_on_guelpe_matches_r2s_final_rms():
     assert np.sqrt(rd.chi2()) == pytest.approx(final, abs=0.02)
     assert np.nanmax(np.r_[rd.a, rd.b, rd.m, rd.n]) <= 79.0          # 80 electrodes, 1 m
     assert 0 < rd.rms_percent() < 20
+
+
+def test_r2_out_final_rms_is_checked(tmp_path):
+    p = _write(tmp_path)
+    (tmp_path / "R2.out").write_text("   Final RMS Misfit:        9.00" + chr(10))
+    with pytest.raises(ValueError, match="RMS"):
+        readers.read(p)
+    (tmp_path / "R2.out").write_text("   Final RMS Misfit:        1.50" + chr(10))
+    readers.read(p)                                          # sqrt(chi2) = 1.45: consistent
+
+
+def test_r2_header_layout_is_validated(tmp_path):
+    p = _write(tmp_path)
+    p.write_text(p.read_text().replace("Observed_Rho  Calculated_Rho", "Foo  Bar"))
+    with pytest.raises(ValueError, match="column"):
+        readers.read(p)
+
+
+def test_electrodes_csv_is_not_used(tmp_path):
+    p = _write(tmp_path, electrodes=False)
+    rows = ["x,y,z"] + [f"{x},25,0" for x in (0, 2, 4, 6, 8, 10)]
+    (tmp_path / "electrodes.csv").write_text(chr(10).join(rows) + chr(10))
+    with pytest.raises(ValueError, match="electrodes.dat"):
+        readers.read(p)

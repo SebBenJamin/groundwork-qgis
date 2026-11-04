@@ -45,3 +45,19 @@ def median_depth(a, b, m, n, iterations: int = 60) -> np.ndarray:
         lo = np.where(low, mid, lo)
         hi = np.where(low, hi, mid)
     return np.where(signal, (lo + hi) / 2, np.nan)
+
+
+def remote_electrodes(x) -> np.ndarray:
+    """True for electrodes placed far away from the line (remote poles): farther from the
+    median electrode than ten times the line's expected length (count x median spacing).
+    They count as absent (infinitely far), like a pole."""
+    x = np.asarray(x, float)
+    if len(x) < 3:
+        return np.zeros(len(x), bool)
+    ok = np.isfinite(x)
+    xs = np.sort(x[ok])
+    spacing = float(np.median(np.diff(xs))) if len(xs) > 1 else 0.0
+    if spacing <= 0:
+        return np.zeros(len(x), bool)
+    limit = 10.0 * spacing * len(xs)
+    return ok & (np.abs(x - np.median(xs)) > limit)
