@@ -43,11 +43,25 @@ _RING = [0, 1, 2, 3, 0]                     # closed cell outline; triangles rep
 _RING_TYPES = [0, 1, 1, 1, 1]               # MoveTo, LineTo x 4
 
 
+DISPLAY_MODES = ("cells", "smooth", "contours", "smooth+contours")
+
+
 @dataclass
 class LayerStyle:
     visible: bool = True
     opacity: float = 1.0
     scale: ColorScale | None = None         # None = auto on first successful load
+    #: how the model is drawn: one of DISPLAY_MODES (a display choice; readouts use the mesh)
+    mode: str = "cells"
+    #: contour spacing: decades on a log scale (0.25 = 4 per decade), units otherwise;
+    #: None = automatic (1-2-5 per decade / nice steps)
+    contour_step: float | None = None
+    #: grid cell of the smooth field in metres; None = automatic
+    grid_cell: float | None = None
+    #: fade (or blank) the model where its coverage is below ``coverage_threshold``
+    fade_coverage: bool = False
+    coverage_threshold: float | None = None     # None = 10th percentile of the coverage
+    fade_mode: str = "fade"                     # "fade" or "blank"
 
 
 @dataclass

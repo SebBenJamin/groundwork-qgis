@@ -11,12 +11,16 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, 
 
 from .data import SectionLayer, layer_name
 from .readout import format_value, unit_label
-from .scale_dialog import ColorScaleDialog, ramp_icon
+from .scale_dialog import DisplayDialog, ramp_icon
 
 MIN_WIDTH = 300
 MAX_HINT_WIDTH = 480            # preferred width: full layer names, up to this
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
 REMOVE_TEXT = "Remove from profile…"
+#: style fields the Display dialog edits
+DISPLAY_FIELDS = ("scale", "mode", "contour_step", "grid_cell", "fade_coverage",
+                  "coverage_threshold", "fade_mode")
+DISPLAY_TEXT = "Display…"
 
 
 def _scale_text(layer: SectionLayer) -> str:
@@ -51,7 +55,7 @@ class _LayerRow(QWidget):
         self.scale_button = QToolButton()
         self.scale_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.scale_button.setIconSize(QSize(40, 10))
-        self.scale_button.setToolTip("Colour scale")
+        self.scale_button.setToolTip("Colour scale and display (cells, smooth, contours, coverage)")
         self.scale_button.clicked.connect(lambda: owner.edit_scale(self.dataset_id))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(
@@ -214,6 +218,8 @@ class LayerList(QWidget):
     def row_menu(self, dataset_id: str) -> QMenu:
         """Context menu of a row (the caller shows and owns it)."""
         menu = QMenu(self)
+        menu.addAction(DISPLAY_TEXT).triggered.connect(lambda: self.edit_scale(dataset_id))
+        menu.addSeparator()
         menu.addAction(REMOVE_TEXT).triggered.connect(lambda: self.remove_dataset(dataset_id))
         return menu
 
@@ -239,9 +245,12 @@ class LayerList(QWidget):
         layer = self._layers.get(dataset_id)
         if layer is None:
             return
-        values = None if layer.mesh is None else layer.mesh.values
-        dialog = ColorScaleDialog(layer.style.scale, values, unit_label(layer.dataset.unit),
-                                  f"Colour scale: {layer_name(layer.dataset)}", self)
-        dialog.applied.connect(lambda scale: self.set_scale(dataset_id, scale))
+        dialog = DisplayDialog(self, layer)
+        dialog.applied_style.connect(lambda style: self.set_display(dataset_id, **{
+            f: getattr(style, f) for f in DISPLAY_FIELDS}))
         dialog.exec()
         dialog.deleteLater()
+
+    def set_display(self, dataset_id: str, **changes) -> None:
+        """Change how a layer is drawn (scale, mode, contours, coverage fade)."""
+        self._update_style(dataset_id, **changes)

@@ -26,7 +26,7 @@ def test_remove_from_profile_updates_store_list_and_provider(qgis_app, store_wit
     dock.open_profile(p.id)
     [ds_id] = dock.layer_list.dataset_ids()
     menu = dock.layer_list.row_menu(ds_id)
-    [action] = menu.actions()
+    action = next(a for a in menu.actions() if a.text() == "Remove from profile…")
     assert action.text() == "Remove from profile…"
 
     answer["button"] = QMessageBox.StandardButton.No           # cancelled: nothing changes
