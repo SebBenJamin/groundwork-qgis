@@ -2,13 +2,17 @@
 from one. Frozen versions are read-only: while one is shown the drawing tools are disabled."""
 from __future__ import annotations
 
-from qgis.PyQt.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QMessageBox,
-                                 QPushButton, QWidget)
+from qgis.PyQt.QtGui import QAction, QActionGroup, QPalette
+from qgis.PyQt.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QMenu,
+                                 QMessageBox, QWidget)
 
 DRAW_KEYS = ("line", "polygon", "point", "edit", "undo", "redo", "types")
 
 
 class VersionBar:
+    """The Version combo (always visible) plus actions for the Interpretation menu:
+    ``freeze_button``, ``restore_button`` and the ``compare_menu``."""
+
     def __init__(self, ctl):
         self.ctl = ctl
         self.widget = QWidget()
@@ -18,26 +22,36 @@ class VersionBar:
         self.combo = QComboBox()
         self.combo.setMinimumWidth(160)
         row.addWidget(self.combo)
-        self.freeze_button = QPushButton("Freeze…")
+        self.freeze_button = QAction("Freeze…", self.widget)
         self.freeze_button.setToolTip("Keep the current interpretation as a named, read-only "
                                       "version and carry on working")
-        self.restore_button = QPushButton("Start from this version")
+        self.restore_button = QAction("Start from this version", self.widget)
         self.restore_button.setEnabled(False)
-        self.readonly_label = QLabel("Viewing frozen version – read-only")
-        self.readonly_label.setStyleSheet("color: grey;")
-        self.readonly_label.hide()
-        self.compare = QComboBox()
-        self.compare.setToolTip("Show a frozen version faintly behind, for comparison")
-        for w in (self.freeze_button, self.restore_button, self.readonly_label,
-                  QLabel("Compare"), self.compare):
-            row.addWidget(w)
-        self.compare.currentIndexChanged.connect(self._compare_selected)
-        self.freeze_button.clicked.connect(self.freeze)
-        self.restore_button.clicked.connect(self.start_from)
+        self.compare_menu = QMenu("Compare with", self.widget)
+        self.compare_menu.setToolTipsVisible(True)
+        self._compare_group = QActionGroup(self.widget)
+        self._compare_group.setExclusive(True)
+        self._compare_group.triggered.connect(self._compare_selected)
+        self.freeze_button.triggered.connect(self.freeze)
+        self.restore_button.triggered.connect(self.start_from)
         self.combo.currentIndexChanged.connect(self._selected)
         #: dialogs (tests replace them)
         self.ask_name = lambda title: _ask_name(self.widget, title)
         self.ask_restore = lambda: _ask_restore(self.widget)
+
+    # -- compare (a checkable list in the Interpretation menu) -----------------------------
+    def compare_items(self) -> list[str]:
+        return [a.text() for a in self._compare_group.actions()]
+
+    def compare_index(self) -> int:
+        acts = self._compare_group.actions()
+        return next((i for i, a in enumerate(acts) if a.isChecked()), 0)
+
+    def set_compare(self, index: int) -> None:
+        self._compare_group.actions()[index].trigger()
+
+    def is_readonly(self) -> bool:
+        return bool(self.combo.currentData())
 
     def _store(self):
         prov = self.ctl.dock.provider
@@ -62,24 +76,31 @@ class VersionBar:
     def _refresh_compare(self, store) -> None:
         prov = self.ctl.dock.provider
         wanted = prov.interp_compare_version_id if prov is not None else None
-        self.compare.blockSignals(True)
-        try:
-            self.compare.clear()
-            self.compare.addItem("(none)", "")
-            for i in range(1, self.combo.count()):
-                self.compare.addItem(self.combo.itemText(i), self.combo.itemData(i))
-            index = self.compare.findData(wanted) if wanted else 0
-            self.compare.setCurrentIndex(max(0, index))
-        finally:
-            self.compare.blockSignals(False)
-        if prov is not None and wanted and index < 0:
-            prov.interp_compare_version_id = None       # deleted or unknown: no comparison
+        for act in self._compare_group.actions():
+            self._compare_group.removeAction(act)
+            act.deleteLater()
+        self.compare_menu.clear()
+        found = False
+        for i in range(self.combo.count()):
+            text = "(none)" if i == 0 else self.combo.itemText(i)
+            vid = self.combo.itemData(i) or ""
+            act = QAction(text, self.compare_menu)
+            act.setCheckable(True)
+            act.setData(vid)
+            act.setChecked(vid == (wanted or ""))
+            found = found or (bool(wanted) and vid == wanted)
+            self._compare_group.addAction(act)
+            self.compare_menu.addAction(act)
+        if not found:
+            self._compare_group.actions()[0].setChecked(True)
+            if prov is not None and wanted:
+                prov.interp_compare_version_id = None   # deleted or unknown: no comparison
 
-    def _compare_selected(self, _index: int) -> None:
+    def _compare_selected(self, action) -> None:
         prov = self.ctl.dock.provider
         if prov is None:
             return
-        prov.interp_compare_version_id = self.compare.currentData() or None
+        prov.interp_compare_version_id = action.data() or None
         prov.notify_redraw()
 
     def _selected(self, _index: int) -> None:
@@ -103,7 +124,15 @@ class VersionBar:
                     key not in ("undo", "redo") or getattr(self.ctl.undo.stack,
                                                            "can" + key.capitalize())()))
         self.restore_button.setEnabled(frozen)
-        self.readonly_label.setVisible(frozen)
+        if frozen:                      # read-only: said by the combo itself, no extra label
+            c = self.combo.palette().color(QPalette.ColorRole.Highlight)
+            self.combo.setStyleSheet("QComboBox { background-color: rgba(%d, %d, %d, 70); }"
+                                     % (c.red(), c.green(), c.blue()))
+            self.combo.setToolTip("Viewing a frozen version, read-only. Choose \u201cCurrent\u201d "
+                                  "to draw and edit.")
+        else:
+            self.combo.setStyleSheet("")
+            self.combo.setToolTip("Interpretation version shown on the section")
 
     def freeze(self) -> None:
         store = self._store()

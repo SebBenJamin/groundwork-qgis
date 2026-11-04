@@ -11,7 +11,7 @@ import numpy as np
 
 from qgis.core import QgsExpressionContextUtils, QgsProject
 from qgis.PyQt.QtCore import QObject
-from qgis.PyQt.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMessageBox, QToolButton
+from qgis.PyQt.QtWidgets import QButtonGroup, QHBoxLayout, QMenu, QMessageBox, QToolButton
 
 from ..core.interpretation import (InterpFeature, InterpPiece, clamp_to_surface, new_id,
                                    normalise, type_suggestions)
@@ -21,6 +21,24 @@ from .interp_undo import InterpUndo
 
 TOOLS = (("pan", "Pan"), ("line", "Line"), ("polygon", "Polygon"), ("point", "Point"),
          ("edit", "Edit"))
+#: QGIS theme icons of the row's buttons (the text is the fallback and the tooltip)
+ICONS = {"pan": "mActionPan.svg", "line": "mActionCaptureLine.svg",
+         "polygon": "mActionCapturePolygon.svg", "point": "mActionCapturePoint.svg",
+         "edit": "mActionVertexToolActiveLayer.svg", "snap": "mIconSnapping.svg",
+         "undo": "mActionUndo.svg", "redo": "mActionRedo.svg"}
+
+
+def _icon_button(icon_name: str, text: str) -> QToolButton:
+    from qgis.core import QgsApplication
+    b = QToolButton()
+    icon = QgsApplication.getThemeIcon(icon_name)
+    if icon.isNull() or not icon.availableSizes():
+        b.setText(text if len(text) <= 12 else text.split(" ")[0])
+    else:
+        b.setIcon(icon)
+        b.setAutoRaise(True)
+    b.setToolTip(text)
+    return b
 
 
 def current_author() -> str:
@@ -50,55 +68,59 @@ class InterpController(QObject):
         #: linking across profiles is a separate, deliberate step.
         self.form_factory = lambda f, s, letters: ask_feature(self.dock, f, s, letters)
         self.bar = QHBoxLayout()
-        self.bar.addWidget(QLabel("Interpretation"))
-        self.buttons: dict[str, QToolButton] = {}
+        self.buttons: dict = {}
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
         for key, text in TOOLS:
-            b = QToolButton()
-            b.setText(text)
+            b = _icon_button(ICONS[key], text)
             b.setCheckable(True)
             b.clicked.connect(lambda _=False, k=key: self.stop() if k == "pan" else self.start(k))
             self.group.addButton(b)
             self.bar.addWidget(b)
             self.buttons[key] = b
-        b = QToolButton()
-        b.setText("Snap")
+        b = _icon_button(ICONS["snap"], "Snap to vertices of drawn pieces, borehole layer "
+                                        "boundaries and the ground line")
         b.setCheckable(True)
         b.setChecked(True)
-        b.setToolTip("Snap to vertices of drawn pieces, borehole layer boundaries and the "
-                     "ground line")
         self.bar.addWidget(b)
         self.buttons["snap"] = b
         self.undo = InterpUndo(self, self._apply, self._apply_rows)
         for text, slot, signal in (("Undo", self.undo.stack.undo, self.undo.stack.canUndoChanged),
                                    ("Redo", self.undo.stack.redo, self.undo.stack.canRedoChanged)):
-            b = QToolButton()
-            b.setText(text)
+            b = _icon_button(ICONS[text.lower()], text)
             b.setEnabled(False)
             b.clicked.connect(slot)
             signal.connect(b.setEnabled)
             self.bar.addWidget(b)
             self.buttons[text.lower()] = b
-        b = QToolButton()
-        b.setText("Types…")
-        b.setToolTip("Rename or merge interpretation types")
-        b.clicked.connect(self.show_types)
-        self.bar.addWidget(b)
-        self.buttons["types"] = b
-        b = QToolButton()
-        b.setText("Export…")
-        b.setToolTip("Export the selected feature's 3D pieces (in Edit), or all features of "
-                     "the shown version, to GeoPackage or DXF")
-        b.clicked.connect(self.export)
-        self.bar.addWidget(b)
-        self.buttons["export"] = b
+        #: everything that is not drawing lives in one menu, so the row stays short
+        self.menu = QMenu(dock)
+        self.menu.setToolTipsVisible(True)
+        act = self.menu.addAction("Types…")
+        act.setToolTip("Rename or merge interpretation types")
+        act.triggered.connect(self.show_types)
+        self.buttons["types"] = act
+        act = self.menu.addAction("Export…")
+        act.setToolTip("Export the selected feature's 3D pieces (in Edit), or all features of "
+                       "the shown version, to GeoPackage or DXF")
+        act.triggered.connect(self.export)
+        self.buttons["export"] = act
+        menu_button = QToolButton()
+        menu_button.setText("Interpretation")
+        menu_button.setMenu(self.menu)
+        menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.bar.addWidget(menu_button)
         #: asks for the export file (None cancels) and reports the result; tests replace them
         self.ask_path = self._ask_path
         self.info = lambda text: QMessageBox.information(self.dock, "Interpretation", text)
         self.bar.addStretch(1)
         from .interp_versions import VersionBar
         self.versions = VersionBar(self)
+        self.menu.addSeparator()
+        self.menu.addAction(self.versions.freeze_button)
+        self.menu.addAction(self.versions.restore_button)
+        self.menu.addSeparator()
+        self.menu.addMenu(self.versions.compare_menu)
         self.bar.addWidget(self.versions.widget)
         self.buttons["pan"].setChecked(True)
         #: asks the user to confirm a deletion; tests replace it

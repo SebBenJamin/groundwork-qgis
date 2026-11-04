@@ -41,7 +41,7 @@ def test_viewing_frozen_disables_tools(bar):
     ctl = dock.interp
     assert dock.provider.interp_version_id is not None
     assert not ctl.buttons["polygon"].isEnabled() and not ctl.buttons["edit"].isEnabled()
-    assert vb.readonly_label.isVisibleTo(vb.widget) and vb.restore_button.isEnabled()
+    assert vb.is_readonly() and vb.restore_button.isEnabled()
     vb.combo.setCurrentIndex(0)
     assert ctl.buttons["polygon"].isEnabled() and not vb.restore_button.isEnabled()
 
@@ -109,9 +109,9 @@ def test_compare_combo_lists_frozen_and_sets_provider(bar):
     vb.ask_name = lambda title: "R1"
     vb.freeze()
     r1 = next(v for v in store.versions() if v.frozen)
-    assert [vb.compare.itemText(i).split(" (")[0] for i in range(vb.compare.count())] == [
+    assert [text.split(" (")[0] for text in vb.compare_items()] == [
         "(none)", "R1"]
-    vb.compare.setCurrentIndex(1)
+    vb.set_compare(1)
     assert dock.provider.interp_compare_version_id == r1.id
     snap = dock.provider.snapshot(dock.current_profile_id())
     assert {p.version_id for p in snap.interp_compare} == {r1.id}
@@ -119,7 +119,7 @@ def test_compare_combo_lists_frozen_and_sets_provider(bar):
     vb.combo.setCurrentIndex(1)                      # showing R1 itself: nothing to compare
     assert dock.provider.snapshot(dock.current_profile_id()).interp_compare == []
     vb.combo.setCurrentIndex(0)
-    vb.compare.setCurrentIndex(0)
+    vb.set_compare(0)
     assert dock.provider.interp_compare_version_id is None
     assert dock.provider.snapshot(dock.current_profile_id()).interp_compare == []
 
@@ -128,4 +128,19 @@ def test_compare_unknown_version_resets(bar):
     vb, store, dock = bar
     dock.provider.interp_compare_version_id = "gone"
     vb.refresh()
-    assert vb.compare.currentIndex() == 0 and dock.provider.interp_compare_version_id is None
+    assert vb.compare_index() == 0 and dock.provider.interp_compare_version_id is None
+
+
+def test_row_is_compact(bar):
+    from qgis.PyQt.QtWidgets import QPushButton
+    _vb, _store, dock = bar
+    row = dock.interp.bar
+    widgets = [row.itemAt(i).widget() for i in range(row.count()) if row.itemAt(i).widget()]
+    assert len(widgets) == 10
+    assert not any(isinstance(w, QPushButton) for w in widgets)
+    assert all(
+        w.text() not in ("Freeze…", "Start from this version") for w in dock.findChildren(QPushButton))
+    menu = dock.interp.menu
+    texts = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert texts[:4] == ["Types…", "Export…", "Freeze…", "Start from this version"]
+    assert texts[4] == "Compare with"
