@@ -172,9 +172,34 @@ class InterpController(QObject):
                 continue
             for iv in p.log:
                 bounds += [(p.s, top - iv.top), (p.s, top - iv.bottom)]
-        targets = SnapTargets(verts, sorted(set(bounds)), surface)
+        targets = SnapTargets(verts, sorted(set(bounds)), surface,
+                              lines=self._coverage_edges(surface))
         self._targets = (exclude, targets)
         return targets
+
+    def _coverage_edges(self, surface) -> list:
+        """The faded edge (coverage threshold contour) of every visible layer with its
+        coverage fade on: the user draws "unreliable" zones along it by hand."""
+        from ..core.gridding import contour_lines, default_threshold, grid_model, grid_shape
+        prov = self.dock.provider
+        out = []
+        try:
+            layers = prov.layers(self.dock.current_profile_id())
+        except Exception:                       # a broken layer must not block drawing
+            return out
+        for layer in layers:
+            st, mesh = layer.style, layer.mesh
+            if (mesh is None or not st.visible or not st.fade_coverage
+                    or mesh.coverage is None):
+                continue
+            thr = st.coverage_threshold
+            if thr is None:
+                thr = default_threshold(mesh.coverage)
+            grid = grid_model(mesh, surface, grid_shape(mesh, st.grid_cell), False,
+                              values=mesh.coverage)
+            for _level, lines in contour_lines(grid, [thr], False):
+                out += lines
+        return out
 
     def snap(self, s: float, z: float, tol_s: float, tol_z: float,
              exclude: str | None = None) -> tuple[float, float]:

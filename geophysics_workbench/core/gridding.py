@@ -62,6 +62,23 @@ def grid_shape(mesh, cell: float | None, max_nodes: int = 250_000) -> tuple[int,
     return max(nx, 2), max(nz, 2)
 
 
+def width_of(verts: np.ndarray) -> float:
+    return float(np.ptp(verts[:, 0])) if len(verts) else 0.0
+
+
+def _merged(mesh) -> tuple[np.ndarray, np.ndarray]:
+    """Vertices with coincident points merged, and the cells renumbered (-1 kept). Some
+    readers (R2) store every cell with its own corners; merged, the cells connect, so
+    values blend across their edges and the triangulation is valid."""
+    v = mesh.vertices
+    tol = 1e-9 * max(float(np.ptp(v)) if len(v) else 1.0, 1.0)
+    _u, first, inverse = np.unique(np.round(v / tol), axis=0, return_index=True,
+                                   return_inverse=True)
+    c = mesh.cells
+    renum = np.where(c >= 0, inverse.ravel()[np.maximum(c, 0)], -1)
+    return v[first], renum
+
+
 def _to_log(v: np.ndarray) -> np.ndarray:
     return np.log10(np.where(v > 0, v, np.nan))
 
@@ -77,12 +94,23 @@ def grid_model(mesh, topo, shape, log: bool, values=None) -> Grid:
     smin, smax, zmin, zmax = mesh.bounds()
     s, z = np.linspace(smin, smax, nx), np.linspace(zmin, zmax, nz)
     S, Z = np.meshgrid(s, z)
-    c = mesh.cells
+    verts, c = _merged(mesh)
     quad = c[:, 3] >= 0
     tris = np.vstack([c[:, :3], c[quad][:, [0, 2, 3]]])
     tri_cell = np.concatenate([np.arange(len(c)), np.flatnonzero(quad)])
-    finder = mtri.Triangulation(mesh.vertices[:, 0], mesh.vertices[:, 1], tris).get_trifinder()
-    t = finder(S.ravel(), Z.ravel())
+    p0, p1, p2 = (verts[tris[:, k]] for k in range(3))
+    area = np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
+                  - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
+    good = area > 1e-12 * max(width_of(verts), 1.0) ** 2
+    tris, tri_cell = tris[good], tri_cell[good]
+    if not len(tris):
+        raise ValueError("cannot grid this mesh: it has no cell with an area")
+    try:
+        tri_mesh = mtri.Triangulation(verts[:, 0], verts[:, 1], tris)
+        finder = tri_mesh.get_trifinder()
+        t = finder(S.ravel(), Z.ravel())
+    except (RuntimeError, ValueError) as exc:
+        raise ValueError(f"cannot grid this mesh: {exc}") from exc
     cell = np.where(t >= 0, tri_cell[np.maximum(t, 0)], -1).reshape(S.shape)
 
     v = np.asarray(mesh.values if values is None else values, float)
@@ -94,11 +122,10 @@ def grid_model(mesh, topo, shape, log: bool, values=None) -> Grid:
     idx = c[ok]
     vals = np.repeat(v, 4).reshape(c.shape)[ok]
     fin = np.isfinite(vals)
-    n = len(mesh.vertices)
+    n = len(verts)
     total = np.bincount(idx[fin], weights=vals[fin], minlength=n)
     count = np.bincount(idx[fin], minlength=n)
     vert = np.where(count > 0, total / np.maximum(count, 1), np.nan)
-    tri_mesh = mtri.Triangulation(mesh.vertices[:, 0], mesh.vertices[:, 1], tris)
     out = np.full(S.shape, np.nan)
     inside = cell >= 0
     if np.isfinite(vert).any():

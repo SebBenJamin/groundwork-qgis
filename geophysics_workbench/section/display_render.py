@@ -114,6 +114,11 @@ def _gridded(layer, topo, threshold):
     return entry
 
 
+def _as_cells(layer):
+    from dataclasses import replace
+    return replace(layer, style=replace(layer.style, mode="cells"))
+
+
 def build_drawing(layer, topo) -> LayerDrawing:
     """What to draw for one visible layer with a mesh and a colour scale."""
     from .data import cell_path_groups
@@ -127,7 +132,12 @@ def build_drawing(layer, topo) -> LayerDrawing:
         drawing.groups = [(QColor(*(int(c) for c in rgba)), _path_from_elements(elems))
                           for rgba, elems in cell_path_groups(layer.mesh, st.scale, alpha)]
         return drawing
-    drawing.field, drawing.contours = _gridded(layer, topo, threshold)
+    try:
+        drawing.field, drawing.contours = _gridded(layer, topo, threshold)
+    except ValueError as exc:                   # a mesh that cannot be gridded: show cells
+        from .profile_source import _log_failure
+        _log_failure(f"{st.mode} display of {layer.dataset.id}", exc)
+        return build_drawing(_as_cells(layer), topo)
     if drawing.field is not None and topo is not None and len(topo[0]) >= 2:
         # the grid masks above-ground nodes; the clip makes the edge follow the ground exactly
         smin, smax, zmin, _zmax = layer.mesh.bounds()

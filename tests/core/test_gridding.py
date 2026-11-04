@@ -94,3 +94,21 @@ def test_contour_lines_level_position():
     assert level == 5.0 and lines
     pts = np.vstack(lines)
     assert np.allclose(pts[:, 0], 5.0, atol=1e-6)
+
+
+def test_mesh_with_duplicated_vertices_grids_and_blends():
+    """R2 models store every cell with its own corners: grid it as one connected mesh."""
+    base = regular_mesh(2, 1, fn=lambda s, z: s)                    # values 0.5 and 1.5
+    verts = base.vertices[base.cells].reshape(-1, 2)                # 4 own corners per cell
+    cells = np.arange(8).reshape(2, 4)
+    mesh = SectionMesh(verts, cells, base.values, quantity="x", unit="")
+    g = grid_model(mesh, None, (5, 3), log=False)
+    i, j = list(g.s).index(1.0), 1                                  # on the shared edge
+    assert g.values[j, i] == pytest.approx(1.0)
+
+
+def test_ungriddable_mesh_raises_value_error():
+    verts = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])          # all collinear
+    mesh = SectionMesh(verts, np.array([[0, 1, 2, -1]]), np.array([1.0]), quantity="x", unit="")
+    with pytest.raises(ValueError):
+        grid_model(mesh, None, (5, 5), log=False)

@@ -237,3 +237,25 @@ def test_snap_targets_include_borehole_boundaries(qgis_app, dock):
     t = dock.interp.snap_targets()
     assert {(12.0, 100.0), (12.0, 97.5), (12.0, 94.0)} <= set(t.boundaries)
     assert t.ground is not None
+
+
+def test_snap_targets_include_coverage_edge(qgis_app, dock):
+    from dataclasses import replace
+    prov = dock.provider
+    pid = dock.current_profile_id()
+    [layer] = prov.layers(pid)
+    orig = prov._load_mesh
+
+    def with_cov(*a, **k):
+        m = orig(*a, **k)
+        z = m.vertices[m.cells[:, 0], 1]
+        return replace(m, coverage=np.where(z < np.median(z), -3.0, 0.0))     # low below
+    prov._load_mesh = with_cov
+    ctl = dock.interp
+    ctl._targets = None
+    assert ctl.snap_targets().lines == []
+    prov.set_style(layer.dataset.id, replace(prov.style(layer.dataset.id), fade_coverage=True,
+                                             coverage_threshold=-1.5))
+    ctl._targets = None
+    lines = ctl.snap_targets().lines
+    assert lines and all(len(x) >= 2 for x in lines)
