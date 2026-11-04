@@ -4,6 +4,7 @@ A row is automatic until the user clicks its tick box: until then it follows the
 visibility in the layer tree, live, and saves ``checked=None``."""
 from __future__ import annotations
 
+from qgis.core import Qgis, QgsMessageLog
 from qgis.gui import QgsColorButton
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import QCheckBox, QComboBox, QGridLayout, QGroupBox, QLabel
@@ -13,6 +14,18 @@ from ..section.crossing_lines import candidate_line_layers, map_visible, symbol_
 from .borehole_mapping import field_of, fill_field_combo
 
 HEADERS = ("Layer", "Label field", "", "Colour")
+
+
+def _guarded(slot):
+    """A Qt slot must never raise (PyQt6 aborts the process): log once-per-call instead."""
+    def run(self, *args):
+        try:
+            slot(self, *args)
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"Crossing lines dialog: {type(exc).__name__}: {exc}",
+                                     "Geophysics Workbench", Qgis.MessageLevel.Warning)
+    run.__name__ = slot.__name__
+    return run
 
 
 class LineRow:
@@ -104,8 +117,9 @@ class CrossingLinesGroup(QGroupBox):
         for item in items:
             if item.layer_id in self.rows:
                 self.rows[item.layer_id].load(item)
-            else:
-                self.stale.append(item)
+            elif self.project.mapLayer(item.layer_id) is None:
+                self.stale.append(item)                   # truly missing; excluded or
+                                                          # non-line layers are just ignored
 
     def stale_count(self) -> int:
         return len(self.stale)
@@ -113,6 +127,7 @@ class CrossingLinesGroup(QGroupBox):
     def settings(self) -> list[LineLayerSetting]:
         return [row.setting() for row in self.rows.values()] + list(self.stale)
 
+    @_guarded
     def _layers_added(self, layers) -> None:
         ids = {layer.id() for layer in layers}
         for layer in candidate_line_layers(self.project, self.exclude):
@@ -124,6 +139,7 @@ class CrossingLinesGroup(QGroupBox):
                     self.stale.remove(saved[0])
         self._update_empty()
 
+    @_guarded
     def _layers_removed(self, layers) -> None:
         for item in layers:                               # ids or layers, by signal overload
             row = self.rows.pop(item if isinstance(item, str) else item.id(), None)
@@ -136,6 +152,7 @@ class CrossingLinesGroup(QGroupBox):
                 widget.deleteLater()
         self._update_empty()
 
+    @_guarded
     def _follow_map(self, *_args) -> None:
         for layer_id, row in self.rows.items():
             row.follow_visibility(map_visible(self.project, layer_id))

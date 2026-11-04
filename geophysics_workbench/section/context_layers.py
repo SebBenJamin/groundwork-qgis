@@ -132,8 +132,12 @@ class ContextGatherer:
             self._project.layersRemoved.disconnect(self._removed)
         except (TypeError, RuntimeError):
             pass
-        for signal in (self._project.layersAdded, self._root.visibilityChanged,
-                       self._root.addedChildren):
+        try:
+            signals = (self._project.layersAdded, self._root.visibilityChanged,
+                       self._root.addedChildren)
+        except RuntimeError:                              # the project is already deleted
+            return
+        for signal in signals:
             try:
                 signal.disconnect(self._active_set_maybe_changed)
             except (TypeError, RuntimeError):
@@ -197,9 +201,14 @@ class ContextGatherer:
         line layers are active."""
         if self._last_settings is None:
             return
-        active = active_line_settings(self._project, self._last_settings, self._exclude())
-        if frozenset(layer.id() for layer, _s in active) != self._last_active:
-            self._kick()
+        try:
+            active = active_line_settings(self._project, self._last_settings, self._exclude())
+            ids = frozenset(layer.id() for layer, _s in active)
+            if ids != self._last_active:
+                self._last_active = ids
+                self._kick()
+        except Exception as exc:                        # a Qt slot must never raise
+            self._warn("active_set", f"live check failed: {type(exc).__name__}: {exc}")
 
     def _removed(self, layer_ids) -> None:
         if any(i in self._watched for i in layer_ids):

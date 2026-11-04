@@ -40,6 +40,8 @@ def qgis_app():
 
     app = QgsApplication([], True)
     app.initQgis()
+    import qgis.testing
+    qgis.testing.QGISAPP = app          # so qgis.testing helpers never build a second app
     yield app
     app.exitQgis()
 

@@ -277,3 +277,39 @@ def test_context_dialog_is_non_modal_and_apply_redraws(qgis_app, fake_iface, sto
         project.removeAllMapLayers()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
         qgis_app.processEvents()
+
+
+def test_saved_entry_for_excluded_layer_is_not_stale(project, fake_iface):
+    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+                                                        write_settings)
+
+    own = _line(project, "profiles")
+    real = _line(project, "Roads")
+    write_settings(project, ContextSettings(line_layers=[LineLayerSetting(own.id()),
+                                                         LineLayerSetting(real.id())]))
+    dlg = ContextDialog(fake_iface, project, exclude={own.id()})
+    try:
+        assert dlg.lines.stale_count() == 0
+        dlg.apply()
+        assert [s.layer_id for s in read_settings(project).line_layers] == [real.id()]
+    finally:
+        dlg.reject()
+
+
+def test_group_slots_survive_a_failing_project(project, fake_iface, monkeypatch):
+    from geophysics_workbench.ui import crossing_rows
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+
+    dlg = ContextDialog(fake_iface, project)
+    try:
+        def boom(*_a, **_k):
+            raise RuntimeError("boom")
+        monkeypatch.setattr(crossing_rows, "candidate_line_layers", boom)
+        monkeypatch.setattr(crossing_rows, "map_visible", boom)
+        dlg.lines._layers_added([])                      # must not raise
+        dlg.lines._layers_removed([])
+        dlg.lines._follow_map()
+    finally:
+        monkeypatch.undo()
+        dlg.reject()

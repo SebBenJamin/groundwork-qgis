@@ -22,18 +22,16 @@ def test_metadata_targets_qgis4():
     assert g["version"] == "0.2.1"
 
 
-def test_plugin_loads_and_unloads(qgis_app):
-    from qgis.testing.mocked import get_iface
+def test_plugin_loads_and_unloads(fake_iface):
     from geophysics_workbench import classFactory
-    p = classFactory(get_iface())
+    p = classFactory(fake_iface)
     p.initGui()
     p.unload()
 
 
-def test_add_action_adds_to_menu(qgis_app):
-    from qgis.testing.mocked import get_iface
+def test_add_action_adds_to_menu(fake_iface):
     from geophysics_workbench import classFactory
-    p = classFactory(get_iface())
+    p = classFactory(fake_iface)
     p.initGui()
     hits = []
     a = p.add_action("Do thing", lambda: hits.append(1), icon="workbench.svg", checkable=True)

@@ -616,3 +616,22 @@ def test_close_disconnects_project_signals(project, profile, qgis_app):
     _layer(project, "LineString", "New")
     _wait(qgis_app, 600)
     assert calls == []
+
+
+def test_active_set_check_and_close_do_not_raise(qgis_app, monkeypatch):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.core.context_settings import ContextSettings
+    from geophysics_workbench.section import context_layers as cl
+
+    project = QgsProject.instance()
+    project.clear()
+    gatherer = cl.ContextGatherer(project, "EPSG:25832", lambda: None, exclude=lambda: set())
+    gatherer._last_settings = ContextSettings()
+    gatherer._last_active = frozenset()
+
+    def boom(*_a, **_k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(cl, "active_line_settings", boom)
+    gatherer._active_set_maybe_changed()                 # must not raise
+    gatherer.close()
