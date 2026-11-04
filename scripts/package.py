@@ -26,7 +26,7 @@ DEMO = REPO / "demo"
 DEMO_GUELPE = REPO / "demo_guelpe"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
-EXCLUDE_FILES = ("*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
+EXCLUDE_FILES = ("*.qto3settings", "*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
                  "*-journal", "*.aux.xml", ".DS_Store", "Thumbs.db")
 MAX_PLUGIN_BYTES = 1_000_000
 

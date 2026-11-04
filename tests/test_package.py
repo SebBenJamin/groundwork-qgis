@@ -90,3 +90,13 @@ def test_zips_take_committed_content_of_modified_files(tmp_path):
     (tmp_path / "new.txt").write_bytes(b"untracked")
     assert package.entry_bytes(tmp_path / "a.gpkg", tmp_path) == b"clean"
     assert package.entry_bytes(tmp_path / "new.txt", tmp_path) == b"untracked"
+
+
+def test_qgis_sidecar_files_are_not_packaged(tmp_path):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import package
+    for name in ("p.qgz", "p.qgz.qto3settings", "dgm1.tif", "dgm1.tif.aux.xml"):
+        (tmp_path / name).write_bytes(b"x")
+    assert sorted(p.name for p in package.files_under(tmp_path)) == ["dgm1.tif", "p.qgz"]
