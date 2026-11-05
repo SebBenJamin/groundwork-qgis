@@ -135,3 +135,28 @@ def test_feature_deleted_in_table_removes_its_pieces(qgis_app, interp_store):
     assert layers["interp_polygons_3d"].featureCount() == 0
     sync.detach()
     prj.clear()
+
+
+def test_layers_panel_legend_lists_a_new_entity(qgis_app, interp_store):
+    # a new entity must show up under the layer in the Layers panel, not only in the renderer
+    from qgis.core import QgsLayerTreeModel, QgsProject
+
+    from geophysics_workbench.ui.interp_layers import add_interp_layers, reload_interp_layers
+
+    prj = QgsProject()
+    polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+    model = QgsLayerTreeModel(prj.layerTreeRoot())
+    node = prj.layerTreeRoot().findLayer(polys.id())
+
+    def legend_labels():
+        return sorted(n.data(0) for n in model.layerLegendNodes(node))
+
+    assert legend_labels() == ["A · anomaly"]
+    v = interp_store.current_version()
+    f = InterpFeature(new_id(), v.id, type="geology", letter="B")
+    interp_store.save_feature(f)
+    interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
+                                        [(0, 0), (5, 0), (5, -2)]))
+    reload_interp_layers(interp_store, prj)
+    assert legend_labels() == ["A · anomaly", "B · geology"]
+    prj.clear()

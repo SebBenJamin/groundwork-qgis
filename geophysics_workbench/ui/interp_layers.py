@@ -81,10 +81,14 @@ def default_style(layer: QgsVectorLayer) -> None:
 
 def sync_categories(layer: QgsVectorLayer, features) -> None:
     """Keep one category per entity: add new ones, relabel, drop deleted ones. Colours the
-    user changed stay; a renderer the user replaced is left alone."""
+    user changed stay; a renderer the user replaced is left alone.
+
+    The renderer is edited on a copy and set back, so QGIS's Layers panel legend (which
+    listens to ``rendererChanged``) shows the new entries."""
     r = layer.renderer()
     if not isinstance(r, QgsCategorizedSymbolRenderer) or r.classAttribute() != "feature_id":
         return
+    r = r.clone()
     wanted = {f.id: f for f in features}
     for i in reversed(range(len(r.categories()))):
         if r.categories()[i].value() not in wanted:
@@ -97,6 +101,7 @@ def sync_categories(layer: QgsVectorLayer, features) -> None:
             r.addCategory(QgsRendererCategory(fid, _entity_symbol(layer.geometryType(),
                                                                   _entity_rgb(len(r.categories()))),
                                               entity_label(feat)))
+    layer.setRenderer(r)
 
 
 def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
