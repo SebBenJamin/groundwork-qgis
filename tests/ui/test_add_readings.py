@@ -51,3 +51,22 @@ def test_model_files_hide_the_response_row(qgis_app, fake_iface, store_with_mode
     dlg = AddModelDialog(fake_iface, st, p.id)
     dlg.set_file(src)
     assert not dlg.response_edit.isVisibleTo(dlg)
+
+
+def test_response_found_when_its_name_differs_from_the_data_stem(tmp_path):
+    # Gülpe demo: T3_measured.data next to T3_response.vector
+    from geophysics_workbench.ui.add_model_dialog import guess_response
+    data = tmp_path / "T3_measured.data"
+    data.write_text("x")
+    (tmp_path / "T3_response.vector").write_text("1")
+    (tmp_path / "dcinv.result.vtk").write_text("x")
+    assert Path(guess_response(data)).name == "T3_response.vector"
+
+
+def test_two_unrelated_responses_are_not_guessed(tmp_path):
+    from geophysics_workbench.ui.add_model_dialog import guess_response
+    data = tmp_path / "line.data"
+    data.write_text("x")
+    (tmp_path / "a_response.vector").write_text("1")
+    (tmp_path / "b_response.vector").write_text("1")
+    assert guess_response(data) == ""

@@ -23,6 +23,22 @@ RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response"
                   "dcinv.response")
 
 
+def guess_response(path) -> str:
+    """The model-response file next to a data file, or "" when none or several fit.
+
+    Tries the known names first, then the only ``*response*.vector`` / ``*.response``
+    file in the folder (e.g. ``T3_response.vector`` next to ``T3_measured.data``).
+    """
+    data = Path(path)
+    for pattern in RESPONSE_NAMES:
+        candidate = data.parent / pattern.format(stem=data.stem)
+        if candidate.is_file():
+            return str(candidate)
+    found = {p for p in data.parent.glob("*response*.vector") if p.is_file()}
+    found |= {p for p in data.parent.glob("*.response") if p.is_file()}
+    return str(found.pop()) if len(found) == 1 else ""
+
+
 def describe(result: readers.ReaderResult, z_kind: str | None) -> str:
     """One-line summary of a reader result for the preview label."""
     mesh = result.mesh
@@ -139,12 +155,7 @@ class AddModelDialog(QDialog):
         self._form.setRowVisible(self.response_row, self._response_visible())
 
     def _guess_response(self, path: str) -> str:
-        data = Path(path)
-        for pattern in RESPONSE_NAMES:
-            candidate = data.parent / pattern.format(stem=data.stem)
-            if candidate.is_file():
-                return str(candidate)
-        return ""
+        return guess_response(path)
 
     def _browse_response(self):
         path, _ = QFileDialog.getOpenFileName(self, "Model response file", "",
