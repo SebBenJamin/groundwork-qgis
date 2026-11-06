@@ -139,6 +139,22 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
     return lines
 
 
+def borehole_at(items: ContextItems, s: float, z: float, column_half_width_s,
+                surface=None):
+    """The borehole whose drawn column is under (s, z), or ``None``."""
+    half = _half_of(column_half_width_s)
+    for p in items.points:
+        if p.kind != "borehole" or abs(s - p.s) > half(p):
+            continue
+        z_top = _collar(p, surface)[0]
+        if z_top is None:
+            continue
+        bottom = max([iv.bottom for iv in p.log] + [p.total_depth or 0.0])
+        if z_top - bottom - 0.2 <= z <= z_top + 0.2:
+            return p
+    return None
+
+
 def borehole_details(items: ContextItems, s: float, z: float, column_half_width_s,
                      surface=None) -> list[str]:
     """Full description of the borehole column under (s, z): name, offset, top with the

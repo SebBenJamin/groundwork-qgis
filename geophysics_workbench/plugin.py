@@ -26,6 +26,7 @@ _ICON_DIR = Path(__file__).parent / "icons"
 class WorkbenchPlugin:
     def __init__(self, iface):
         self.iface = iface
+        self.borehole_viewer = None
         self.menu = None
         self.actions = []
         self.provider: SectionDataProvider | None = None
@@ -73,6 +74,7 @@ class WorkbenchPlugin:
                                            checkable=True)
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
         self.dock.profile_changed.connect(self._update_actions)
+        self.dock.borehole_clicked.connect(self.open_borehole_viewer)
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
 
@@ -96,6 +98,7 @@ class WorkbenchPlugin:
         self._close_profile_dialog()
         self._close_context_dialog()
         self._close_ties_panel()
+        self._close_borehole_viewer()
         if self.map_link is not None:
             self.map_link.unload()
             self.map_link = None
@@ -194,7 +197,42 @@ class WorkbenchPlugin:
         self.set_store(store)
 
     def _project_cleared(self):
+        self._close_borehole_viewer()
         self.set_store(None)
+
+    def open_borehole_viewer(self, entry: int, label: str) -> None:
+        """Show the current profile's boreholes, ``(entry, label)`` highlighted; one window,
+        re-used by later clicks."""
+        from .section.borehole_viewer import BoreholeViewer
+        if self.dock is None or self.dock.provider is None:
+            return
+        profile_id = self.dock.current_profile_id()
+        if profile_id is None:
+            return
+        if self.borehole_viewer is None:
+            self.borehole_viewer = BoreholeViewer(self.dock, QgsProject.instance(),
+                                                  self.iface.mainWindow())
+        self.borehole_viewer.show_profile(profile_id, (entry, label))
+        self.borehole_viewer.show()
+        self.borehole_viewer.raise_()
+        self.borehole_viewer.activateWindow()
+
+    def _current_boreholes(self) -> tuple[list[str], str]:
+        """Labels of the open profile's boreholes and its name (Borehole style on a live
+        interval table only reads those)."""
+        profile = self.dock.current_profile() if self.dock is not None else None
+        if profile is None or self.provider is None:
+            return [], ""
+        items = self.provider.context(profile.id)
+        return ([p.label for p in (items.points if items else []) if p.kind == "borehole"],
+                profile.name)
+
+    def _close_borehole_viewer(self) -> None:
+        viewer, self.borehole_viewer = self.borehole_viewer, None
+        if viewer is not None:
+            viewer.detach()
+            viewer.close()
+            viewer.deleteLater()
 
     def _project_renamed(self):
         """Saved under a new name: keep the store path relative to the new location."""
@@ -306,7 +344,8 @@ class WorkbenchPlugin:
             return
         project = QgsProject.instance()
         dialog = ContextDialog(self.iface, project,
-                               exclude=own_layer_ids(self.store, project))
+                               exclude=own_layer_ids(self.store, project),
+                               current_boreholes=self._current_boreholes)
         dialog.applied.connect(self._context_applied)
         dialog.finished.connect(lambda _r, d=dialog: self._context_finished(d))
         self._context_dialog = dialog

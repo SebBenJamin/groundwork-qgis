@@ -45,6 +45,7 @@ class SectionDock(QDockWidget):
     cursor_moved = pyqtSignal(float, float)     # forward chainage, elevation
     cursor_left = pyqtSignal()                  # the mouse left the section
     profile_changed = pyqtSignal(object)        # open profile id, or None when closed
+    borehole_clicked = pyqtSignal(int, str)     # (borehole entry, label): open the viewer
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -60,6 +61,7 @@ class SectionDock(QDockWidget):
         self._coverage = None                   # (min, max) station chainage, with _topo
         self._cursor_s = None
         self._click_pos = None
+        self.details_popup = None               # details with an "Open in borehole viewer" link
 
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
@@ -338,9 +340,55 @@ class SectionDock(QDockWidget):
         return click_details(self, float(pp.distance()), float(pp.elevation()))
 
     def show_details(self, pos, global_pos) -> None:
-        lines = self.details_at(pos)
-        if lines:
-            QToolTip.showText(global_pos.toPoint(), "\n".join(lines), self.canvas)
+        if self._profile is None or self.provider is None:
+            return
+        pp = self.canvas.canvasPointToPlotPoint(pos)
+        if pp.isEmpty():
+            return
+        self.handle_click(float(pp.distance()), float(pp.elevation()), global_pos.toPoint())
+
+    def handle_click(self, s: float, z: float, global_point) -> None:
+        """A Pan-mode click at (s, z): on a borehole column alone it opens the borehole
+        viewer; together with an interpretation piece the details show as before, with an
+        "Open in borehole viewer" link; anywhere else the details tooltip as before."""
+        from .dock_context import borehole_hit, click_details
+        hit = borehole_hit(self, s, z)
+        lines = click_details(self, s, z)
+        piece = any(line.startswith("Interpretation") for line in lines)
+        if hit is not None and not piece:
+            self.borehole_clicked.emit(*hit)
+            return
+        if hit is not None:
+            self._show_popup(lines, hit, global_point)
+            return
+        if lines and global_point is not None:
+            QToolTip.showText(global_point, "\n".join(lines), self.canvas)
+
+    def _show_popup(self, lines: list[str], hit, global_point) -> None:
+        import html
+        from qgis.PyQt.QtWidgets import QLabel
+        if self.details_popup is None:
+            # parented: deleted with the dock, still its own small window
+            self.details_popup = QLabel(self, Qt.WindowType.ToolTip)
+            self.details_popup.setTextFormat(Qt.TextFormat.RichText)
+            self.details_popup.setMargin(4)
+        popup = self.details_popup
+        try:
+            popup.linkActivated.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+
+        def opened(_link, hit=hit):
+            popup.hide()
+            self.borehole_clicked.emit(*hit)
+
+        popup.linkActivated.connect(opened)
+        body = "<br>".join(html.escape(line).replace("  ", "&nbsp;&nbsp;") for line in lines)
+        popup.setText(f"{body}<br><a href='open'>Open in borehole viewer</a>")
+        popup.adjustSize()
+        if global_point is not None:
+            popup.move(global_point)
+        popup.show()
 
     # -- cursor ------------------------------------------------------------------------------
     def _hovered(self, _canvas_point, plot_point) -> None:

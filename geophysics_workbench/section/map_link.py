@@ -13,6 +13,7 @@ from qgis.PyQt.QtGui import QColor
 
 PICK_PX = 10        # click distance (pixels) that selects a profile line
 HOVER_PX = 30       # mouse distance (pixels) from the open profile that moves the guide
+BOREHOLE_PICK_PX = 6  # click distance (pixels) that opens a borehole of the open profile
 
 
 def _store_crs(dock) -> QgsCoordinateReferenceSystem | None:
@@ -68,6 +69,29 @@ class ProfilePickTool(QgsMapTool):
                 best = (dist, profile)
         return None if best is None else best[1]
 
+    def borehole_at(self, map_point) -> tuple[int, str] | None:
+        """(entry, label) of a borehole of the open profile within ``BOREHOLE_PICK_PX`` of
+        ``map_point`` (compared as chainage and offset), or ``None``."""
+        profile = self.dock.current_profile()
+        if profile is None or self.dock.provider is None:
+            return None
+        xy, tol = self._to_store(map_point, BOREHOLE_PICK_PX)
+        if xy is None:
+            return None
+        try:
+            s, offset = profile.chainage.project(xy)
+            items = self.dock.provider.context(profile.id)
+        except Exception:                           # degenerate geometry or no context
+            return None
+        best = None
+        for p in (items.points if items is not None else []):
+            if p.kind != "borehole":
+                continue
+            dist = math.hypot(float(s[0]) - p.s, float(offset[0]) - p.offset)
+            if dist <= tol and (best is None or dist < best[0]):
+                best = (dist, p)
+        return None if best is None else (best[1].entry, best[1].label)
+
     def chainage_at(self, map_point) -> float | None:
         """Chainage on the open profile within ``HOVER_PX`` of ``map_point``, or ``None``."""
         profile = self.dock.current_profile()
@@ -81,6 +105,10 @@ class ProfilePickTool(QgsMapTool):
 
     def canvasReleaseEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton:
+            return
+        hit = self.borehole_at(event.mapPoint())
+        if hit is not None:
+            self.dock.borehole_clicked.emit(*hit)
             return
         profile = self.profile_at(event.mapPoint())
         if profile is not None:
