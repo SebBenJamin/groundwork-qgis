@@ -13,7 +13,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 
 from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings,
                                      PointLayerSetting)
-from .borehole_mapping import (MISSING, NONE, BoreholeGroup, field_of, fill_field_combo,
+from .borehole_mapping import (MISSING, NONE, BoreholeEntries, field_of, fill_field_combo,
                                fill_layer_combo, keep_missing)
 from .crossing_rows import CrossingLinesGroup
 from .project_actions import SCOPE
@@ -78,7 +78,8 @@ class ContextDialog(QDialog):
     applied = pyqtSignal()                              # settings written (Apply or OK)
 
     def __init__(self, iface, project: QgsProject | None = None, parent=None,
-                 exclude: set[str] = frozenset()):
+                 exclude: set[str] = frozenset(),
+                 current_boreholes=lambda: ([], "")):
         super().__init__(parent if parent is not None else iface.mainWindow())
         self.setWindowTitle("Context layers")
         self.iface = iface
@@ -96,8 +97,11 @@ class ContextDialog(QDialog):
         self.point_rows, box = self._layer_group(
             "Points near the line", [lyr for lyr in by_geom["point"] if lyr.id() not in exclude])
         outer.addWidget(box)
-        self.borehole = BoreholeGroup(self.project, vectors, by_geom["point"])
-        outer.addWidget(self.borehole)
+        self.boreholes = BoreholeEntries(self.project, vectors, by_geom["point"],
+                                         current_boreholes, self.applied.emit)
+        borehole_box = QGroupBox("Boreholes")
+        QVBoxLayout(borehole_box).addWidget(self.boreholes)
+        outer.addWidget(borehole_box)
 
         self.band_combo, self.band_label = QComboBox(), QComboBox()
         fill_layer_combo(self.band_combo, by_geom["polygon"])
@@ -163,6 +167,11 @@ class ContextDialog(QDialog):
         self.band_combo.setCurrentIndex(max(0, self.band_combo.findData(layer_id)))
         self.band_label.setCurrentIndex(max(0, self.band_label.findData(label_field)))
 
+    @property
+    def borehole(self):
+        """The borehole entry being edited."""
+        return self.boreholes.current()
+
     def select_dem(self, layer_id: str) -> None:
         self.dem_combo.setCurrentIndex(max(0, self.dem_combo.findData(layer_id)))
 
@@ -172,15 +181,14 @@ class ContextDialog(QDialog):
             if item.layer_id in self.point_rows:
                 self.point_rows[item.layer_id].load(item.label_field, item.depth_field)
         self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
-        self.borehole.load(s.boreholes[0] if s.boreholes else None)
-        self._other_boreholes = list(s.boreholes[1:])   # kept until the entry list (0.5)
+        self.boreholes.load(s.boreholes)
         self.loaded_band = s.band
         if s.band is not None:
             keep_missing(self.band_combo, self.project, s.band.layer_id)
             self.select_band(s.band.layer_id, s.band.label_field)
         keep_missing(self.dem_combo, self.project, s.dem_layer_id)
         self.select_dem(s.dem_layer_id)
-        missing = (self.lines.stale_count() + len(self.stale_points) + self.borehole.missing_count()
+        missing = (self.lines.stale_count() + len(self.stale_points) + self.boreholes.missing_count()
                    + sum(c.currentText() == MISSING for c in (self.band_combo, self.dem_combo)))
         self.note.setText(f"{missing} saved layer(s) are not in this project; "
                           "their settings are kept." if missing else "")
@@ -200,8 +208,7 @@ class ContextDialog(QDialog):
             point_layers=[PointLayerSetting(r.layer_id, field_of(r.label), field_of(r.depth))
                           for r in self.point_rows.values() if r.check.isChecked()]
             + list(self.stale_points),
-            boreholes=[b for b in [self.borehole.setting()] if b is not None]
-            + list(getattr(self, "_other_boreholes", [])),
+            boreholes=self.boreholes.entries(),
             band=BandSetting(band_id, band_label) if band_id else None,
             dem_layer_id=self.dem_combo.currentData() or "",
             buffer=self.buffer_spin.value(), near_miss=self.near_miss_spin.value(),

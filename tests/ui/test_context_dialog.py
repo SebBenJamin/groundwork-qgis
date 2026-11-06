@@ -358,3 +358,99 @@ def test_point_row_depth_combo_saves(project, fake_iface):
         dlg2.reject()
     finally:
         dlg.reject()
+
+
+def _bh_layers(project):
+    from qgis.core import QgsVectorLayer
+    a = QgsVectorLayer("Point?crs=EPSG:25832&field=id:string&field=z:double&field=td:double",
+                       "Cores", "memory")
+    b = QgsVectorLayer("Point?crs=EPSG:25832&field=name:string", "State boreholes", "memory")
+    logs = QgsVectorLayer("None?field=hole:string&field=top:double&field=bot:double"
+                          "&field=lith:string", "Logs", "memory")
+    curves = QgsVectorLayer("None?field=hole:string&field=d:double&field=gr:double"
+                            "&field=cond:double", "Curves", "memory")
+    for lyr in (a, b, logs, curves):
+        project.addMapLayer(lyr)
+    return a, b, logs, curves
+
+
+def test_dialog_round_trips_two_entries(project, fake_iface):
+    from geophysics_workbench.core.context_settings import (BoreholeSetting, CurveField,
+                                                            CurveTableSetting)
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
+    a, b, logs, curves = _bh_layers(project)
+    saved = ContextSettings(boreholes=[
+        BoreholeSetting(a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith",
+                        total_depth_field="td", column_px=20, opacity=0.5, layer_text=True,
+                        section_curves=[f"{curves.id()}:gr"],
+                        curve_tables=[CurveTableSetting(curves.id(), "hole", "d",
+                                                        [CurveField("gr", "API")])]),
+        BoreholeSetting(b.id(), "name")])
+    write_settings(project, saved)
+    dlg = ContextDialog(fake_iface, project)
+    assert dlg.boreholes.count() == 2
+    assert dlg.settings().boreholes == saved.boreholes
+    dlg.accept()
+    assert read_settings(project).boreholes == saved.boreholes
+
+
+def test_existing_single_borehole_project_opens_as_one_entry(project, fake_iface):
+    from geophysics_workbench.core.context_settings import BoreholeSetting
+    from geophysics_workbench.ui.context_dialog import ContextDialog, write_settings
+    a, _b, logs, _c = _bh_layers(project)
+    write_settings(project, ContextSettings(boreholes=[BoreholeSetting(
+        a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith")]))
+    dlg = ContextDialog(fake_iface, project)
+    assert dlg.boreholes.count() == 1
+    assert dlg.borehole.setting().log_layer_id == logs.id()
+
+
+def test_add_and_remove_entries(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    a, b, _logs, _c = _bh_layers(project)
+    dlg = ContextDialog(fake_iface, project)
+    assert dlg.boreholes.count() == 1                    # one empty entry to fill in
+    dlg.borehole.set_layer(a.id())
+    dlg.boreholes.add_entry()
+    dlg.borehole.set_layer(b.id())
+    assert [e.layer_id for e in dlg.settings().boreholes] == [a.id(), b.id()]
+    dlg.boreholes.remove_current()
+    assert [e.layer_id for e in dlg.settings().boreholes] == [a.id()]
+
+
+def test_curve_table_editor_returns_checked_fields_with_units(project, qgis_app):
+    from geophysics_workbench.core.context_settings import CurveField, CurveTableSetting
+    from geophysics_workbench.ui.borehole_mapping import CurveTableEditor
+    _a, _b, _logs, curves = _bh_layers(project)
+    ed = CurveTableEditor(project, [curves])
+    ed.set_layer(curves.id())
+    ed.set_fields("hole", "d")
+    ed.check_curve("cond", unit="mS/m", on_section=True)
+    assert ed.setting() == CurveTableSetting(curves.id(), "hole", "d",
+                                             [CurveField("cond", "mS/m")])
+    assert ed.section_keys() == [f"{curves.id()}:cond"]
+
+
+def test_section_options_saved(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    a, _b, _logs, _c = _bh_layers(project)
+    dlg = ContextDialog(fake_iface, project)
+    g = dlg.borehole
+    g.set_layer(a.id())
+    g.column_spin.setValue(24)
+    g.opacity_spin.setValue(0.6)
+    g.text_check.setChecked(True)
+    g.set_total_depth("td")
+    dlg.accept()
+    e = read_settings(project).boreholes[0]
+    assert (e.column_px, e.opacity, e.layer_text, e.total_depth_field) == (24, 0.6, True, "td")
+
+
+def test_style_button_disabled_without_interval_table(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    a, _b, logs, _c = _bh_layers(project)
+    dlg = ContextDialog(fake_iface, project)
+    dlg.borehole.set_layer(a.id())
+    assert not dlg.borehole.style_button.isEnabled()
+    dlg.borehole.set_log_layer(logs.id())
+    assert dlg.borehole.style_button.isEnabled()
