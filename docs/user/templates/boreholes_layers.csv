@@ -1,0 +1,9 @@
+id,top,bottom,lithology,description
+BH1,0.0,0.4,topsoil,"humic, dark brown"
+BH1,0.4,2.5,sand,fine to medium sand
+BH1,2.5,6.0,clay,"silty clay, grey"
+BH2,0.0,0.3,topsoil,
+BH2,0.3,4.0,sand,"medium sand, some gravel"
+BH2,4.0,8.0,gravel,sandy gravel
+BH3,0.0,1.2,peat,
+BH3,1.2,5.0,sand,fine sand
