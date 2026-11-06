@@ -113,4 +113,9 @@ def test_plugin_opens_one_viewer_and_closes_it_on_unload(qgis_app, flushed, fake
         assert plugin.borehole_viewer is viewer and viewer.highlight == (0, "RK2")
     finally:
         plugin.unload()
+        # run the viewer's and dock's deferred deletes now, as QGIS's event loop would,
+        # not in the middle of a later test
+        from qgis.PyQt.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
     assert plugin.borehole_viewer is None

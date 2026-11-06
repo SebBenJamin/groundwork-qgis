@@ -99,10 +99,31 @@ def used_attributes(renderer, fields) -> set[str]:
         return set()
 
 
+def broken_rules(renderer) -> list[str]:
+    """Filter expressions of a rule-based renderer that do not parse (never handed to
+    QGIS for drawing: a broken rule must not take the section down)."""
+    from qgis.core import QgsExpression
+    if renderer is None or renderer.type() != "RuleRenderer":
+        return []
+    out, todo = [], list(renderer.rootRule().children())
+    while todo:
+        rule = todo.pop()
+        expr = rule.filterExpression()
+        if expr and not rule.isElse() and QgsExpression(expr).hasParserError():
+            out.append(expr)
+        todo.extend(rule.children())
+    return out
+
+
 def interval_symbols(renderer, fields, features, texts) -> list[tuple]:
     """(cloned fill symbol, feature) per feature; ``texts`` give the neutral fallback per
     feature. A renderer that fails or gives no symbol falls back for that feature only."""
     symbols = [None] * len(features)
+    broken = broken_rules(renderer)
+    if broken:
+        QgsMessageLog.logMessage(f"Borehole style has rules that do not parse ({broken[0]!r}); "
+                                 f"default colours used.", LOG_TAG, Qgis.MessageLevel.Warning)
+        renderer = None
     if renderer is not None:
         ctx = QgsRenderContext()
         try:

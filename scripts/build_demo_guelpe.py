@@ -9,6 +9,8 @@ Writes under demo_guelpe/:
   data/stations/T{1..4}_electrodes.csv all DGPS points (number,x,y,z), checked against the
                                       BERT electrode file (guelpe_data.match_electrodes)
   context/cores.gpkg                  the 24 cores (layer cores, table core_logs)
+  context/synthetic_logs.gpkg         SYNTHETIC log curves for the cores (NOT measured;
+                                      scripts/make_synthetic_curves.py)
   context/dgm1.tif                    DGM1 cropped to the transects + 100 m
   guelpe_workbench.gpkg               workbench store: Transect 1-4, one model each
   guelpe_project.qgz                  QGIS project (EPSG:25833), every path relative
@@ -27,6 +29,7 @@ import numpy as np
 
 import demo_extra
 import guelpe_data
+import make_synthetic_curves
 from fetch_demo_guelpe import CACHE, ERT_FILES, TRANSECTS_BBOX, dgm_tiles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,6 +61,10 @@ without changing its values.
   laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
   https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =
   grain-size class and texture code; core-loss rows marked "offset" left out).
+- **Synthetic curves** (`context/synthetic_logs.gpkg`, layer "Synthetic curves (NOT measured)"):
+  made up for the demo, **not measured**. The cores have no geophysical logs; these seeded
+  random values only show how log curves look in the borehole viewer
+  (scripts/make_synthetic_curves.py).
 - Both are part of: Köhler, A. et al. (2025): Geophysical, Sedimentological and Geochemical Data
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
@@ -86,7 +93,7 @@ def _unzip_member(zf: zipfile.ZipFile, suffix: str, target: Path) -> Path:
 
 def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
     """Models, stations, cores and DGM1 from the cache (no QGIS)."""
-    for sub in ("data", "context/cores.gpkg", "context/dgm1.tif"):
+    for sub in ("data", "context/cores.gpkg", "context/synthetic_logs.gpkg", "context/dgm1.tif"):
         p = out / sub
         shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -108,6 +115,8 @@ def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
             shutil.copy(MISFIT_INPUTS / name, out / "data/ert/T3" / name)
     sites, logs = guelpe_data.parse_cores((cache / "cores.tab").read_text(encoding="utf-8"))
     guelpe_data.write_cores_gpkg(out / "context/cores.gpkg", sites, logs)
+    make_synthetic_curves.write(out / "context/synthetic_logs.gpkg",
+                                make_synthetic_curves.read_logs(out / "context/cores.gpkg"))
     guelpe_data.mosaic_dgm([cache / "dgm" / f"{t}.zip" for t in dgm_tiles(TRANSECTS_BBOX)],
                            TRANSECTS_BBOX, out / "context/dgm1.tif")
 
@@ -220,6 +229,26 @@ def _geology(project):
     return layer, field
 
 
+def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: str,
+                          geology: str, geology_field: str | None, dem: str):
+    """The demo's Context layers settings (layer ids in): the cores with their logs and the
+    synthetic curves, and the LBGR boreholes as a second entry drawn to their total depth."""
+    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+                                                            ContextSettings, CurveField,
+                                                            CurveTableSetting, LineLayerSetting)
+    synthetic = CurveTableSetting(curves, "core_id", "depth",
+                                  [CurveField("gamma_synthetic", "API (synthetic)"),
+                                   CurveField("cond_synthetic", "mS/m (synthetic)")])
+    return ContextSettings(
+        line_layers=[LineLayerSetting(water, "name", checked=True)],
+        point_layers=[],
+        boreholes=[BoreholeSetting(cores, "id", "elevation", logs, "core_id", "top", "bottom",
+                                   "lithology", curve_tables=[synthetic]),
+                   BoreholeSetting(bpk, "Bohrungsname", total_depth_field="Teufe_in_m")],
+        band=BandSetting(geology, geology_field) if geology_field else None,
+        dem_layer_id=dem, buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
+
+
 def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
     """guelpe_project.qgz; returns its path and how geology was added ("WFS" or "WMS")."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -231,9 +260,6 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
     if QgsApplication.instance() is None:
         app = QgsApplication([], False)
         app.initQgis()
-    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
-                                                            ContextSettings, LineLayerSetting,
-                                                            PointLayerSetting)
     from geophysics_workbench.store.gpkg_store import ProjectStore
     from geophysics_workbench.ui.context_dialog import write_settings
     from geophysics_workbench.ui.project_actions import use_store
@@ -259,6 +285,9 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
                                   "outline_color": "20,20,20", "size": "2.6"})
         demo_extra._labels(cores, '"id"', 8.0, (20, 20, 20))
         logs = QgsVectorLayer(f"{ctx / 'cores.gpkg'}|layername=core_logs", "Core logs", "ogr")
+        curves = QgsVectorLayer(f"{ctx / 'synthetic_logs.gpkg'}|layername="
+                                f"{make_synthetic_curves.LAYER}",
+                                "Synthetic curves (NOT measured)", "ogr")
         bpk = _wfs("app:bpk_m_sch", BPK_WFS, "State boreholes with log (LBGR, live)")
         _symbol(bpk, "marker", {"name": "diamond", "color": "200,30,30",
                                 "outline_color": "60,0,0", "size": "2.8"})
@@ -274,25 +303,21 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         dem = QgsRasterLayer(str(ctx / "dgm1.tif"), "DGM1 (LGB)", "gdal")
         dop = _wms(DOP_WMS, "bebb_dop20c", "Aerial images DOP20 (LGB, live)")
         osm = QgsRasterLayer(OSM_URI, "OpenStreetMap", "wms")
-        offline = (cores, logs, water, dem, osm)
+        offline = (cores, logs, curves, water, dem, osm)
         for layer in offline:
             if not layer.isValid():
                 raise RuntimeError(f"demo layer {layer.name()} is not valid")
         root = project.layerTreeRoot()
-        for layer in (cores, logs, bpk, bpk_o, water, geology, dem, dop, osm):
+        for layer in (cores, logs, curves, bpk, bpk_o, water, geology, dem, dop, osm):
             if not layer.isValid() and layer not in offline:
                 print(f"warning: live layer {layer.name()} is not reachable now")
             project.addMapLayer(layer, False)
             root.addLayer(layer)
         for hidden in (bpk_o, dem, dop):
             root.findLayer(hidden.id()).setItemVisibilityChecked(False)
-        write_settings(project, ContextSettings(
-            line_layers=[LineLayerSetting(water.id(), "name", checked=True)],
-            point_layers=[PointLayerSetting(bpk.id(), "Bohrungsname", "Teufe_in_m")],
-            boreholes=[BoreholeSetting(cores.id(), "id", "elevation", logs.id(), "core_id",
-                                       "top", "bottom", "lithology")],
-            band=BandSetting(geology.id(), geology_field) if geology_field else None,
-            dem_layer_id=dem.id(), buffer=5.0, near_miss=10.0, dem_tolerance=0.5))
+        write_settings(project, demo_context_settings(
+            water.id(), bpk.id(), cores.id(), logs.id(), curves.id(), geology.id(),
+            geology_field, dem.id()))
         store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top
         xy = np.vstack([p.xy for p in store.profiles()])
         (x0, y0), (x1, y1) = xy.min(axis=0) - 150.0, xy.max(axis=0) + 150.0

@@ -65,11 +65,11 @@ def test_rule_with_bad_expression_falls_back(qgis_app):
     from qgis.core import QgsFillSymbol, QgsRuleBasedRenderer
     from geophysics_workbench.core.lithology import label_colour
     from geophysics_workbench.section.borehole_style import interval_symbols
-    root = QgsRuleBasedRenderer.Rule(None)
-    root.appendChild(QgsRuleBasedRenderer.Rule(
-        QgsFillSymbol.createSimple({"color": "255,0,0"}), 0, 0, "\"lithology\" = = 'x' ((("))
+    # built from a symbol: QGIS owns every rule (no Python-made rules handed over)
+    renderer = QgsRuleBasedRenderer(QgsFillSymbol.createSimple({"color": "255,0,0"}))
+    renderer.rootRule().children()[0].setFilterExpression("\"lithology\" = = 'x' (((")
     fields = _fields("lithology")
-    (sym, _f), = interval_symbols(QgsRuleBasedRenderer(root), fields,
+    (sym, _f), = interval_symbols(renderer, fields,
                                   [_feature(fields, lithology="Clay")], texts=["Clay"])
     assert _rgb(sym) == label_colour("Clay")
 
