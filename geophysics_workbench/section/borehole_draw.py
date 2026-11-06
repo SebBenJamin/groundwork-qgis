@@ -16,6 +16,7 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPen, QPolygonF
 
 from ..core.borehole_curves import CurveStyle, data_range, track_fraction
+from ..core.borehole_layout import column_depth
 from .borehole_style import default_symbol
 
 HIGHLIGHT_RGB = (230, 120, 0)
@@ -52,11 +53,6 @@ def qcolor(text: str) -> QColor:
         c.setAlpha(int(text[7:], 16))
         return c
     return QColor(text)
-
-
-def column_depth(p) -> float:
-    """How deep the column reaches: the deepest interval or the total depth."""
-    return max([iv.bottom for iv in p.log] + [p.total_depth or 0.0])
 
 
 def draw_borehole(painter, rc, x_px: float, y_of_depth: Callable[[float], float], p,
