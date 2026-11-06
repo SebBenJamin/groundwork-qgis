@@ -119,10 +119,13 @@ Client exports differ every time. These are the layouts we see, and what to do w
 | Interval table | your layer table |
 | Intervals: borehole id / top / bottom field | `id`, `top`, `bottom` |
 | Intervals: text field | `lithology` |
-| On the section | column width (px), opacity, layer text on/off |
-| Add curve table | the curve table, its id and depth fields; tick each curve, give a unit, tick "On section" to draw it on the section too |
+| Add curve table | the curve table, its id and depth fields; tick each curve and give its unit |
 
 Press **Apply** or **OK**. The section redraws with the boreholes as columns.
+
+**How they look is set in the borehole viewer**, and the section follows:
+- **Layer text** and the ticked **Curves** in the viewer's side panel are drawn on the section too.
+- So are the **column width** and **opacity** under "On the section".
 
 ---
 

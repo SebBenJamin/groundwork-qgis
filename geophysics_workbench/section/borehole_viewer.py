@@ -15,13 +15,15 @@ from qgis.core import QgsSettings, QgsTextFormat
 from qgis.gui import QgsFontButton
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QImage, QPainter, QPen, QPolygonF
-from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout,
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+                                 QHBoxLayout, QSpinBox,
                                  QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ..core.borehole_curves import data_range
 from ..core.borehole_layout import (ViewTransform, column_depth, extent_z, fit, layout_even,
                                     vertical_exaggeration)
 from ..core.context import collar_height
+from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
 from .borehole_draw import ColumnOptions, draw_borehole, draw_flag
 
 SCOPE = "geophysics_workbench"
@@ -346,6 +348,22 @@ class BoreholeViewer(QWidget):
         self.font_button.changed.connect(lambda: self._redraw(refit=False))
         label_layout.addWidget(self.font_button)
         side.addWidget(label_box)
+        # how the section draws the columns: written to the borehole entries, so the
+        # section follows (with layer text and the curves ticked above)
+        section_box = QGroupBox("On the section")
+        section_form = QFormLayout(section_box)
+        self.column_spin = QSpinBox()
+        self.column_spin.setRange(*COLUMN_PX_RANGE)
+        self.column_spin.setSuffix(" px")
+        self.column_spin.setValue(16)
+        self.opacity_spin = QDoubleSpinBox()
+        self.opacity_spin.setRange(*OPACITY_RANGE)
+        self.opacity_spin.setSingleStep(0.1)
+        self.opacity_spin.setDecimals(2)
+        self.opacity_spin.setValue(1.0)
+        section_form.addRow("Column", self.column_spin)
+        section_form.addRow("Opacity", self.opacity_spin)
+        side.addWidget(section_box)
         side.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidget(panel)
@@ -364,6 +382,11 @@ class BoreholeViewer(QWidget):
         layout.addWidget(self.status)
 
         self.load_options()
+        self._syncing = False
+        self._sync_look()
+        self.show_check["text"].toggled.connect(lambda _c: self._look_changed())
+        self.column_spin.valueChanged.connect(lambda _v: self._look_changed())
+        self.opacity_spin.valueChanged.connect(lambda _v: self._look_changed())
         self.mode_combo.currentIndexChanged.connect(
             lambda _i: self.set_mode(self.mode_combo.currentData()))
         self.axis_combo.currentIndexChanged.connect(
@@ -407,11 +430,49 @@ class BoreholeViewer(QWidget):
         self.topo = provider.topography(self.profile_id) if self.profile_id else None
         self.boreholes = sorted((p for p in (self.items.points if self.items else [])
                                  if p.kind == "borehole"), key=lambda p: p.s)
-        self._rebuild_curves()
+        self._sync_look()
 
-    def _rebuild_curves(self) -> None:
-        keep = {k for k, box in self._curve_checks.items() if box.isChecked()} | getattr(
-            self, "_saved_curves", set())
+    # -- the look shared with the section (kept in the borehole entries) ------------------
+    def _entries(self):
+        from ..ui.context_dialog import read_settings
+        return read_settings(self.project)
+
+    def _sync_look(self) -> None:
+        """Switches from the borehole entries (the section's settings)."""
+        settings = self._entries()
+        self._syncing = True
+        try:
+            entries = settings.boreholes
+            self.show_check["text"].setChecked(any(b.layer_text for b in entries))
+            if entries:
+                self.column_spin.setValue(int(entries[0].column_px))
+                self.opacity_spin.setValue(float(entries[0].opacity))
+            self._rebuild_curves({k for b in entries for k in b.section_curves})
+        finally:
+            self._syncing = False
+
+    def _look_changed(self) -> None:
+        """Layer text, curves, width or opacity changed here: the section follows."""
+        if self._syncing:
+            self._redraw(refit=False)
+            return
+        from ..ui.context_dialog import write_settings
+        settings = self._entries()
+        chosen = self.chosen_curves()
+        for b in settings.boreholes:
+            tables = {t.layer_id for t in b.curve_tables}
+            b.layer_text = self.show_check["text"].isChecked()
+            b.column_px = self.column_spin.value()
+            b.opacity = round(self.opacity_spin.value(), 2)
+            b.section_curves = [k for k in chosen if k.rsplit(":", 1)[0] in tables]
+        write_settings(self.project, settings)
+        self.dock.provider.notify_changed()
+        self._redraw(refit=False)
+
+    def curve_check(self, key: str):
+        return self._curve_checks.get(key)
+
+    def _rebuild_curves(self, keep: set) -> None:
         for box in self._curve_checks.values():
             self.curves_layout.removeWidget(box)
             box.deleteLater()
@@ -423,7 +484,7 @@ class BoreholeViewer(QWidget):
         for key, text in seen.items():
             box = QCheckBox(text)
             box.setChecked(key in keep)
-            box.toggled.connect(lambda _c: self._redraw(refit=False))
+            box.toggled.connect(lambda _c: self._look_changed())
             self.curves_layout.addWidget(box)
             self._curve_checks[key] = box
         self.curves_box.setVisible(bool(seen))
@@ -533,7 +594,6 @@ class BoreholeViewer(QWidget):
         return {"mode": self.mode, "axis": self.axis, "ve": self.ve_spin.value(),
                 "show": {k: b.isChecked() for k, b in self.show_check.items()},
                 "labels": {k: b.isChecked() for k, b in self.label_check.items()},
-                "curves": self.chosen_curves(),
                 "font": self.font_button.textFormat().toQFont().toString(),
                 "font_size": self.font_button.textFormat().size(),
                 "font_colour": self.font_button.textFormat().color().name()}
@@ -561,7 +621,6 @@ class BoreholeViewer(QWidget):
             for key, value in (data.get(group) or {}).items():
                 if key in checks and isinstance(value, bool):
                     checks[key].setChecked(value)
-        self._saved_curves = {k for k in data.get("curves", []) if isinstance(k, str)}
         if isinstance(data.get("font"), str):
             fmt = self.font_button.textFormat()
             font = QFont()

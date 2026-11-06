@@ -425,25 +425,31 @@ def test_curve_table_editor_returns_checked_fields_with_units(project, qgis_app)
     ed = CurveTableEditor(project, [curves])
     ed.set_layer(curves.id())
     ed.set_fields("hole", "d")
-    ed.check_curve("cond", unit="mS/m", on_section=True)
+    ed.check_curve("cond", unit="mS/m")
     assert ed.setting() == CurveTableSetting(curves.id(), "hole", "d",
                                              [CurveField("cond", "mS/m")])
-    assert ed.section_keys() == [f"{curves.id()}:cond"]
+    assert ed.table.columnCount() == 2                   # curve, unit (look: in the viewer)
 
 
-def test_section_options_saved(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
-    a, _b, _logs, _c = _bh_layers(project)
+def test_section_look_is_kept_but_not_edited_here(project, fake_iface):
+    """How the section draws boreholes is set in the borehole viewer; Context layers… keeps
+    those settings unchanged on OK and has no switches for them."""
+    from geophysics_workbench.core.context_settings import (BoreholeSetting, CurveField,
+                                                            CurveTableSetting)
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
+    a, _b, logs, c = _bh_layers(project)
+    write_settings(project, ContextSettings(boreholes=[BoreholeSetting(
+        a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith", column_px=24,
+        opacity=0.6, layer_text=True, section_curves=[f"{c.id()}:gr"],
+        curve_tables=[CurveTableSetting(c.id(), "hole", "d", [CurveField("gr", "API")])])]))
     dlg = ContextDialog(fake_iface, project)
-    g = dlg.borehole
-    g.set_layer(a.id())
-    g.column_spin.setValue(24)
-    g.opacity_spin.setValue(0.6)
-    g.text_check.setChecked(True)
-    g.set_total_depth("td")
+    assert not hasattr(dlg.borehole, "column_spin") and not hasattr(dlg.borehole, "text_check")
+    dlg.borehole.set_total_depth("td")
     dlg.accept()
     e = read_settings(project).boreholes[0]
-    assert (e.column_px, e.opacity, e.layer_text, e.total_depth_field) == (24, 0.6, True, "td")
+    assert (e.column_px, e.opacity, e.layer_text, e.section_curves) == (
+        24, 0.6, True, [f"{c.id()}:gr"])
+    assert e.total_depth_field == "td"
 
 
 def test_style_button_disabled_without_interval_table(project, fake_iface):

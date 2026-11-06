@@ -201,3 +201,63 @@ def test_curve_style_dialog_saves_and_calls_back(qgis_app):
     s = curve_styles(QgsProject.instance())["t:gr"]
     assert (s.log, s.vmin, s.vmax, s.fill) == (True, 1.0, 1000.0, "left")
     assert len(s.fill_colour) == 9 and calls == [1]
+
+
+# -- the viewer is the one place for how boreholes look (the section follows) ------------
+def _two_entries(project):
+    from geophysics_workbench.core.context_settings import (BoreholeSetting, ContextSettings,
+                                                            CurveField, CurveTableSetting)
+    from geophysics_workbench.ui.context_dialog import write_settings
+    write_settings(project, ContextSettings(boreholes=[
+        BoreholeSetting("cores", "id", curve_tables=[CurveTableSetting(
+            "t", "id", "d", [CurveField("gr", "API")])]),
+        BoreholeSetting("state", "name")]))
+
+
+def _curve_bh(qgis_app, fake_dock):
+    from geophysics_workbench.core.context import Curve
+    p = fake_dock.provider.items["p1"].points[0]
+    p.curves = [Curve("t:gr", "gr", "API", np.array([0.0, 2.0]), np.array([10.0, 90.0]))]
+
+
+def test_viewer_layer_text_and_curves_reach_the_section_settings(fake_dock, qgis_app):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from geophysics_workbench.ui.context_dialog import read_settings
+    prj = QgsProject.instance()
+    _two_entries(prj)
+    _curve_bh(qgis_app, fake_dock)
+    v = BoreholeViewer(fake_dock, prj)
+    v.show_profile("p1")
+    before = fake_dock.provider.changed
+    v.show_check["text"].setChecked(True)
+    v.curve_check("t:gr").setChecked(True)
+    v.column_spin.setValue(24)
+    v.opacity_spin.setValue(0.6)
+    cores, state = read_settings(prj).boreholes
+    assert cores.layer_text and state.layer_text
+    assert cores.section_curves == ["t:gr"] and state.section_curves == []   # only its table
+    assert (cores.column_px, state.column_px) == (24, 24)
+    assert cores.opacity == pytest.approx(0.6)
+    assert fake_dock.provider.changed > before                      # the section redraws
+    v.deleteLater()
+
+
+def test_viewer_starts_from_the_section_settings(fake_dock, qgis_app):
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from geophysics_workbench.ui.context_dialog import read_settings, write_settings
+    prj = QgsProject.instance()
+    _two_entries(prj)
+    s = read_settings(prj)
+    s.boreholes[0].layer_text, s.boreholes[0].section_curves = True, ["t:gr"]
+    s.boreholes[0].column_px = 30
+    write_settings(prj, s)
+    _curve_bh(qgis_app, fake_dock)
+    v = BoreholeViewer(fake_dock, prj)
+    v.show_profile("p1")
+    assert v.show_check["text"].isChecked() and v.curve_check("t:gr").isChecked()
+    assert v.column_spin.value() == 30
+    v.deleteLater()

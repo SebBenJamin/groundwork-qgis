@@ -8,13 +8,12 @@ from typing import Callable
 
 from qgis.core import QgsVectorLayer
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-                                 QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton,
-                                 QSpinBox, QStackedWidget, QTableWidget, QTableWidgetItem,
-                                 QVBoxLayout, QWidget)
+from qgis.PyQt.QtWidgets import (QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QListWidget,
+                                 QMessageBox, QPushButton, QStackedWidget, QTableWidget,
+                                 QTableWidgetItem, QVBoxLayout, QWidget)
 
-from ..core.context_settings import (COLUMN_PX_RANGE, OPACITY_RANGE, BoreholeSetting,
-                                     CurveField, CurveTableSetting, curve_key)
+from ..core.context_settings import (BoreholeSetting, CurveField, CurveTableSetting,
+                                     curve_key)
 
 NONE = "None"
 MISSING = "(not in project)"
@@ -57,17 +56,16 @@ def field_of(combo: QComboBox) -> str:
 class CurveTableEditor(QGroupBox):
     """One curve table: layer, borehole id and depth fields, and which value fields are
     curves (with a unit each, and whether the section draws them)."""
-    _CURVE, _UNIT, _SECTION = range(3)
+    _CURVE, _UNIT = range(2)
 
     def __init__(self, project, tables: list[QgsVectorLayer], on_remove=None):
         super().__init__("Curve table")
         self.project = project
         self.loaded: CurveTableSetting | None = None
-        self.loaded_keys: list[str] = []
         self.layer_combo, self.id_combo, self.depth_combo = QComboBox(), QComboBox(), QComboBox()
         fill_layer_combo(self.layer_combo, tables)
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Curve", "Unit", "On section"])
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["Curve", "Unit"])
         self.table.verticalHeader().setVisible(False)
         self.table.setMinimumHeight(110)
         form = QFormLayout(self)
@@ -85,7 +83,7 @@ class CurveTableEditor(QGroupBox):
     def _layer(self):
         return self.project.mapLayer(self.layer_combo.currentData() or "")
 
-    def _refill(self, setting: CurveTableSetting | None = None, keys=()) -> None:
+    def _refill(self, setting: CurveTableSetting | None = None) -> None:
         layer = self._layer()
         fill_field_combo(self.id_combo, layer, setting.id_field if setting else "")
         fill_field_combo(self.depth_combo, layer, setting.depth_field if setting else "")
@@ -100,11 +98,6 @@ class CurveTableEditor(QGroupBox):
                                else Qt.CheckState.Unchecked)
             self.table.setItem(row, self._CURVE, item)
             self.table.setItem(row, self._UNIT, QTableWidgetItem(chosen.get(name, "")))
-            on = QTableWidgetItem()
-            on.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            on.setCheckState(Qt.CheckState.Checked
-                             if curve_key(layer.id(), name) in keys else Qt.CheckState.Unchecked)
-            self.table.setItem(row, self._SECTION, on)
         for combo in (self.id_combo, self.depth_combo):
             combo.setEnabled(layer is not None)
 
@@ -115,22 +108,19 @@ class CurveTableEditor(QGroupBox):
         self.id_combo.setCurrentIndex(max(0, self.id_combo.findData(id_field)))
         self.depth_combo.setCurrentIndex(max(0, self.depth_combo.findData(depth_field)))
 
-    def check_curve(self, field_name: str, unit: str = "", on_section: bool = False) -> None:
+    def check_curve(self, field_name: str, unit: str = "") -> None:
         for row in range(self.table.rowCount()):
             if self.table.item(row, self._CURVE).text() == field_name:
                 self.table.item(row, self._CURVE).setCheckState(Qt.CheckState.Checked)
                 self.table.item(row, self._UNIT).setText(unit)
-                self.table.item(row, self._SECTION).setCheckState(
-                    Qt.CheckState.Checked if on_section else Qt.CheckState.Unchecked)
 
-    def load(self, setting: CurveTableSetting, section_keys) -> None:
-        self.loaded, self.loaded_keys = setting, [k for k in section_keys
-                                                  if k.startswith(setting.layer_id + ":")]
+    def load(self, setting: CurveTableSetting) -> None:
+        self.loaded = setting
         keep_missing(self.layer_combo, self.project, setting.layer_id)
         self.layer_combo.blockSignals(True)
         self.set_layer(setting.layer_id)
         self.layer_combo.blockSignals(False)
-        self._refill(setting, self.loaded_keys)
+        self._refill(setting)
 
     def _missing(self) -> bool:
         return self.layer_combo.currentText() == MISSING
@@ -147,15 +137,6 @@ class CurveTableEditor(QGroupBox):
                   if self.table.item(r, self._CURVE).checkState() == Qt.CheckState.Checked]
         return CurveTableSetting(layer_id, field_of(self.id_combo), field_of(self.depth_combo),
                                  curves)
-
-    def section_keys(self) -> list[str]:
-        if self._missing():
-            return list(self.loaded_keys)
-        layer_id = self.layer_combo.currentData() or ""
-        return [curve_key(layer_id, self.table.item(r, self._CURVE).text())
-                for r in range(self.table.rowCount())
-                if self.table.item(r, self._CURVE).checkState() == Qt.CheckState.Checked
-                and self.table.item(r, self._SECTION).checkState() == Qt.CheckState.Checked]
 
 
 class BoreholeGroup(QGroupBox):
@@ -183,16 +164,6 @@ class BoreholeGroup(QGroupBox):
         self.style_button = QPushButton("Borehole style…")
         self.style_button.setToolTip("Style the intervals with QGIS's own style editor")
         self.style_button.clicked.connect(self._open_style)
-        self.column_spin = QSpinBox()
-        self.column_spin.setRange(*COLUMN_PX_RANGE)
-        self.column_spin.setSuffix(" px")
-        self.column_spin.setValue(16)
-        self.opacity_spin = QDoubleSpinBox()
-        self.opacity_spin.setRange(*OPACITY_RANGE)
-        self.opacity_spin.setSingleStep(0.1)
-        self.opacity_spin.setDecimals(2)
-        self.opacity_spin.setValue(1.0)
-        self.text_check = QCheckBox("Layer text")
         form = QFormLayout(self)
         form.addRow("Borehole layer", self.layer_combo)
         form.addRow("Borehole id field", self.id_combo)
@@ -204,14 +175,8 @@ class BoreholeGroup(QGroupBox):
         form.addRow("Intervals: bottom depth field", self.bottom_combo)
         form.addRow("Intervals: text field", self.lithology_combo)
         form.addRow("", self.style_button)
-        section = QHBoxLayout()
-        section.addWidget(QLabel("Column"))
-        section.addWidget(self.column_spin)
-        section.addWidget(QLabel("Opacity"))
-        section.addWidget(self.opacity_spin)
-        section.addWidget(self.text_check)
-        section.addStretch(1)
-        form.addRow("On the section", section)
+        # how the columns look (width, opacity, layer text, curves) is set in the borehole
+        # viewer, for the viewer and the section alike; kept unchanged here
         self.curves_box = QVBoxLayout()
         form.addRow(self.curves_box)
         add_curves = QPushButton("Add curve table")
@@ -257,11 +222,10 @@ class BoreholeGroup(QGroupBox):
         self.total_depth_combo.setCurrentIndex(
             max(0, self.total_depth_combo.findData(field_name)))
 
-    def add_curve_table(self, setting: CurveTableSetting | None = None,
-                        keys=()) -> CurveTableEditor:
+    def add_curve_table(self, setting: CurveTableSetting | None = None) -> CurveTableEditor:
         editor = CurveTableEditor(self.project, self.vector_layers, self._remove_curve_table)
         if setting is not None:
-            editor.load(setting, keys)
+            editor.load(setting)
         self.curve_editors.append(editor)
         self.curves_box.addWidget(editor)
         return editor
@@ -281,11 +245,8 @@ class BoreholeGroup(QGroupBox):
         self.set_log_layer(setting.log_layer_id)
         self._refill_borehole(setting)
         self._refill_log(setting)
-        self.column_spin.setValue(int(setting.column_px))
-        self.opacity_spin.setValue(float(setting.opacity))
-        self.text_check.setChecked(bool(setting.layer_text))
         for table in setting.curve_tables:
-            self.add_curve_table(table, setting.section_curves)
+            self.add_curve_table(table)
 
     def setting(self) -> BoreholeSetting | None:
         layer_id = self.layer_combo.currentData() or ""
@@ -297,6 +258,9 @@ class BoreholeGroup(QGroupBox):
         keep_log = old is not None and old.log_layer_id == log_id \
             and self._layer(self.log_combo) is None
         tables = [t for t in (e.setting() for e in self.curve_editors) if t is not None]
+        # the look comes from the viewer: kept as saved, minus curves no longer set up
+        kept = {curve_key(t.layer_id, c.field) for t in tables for c in t.curves}
+        look = old if old is not None else BoreholeSetting("", "")
         return BoreholeSetting(
             layer_id, old.id_field if keep else field_of(self.id_combo),
             old.elevation_field if keep else field_of(self.elevation_combo), log_id,
@@ -306,9 +270,9 @@ class BoreholeGroup(QGroupBox):
             old.lithology_field if keep_log else field_of(self.lithology_combo),
             total_depth_field=old.total_depth_field if keep
             else field_of(self.total_depth_combo),
-            curve_tables=tables, column_px=self.column_spin.value(),
-            opacity=round(self.opacity_spin.value(), 2), layer_text=self.text_check.isChecked(),
-            section_curves=[k for e in self.curve_editors for k in e.section_keys()])
+            curve_tables=tables, column_px=look.column_px, opacity=look.opacity,
+            layer_text=look.layer_text,
+            section_curves=[k for k in look.section_curves if k in kept])
 
     def missing_count(self) -> int:
         return sum(1 for c in [self.layer_combo, self.log_combo]
