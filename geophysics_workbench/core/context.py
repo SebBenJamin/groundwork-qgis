@@ -40,6 +40,13 @@ class LogInterval:
     def lithology(self) -> str:        # name before 0.5
         return self.text
 
+    def __deepcopy__(self, memo) -> "LogInterval":
+        """The section snapshot deep-copies its context; QGIS objects cannot be pickled, so
+        the symbol is cloned (``QgsSymbol.clone``) and the feature copied."""
+        return LogInterval(self.top, self.bottom, self.text,
+                           None if self.symbol is None else self.symbol.clone(),
+                           None if self.feature is None else type(self.feature)(self.feature))
+
 
 @dataclass
 class Curve:

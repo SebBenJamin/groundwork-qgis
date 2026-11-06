@@ -318,3 +318,28 @@ def test_plugin_closes_gatherer_on_store_change(qgis_app, fake_iface, store_with
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
         qgis_app.processEvents()
     assert closed == [first, second] and plugin.gatherer is None
+
+
+def test_snapshot_copies_styled_intervals_and_curves(store_with_model, qgis_app):
+    """0.5: intervals carry their QGIS symbol and feature; the snapshot (a deep copy for the
+    generator thread) must clone them, not fail (an empty section in QGIS)."""
+    from qgis.core import QgsFeature, QgsFillSymbol
+    from qgis.PyQt.QtGui import QColor
+
+    from geophysics_workbench.core.context import (ContextItems, Curve, LogInterval,
+                                                   ProjectedPoint)
+    from geophysics_workbench.section.data import SectionDataProvider
+    st, p, _ = store_with_model
+    sym = QgsFillSymbol.createSimple({})
+    sym.setColor(QColor(10, 200, 30))
+    iv = LogInterval(0.0, 2.0, "sand", sym, QgsFeature())
+    curve = Curve("t:gr", "gr", "API", np.array([0.0, 1.0]), np.array([40.0, 50.0]))
+    bh = ProjectedPoint(20.0, 1.0, "B1", "borehole", 100.0, [iv], entry=0, curves=[curve])
+    prov = SectionDataProvider(st)
+    prov.context_source = lambda profile: ContextItems(points=[bh])
+    snap = prov.snapshot(p.id)
+    copied = snap.context.points[0].log[0]
+    assert copied.symbol is not sym and copied.symbol.color() == QColor(10, 200, 30)
+    assert copied.text == "sand" and isinstance(copied.feature, QgsFeature)
+    np.testing.assert_array_equal(snap.context.points[0].curves[0].values, [40.0, 50.0])
+    assert prov.snapshot(p.id, reverse=True).context.points[0].log[0].symbol is not None
