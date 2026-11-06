@@ -31,7 +31,24 @@ class Crossing:
 class LogInterval:
     top: float         # depths below the borehole top, metres
     bottom: float
-    lithology: str
+    text: str          # the interval table's text field (shown as layer text)
+    #: QgsFillSymbol clone and the QgsFeature that drives it (resolved on the main thread)
+    symbol: object = None
+    feature: object = None
+
+    @property
+    def lithology(self) -> str:        # name before 0.5
+        return self.text
+
+
+@dataclass
+class Curve:
+    """One log curve of a borehole: samples sorted by depth (m below the collar); NULL = nan."""
+    key: str           # curve_key(table layer id, field)
+    name: str
+    unit: str
+    depth: np.ndarray
+    values: np.ndarray
 
 
 @dataclass
@@ -40,9 +57,25 @@ class ProjectedPoint:
     offset: float      # signed, + = left of the profile
     label: str
     kind: str          # "point" or "borehole"
-    z_top: float | None = None
+    z_top: float | None = None    # boreholes: elevation field, else DEM (see z_source)
     log: list[LogInterval] = field(default_factory=list)
     depth: float | None = None    # plain points: stick depth below the surface (m)
+    entry: int = -1               # boreholes: index into ContextSettings.boreholes
+    z_source: str = ""            # "field", "dem" or "" (then the drawn surface is used)
+    z_dem: float | None = None    # DEM at the borehole, sampled even when the field is set
+    total_depth: float | None = None
+    curves: list[Curve] = field(default_factory=list)
+    flagged: bool = False         # elevation field and DEM differ by more than the tolerance
+
+
+def collar_height(field_z: float | None, dem_z: float | None,
+                  surface_z: float | None) -> tuple[float | None, str]:
+    """A borehole's top: the elevation field, else the DEM, else the section's drawn surface.
+    The second value says which one ("field", "dem", "surface"; "" when none)."""
+    for value, source in ((field_z, "field"), (dem_z, "dem"), (surface_z, "surface")):
+        if value is not None and np.isfinite(value):
+            return float(value), source
+    return None, ""
 
 
 @dataclass

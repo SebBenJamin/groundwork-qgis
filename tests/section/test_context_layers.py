@@ -692,3 +692,111 @@ def test_restyling_the_band_layer_redraws(project, profile, qgis_app):
         assert calls == [1]
     finally:
         g.close()
+
+
+def test_two_borehole_entries_both_gathered(project, profile):
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    a = _layer(project, "Point", "A", "bid:string")
+    _add(a, "POINT(20 1)", ["A1"])
+    b = _layer(project, "Point", "B", "name:string")
+    _add(b, "POINT(60 -2)", ["B1"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(a.id(), "bid"),
+                                                      BoreholeSetting(b.id(), "name")]))
+    items = g.items_for(profile)
+    g.close()
+    assert sorted((p.label, p.entry) for p in items.points) == [("A1", 0), ("B1", 1)]
+
+
+def test_dem_sampled_even_with_elevation_field_and_flag_set(project, profile, tmp_path):
+    from qgis.core import QgsRasterLayer
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    arr = _write_dem(tmp_path / "dem.tif")
+    dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
+    project.addMapLayer(dem)
+    bh = _layer(project, "Point", "BH", "bid:string&field=elev:double")
+    _add(bh, "POINT(20 1)", ["B1", float(arr[0, 20]) + 2.0])      # 2 m above the DEM
+    _add(bh, "POINT(30 1)", ["B2", float(arr[0, 30]) + 0.5])      # within tolerance
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid", "elev")],
+                                           dem_layer_id=dem.id(), dem_tolerance=1.0))
+    items = g.items_for(profile)
+    g.close()
+    p1, p2 = sorted(items.points, key=lambda p: p.s)
+    assert p1.z_source == "field" and p1.z_dem == approx(float(arr[0, 20]), abs=1e-4)
+    assert p1.flagged and not p2.flagged
+
+
+def test_dem_source_recorded(project, profile, tmp_path):
+    from qgis.core import QgsRasterLayer
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    _write_dem(tmp_path / "dem.tif")
+    dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
+    project.addMapLayer(dem)
+    bh = _layer(project, "Point", "BH", "bid:string")
+    _add(bh, "POINT(20 1)", ["B1"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid")],
+                                           dem_layer_id=dem.id()))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert p.z_source == "dem" and not p.flagged
+
+
+def test_total_depth_without_interval_table(project, profile):
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    bh = _layer(project, "Point", "BH", "bid:string&field=td:double")
+    _add(bh, "POINT(20 1)", ["B1", 12.0])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", total_depth_field="td")]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert p.total_depth == approx(12.0) and p.log == []
+
+
+def test_curves_read_sorted_with_nan_gaps(project, profile):
+    from geophysics_workbench.core.context_settings import (BoreholeSetting, ContextSettings,
+                                                            CurveField, CurveTableSetting)
+    bh = _layer(project, "Point", "BH", "bid:string")
+    _add(bh, "POINT(20 1)", ["B1"])
+    cv = _layer(project, "NoGeometry", "Curves", "bid:string&field=d:double&field=gr:double")
+    _add(cv, None, ["B1", 2.0, 50.0])
+    _add(cv, None, ["B1", 1.0, 40.0])
+    _add(cv, None, ["B1", 1.5, None])
+    _add(cv, None, ["OTHER", 1.0, 99.0])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", curve_tables=[CurveTableSetting(cv.id(), "bid", "d",
+                                                        [CurveField("gr", "API")])])]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert len(p.curves) == 1
+    c = p.curves[0]
+    assert (c.key, c.name, c.unit) == (f"{cv.id()}:gr", "gr", "API")
+    np.testing.assert_array_equal(c.depth, [1.0, 1.5, 2.0])
+    assert c.values[0] == 40.0 and np.isnan(c.values[1]) and c.values[2] == 50.0
+
+
+def test_ids_match_as_stripped_text(project, profile):
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    bh = _layer(project, "Point", "BH", "bid:integer")
+    _add(bh, "POINT(20 1)", [7])
+    log = _layer(project, "NoGeometry", "Log",
+                 "bid:string&field=top:double&field=bot:double&field=lith:string")
+    _add(log, None, [" 7 ", 0.0, 2.0, "sand"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert [(i.top, i.bottom, i.text) for i in p.log] == [(0.0, 2.0, "sand")]
+
+
+def test_interval_top_bottom_swapped_and_null_rows_skipped(project, profile):
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    bh = _layer(project, "Point", "BH", "bid:string")
+    _add(bh, "POINT(20 1)", ["B1"])
+    log = _layer(project, "NoGeometry", "Log",
+                 "bid:string&field=top:double&field=bot:double&field=lith:string")
+    _add(log, None, ["B1", 3.0, 1.0, "clay"])
+    _add(log, None, ["B1", None, 2.0, "x"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert [(i.top, i.bottom, i.text) for i in p.log] == [(1.0, 3.0, "clay")]

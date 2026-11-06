@@ -17,8 +17,10 @@ from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QTimer
 
 from ..core.lithology import label_colour
-from ..core.context import (BandSegment, ContextItems, Crossing, LogInterval, ProjectedPoint,
-                            line_crossings, polygon_intervals, project_points)
+from ..core.context import (BandSegment, ContextItems, Crossing, Curve, LogInterval,
+                            ProjectedPoint, collar_height, line_crossings, polygon_intervals,
+                            project_points)
+from ..core.context_settings import curve_key
 from ..core.model import Profile
 from ..ui.context_dialog import read_settings
 from .crossing_lines import active_line_settings, line_colour
@@ -65,6 +67,19 @@ def _depth(value) -> float | None:
     """A usable stick depth: a positive finite number, else ``None`` (NULL, text, <= 0)."""
     out = None if QgsVariantUtils.isNull(value) else _number(value)
     return out if out is not None and out > 0 else None
+
+
+def _value(value) -> float:
+    """A curve sample: a finite number, else nan (NULL, text)."""
+    out = None if QgsVariantUtils.isNull(value) else _number(value)
+    return np.nan if out is None else out
+
+
+def _id_filter(field: str, bid: str) -> str:
+    """Rows whose id equals ``bid`` as stripped text, whatever the field's type (7 vs " 7 ").
+    The caller re-checks with ``_text``, so the match is exact either way."""
+    return (f"trim(to_string({QgsExpression.quotedColumnRef(field)})) = "
+            f"{QgsExpression.quotedString(bid)}")
 
 
 class _Skip(Exception):
@@ -120,9 +135,9 @@ class ContextGatherer:
         for s in settings.point_layers:
             items.points += self._try(s.layer_id, "point layer", lambda: self._points(
                 s, xy, box, settings.buffer)) or []
-        for b in settings.boreholes:
+        for index, b in enumerate(settings.boreholes):
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
-                b, xy, box, settings.buffer, dem_layer)) or []
+                b, xy, box, settings.buffer, dem_layer, index, settings.dem_tolerance)) or []
         if settings.band is not None:
             b = settings.band
             items.band = self._try(b.layer_id, "geology layer", lambda: self._band(
@@ -335,22 +350,64 @@ class ContextGatherer:
             out.append((feature, (p.x(), p.y())))
         return out
 
-    def _boreholes(self, b, xy, box, buffer, dem_layer) -> list[ProjectedPoint]:
-        layer = self._vector(b.layer_id, "point", (b.id_field, b.elevation_field))
-        found = self._point_features(layer, box, (b.id_field, b.elevation_field))
+    def _boreholes(self, b, xy, box, buffer, dem_layer, entry: int = -1,
+                   tolerance: float = 1.0) -> list[ProjectedPoint]:
+        wanted = tuple(f for f in (b.id_field, b.elevation_field, b.total_depth_field) if f)
+        layer = self._vector(b.layer_id, "point", wanted)
+        found = self._point_features(layer, box, wanted)
         out = []
         for (feature, (x, y)), (s, off) in _project(xy, found, buffer):
             bid = _text(feature[b.id_field])
-            z_top = _number(feature[b.elevation_field]) if b.elevation_field else None
-            if z_top is None and dem_layer is not None:
+            field_z = _number(feature[b.elevation_field]) if b.elevation_field else None
+            dem_z = None
+            if dem_layer is not None:
                 try:
-                    z_top = sample_point(dem_layer, x, y, self._crs_authid, self._project)
+                    dem_z = sample_point(dem_layer, x, y, self._crs_authid, self._project)
                 except Exception as exc:
                     self._warn(b.layer_id, f"DEM sample at borehole failed: "
                                            f"{type(exc).__name__}: {exc}")
+            dem_z = dem_z if dem_z is not None and np.isfinite(dem_z) else None
+            z_top, source = collar_height(field_z, dem_z, None)
             log = self._log(b, bid) if bid else []
-            out.append(ProjectedPoint(s, off, bid or layer.name(), "borehole", z_top, log))
+            curves = [c for t in b.curve_tables for c in self._curves(t, bid)] if bid else []
+            total = _depth(feature[b.total_depth_field]) if b.total_depth_field else None
+            flagged = (source == "field" and dem_z is not None
+                       and abs(z_top - dem_z) > tolerance)
+            out.append(ProjectedPoint(s, off, bid or layer.name(), "borehole", z_top, log,
+                                      entry=entry, z_source=source, z_dem=dem_z,
+                                      total_depth=total, curves=curves, flagged=flagged))
         return out
+
+    def _curves(self, t, bid: str) -> list[Curve]:
+        """The curves of one curve table for borehole ``bid``, sorted by depth."""
+        if not (t.layer_id and t.id_field and t.depth_field and t.curves):
+            return []
+        names = [c.field for c in t.curves]
+        fields = (t.id_field, t.depth_field, *names)
+        try:
+            layer = self._vector(t.layer_id, None, fields)
+            request = QgsFeatureRequest().setFilterExpression(_id_filter(t.id_field, bid))
+            request.setSubsetOfAttributes(list(fields), layer.fields())
+            rows = []
+            for f in layer.getFeatures(request):
+                if _text(f[t.id_field]) != bid:
+                    continue
+                d = _number(f[t.depth_field])
+                if d is not None:
+                    rows.append((d, [_value(f[n]) for n in names]))
+        except _Skip as exc:
+            self._warn(t.layer_id, f"curve table skipped: {exc}")
+            return []
+        except Exception as exc:
+            self._warn(t.layer_id, f"curve table skipped: {type(exc).__name__}: {exc}")
+            return []
+        if not rows:
+            return []
+        rows.sort(key=lambda r: r[0])
+        depth = np.array([r[0] for r in rows], float)
+        return [Curve(curve_key(t.layer_id, c.field), c.field, c.unit, depth,
+                      np.array([r[1][i] for r in rows], float))
+                for i, c in enumerate(t.curves)]
 
     def _log(self, b, bid: str) -> list[LogInterval]:
         if not b.log_layer_id:
@@ -358,14 +415,16 @@ class ContextGatherer:
         fields = (b.log_id_field, b.top_field, b.bottom_field, b.lithology_field)
         try:
             layer = self._vector(b.log_layer_id, None, fields)
-            request = QgsFeatureRequest().setFilterExpression(
-                QgsExpression.createFieldEqualityExpression(b.log_id_field, bid))
+            request = QgsFeatureRequest().setFilterExpression(_id_filter(b.log_id_field, bid))
             request.setSubsetOfAttributes([f for f in fields if f], layer.fields())
             rows = []
             for f in layer.getFeatures(request):
+                if _text(f[b.log_id_field]) != bid:
+                    continue
                 top, bottom = _number(f[b.top_field]), _number(f[b.bottom_field])
                 if top is not None and bottom is not None:
-                    rows.append(LogInterval(top, bottom, _text(f[b.lithology_field])
+                    rows.append(LogInterval(min(top, bottom), max(top, bottom),
+                                            _text(f[b.lithology_field])
                                             if b.lithology_field else ""))
         except _Skip as exc:
             self._warn(b.log_layer_id, f"log table skipped: {exc}")
