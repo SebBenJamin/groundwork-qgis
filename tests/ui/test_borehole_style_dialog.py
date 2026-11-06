@@ -120,3 +120,21 @@ def test_editor_is_embedded_and_visible(project, logs, qgis_app):
     qgis_app.processEvents()
     assert not dlg.editor.isWindow() and dlg.editor.isVisible()
     dlg.close()
+
+
+def test_without_saved_style_the_editor_starts_with_the_drawn_look(project, logs, qgis_app):
+    """Nothing saved yet: the editor opens with what the section shows now (one category per
+    interval text, in its neutral colour), not QGIS's default single symbol. Nothing is
+    saved until Apply/OK."""
+    from geophysics_workbench.core.lithology import label_colour
+    from geophysics_workbench.section.borehole_style import load_renderer
+    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    dlg = BoreholeStyleDialog(project, _entry(logs), [], lambda: None)
+    r = dlg.copy.renderer()
+    assert r.type() == "categorizedSymbol" and r.classAttribute() == "lith"
+    cats = {c.value(): c.symbol().color() for c in r.categories()}
+    assert set(cats) == {"sand", "clay", "peat"}
+    c = cats["clay"]
+    assert (c.red(), c.green(), c.blue()) == label_colour("clay")
+    assert load_renderer(project, logs.id()) is None
+    dlg.close()

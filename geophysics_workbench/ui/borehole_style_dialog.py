@@ -53,6 +53,20 @@ def style_copy(log_layer: QgsVectorLayer, ids: list[str] | None,
     return copy
 
 
+def drawn_look(copy: QgsVectorLayer, text_field: str):
+    """What the section draws without a saved style, as a QGIS renderer: one category per
+    interval text in its neutral colour (``default_symbol``). Only the editor's starting
+    point; nothing is saved until Apply/OK."""
+    from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory
+
+    from ..section.borehole_style import default_symbol
+    index = copy.fields().indexOf(text_field)
+    values = sorted({str(v) for v in copy.uniqueValues(index) if v not in (None, "")}
+                    if index >= 0 else set(), key=str.lower)
+    return QgsCategorizedSymbolRenderer(text_field, [
+        QgsRendererCategory(v, default_symbol(v), v) for v in values])
+
+
 class BoreholeStyleDialog(QDialog):
     def __init__(self, project, entry, profile_ids: list[str], on_saved: Callable[[], None],
                  parent=None, profile_name: str = ""):
@@ -67,6 +81,8 @@ class BoreholeStyleDialog(QDialog):
         stored = load_renderer(project, entry.log_layer_id)
         if stored is not None:
             self.copy.setRenderer(stored)
+        elif entry.lithology_field:
+            self.copy.setRenderer(drawn_look(self.copy, entry.lithology_field))
         self.setWindowTitle(f"Borehole style – {self.log_layer.name()}")
         layout = QVBoxLayout(self)
         self.note = QLabel(f"Classes from the boreholes of {profile_name or 'this profile'} "
