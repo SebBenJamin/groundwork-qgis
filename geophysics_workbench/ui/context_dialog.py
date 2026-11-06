@@ -172,7 +172,8 @@ class ContextDialog(QDialog):
             if item.layer_id in self.point_rows:
                 self.point_rows[item.layer_id].load(item.label_field, item.depth_field)
         self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
-        self.borehole.load(s.borehole)
+        self.borehole.load(s.boreholes[0] if s.boreholes else None)
+        self._other_boreholes = list(s.boreholes[1:])   # kept until the entry list (0.5)
         self.loaded_band = s.band
         if s.band is not None:
             keep_missing(self.band_combo, self.project, s.band.layer_id)
@@ -199,7 +200,8 @@ class ContextDialog(QDialog):
             point_layers=[PointLayerSetting(r.layer_id, field_of(r.label), field_of(r.depth))
                           for r in self.point_rows.values() if r.check.isChecked()]
             + list(self.stale_points),
-            borehole=self.borehole.setting(),
+            boreholes=[b for b in [self.borehole.setting()] if b is not None]
+            + list(getattr(self, "_other_boreholes", [])),
             band=BandSetting(band_id, band_label) if band_id else None,
             dem_layer_id=self.dem_combo.currentData() or "",
             buffer=self.buffer_spin.value(), near_miss=self.near_miss_spin.value(),

@@ -120,8 +120,7 @@ class ContextGatherer:
         for s in settings.point_layers:
             items.points += self._try(s.layer_id, "point layer", lambda: self._points(
                 s, xy, box, settings.buffer)) or []
-        if settings.borehole is not None:
-            b = settings.borehole
+        for b in settings.boreholes:
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
                 b, xy, box, settings.buffer, dem_layer)) or []
         if settings.band is not None:
@@ -430,8 +429,8 @@ def _project(xy, found, buffer):
 
 def _layer_ids(settings, line_ids=()) -> list[str]:
     ids = list(line_ids) + [s.layer_id for s in settings.point_layers]
-    if settings.borehole is not None:
-        ids += [settings.borehole.layer_id, settings.borehole.log_layer_id]
+    for b in settings.boreholes:
+        ids += [b.layer_id, b.log_layer_id] + [c.layer_id for c in b.curve_tables]
     if settings.band is not None:
         ids.append(settings.band.layer_id)
     ids.append(settings.dem_layer_id)

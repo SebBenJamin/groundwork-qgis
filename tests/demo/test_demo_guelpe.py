@@ -47,8 +47,8 @@ def test_guelpe_settings_reference_project_layers(qgis_app):
     prj = _project()
     s = read_settings(prj)
     layer = prj.mapLayer
-    assert layer(s.borehole.layer_id).name().startswith("Cores")
-    assert layer(s.borehole.log_layer_id).name() == "Core logs"
+    assert layer(s.boreholes[0].layer_id).name().startswith("Cores")
+    assert layer(s.boreholes[0].log_layer_id).name() == "Core logs"
     assert s.band is None or "Geology" in layer(s.band.layer_id).name()
     assert layer(s.dem_layer_id).name() == "DGM1 (LGB)"
     assert any(ls.checked for ls in s.line_layers)

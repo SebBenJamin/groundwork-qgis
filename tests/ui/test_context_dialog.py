@@ -49,7 +49,7 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     assert [s.layer_id for s in got.point_layers] == [pts.id()]
     assert got.band.layer_id == poly.id() and got.band.label_field == "unit"
     assert got.dem_layer_id == dem.id()
-    assert got.borehole.layer_id == pts.id() and got.borehole.log_layer_id == table.id()
+    assert got.boreholes[0].layer_id == pts.id() and got.boreholes[0].log_layer_id == table.id()
     assert got.buffer == 30.0 and got.near_miss == 10.0 and got.dem_tolerance == 1.0
     assert dlg.settings() == got
 
@@ -223,8 +223,8 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
 
     prj = QgsProject()
     saved = ContextSettings(line_layers=[LineLayerSetting("gone_line", "name", checked=True)],
-                            borehole=BoreholeSetting("gone_bh", "id", "z", "gone_log", "hid",
-                                                     "t", "b", "lith"),
+                            boreholes=[BoreholeSetting("gone_bh", "id", "z", "gone_log", "hid",
+                                                      "t", "b", "lith")],
                             band=BandSetting("gone_band", "unit"), dem_layer_id="gone_dem")
     write_settings(prj, saved)
     dlg = ContextDialog(fake_iface, prj)
@@ -237,7 +237,7 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     dlg.accept()
     got = read_settings(prj)
     assert got.dem_layer_id == ""
-    assert got.line_layers == saved.line_layers and got.borehole == saved.borehole
+    assert got.line_layers == saved.line_layers and got.boreholes == saved.boreholes
     assert got.band == saved.band
 
 

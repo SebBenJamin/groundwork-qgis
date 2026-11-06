@@ -289,8 +289,8 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         write_settings(project, ContextSettings(
             line_layers=[LineLayerSetting(water.id(), "name", checked=True)],
             point_layers=[PointLayerSetting(bpk.id(), "Bohrungsname", "Teufe_in_m")],
-            borehole=BoreholeSetting(cores.id(), "id", "elevation", logs.id(), "core_id",
-                                     "top", "bottom", "lithology"),
+            boreholes=[BoreholeSetting(cores.id(), "id", "elevation", logs.id(), "core_id",
+                                       "top", "bottom", "lithology")],
             band=BandSetting(geology.id(), geology_field) if geology_field else None,
             dem_layer_id=dem.id(), buffer=5.0, near_miss=10.0, dem_tolerance=0.5))
         store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top

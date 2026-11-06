@@ -263,7 +263,7 @@ def test_project_has_context_settings_and_relative_paths(qgis_app):
         (by_name["Powerline (OSM)"], "voltage", True)]
     assert [(x.layer_id, x.label_field) for x in s.point_layers] == [
         (by_name["Pylons (from OSM)"], "name")]
-    b = s.borehole
+    b = s.boreholes[0]
     assert (b.layer_id, b.id_field, b.elevation_field) == (by_name["Boreholes"], "id",
                                                            "elevation")
     assert (b.log_layer_id, b.log_id_field, b.top_field, b.bottom_field, b.lithology_field) == (

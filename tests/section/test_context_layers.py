@@ -207,8 +207,8 @@ def test_borehole_with_log_table(project, profile):
     _add(log, None, ["B1", 0.0, 4.0, "sand"])
     _add(log, None, ["B1", 9.0, 12.0, "gravel"])
     _add(log, None, ["OTHER", 0.0, 3.0, "peat"])
-    g = _gatherer(project, ContextSettings(borehole=BoreholeSetting(
-        bh.id(), "bid", "elev", log.id(), "bid", "top", "bot", "lith")))
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "elev", log.id(), "bid", "top", "bot", "lith")]))
     items = g.items_for(profile)
     g.close()
     assert len(items.points) == 1
@@ -292,7 +292,7 @@ def test_borehole_without_elevation_uses_dem(project, profile, tmp_path):
     project.addMapLayer(dem)
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
-    g = _gatherer(project, ContextSettings(borehole=BoreholeSetting(bh.id(), "bid"),
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid")],
                                            dem_layer_id=dem.id()))
     items = g.items_for(profile)
     g.close()
@@ -304,7 +304,7 @@ def test_borehole_without_elevation_or_dem_has_no_z_top(project, profile):
     from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
-    g = _gatherer(project, ContextSettings(borehole=BoreholeSetting(bh.id(), "bid")))
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid")]))
     items = g.items_for(profile)
     g.close()
     assert items.points[0].z_top is None
@@ -521,7 +521,7 @@ def test_null_elevation_falls_back_to_dem(project, profile, tmp_path):
     project.addMapLayer(dem)
     bh = _layer(project, "Point", "BH", "bid:string&field=elev:double")
     _add(bh, "POINT(20 1)", ["B1", None])
-    g = _gatherer(project, ContextSettings(borehole=BoreholeSetting(bh.id(), "bid", "elev"),
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid", "elev")],
                                            dem_layer_id=dem.id()))
     items = g.items_for(profile)
     g.close()

@@ -162,7 +162,7 @@ def add_context(project, context_dir: Path, powerline) -> None:
     write_settings(project, ContextSettings(
         line_layers=[LineLayerSetting(powerline.id(), "voltage", checked=True)],
         point_layers=[PointLayerSetting(pylons.id(), "name")],
-        borehole=BoreholeSetting(boreholes.id(), "id", "elevation", logs.id(), "borehole_id",
-                                 "top", "bottom", "lithology"),
+        boreholes=[BoreholeSetting(boreholes.id(), "id", "elevation", logs.id(),
+                                   "borehole_id", "top", "bottom", "lithology")],
         band=BandSetting(geology.id(), "unit"),
         dem_layer_id=dem.id(), buffer=25.0, near_miss=10.0, dem_tolerance=1.0))

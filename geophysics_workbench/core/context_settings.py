@@ -10,7 +10,7 @@ import math
 import re
 from dataclasses import asdict, dataclass, field, fields
 
-VERSION = 2
+VERSION = 3
 MAX_DISTANCE = 1e6                                     # metres; the dialog's spin boxes allow the same
 
 
@@ -31,6 +31,31 @@ class PointLayerSetting:
 
 
 @dataclass
+class CurveField:
+    field: str
+    unit: str = ""
+
+
+@dataclass
+class CurveTableSetting:
+    """A table of log curves: one row per depth (metres below the collar), linked by id."""
+    layer_id: str
+    id_field: str = ""
+    depth_field: str = ""
+    curves: list = field(default_factory=list)          # [CurveField]
+
+
+def curve_key(layer_id: str, field_name: str) -> str:
+    """The key of one curve (a value field of a curve table) in styles and section options."""
+    return f"{layer_id}:{field_name}"
+
+
+#: allowed ranges of the section options; values outside fall back to the default
+COLUMN_PX_RANGE = (6, 80)
+OPACITY_RANGE = (0.1, 1.0)
+
+
+@dataclass
 class BoreholeSetting:
     layer_id: str
     id_field: str
@@ -39,7 +64,14 @@ class BoreholeSetting:
     log_id_field: str = ""
     top_field: str = ""
     bottom_field: str = ""
-    lithology_field: str = ""
+    lithology_field: str = ""           # the interval's text (shown as layer text)
+    total_depth_field: str = ""         # optional: depth of a borehole without intervals
+    curve_tables: list = field(default_factory=list)    # [CurveTableSetting]
+    # how the section draws this entry's columns
+    column_px: int = 16
+    opacity: float = 1.0
+    layer_text: bool = False
+    section_curves: list = field(default_factory=list)  # [curve_key]
 
 
 @dataclass
@@ -52,7 +84,7 @@ class BandSetting:
 class ContextSettings:
     line_layers: list = field(default_factory=list)
     point_layers: list = field(default_factory=list)
-    borehole: BoreholeSetting | None = None
+    boreholes: list = field(default_factory=list)       # [BoreholeSetting]
     band: BandSetting | None = None
     dem_layer_id: str = ""
     buffer: float = 25.0
@@ -61,6 +93,8 @@ class ContextSettings:
 
     def to_json(self) -> str:
         data = asdict(self)
+        # the first entry also under the 0.2-0.4 key, so an older plugin still shows it
+        data["borehole"] = data["boreholes"][0] if data["boreholes"] else None
         data["version"] = VERSION
         return json.dumps(data)
 
@@ -79,7 +113,11 @@ class ContextSettings:
             for item in out.line_layers:                # 0.2.0: every saved line row was ticked
                 item.checked = True
         out.point_layers = _items(data.get("point_layers"), PointLayerSetting)
-        out.borehole = _item(data.get("borehole"), BoreholeSetting)
+        if isinstance(data.get("boreholes"), list):
+            out.boreholes = _items(data["boreholes"], BoreholeSetting)
+        else:                                           # v2: one borehole layer
+            legacy = _item(data.get("borehole"), BoreholeSetting)
+            out.boreholes = [legacy] if legacy is not None else []
         out.band = _item(data.get("band"), BandSetting)
         dem = data.get("dem_layer_id")
         out.dem_layer_id = dem if isinstance(dem, str) else ""
@@ -107,6 +145,24 @@ def _item(data, kind):
             if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                 kwargs[f.name] = value
             continue
+        if f.name == "column_px":
+            if _number_in(value, COLUMN_PX_RANGE):
+                kwargs[f.name] = int(value)
+            continue
+        if f.name == "opacity":
+            if _number_in(value, OPACITY_RANGE):
+                kwargs[f.name] = float(value)
+            continue
+        if f.name == "curve_tables":
+            kwargs[f.name] = _items(value, CurveTableSetting)
+            continue
+        if f.name == "curves":
+            kwargs[f.name] = [c for c in (_curve(v) for v in (value or [])
+                                          if isinstance(value, list)) if c is not None]
+            continue
+        if f.name == "section_curves":
+            kwargs[f.name] = [v for v in value if isinstance(v, str)]                 if isinstance(value, list) else []
+            continue
         want = bool if f.type in ("bool", bool) else str
         if isinstance(value, want):
             kwargs[f.name] = value
@@ -116,6 +172,18 @@ def _item(data, kind):
         return kind(**kwargs)
     except TypeError:                                   # a required field is missing
         return None
+
+
+def _number_in(value, bounds) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and bounds[0] <= value <= bounds[1])
+
+
+def _curve(data) -> CurveField | None:
+    if not isinstance(data, dict) or not isinstance(data.get("field"), str)             or not data["field"]:
+        return None
+    unit = data.get("unit")
+    return CurveField(data["field"], unit if isinstance(unit, str) else "")
 
 
 def _items(data, kind) -> list:
