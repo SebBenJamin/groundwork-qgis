@@ -93,6 +93,16 @@ def draw_borehole(painter, rc, x_px: float, y_of_depth: Callable[[float], float]
     return area
 
 
+def draw_flag(painter, x: float, y: float, size: float) -> None:
+    """A small red triangle above a collar: the elevation field and the DEM disagree."""
+    painter.save()
+    painter.setPen(QPen(QColor(*FLAG_RGB), 1))
+    painter.setBrush(QBrush(QColor(*FLAG_RGB)))
+    painter.drawPolygon(QPolygonF([QPointF(x - size, y - 2 * size - 1),
+                                   QPointF(x + size, y - 2 * size - 1), QPointF(x, y - 1)]))
+    painter.restore()
+
+
 def _pen(rc, rgb, width_mm: float) -> QPen:
     pen = QPen(QColor(*rgb), max(1.0, rc.convertToPainterUnits(width_mm, _MM)))
     pen.setCosmetic(True)

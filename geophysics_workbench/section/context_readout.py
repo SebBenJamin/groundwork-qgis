@@ -33,7 +33,7 @@ def _collar(p, surface) -> tuple[float | None, str]:
                                                                       p.z_source or "field")
 
 
-def _curve_lines(p, depth: float) -> list[str]:
+def curve_lines(p, depth: float) -> list[str]:
     out = []
     for c in p.curves:
         v = value_at(c, depth)
@@ -121,7 +121,7 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
                 lines.append(f"Borehole {p.label} ({p.offset:+.0f} m): "
                              f"{iv.top:.1f}\u2013{iv.bottom:.1f} m {iv.text}")
                 break
-        lines += [f"Borehole {p.label} {line}" for line in _curve_lines(p, depth)]
+        lines += [f"Borehole {p.label} {line}" for line in curve_lines(p, depth)]
     for tie in items.ties:
         start = strip_start(items.points, tie.s, strip_width_s, half)
         col = strip_column(tie)                 # the drawn strip's column, or none drawn
@@ -163,6 +163,6 @@ def borehole_details(items: ContextItems, s: float, z: float, column_half_width_
                  f"Down to {bottom:.2f} m depth"]
         lines += [f"  {iv.top:.2f}–{iv.bottom:.2f} m  {iv.text}"
                   + ("  ← here" if iv.top <= depth <= iv.bottom else "") for iv in p.log]
-        lines += _curve_lines(p, depth)
+        lines += curve_lines(p, depth)
         return lines
     return []

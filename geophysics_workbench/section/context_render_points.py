@@ -7,7 +7,7 @@ from qgis.PyQt.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
 
 from ..core.borehole_curves import data_range
 from ..core.context import collar_height
-from .borehole_draw import FLAG_RGB, ColumnOptions, column_depth, draw_borehole
+from .borehole_draw import ColumnOptions, column_depth, draw_borehole, draw_flag
 from .context_render import line_pen, mm
 
 COLUMN_WIDTH = 2.5          # mm: boreholes without a Context layers entry (older callers)
@@ -53,14 +53,6 @@ def section_ranges(items) -> dict:
     return out
 
 
-def _flag(painter, x: float, y: float, size: float) -> None:
-    """A small red triangle above the collar: field height and DEM disagree."""
-    painter.setPen(QPen(QColor(*FLAG_RGB), 1))
-    painter.setBrush(QBrush(QColor(*FLAG_RGB)))
-    painter.drawPolygon(QPolygonF([QPointF(x - size, y - 2 * size - 1),
-                                   QPointF(x + size, y - 2 * size - 1), QPointF(x, y - 1)]))
-
-
 def draw_points(painter, rc, wt, items, surface) -> None:
     if not items.points or surface is None or len(surface[0]) < 1:
         return
@@ -76,7 +68,7 @@ def draw_points(painter, rc, wt, items, surface) -> None:
             draw_borehole(painter, rc, x, lambda d, s=p.s, z=z_top: wt.map(QPointF(s, z - d)).y(),
                           p, section_options(rc, items, p), items.curve_styles, ranges)
             if p.flagged:
-                _flag(painter, x, top.y(), mm(rc, FLAG_MM))
+                draw_flag(painter, x, top.y(), mm(rc, FLAG_MM))
         else:
             y = wt.map(QPointF(p.s, z_surf)).y()
             if p.depth:
