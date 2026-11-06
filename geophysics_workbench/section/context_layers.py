@@ -11,7 +11,7 @@ from typing import Callable
 
 import numpy as np
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
-                       QgsExpression, QgsFeatureRequest, QgsGeometry, QgsMapLayer,
+                       QgsExpression, QgsFeature, QgsFeatureRequest, QgsGeometry, QgsMapLayer,
                        QgsMessageLog, QgsProject, QgsRectangle, QgsVariantUtils)
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QTimer
@@ -412,12 +412,16 @@ class ContextGatherer:
     def _log(self, b, bid: str) -> list[LogInterval]:
         if not b.log_layer_id:
             return []
+        from .borehole_style import interval_symbols, load_renderer, used_attributes
         fields = (b.log_id_field, b.top_field, b.bottom_field, b.lithology_field)
         try:
             layer = self._vector(b.log_layer_id, None, fields)
+            renderer = load_renderer(self._project, b.log_layer_id)
+            styled = used_attributes(renderer, layer.fields()) & set(layer.fields().names())
             request = QgsFeatureRequest().setFilterExpression(_id_filter(b.log_id_field, bid))
-            request.setSubsetOfAttributes([f for f in fields if f], layer.fields())
-            rows = []
+            request.setSubsetOfAttributes(sorted({f for f in fields if f} | styled),
+                                          layer.fields())
+            rows, features = [], []
             for f in layer.getFeatures(request):
                 if _text(f[b.log_id_field]) != bid:
                     continue
@@ -426,6 +430,10 @@ class ContextGatherer:
                     rows.append(LogInterval(min(top, bottom), max(top, bottom),
                                             _text(f[b.lithology_field])
                                             if b.lithology_field else ""))
+                    features.append(QgsFeature(f))
+            for row, (symbol, feature) in zip(rows, interval_symbols(
+                    renderer, layer.fields(), features, [r.text for r in rows])):
+                row.symbol, row.feature = symbol, feature
         except _Skip as exc:
             self._warn(b.log_layer_id, f"log table skipped: {exc}")
             return []
