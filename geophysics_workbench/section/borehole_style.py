@@ -115,34 +115,84 @@ def broken_rules(renderer) -> list[str]:
     return out
 
 
-def interval_symbols(renderer, fields, features, texts) -> list[tuple]:
-    """(cloned fill symbol, feature) per feature; ``texts`` give the neutral fallback per
-    feature. A renderer that fails or gives no symbol falls back for that feature only."""
-    symbols = [None] * len(features)
-    broken = broken_rules(renderer)
-    if broken:
-        QgsMessageLog.logMessage(f"Borehole style has rules that do not parse ({broken[0]!r}); "
-                                 f"default colours used.", LOG_TAG, Qgis.MessageLevel.Warning)
-        renderer = None
-    if renderer is not None:
-        ctx = QgsRenderContext()
-        try:
-            r = renderer.clone()
-            r.startRender(ctx, fields)
-            try:
-                for i, f in enumerate(features):
-                    ctx.expressionContext().setFeature(f)
-                    found = r.symbolsForFeature(f, ctx)
-                    sym = found[0] if found else None
-                    if isinstance(sym, QgsFillSymbol) and r.willRenderFeature(f, ctx):
-                        symbols[i] = sym.clone()
-            finally:
-                r.stopRender(ctx)
-        except Exception as exc:                  # a broken style never breaks the column
-            QgsMessageLog.logMessage(f"Borehole style failed, default colours used: "
-                                     f"{type(exc).__name__}: {exc}", LOG_TAG,
-                                     Qgis.MessageLevel.Warning)
-            symbols = [None] * len(features)
-    return [(sym or default_symbol(text), f)
-            for sym, f, text in zip(symbols, features, texts)]
+class IntervalStyler:
+    """A stored style prepared once for one interval table: copied and started once, its
+    used fields known, and one symbol copy per class (intervals of the same class share it).
+    Use as a context manager around all boreholes of a gather. Any failure, or rules that
+    do not parse, give the neutral default colours (logged once)."""
 
+    def __init__(self, renderer, fields):
+        self.fields = fields
+        self.ctx = QgsRenderContext()
+        self.renderer = None
+        self.used: set[str] = set()
+        self._copies: dict[frozenset, object] = {}
+        self._defaults: dict[str, object] = {}
+        broken = broken_rules(renderer)
+        if broken:
+            _warn(f"Borehole style has rules that do not parse ({broken[0]!r}); "
+                  f"default colours used.")
+        elif renderer is not None:
+            self.renderer = renderer.clone()
+
+    def __enter__(self):
+        if self.renderer is not None:
+            try:
+                self.renderer.startRender(self.ctx, self.fields)
+                self.used = set(self.renderer.usedAttributes(self.ctx)) & set(
+                    self.fields.names())
+            except Exception as exc:
+                _warn(f"Borehole style failed, default colours used: "
+                      f"{type(exc).__name__}: {exc}")
+                self.renderer = None
+        return self
+
+    def __exit__(self, *_exc):
+        if self.renderer is not None:
+            try:
+                self.renderer.stopRender(self.ctx)
+            except Exception:
+                pass
+        return False
+
+    def _default(self, text: str):
+        if text not in self._defaults:
+            self._defaults[text] = default_symbol(text)
+        return self._defaults[text]
+
+    def symbols(self, features, texts) -> list[tuple]:
+        """(fill symbol, feature) per feature; shared copies per class and per text."""
+        out = []
+        for f, text in zip(features, texts):
+            sym = None
+            if self.renderer is not None:
+                try:
+                    self.ctx.expressionContext().setFeature(f)
+                    found = self.renderer.symbolsForFeature(f, self.ctx)
+                    cls = found[0] if found else None
+                    if isinstance(cls, QgsFillSymbol) and \
+                            self.renderer.willRenderFeature(f, self.ctx):
+                        # QGIS's own key for the class (stable; Python wrapper ids are not)
+                        key = frozenset(self.renderer.legendKeysForFeature(f, self.ctx))
+                        if not key:
+                            sym = cls.clone()
+                        else:
+                            if key not in self._copies:
+                                self._copies[key] = cls.clone()
+                            sym = self._copies[key]
+                except Exception as exc:          # a broken style never breaks the column
+                    _warn(f"Borehole style failed, default colours used: "
+                          f"{type(exc).__name__}: {exc}")
+                    self.renderer = None
+            out.append((sym or self._default(text), f))
+        return out
+
+
+def _warn(message: str) -> None:
+    QgsMessageLog.logMessage(message, LOG_TAG, Qgis.MessageLevel.Warning)
+
+
+def interval_symbols(renderer, fields, features, texts) -> list[tuple]:
+    """(fill symbol, feature) per feature, for one batch (``IntervalStyler`` for many)."""
+    with IntervalStyler(renderer, fields) as styler:
+        return styler.symbols(features, texts)

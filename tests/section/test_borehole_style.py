@@ -121,3 +121,45 @@ def test_gatherer_carries_views_and_curve_styles(project, profile):
     assert (v.column_px, v.opacity, v.layer_text, v.curve_keys) == (22, 0.5, True, ("t:gr",))
     assert items.curve_styles["t:gr"].colour == "#123456"
     assert items.mirrored(100.0).borehole_views == items.borehole_views
+
+
+def test_style_loaded_once_per_entry_and_shared_per_class(project, profile, monkeypatch):
+    """Performance: one load of the stored style per interval table and gather (not one per
+    borehole), and intervals of the same class share one symbol copy."""
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from geophysics_workbench.section import borehole_style
+    bh = _layer(project, "Point", "BH", "bid:string")
+    for i, x in enumerate((10, 30, 50, 70)):
+        _add(bh, f"POINT({x} 1)", [f"B{i}"])
+    log = _layer(project, "NoGeometry", "Log",
+                 "bid:string&field=top:double&field=bot:double&field=lith:string")
+    for i in range(4):
+        _add(log, None, [f"B{i}", 0.0, 1.0, "sand"])
+        _add(log, None, [f"B{i}", 1.0, 2.0, "Sand"])
+    borehole_style.save_renderer(project, log.id(), _categorized(field="lith", value="sand"))
+    loads = []
+    real = borehole_style.load_renderer
+    monkeypatch.setattr(borehole_style, "load_renderer",
+                        lambda *a: loads.append(1) or real(*a))
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
+    items = g.items_for(profile)
+    g.close()
+    assert len(loads) == 1
+    sands = [iv.symbol for p in items.points for iv in p.log if iv.text == "sand"]
+    assert len(sands) == 4 and all(s is sands[0] for s in sands)
+
+
+def test_snapshot_copy_clones_each_distinct_symbol_once(qgis_app):
+    import copy
+
+    from qgis.core import QgsFillSymbol
+
+    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+    sym = QgsFillSymbol.createSimple({})
+    pts = [ProjectedPoint(float(i), 0.0, f"B{i}", "borehole", 10.0,
+                          [LogInterval(0.0, 1.0, "sand", sym), LogInterval(1.0, 2.0, "sand", sym)])
+           for i in range(3)]
+    copied = copy.deepcopy(ContextItems(points=pts))
+    syms = [iv.symbol for p in copied.points for iv in p.log]
+    assert all(s is syms[0] for s in syms) and syms[0] is not sym

@@ -361,6 +361,26 @@ class ContextGatherer:
         wanted = tuple(f for f in (b.id_field, b.elevation_field, b.total_depth_field) if f)
         layer = self._vector(b.layer_id, "point", wanted)
         found = self._point_features(layer, box, wanted)
+        with self._styler(b) as styler:
+            return self._borehole_points(b, xy, found, buffer, dem_layer, entry, tolerance,
+                                         layer, styler)
+
+    def _styler(self, b):
+        """The entry's interval style, prepared once for all its boreholes in this gather."""
+        import contextlib
+
+        from . import borehole_style
+        if not b.log_layer_id:
+            return contextlib.nullcontext(None)
+        try:
+            log_layer = self._vector(b.log_layer_id, None, ())
+        except Exception:                           # reported by _log for each borehole
+            return contextlib.nullcontext(None)
+        return borehole_style.IntervalStyler(
+            borehole_style.load_renderer(self._project, b.log_layer_id), log_layer.fields())
+
+    def _borehole_points(self, b, xy, found, buffer, dem_layer, entry, tolerance, layer,
+                         styler) -> list[ProjectedPoint]:
         out = []
         for (feature, (x, y)), (s, off) in _project(xy, found, buffer):
             bid = _text(feature[b.id_field])
@@ -374,7 +394,7 @@ class ContextGatherer:
                                            f"{type(exc).__name__}: {exc}")
             dem_z = dem_z if dem_z is not None and np.isfinite(dem_z) else None
             z_top, source = collar_height(field_z, dem_z, None)
-            log = self._log(b, bid) if bid else []
+            log = self._log(b, bid, styler) if bid else []
             curves = [c for t in b.curve_tables for c in self._curves(t, bid)] if bid else []
             total = _depth(feature[b.total_depth_field]) if b.total_depth_field else None
             flagged = (source == "field" and dem_z is not None
@@ -415,15 +435,14 @@ class ContextGatherer:
                       np.array([r[1][i] for r in rows], float))
                 for i, c in enumerate(t.curves)]
 
-    def _log(self, b, bid: str) -> list[LogInterval]:
+    def _log(self, b, bid: str, styler=None) -> list[LogInterval]:
         if not b.log_layer_id:
             return []
-        from .borehole_style import interval_symbols, load_renderer, used_attributes
+        from .borehole_style import default_symbol
         fields = (b.log_id_field, b.top_field, b.bottom_field, b.lithology_field)
         try:
             layer = self._vector(b.log_layer_id, None, fields)
-            renderer = load_renderer(self._project, b.log_layer_id)
-            styled = used_attributes(renderer, layer.fields()) & set(layer.fields().names())
+            styled = styler.used if styler is not None else set()
             request = QgsFeatureRequest().setFilterExpression(_id_filter(b.log_id_field, bid))
             request.setSubsetOfAttributes(sorted({f for f in fields if f} | styled),
                                           layer.fields())
@@ -437,8 +456,9 @@ class ContextGatherer:
                                             _text(f[b.lithology_field])
                                             if b.lithology_field else ""))
                     features.append(QgsFeature(f))
-            for row, (symbol, feature) in zip(rows, interval_symbols(
-                    renderer, layer.fields(), features, [r.text for r in rows])):
+            pairs = (styler.symbols(features, [r.text for r in rows]) if styler is not None
+                     else [(default_symbol(r.text), f) for r, f in zip(rows, features)])
+            for row, (symbol, feature) in zip(rows, pairs):
                 row.symbol, row.feature = symbol, feature
         except _Skip as exc:
             self._warn(b.log_layer_id, f"log table skipped: {exc}")

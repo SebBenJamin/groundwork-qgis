@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
-from qgis.core import Qgis, QgsFeature
+from qgis.core import Qgis, QgsFeature, QgsFields
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPen, QPolygonF
 
@@ -55,9 +55,51 @@ def qcolor(text: str) -> QColor:
     return QColor(text)
 
 
+class SymbolPool:
+    """The interval symbols of one frame, each started once and drawn with directly (no
+    copy per interval: copying pattern symbols made every pan and zoom slow). The symbols
+    belong to the frame's own context items (the section's snapshot copies, or the viewer's
+    on the main thread), so nothing else draws with them meanwhile."""
+
+    def __init__(self, rc):
+        self.rc = rc
+        self.started = 0
+        self._symbols: dict[int, object] = {}      # id -> symbol (kept alive: ids stay unique)
+        self._defaults: dict[str, object] = {}
+
+    def get(self, symbol, fields=None):
+        key = id(symbol)
+        if key not in self._symbols:
+            symbol.startRender(self.rc, fields if fields is not None else QgsFields())
+            self._symbols[key] = symbol
+            self.started += 1
+        return symbol
+
+    def default(self, text: str):
+        if text not in self._defaults:
+            self._defaults[text] = default_symbol(text)
+        return self.get(self._defaults[text])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        for symbol in self._symbols.values():
+            try:
+                symbol.stopRender(self.rc)
+            except Exception:
+                pass
+        self._symbols.clear()
+        return False
+
+
 def draw_borehole(painter, rc, x_px: float, y_of_depth: Callable[[float], float], p,
-                  opts: ColumnOptions, styles: dict, ranges: dict) -> QRectF:
-    """Draw borehole ``p``; returns the drawn area (column, tracks, text) for hit tests."""
+                  opts: ColumnOptions, styles: dict, ranges: dict, pool=None) -> QRectF:
+    """Draw borehole ``p``; returns the drawn area (column, tracks, text) for hit tests.
+    ``pool``: the frame's ``SymbolPool`` (one is made for this borehole when not given)."""
+    if pool is None:
+        with SymbolPool(rc) as own:
+            return draw_borehole(painter, rc, x_px, y_of_depth, p, opts, styles, ranges, own)
     w = float(opts.width_px)
     y0, y1 = y_of_depth(0.0), y_of_depth(column_depth(p))
     col = QRectF(QPointF(x_px - w / 2, min(y0, y1)), QPointF(x_px + w / 2, max(y0, y1)))
@@ -66,7 +108,7 @@ def draw_borehole(painter, rc, x_px: float, y_of_depth: Callable[[float], float]
     try:
         painter.setOpacity(max(0.0, min(1.0, opts.opacity)))
         for iv in p.log:
-            _interval(painter, rc, col, y_of_depth, iv)
+            _interval(rc, col, y_of_depth, iv, pool)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(_pen(rc, OUTLINE_RGB, OUTLINE_MM))
         painter.drawRect(col)
@@ -109,19 +151,16 @@ def _pen(rc, rgb, width_mm: float) -> QPen:
     return pen
 
 
-def _interval(painter, rc, col: QRectF, y_of_depth, iv) -> None:
+def _interval(rc, col: QRectF, y_of_depth, iv, pool: SymbolPool) -> None:
     ya, yb = y_of_depth(iv.top), y_of_depth(iv.bottom)
     poly = QPolygonF([QPointF(col.left(), ya), QPointF(col.right(), ya),
                       QPointF(col.right(), yb), QPointF(col.left(), yb),
                       QPointF(col.left(), ya)])
-    sym = iv.symbol.clone() if iv.symbol is not None else default_symbol(iv.text)
     feature = iv.feature if iv.feature is not None else QgsFeature()
+    sym = pool.get(iv.symbol, feature.fields()) if iv.symbol is not None \
+        else pool.default(iv.text)
     rc.expressionContext().setFeature(feature)
-    sym.startRender(rc, feature.fields())
-    try:
-        sym.renderPolygon(poly, None, feature, rc)
-    finally:
-        sym.stopRender(rc)
+    sym.renderPolygon(poly, None, feature, rc)
 
 
 def _font(painter, rc) -> QFont:

@@ -7,7 +7,7 @@ from qgis.PyQt.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
 
 from ..core.borehole_curves import data_range
 from ..core.context import collar_height
-from .borehole_draw import ColumnOptions, column_depth, draw_borehole, draw_flag
+from .borehole_draw import ColumnOptions, SymbolPool, column_depth, draw_borehole, draw_flag
 from .context_render import line_pen, mm
 
 COLUMN_WIDTH = 2.5          # mm: boreholes without a Context layers entry (older callers)
@@ -59,6 +59,11 @@ def draw_points(painter, rc, wt, items, surface) -> None:
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     half = mm(rc, DIAMOND_HALF)
     ranges = section_ranges(items)
+    with SymbolPool(rc) as pool:
+        _draw_all(painter, rc, wt, items, surface, half, ranges, pool)
+
+
+def _draw_all(painter, rc, wt, items, surface, half, ranges, pool) -> None:
     for p in items.points:
         z_surf = float(np.interp(p.s, *surface))
         z_top = collar_height(p.z_top, None, z_surf)[0]
@@ -66,7 +71,7 @@ def draw_points(painter, rc, wt, items, surface) -> None:
         x = top.x()
         if p.kind == "borehole" and column_depth(p) > 0:
             draw_borehole(painter, rc, x, lambda d, s=p.s, z=z_top: wt.map(QPointF(s, z - d)).y(),
-                          p, section_options(rc, items, p), items.curve_styles, ranges)
+                          p, section_options(rc, items, p), items.curve_styles, ranges, pool)
             if p.flagged:
                 draw_flag(painter, x, top.y(), mm(rc, FLAG_MM))
         else:

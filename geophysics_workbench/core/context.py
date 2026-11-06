@@ -42,9 +42,15 @@ class LogInterval:
 
     def __deepcopy__(self, memo) -> "LogInterval":
         """The section snapshot deep-copies its context; QGIS objects cannot be pickled, so
-        the symbol is cloned (``QgsSymbol.clone``) and the feature copied."""
-        return LogInterval(self.top, self.bottom, self.text,
-                           None if self.symbol is None else self.symbol.clone(),
+        the symbol is cloned (``QgsSymbol.clone``), once per distinct symbol in the copy
+        (intervals of one class share it), and the feature copied."""
+        symbol = None
+        if self.symbol is not None:
+            key = id(self.symbol)
+            if key not in memo:
+                memo[key] = self.symbol.clone()
+            symbol = memo[key]
+        return LogInterval(self.top, self.bottom, self.text, symbol,
                            None if self.feature is None else type(self.feature)(self.feature))
 
 

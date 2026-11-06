@@ -24,7 +24,7 @@ from ..core.borehole_layout import (ViewTransform, column_depth, extent_z, fit, 
                                     vertical_exaggeration)
 from ..core.context import collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
-from .borehole_draw import ColumnOptions, draw_borehole, draw_flag
+from .borehole_draw import ColumnOptions, SymbolPool, draw_borehole, draw_flag
 
 SCOPE = "geophysics_workbench"
 OPTIONS_KEY = "borehole_viewer"
@@ -138,25 +138,27 @@ class BoreholeCanvas(QWidget):
         styles = v.items.curve_styles if v.items is not None else {}
         ranges = v.curve_ranges(keys)
         xs = self._x_layout(points)
-        for p, x in zip(points, xs):
-            z_top = self._z_top(p) if v.axis == "elevation" else 0.0
-            px = t.to_px(x, 0.0)[0]
-            if v.axis == "elevation":
-                y_of = (lambda zt: lambda d: t.to_px(0.0, zt - d)[1])(z_top)
-            else:
-                y_of = lambda d: t.to_px(0.0, -d)[1]
-            drawn = p if v.show_check["lithology"].isChecked() else replace(
-                p, log=[], total_depth=column_depth(p))
-            highlight = v.highlight is not None and (p.entry, p.label) == v.highlight
-            opts = ColumnOptions(width_px=COLUMN_PX, layer_text=v.show_check["text"].isChecked(),
-                                 ticks=v.show_check["ticks"].isChecked(), curve_keys=keys,
-                                 track_px=TRACK_PX, highlight=highlight)
-            area = draw_borehole(painter, rc, px, y_of, drawn, opts, styles, ranges)
-            col = QRectF(px - COLUMN_PX / 2, area.top(), COLUMN_PX, area.height())
-            self.column_rects.append((p, col))
-            if v.show_check["flags"].isChecked() and p.flagged:
-                draw_flag(painter, px, col.top(), 5.0)
-            self._labels(painter, p, px, col.top(), z_top)
+        with SymbolPool(rc) as pool:      # each interval symbol started once per frame
+            for p, x in zip(points, xs):
+                z_top = self._z_top(p) if v.axis == "elevation" else 0.0
+                px = t.to_px(x, 0.0)[0]
+                if v.axis == "elevation":
+                    y_of = (lambda zt: lambda d: t.to_px(0.0, zt - d)[1])(z_top)
+                else:
+                    y_of = lambda d: t.to_px(0.0, -d)[1]
+                drawn = p if v.show_check["lithology"].isChecked() else replace(
+                    p, log=[], total_depth=column_depth(p))
+                highlight = v.highlight is not None and (p.entry, p.label) == v.highlight
+                opts = ColumnOptions(width_px=COLUMN_PX, layer_text=v.show_check["text"].isChecked(),
+                                     ticks=v.show_check["ticks"].isChecked(), curve_keys=keys,
+                                     track_px=TRACK_PX, highlight=highlight)
+                area = draw_borehole(painter, rc, px, y_of, drawn, opts, styles, ranges,
+                                         pool)
+                col = QRectF(px - COLUMN_PX / 2, area.top(), COLUMN_PX, area.height())
+                self.column_rects.append((p, col))
+                if v.show_check["flags"].isChecked() and p.flagged:
+                    draw_flag(painter, px, col.top(), 5.0)
+                self._labels(painter, p, px, col.top(), z_top)
         self._axis(painter)
         if v.mode == "true":
             painter.setPen(QPen(QColor(*AXIS_RGB)))

@@ -96,3 +96,35 @@ def test_opacity_lightens_the_fill(qgis_app):
     from geophysics_workbench.section.borehole_draw import ColumnOptions
     img, _ = _draw(_bh([(0, 2, "a", (0, 0, 200))]), ColumnOptions(width_px=16, opacity=0.5))
     assert _close(img.pixel(100, 60), (127, 127, 227), tol=20)
+
+
+def test_symbol_pool_starts_each_symbol_once_without_copying(qgis_app):
+    """Performance: one frame starts each distinct interval symbol once and draws with it
+    directly (copying a pattern symbol per interval made panning slow)."""
+    from qgis.core import QgsRenderContext
+    from qgis.PyQt.QtGui import QImage, QPainter
+
+    from geophysics_workbench.section.borehole_draw import SymbolPool
+    from geophysics_workbench.section.borehole_style import default_symbol
+    img = QImage(10, 10, QImage.Format.Format_ARGB32)
+    painter = QPainter(img)
+    try:
+        rc = QgsRenderContext.fromQPainter(painter)
+        sym = default_symbol("sand")
+        with SymbolPool(rc) as pool:
+            assert pool.get(sym) is sym and pool.get(sym) is sym
+            assert pool.started == 1
+    finally:
+        painter.end()
+
+
+def test_frame_draws_many_shared_intervals_with_one_pool(qgis_app):
+    from geophysics_workbench.core.context import LogInterval
+    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from geophysics_workbench.section.borehole_style import default_symbol
+    p = _bh()
+    shared = default_symbol("sand")
+    p.log = [LogInterval(i * 0.1, i * 0.1 + 0.1, "sand", shared) for i in range(40)]
+    img, _ = _draw(p, ColumnOptions(width_px=16))
+    assert _close(img.pixel(100, 62), (shared.color().red(), shared.color().green(),
+                                       shared.color().blue()))
