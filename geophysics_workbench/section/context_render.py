@@ -256,7 +256,7 @@ def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> Non
     """Dashed tie lines, each with a strip of the other profile's column just right of
     the line, or in the nearest free slot beside a borehole column (``strip_start``)."""
     from .context_readout import strip_start
-    from .context_render_points import COLUMN_WIDTH
+    from .context_render_points import column_px
 
     if not items.ties or not z_range[0] < z_range[1]:
         return
@@ -271,7 +271,7 @@ def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> Non
         if col is None:
             continue
         start = strip_start(items.points, tie.s, width / px_per_m,
-                            mm(rc, COLUMN_WIDTH) / 2 / px_per_m)
+                            lambda q: column_px(rc, items, q) / 2 / px_per_m)
         x = wt.map(QPointF(start, z_range[1])).x()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(Qt.PenStyle.NoPen)
@@ -299,14 +299,16 @@ def context_z_values(items, topo) -> list[float]:
     if items is None:
         return []
     out: list[float] = []
+    from ..core.context import collar_height
+    from .borehole_draw import column_depth
     for p in items.points:
-        if not p.log:
+        depth = column_depth(p) if p.kind == "borehole" else 0.0
+        if depth <= 0:
             continue
-        top = p.z_top
-        if top is None and topo is not None and len(topo[0]):
-            top = float(np.interp(p.s, *topo))
+        surface = float(np.interp(p.s, *topo)) if topo is not None and len(topo[0]) else None
+        top = collar_height(p.z_top, None, surface)[0]
         if top is not None:
-            out.append(top - max(iv.bottom for iv in p.log))
+            out.append(top - depth)
     for tie in items.ties:
         col = tie_strip_column(tie)
         if col is not None and len(col.z_top):

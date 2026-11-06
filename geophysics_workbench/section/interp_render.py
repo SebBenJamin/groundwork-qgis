@@ -127,7 +127,8 @@ def _mark_colour(symbols, piece_id: str) -> QColor | None:
     return colour
 
 
-def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols) -> None:
+def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols,
+                        views=None) -> None:
     """A crossing profile's interpretation at the tie, over its strip (``strip_start``, as
     ``draw_ties``): polygons as bars, lines as ticks, points as diamonds, with letters."""
     from qgis.PyQt.QtCore import QRectF, Qt
@@ -135,7 +136,9 @@ def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols) -
 
     from .context_readout import strip_start
     from .context_render import TIE_STRIP_WIDTH, mm
-    from .context_render_points import COLUMN_WIDTH
+    from ..core.context import ContextItems
+    from .context_render_points import column_px
+    items = ContextItems(borehole_views=dict(views or {}))
 
     width = mm(rc, TIE_STRIP_WIDTH)
     px_per_m = abs(wt.map(QPointF(1.0, 0.0)).x() - wt.map(QPointF(0.0, 0.0)).x()) or 1.0
@@ -146,7 +149,8 @@ def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols) -
     font.setPixelSize(max(8, round(mm(rc, LETTER_SIZE_MM * 0.8))))
     painter.setFont(font)
     for s, marks in crossings:
-        start = strip_start(points, s, width / px_per_m, mm(rc, COLUMN_WIDTH) / 2 / px_per_m)
+        start = strip_start(points, s, width / px_per_m,
+                            lambda q: column_px(rc, items, q) / 2 / px_per_m)
         x0 = wt.map(QPointF(start, 0.0)).x()
         x1 = x0 + width
         for m in marks:

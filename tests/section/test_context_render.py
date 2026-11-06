@@ -138,13 +138,14 @@ def test_crossing_label_has_no_glyph(qgis_app):
 
 def test_borehole_column_colours_by_lithology(qgis_app):
     from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
-    from geophysics_workbench.core.lithology import lithology_colour
+    from geophysics_workbench.core.lithology import label_colour
 
     bh = ProjectedPoint(60.0, 12.0, "BK1", "borehole", 0.0,
                         [LogInterval(0.0, 1.0, "Ton"), LogInterval(1.0, 2.5, "Sand")])
     img = _img(_results(ContextItems(points=[bh])))
-    assert _close(img.pixel(_x(60.0), _y(-0.5)), lithology_colour("Ton"))
-    assert _close(img.pixel(_x(60.0), _y(-1.8)), lithology_colour("Sand"))
+    # unstyled intervals: a neutral colour per text, nothing matched from the words
+    assert _close(img.pixel(_x(60.0), _y(-0.5)), label_colour("Ton"))
+    assert _close(img.pixel(_x(60.0), _y(-1.8)), label_colour("Sand"))
     assert img.pixel(_x(48.0), _y(-0.5)) == 0xFFFFFFFF
 
 
@@ -240,11 +241,11 @@ def test_tie_strip_moves_off_a_borehole_column(qgis_app):
     column standing on the line (both sides blocked) sends it just past the column."""
     from geophysics_workbench.core.colors import ColorScale
     from geophysics_workbench.core.context import LogInterval, ProjectedPoint
-    from geophysics_workbench.core.lithology import lithology_colour
+    from geophysics_workbench.core.lithology import label_colour
 
     scale = ColorScale("Spectral_r", 1.0, 1000.0, True)
     blue = tuple(scale.rgba(10.0)[0][:3])
-    sand = lithology_colour("Sand")
+    sand = label_colour("Sand")
 
     def render(s_borehole):
         bh = ProjectedPoint(s_borehole, 0.0, "B1", "borehole", 0.0,
@@ -378,3 +379,61 @@ def test_band_draws_segment_rgb_and_distinct_label_colours(qgis_app):
     y = _y(0.0) - round(0.5 * (near + far))
     assert _close(img.pixel(_x(51.0), y), _blend((10, 20, 200), 0.85))           # off the text
     assert _close(img.pixel(_x(69.0), y), _blend(label_colour("Sand, grob"), 0.85))
+
+
+def _view_items(points, **view):
+    from geophysics_workbench.core.context import BoreholeView, ContextItems
+    return ContextItems(points=points, borehole_views={0: BoreholeView(**view)})
+
+
+def _bh60(**kw):
+    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
+    return ProjectedPoint(60.0, 1.0, "B1", "borehole", 0.0, [LogInterval(0.0, 2.5, "Sand")],
+                          entry=0, **kw)
+
+
+def test_section_column_uses_entry_width_px(qgis_app):
+    from geophysics_workbench.core.lithology import label_colour
+    img = _img(_results(_view_items([_bh60()], column_px=40)))
+    assert _close(img.pixel(_x(60.0) + 17, _y(-1.0)), label_colour("Sand"))
+    assert img.pixel(_x(60.0) + 23, _y(-1.0)) == 0xFFFFFFFF
+
+
+def test_flagged_borehole_has_red_marker(qgis_app):
+    from geophysics_workbench.section.borehole_draw import FLAG_RGB
+    img = _img(_results(_view_items([_bh60(flagged=True, z_source="field", z_dem=-0.5)],
+                                    column_px=16)))
+    near = [img.pixel(_x(60.0) + dx, _y(0.0) - dy) for dx in range(-12, 13)
+            for dy in range(0, 14)]
+    assert any(_close(px, FLAG_RGB, tol=40) for px in near)
+    plain = _img(_results(_view_items([_bh60()], column_px=16)))
+    near = [plain.pixel(_x(60.0) + dx, _y(0.0) - dy) for dx in range(-12, 13)
+            for dy in range(0, 14)]
+    assert not any(_close(px, FLAG_RGB, tol=40) for px in near)
+
+
+def _curve():
+    from geophysics_workbench.core.context import Curve
+    return Curve("t:gr", "gr", "API", np.linspace(0.0, 2.5, 26), np.linspace(10, 140, 26))
+
+
+def test_section_curves_off_by_default(qgis_app):
+    img = _img(_results(_view_items([_bh60(curves=[_curve()])], column_px=16)))
+    right = [img.pixel(_x(60.0) + dx, _y(-1.2)) for dx in range(12, 60)]
+    assert all(px == 0xFFFFFFFF for px in right)
+
+
+def test_section_curve_drawn_when_chosen(qgis_app):
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    items = _view_items([_bh60(curves=[_curve()])], column_px=16, curve_keys=("t:gr",))
+    items.curve_styles = {"t:gr": CurveStyle(colour="#00b400", width_mm=0.6)}
+    img = _img(_results(items))
+    right = [img.pixel(_x(60.0) + dx, _y(-1.2)) for dx in range(10, 80)]
+    assert any(_close(px, (0, 180, 0), tol=50) for px in right)
+
+
+def test_total_depth_counts_in_z_values(qgis_app):
+    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
+    from geophysics_workbench.section.context_render import context_z_values
+    p = ProjectedPoint(50.0, 0.0, "B", "borehole", 10.0, total_depth=7.0)
+    assert context_z_values(ContextItems(points=[p]), None) == [3.0]

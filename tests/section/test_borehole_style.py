@@ -94,3 +94,30 @@ def test_gatherer_attaches_symbols(project, profile):
     assert _rgb(p.log[0].symbol) == (10, 200, 30)
     assert _rgb(p.log[1].symbol) == label_colour("clay")      # no category: neutral default
     assert p.log[0].feature["code"] == "S"
+
+
+def test_curve_styles_round_trip(project):
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from geophysics_workbench.section.borehole_style import curve_styles, save_curve_styles
+    assert curve_styles(project) == {}
+    styles = {"t:gr": CurveStyle(colour="#ff0000", log=True, vmin=1.0, vmax=1000.0)}
+    save_curve_styles(project, styles)
+    assert curve_styles(project) == styles
+
+
+def test_gatherer_carries_views_and_curve_styles(project, profile):
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from geophysics_workbench.section.borehole_style import save_curve_styles
+    bh = _layer(project, "Point", "BH", "bid:string")
+    _add(bh, "POINT(20 1)", ["B1"])
+    save_curve_styles(project, {"t:gr": CurveStyle(colour="#123456")})
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", column_px=22, opacity=0.5, layer_text=True,
+        section_curves=["t:gr"])]))
+    items = g.items_for(profile)
+    g.close()
+    v = items.borehole_views[0]
+    assert (v.column_px, v.opacity, v.layer_text, v.curve_keys) == (22, 0.5, True, ("t:gr",))
+    assert items.curve_styles["t:gr"].colour == "#123456"
+    assert items.mirrored(100.0).borehole_views == items.borehole_views

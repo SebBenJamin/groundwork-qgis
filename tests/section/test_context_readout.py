@@ -112,3 +112,43 @@ def test_crossing_readout_omits_layer_when_same_as_label():
     items = ContextItems(crossings=[Crossing(10.0, "Road", "line", 90.0, layer="Road")])
     assert context_hits(items, 10.0, 0.0, tol_s=1.0, column_half_width_s=0.5) == [
         "Crossing: Road, 90°"]
+
+
+def test_details_show_height_source_flag_interval_and_curves():
+    from geophysics_workbench.core.context import Curve
+    from geophysics_workbench.section.context_readout import borehole_details
+    p = ProjectedPoint(20.0, 4.0, "B1", "borehole", 25.0,
+                       [LogInterval(0.0, 1.0, "Topsoil"), LogInterval(1.0, 3.0, "Sand")],
+                       z_source="field", z_dem=23.0, flagged=True,
+                       curves=[Curve("t:gr", "gr", "API", np.array([1.0, 3.0]),
+                                     np.array([40.0, 50.0]))])
+    lines = borehole_details(ContextItems(points=[p]), 20.0, 23.0, 0.5)
+    assert lines[1] == "Top 25.00 m (field; DEM 23.00 m, differs by 2.00 m)"
+    assert "  1.00\u20133.00 m  Sand  \u2190 here" in lines
+    assert "gr: 45.0 API (interpolated)" in lines
+
+
+def test_details_say_when_the_surface_gives_the_height():
+    from geophysics_workbench.section.context_readout import borehole_details
+    p = ProjectedPoint(20.0, 4.0, "B1", "borehole", None, [LogInterval(0.0, 2.0, "Sand")])
+    lines = borehole_details(ContextItems(points=[p]), 20.0, 99.0, 0.5,
+                             (S, np.array([100.0, 100.0])))
+    assert lines[1].startswith("Top 100.00 m (surface)")
+
+
+def test_hover_lists_curve_values_at_the_cursor_depth():
+    from geophysics_workbench.core.context import Curve
+    p = ProjectedPoint(20.0, 4.0, "B1", "borehole", 100.0, [LogInterval(0.0, 4.0, "Sand")],
+                       curves=[Curve("t:gr", "gr", "API", np.array([1.0, 3.0]),
+                                     np.array([40.0, 50.0]))])
+    hits = context_hits(ContextItems(points=[p]), 20.0, 98.0, 1.0, lambda q: 0.5)
+    assert "Borehole B1 gr: 45.0 API (interpolated)" in hits
+
+
+def test_per_borehole_half_widths():
+    near = ProjectedPoint(20.0, 4.0, "N", "borehole", 100.0, [LogInterval(0.0, 4.0, "Sand")])
+    wide = ProjectedPoint(30.0, 4.0, "W", "borehole", 100.0, [LogInterval(0.0, 4.0, "Clay")])
+    half = {id(near): 0.2, id(wide): 3.0}
+    hits = context_hits(ContextItems(points=[near, wide]), 27.5, 98.0, 1.0,
+                        lambda q: half[id(q)])
+    assert any("Borehole W" in h for h in hits) and not any("Borehole N" in h for h in hits)

@@ -78,6 +78,15 @@ def collar_height(field_z: float | None, dem_z: float | None,
     return None, ""
 
 
+@dataclass(frozen=True)
+class BoreholeView:
+    """How the section draws one borehole entry's columns (from its Context layers entry)."""
+    column_px: float = 16
+    opacity: float = 1.0
+    layer_text: bool = False
+    curve_keys: tuple = ()
+
+
 @dataclass
 class BandSegment:
     s0: float
@@ -97,6 +106,9 @@ class ContextItems:
     ties: list[Tie] = field(default_factory=list)
     dem: tuple[np.ndarray, np.ndarray] | None = None    # (s ascending, z); nan = no data
     dem_tolerance: float = 1.0
+    #: section look per borehole entry (``ProjectedPoint.entry``) and the curve styles by key
+    borehole_views: dict = field(default_factory=dict)
+    curve_styles: dict = field(default_factory=dict)
 
     def mirrored(self, length: float) -> "ContextItems":
         """The same items for the reversed profile: every s becomes ``length - s``. Offsets,
@@ -112,7 +124,8 @@ class ContextItems:
             band=sorted((BandSegment(length - b.s1, length - b.s0, b.label, b.rgb) for b in self.band),
                         key=lambda b: b.s0),
             ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
-            dem=dem, dem_tolerance=self.dem_tolerance)
+            dem=dem, dem_tolerance=self.dem_tolerance,
+            borehole_views=dict(self.borehole_views), curve_styles=dict(self.curve_styles))
 
 
 def _cum(xy: np.ndarray) -> np.ndarray:

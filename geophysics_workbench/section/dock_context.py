@@ -5,7 +5,7 @@ from .context_readout import context_hits
 from .topography import station_line
 
 TOLERANCE_PX = 4.0
-COLUMN_MM = 2.5         # borehole column width, as drawn by context_render_points
+COLUMN_MM = 2.5         # borehole column width without an entry (context_render_points)
 STRIP_MM = 3.0          # tie strip width, beside the tie line (see context_readout.strip_start)
 
 
@@ -25,8 +25,16 @@ def context_lines(dock, s: float, z: float) -> list[str]:
         return []
     per_px = (rng.upper() - rng.lower()) / area.width()
     per_mm = per_px * dock.logicalDpiX() / 25.4
-    return context_hits(ctx, s, z, TOLERANCE_PX * per_px, COLUMN_MM / 2 * per_mm,
+    return context_hits(ctx, s, z, TOLERANCE_PX * per_px, half_widths(ctx, per_px, per_mm),
                         STRIP_MM * per_mm, surface=dock._topo, stations=stations)
+
+
+def half_widths(ctx, per_px: float, per_mm: float):
+    """A borehole column's half-width in metres of chainage, per point (as drawn)."""
+    def half(p):
+        view = ctx.borehole_views.get(p.entry)
+        return view.column_px / 2 * per_px if view is not None else COLUMN_MM / 2 * per_mm
+    return half
 
 
 def click_details(dock, s: float, z: float) -> list[str]:
@@ -45,7 +53,8 @@ def click_details(dock, s: float, z: float) -> list[str]:
     per_mm = per_px * dock.logicalDpiX() / 25.4
     context_lines(dock, s, z)                   # fills the cached context
     if dock._ctx is not None and dock._ctx[0] is not None:
-        lines += borehole_details(dock._ctx[0], s, z, COLUMN_MM / 2 * per_mm, dock._topo)
+        lines += borehole_details(dock._ctx[0], s, z,
+                                  half_widths(dock._ctx[0], per_px, per_mm), dock._topo)
     store = dock.provider.store
     version = dock.provider.shown_interp_version()
     if version is not None:

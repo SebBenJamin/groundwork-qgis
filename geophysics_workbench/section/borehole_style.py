@@ -18,6 +18,38 @@ LOG_TAG = "Geophysics Workbench"
 OUTLINE_MM = 0.15
 
 
+CURVE_STYLES_KEY = "borehole_curve_styles"
+
+
+def curve_styles(project) -> dict:
+    """The user's curve styles by curve key; unusable entries are skipped."""
+    import json
+    from dataclasses import fields
+
+    from ..core.borehole_curves import CurveStyle
+    text, ok = project.readEntry(STYLE_SCOPE, CURVE_STYLES_KEY, "")
+    try:
+        data = json.loads(text) if ok and text else {}
+    except ValueError:
+        return {}
+    out = {}
+    names = {f.name for f in fields(CurveStyle)}
+    for key, value in (data.items() if isinstance(data, dict) else []):
+        if isinstance(value, dict):
+            try:
+                out[key] = CurveStyle(**{k: v for k, v in value.items() if k in names})
+            except TypeError:
+                continue
+    return out
+
+
+def save_curve_styles(project, styles: dict) -> None:
+    import json
+    from dataclasses import asdict
+    project.writeEntry(STYLE_SCOPE, CURVE_STYLES_KEY,
+                       json.dumps({k: asdict(v) for k, v in styles.items()}))
+
+
 def style_key(log_layer_id: str) -> str:
     return f"borehole_style/{log_layer_id}"
 
