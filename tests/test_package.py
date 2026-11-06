@@ -100,3 +100,27 @@ def test_qgis_sidecar_files_are_not_packaged(tmp_path):
     for name in ("p.qgz", "p.qgz.qto3settings", "dgm1.tif", "dgm1.tif.aux.xml"):
         (tmp_path / name).write_bytes(b"x")
     assert sorted(p.name for p in package.files_under(tmp_path)) == ["dgm1.tif", "p.qgz"]
+
+
+def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
+    """The Gülpe demo zip from a separately built folder (``--guelpe``), so a release ships
+    a clean demo with all its files while the committed demo (the user's test drawings)
+    stays untouched."""
+    import shutil
+    import sys
+    import zipfile
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "scripts"))
+    import package
+
+    fresh = root / ".cache" / "test_guelpe_fresh"
+    shutil.rmtree(fresh, ignore_errors=True)
+    shutil.copytree(root / "demo_guelpe", fresh)
+    (fresh / "context" / "synthetic_logs.gpkg").write_bytes(b"x")
+    try:
+        zips = package.build(tmp_path, guelpe_src=fresh)
+        names = zipfile.ZipFile(zips[2]).namelist()
+        assert "context/synthetic_logs.gpkg" in names and "guelpe_project.qgz" in names
+    finally:
+        shutil.rmtree(fresh, ignore_errors=True)

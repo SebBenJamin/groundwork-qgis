@@ -336,12 +336,21 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
 
 
 def main() -> int:
-    build_data()
-    build_workbench()
-    _, geology_kind = build_qgis_project()
-    (DEMO_GUELPE / "ATTRIBUTION.md").write_text(ATTRIBUTION.format(geology_kind=geology_kind),
-                                                encoding="utf-8", newline="\n")
-    print(f"demo_guelpe built; geology via {geology_kind}")
+    """``--out <folder>`` builds there instead of demo_guelpe/ (e.g. for a release zip, so
+    the committed demo with someone's test drawings stays as it is)."""
+    out = DEMO_GUELPE
+    if "--out" in sys.argv:
+        out = Path(sys.argv[sys.argv.index("--out") + 1]).resolve()
+        (out / "context").mkdir(parents=True, exist_ok=True)
+        # an input kept in the repo, not built from the cache
+        shutil.copy(DEMO_GUELPE / "context" / "waterways.geojson",
+                    out / "context" / "waterways.geojson")
+    build_data(out=out)
+    build_workbench(out=out)
+    _, geology_kind = build_qgis_project(out=out)
+    (out / "ATTRIBUTION.md").write_text(ATTRIBUTION.format(geology_kind=geology_kind),
+                                        encoding="utf-8", newline="\n")
+    print(f"{out} built; geology via {geology_kind}")
     return 0
 
 

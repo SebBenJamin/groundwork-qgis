@@ -1,6 +1,6 @@
 """Build the release zips in dist/:
 
-    python-qgis.bat scripts/package.py
+    python-qgis.bat scripts/package.py [--guelpe <freshly built Gülpe demo folder>]
 
 dist/geophysics_workbench-<version>.zip       the plugin, top folder geophysics_workbench/
                                               (what Plugins > Install from ZIP expects)
@@ -95,7 +95,10 @@ def write_zip(target: Path, entries: list[tuple[Path, str]]) -> Path:
     return target
 
 
-def build(dist: Path = DIST) -> tuple[Path, Path]:
+def build(dist: Path = DIST, guelpe_src: Path = DEMO_GUELPE) -> tuple[Path, Path]:
+    """The three zips. ``guelpe_src``: the Gülpe demo folder to ship, by default the committed
+    demo_guelpe/; a freshly built folder (``build_demo_guelpe.py --out``) ships a clean demo
+    without touching the committed one."""
     ver = version()
     plugin_entries = [(p, f"{PLUGIN.name}/{p.relative_to(PLUGIN).as_posix()}")
                       for p in files_under(PLUGIN)]
@@ -103,7 +106,7 @@ def build(dist: Path = DIST) -> tuple[Path, Path]:
         plugin_entries.append((REPO / "LICENSE", f"{PLUGIN.name}/LICENSE"))
     plugin_zip = write_zip(dist / f"{PLUGIN.name}-{ver}.zip", plugin_entries)
     demo_zip = _demo_zip(DEMO, f"{PLUGIN.name}-demo-{ver}", "demo_project.qgz", dist)
-    guelpe_zip = _demo_zip(DEMO_GUELPE, f"{PLUGIN.name}-demo-guelpe-{ver}", "guelpe_project.qgz",
+    guelpe_zip = _demo_zip(Path(guelpe_src), f"{PLUGIN.name}-demo-guelpe-{ver}", "guelpe_project.qgz",
                            dist)
     size = plugin_zip.stat().st_size
     if size >= MAX_PLUGIN_BYTES:
@@ -123,8 +126,11 @@ def main() -> int:
     if GIT is None:
         print("warning: git not found; files with local changes ship as they are on disk",
               file=sys.stderr)
+    guelpe = DEMO_GUELPE
+    if "--guelpe" in sys.argv:
+        guelpe = Path(sys.argv[sys.argv.index("--guelpe") + 1]).resolve()
     try:
-        zips = build()
+        zips = build(guelpe_src=guelpe)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
