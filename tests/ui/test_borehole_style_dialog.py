@@ -105,3 +105,18 @@ def test_remote_note_names_the_profile(project, logs, qgis_app, monkeypatch):
                                 profile_name="Transect 3")
     assert "Transect 3" in dlg.note.text() and dlg.copy.featureCount() == 2
     dlg.close()
+
+
+def test_editor_is_embedded_and_visible(project, logs, qgis_app):
+    """QGIS's style editor is a QDialog: it must sit inside the window as a widget (the
+    window was empty when it stayed a separate, hidden top-level dialog)."""
+    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    dlg = BoreholeStyleDialog(project, _entry(logs), [], lambda: None)
+    dlg.show()
+    qgis_app.processEvents()
+    assert not dlg.editor.isWindow()
+    assert dlg.editor.isVisible() and dlg.editor.height() > 100
+    dlg.reload_editor()
+    qgis_app.processEvents()
+    assert not dlg.editor.isWindow() and dlg.editor.isVisible()
+    dlg.close()

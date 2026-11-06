@@ -437,3 +437,15 @@ def test_total_depth_counts_in_z_values(qgis_app):
     from geophysics_workbench.section.context_render import context_z_values
     p = ProjectedPoint(50.0, 0.0, "B", "borehole", 10.0, total_depth=7.0)
     assert context_z_values(ContextItems(points=[p]), None) == [3.0]
+
+
+def test_section_layer_text_beside_the_column(qgis_app):
+    """Layer text switched on for the entry: the interval's text is written right of the
+    column on the section (dark text pixels there), nothing when switched off."""
+    on = _img(_results(_view_items([_bh60()], column_px=16, layer_text=True)))
+    off = _img(_results(_view_items([_bh60()], column_px=16, layer_text=False)))
+
+    def dark(img):
+        return sum(1 for dx in range(10, 70) for y in range(_y(-0.2), _y(-2.3))
+                   if _close(img.pixel(_x(60.0) + dx, y), (40, 40, 40), tol=60))
+    assert dark(on) > 5 and dark(off) == 0

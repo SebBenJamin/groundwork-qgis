@@ -13,6 +13,7 @@ from typing import Callable
 from qgis.core import (QgsFeature, QgsFeatureRequest, QgsExpression, QgsGeometry, QgsMapLayer,
                        QgsStyle, QgsVectorLayer)
 from qgis.gui import QgsRendererPropertiesDialog
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel,
                                  QPushButton, QVBoxLayout)
 
@@ -73,7 +74,7 @@ class BoreholeStyleDialog(QDialog):
         self.note.setVisible(remote)
         layout.addWidget(self.note)
         self._editor_box = QVBoxLayout()
-        layout.addLayout(self._editor_box)
+        layout.addLayout(self._editor_box, 1)
         self.editor = None
         self.reload_editor()
         row = QHBoxLayout()
@@ -99,7 +100,10 @@ class BoreholeStyleDialog(QDialog):
             self._editor_box.removeWidget(self.editor)
             self.editor.deleteLater()
         self.editor = QgsRendererPropertiesDialog(self.copy, QgsStyle.defaultStyle(), True, self)
-        self._editor_box.addWidget(self.editor)
+        # it is a QDialog: as a child it would stay a separate (hidden) window
+        self.editor.setWindowFlags(Qt.WindowType.Widget)
+        self._editor_box.addWidget(self.editor, 1)
+        self.editor.show()
 
     def apply(self) -> None:
         self.editor.apply()
