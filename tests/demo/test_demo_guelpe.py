@@ -168,3 +168,19 @@ def test_demo_context_settings_two_borehole_entries():
     assert (state.layer_id, state.id_field, state.total_depth_field) == (
         "b", "Bohrungsname", "Teufe_in_m")
     assert s.point_layers == [] and curve_key("k", "gamma_synthetic") == "k:gamma_synthetic"
+
+
+def test_demo_build_styles_the_core_logs(qgis_app):
+    """The build stores the cores' style for the core log table, by FGDC pattern name."""
+    from qgis.core import QgsProject
+
+    import build_demo_guelpe
+    from geophysics_workbench.section.borehole_style import load_renderer
+    prj = QgsProject()
+    build_demo_guelpe.apply_core_style(prj, "logs_id",
+                                       REPO / "demo_guelpe" / "context" / "core_logs_style.qml")
+    r = load_renderer(prj, "logs_id")
+    assert r is not None and r.type() == "categorizedSymbol"
+    assert {c.value() for c in r.categories()} == {"sand", "loam", "clay", "peat", "Oh"}
+    text = prj.readEntry("geophysics_workbench", "borehole_style/logs_id", "")[0]
+    assert "fgdc/607" in text and ":/" not in text.replace("qrc:/", "")

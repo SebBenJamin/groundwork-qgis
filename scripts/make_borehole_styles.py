@@ -58,6 +58,18 @@ ISO = [
 ]
 FIELD = "lithology"
 
+# the Gülpe demo cores (Köhler et al. 2025): values are "main class · texture code" (KA5),
+# e.g. "sand · Ss (mS)"; classified by the main class, the text before "·"
+GUELPE_EXPRESSION = """trim(regexp_substr("lithology", '^[^·]+'))"""
+GUELPE = [
+    ("sand", "sand (S…)", SAND_M, "607"),
+    ("loam", "loam (L…, Sl…)", (196, 160, 110), "619"),
+    ("clay", "clay (T…)", (150, 162, 192), "620"),
+    ("peat", "peat", (110, 80, 50), "657"),
+    ("Oh", "Oh – organic horizon", (85, 65, 45), "624"),
+]
+GUELPE_OUT = ROOT / "demo_guelpe" / "context" / "core_logs_style.qml"
+
 
 def write(out: Path) -> list[Path]:
     from qgis.core import (QgsCategorizedSymbolRenderer, QgsMapLayer, QgsRendererCategory,
@@ -71,14 +83,15 @@ def write(out: Path) -> list[Path]:
     register_svg_path()                    # so QGIS stores pattern names, not full paths
     written = []
     try:
-        for name, classes in (("din_codes.qml", DIN), ("iso_14688.qml", ISO)):
+        for path, attr, classes in ((out / "din_codes.qml", FIELD, DIN),
+                                    (out / "iso_14688.qml", FIELD, ISO),
+                                    (GUELPE_OUT, GUELPE_EXPRESSION, GUELPE)):
             layer = QgsVectorLayer(f"Polygon?field={FIELD}:string", "style", "memory")
-            layer.setRenderer(QgsCategorizedSymbolRenderer(FIELD, [
+            layer.setRenderer(QgsCategorizedSymbolRenderer(attr, [
                 QgsRendererCategory(code, pattern_symbol(QColor(*rgb),
                                                          by_code.get(fgdc) if fgdc else None),
                                     f"{code} – {label}")
                 for code, label, rgb, fgdc in classes]))
-            path = out / name
             msg, ok = layer.saveNamedStyle(str(path), QgsMapLayer.StyleCategory.Symbology)
             if not ok:
                 raise RuntimeError(f"cannot write {path}: {msg}")

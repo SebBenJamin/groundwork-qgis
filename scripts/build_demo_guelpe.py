@@ -249,6 +249,25 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
         dem_layer_id=dem, buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
 
 
+def apply_core_style(project, logs_id: str, style: Path) -> None:
+    """Store the cores' borehole style (``context/core_logs_style.qml``) for the core log
+    table, as Borehole style… would. FGDC patterns are kept by name (the plugin's pattern
+    folder is registered while reading and writing)."""
+    from qgis.core import QgsMapLayer, QgsVectorLayer
+
+    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
+    from geophysics_workbench.section.borehole_style import save_renderer
+    register_svg_path()
+    try:
+        copy = QgsVectorLayer("Polygon?field=lithology:string", "style", "memory")
+        msg, ok = copy.loadNamedStyle(str(style), QgsMapLayer.StyleCategory.Symbology)
+        if not ok:
+            raise RuntimeError(f"cannot read {style}: {msg}")
+        save_renderer(project, logs_id, copy.renderer().clone())
+    finally:
+        unregister_svg_path()
+
+
 def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
     """guelpe_project.qgz; returns its path and how geology was added ("WFS" or "WMS")."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -318,6 +337,7 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         write_settings(project, demo_context_settings(
             water.id(), bpk.id(), cores.id(), logs.id(), curves.id(), geology.id(),
             geology_field, dem.id()))
+        apply_core_style(project, logs.id(), ctx / "core_logs_style.qml")
         store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top
         xy = np.vstack([p.xy for p in store.profiles()])
         (x0, y0), (x1, y1) = xy.min(axis=0) - 150.0, xy.max(axis=0) + 150.0
@@ -342,9 +362,9 @@ def main() -> int:
     if "--out" in sys.argv:
         out = Path(sys.argv[sys.argv.index("--out") + 1]).resolve()
         (out / "context").mkdir(parents=True, exist_ok=True)
-        # an input kept in the repo, not built from the cache
-        shutil.copy(DEMO_GUELPE / "context" / "waterways.geojson",
-                    out / "context" / "waterways.geojson")
+        # inputs kept in the repo, not built from the cache
+        for name in ("waterways.geojson", "core_logs_style.qml"):
+            shutil.copy(DEMO_GUELPE / "context" / name, out / "context" / name)
     build_data(out=out)
     build_workbench(out=out)
     _, geology_kind = build_qgis_project(out=out)

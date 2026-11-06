@@ -76,3 +76,68 @@ def test_readme_expression_keeps_the_main_component(qgis_app):
         ctx = QgsExpressionContext()
         ctx.setFeature(f)
         assert expr.evaluate(ctx) == main, text
+
+
+GUELPE_CLASSES = {"sand", "loam", "clay", "peat", "Oh"}
+
+
+def test_guelpe_core_style_classifies_by_main_class(qgis_app):
+    """The Gülpe cores' values are "main class · texture code" (e.g. "sand · Ss (mS)"): the
+    demo style is Categorized on an expression (the text before "·"), five classes."""
+    from qgis.core import QgsMapLayer
+
+    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
+    path = Path(__file__).resolve().parents[1] / "demo_guelpe" / "context" / "core_logs_style.qml"
+    register_svg_path()
+    try:
+        layer = _copy()
+        _msg, ok = layer.loadNamedStyle(str(path), QgsMapLayer.StyleCategory.Symbology)
+        assert ok
+        r = layer.renderer()
+        assert r.type() == "categorizedSymbol" and "lithology" in r.classAttribute()
+        cats = r.categories()
+        assert {c.value() for c in cats} == GUELPE_CLASSES
+    finally:
+        unregister_svg_path()
+
+
+def test_gatherer_colours_intervals_by_main_class(qgis_app):
+    """Stored as the interval table's style, the expression style colours "sand · Ss (mS)"
+    like "sand · St2", and clay differently."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "section"))
+    import numpy as np
+    from qgis.core import QgsMapLayer, QgsProject
+
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from geophysics_workbench.core.model import Profile
+    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
+    from geophysics_workbench.section.borehole_style import save_renderer
+    from test_context_layers import _add, _gatherer, _layer
+    prj = QgsProject.instance()
+    prj.clear()
+    register_svg_path()
+    try:
+        bh = _layer(prj, "Point", "BH", "bid:string")
+        _add(bh, "POINT(20 1)", ["RK1"])
+        log = _layer(prj, "NoGeometry", "Log", "core_id:string&field=top:double"
+                     "&field=bottom:double&field=lithology:string")
+        for top, bottom, lith in ((0, 1, "sand · Ss (mS)"), (1, 2, "sand · St2"),
+                                  (2, 3, "clay · Tu2")):
+            _add(log, None, ["RK1", top, bottom, lith])
+        style = _copy()
+        style.loadNamedStyle(str(Path(__file__).resolve().parents[1] / "demo_guelpe" /
+                                 "context" / "core_logs_style.qml"),
+                             QgsMapLayer.StyleCategory.Symbology)
+        save_renderer(prj, log.id(), style.renderer().clone())
+        g = _gatherer(prj, ContextSettings(boreholes=[BoreholeSetting(
+            bh.id(), "bid", "", log.id(), "core_id", "top", "bottom", "lithology")]))
+        p = g.items_for(Profile("p1", "P1", np.array([[0.0, 0.0], [100.0, 0.0]]),
+                                "EPSG:25832")).points[0]
+        g.close()
+        colours = [iv.symbol.symbolLayer(0).color().name() for iv in p.log]
+        assert colours[0] == colours[1] != colours[2]
+    finally:
+        unregister_svg_path()
+        prj.removeAllMapLayers()
+        prj.clear()
