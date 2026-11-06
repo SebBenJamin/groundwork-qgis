@@ -49,6 +49,8 @@ class WorkbenchPlugin:
         return None if self.provider is None else self.provider.store
 
     def initGui(self):
+        from .patterns import register_svg_path
+        register_svg_path()                              # FGDC patterns in the SVG pickers
         main_window = self.iface.mainWindow()
         self.menu = QMenu(MENU_TITLE, main_window)
         self.menu.setObjectName("GeophysicsWorkbenchMenu")
@@ -112,6 +114,8 @@ class WorkbenchPlugin:
         self.actions.clear()
         self.pick_action = self.new_profile_action = self.add_model_action = None
         self.context_action = self.ties_action = None
+        from .patterns import unregister_svg_path
+        unregister_svg_path()
 
     def add_action(self, text, callback, icon=None, checkable=False):
         """Add a menu action. `icon` is a file name inside the icons folder or an absolute path."""
