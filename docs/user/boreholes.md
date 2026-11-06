@@ -140,6 +140,12 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
     - The FGDC patterns are listed among the SVG fills, named by code and name, e.g. "607 Massive sand or sandstone".
     - Codes 601–686 are sediments, 701–733 metamorphic and igneous rocks.
   - **Export… / Import…** save the style as a `.qml` file for the next project.
+  - **Ready-made styles:** Import… opens in the plugin's own styles folder.
+    - `din_codes.qml`: German short codes G, S, fS, U, T, H, Mu, A …
+    - `iso_14688.qml`: EN ISO 14688-1 symbols Gr, Sa, Si, Cl, Or …
+
+    Both are Categorized on a column `lithology`; switch to your column after importing. Their colours and patterns are the plugin's choice, not a standard's drawing rules.
+  - **A class only applies to values that are exactly that code** ("fS, ms, u'" is not "fS"). To style by the main component, add a column in QGIS's field calculator with `trim(regexp_substr("lithology", '^[^,;]+'))` and style by that column.
 - **Curve style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
 - Without a saved style, each layer text gets its own neutral colour. The plugin never guesses a colour from the words.
 

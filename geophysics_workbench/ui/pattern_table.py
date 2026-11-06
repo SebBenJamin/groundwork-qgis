@@ -131,16 +131,20 @@ class PatternTable(QDialog):
 
     @staticmethod
     def _symbol(old, colour: QColor, pattern: Pattern | None):
-        """``old`` without its SVG fills, its first fill in ``colour`` (a simple fill added
-        when it has none), and ``pattern`` as an SVG fill on top."""
-        sym = old.clone() if isinstance(old, QgsFillSymbol) else QgsFillSymbol.createSimple({})
-        for i in reversed(_svg_indices(sym)):
-            sym.deleteSymbolLayer(i)
-        if sym.symbolLayerCount() == 0:
-            sym.appendSymbolLayer(QgsSimpleFillSymbolLayer())
-        sym.symbolLayer(0).setColor(colour)
-        if pattern is not None:
-            svg = QgsSVGFillSymbolLayer(str(pattern.path), PATTERN_MM, 0.0)
-            svg.setPatternWidthUnit(Qgis.RenderUnit.Millimeters)
-            sym.appendSymbolLayer(svg)
-        return sym
+        return pattern_symbol(colour, pattern, old)
+
+
+def pattern_symbol(colour: QColor, pattern: Pattern | None, old=None):
+    """A fill symbol: ``old`` (or a new simple fill) without its SVG fills, its first fill in
+    ``colour``, and ``pattern`` as an SVG fill on top."""
+    sym = old.clone() if isinstance(old, QgsFillSymbol) else QgsFillSymbol.createSimple({})
+    for i in reversed(_svg_indices(sym)):
+        sym.deleteSymbolLayer(i)
+    if sym.symbolLayerCount() == 0:
+        sym.appendSymbolLayer(QgsSimpleFillSymbolLayer())
+    sym.symbolLayer(0).setColor(colour)
+    if pattern is not None:
+        svg = QgsSVGFillSymbolLayer(str(pattern.path), PATTERN_MM, 0.0)
+        svg.setPatternWidthUnit(Qgis.RenderUnit.Millimeters)
+        sym.appendSymbolLayer(svg)
+    return sym

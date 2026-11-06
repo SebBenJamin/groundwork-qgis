@@ -24,6 +24,12 @@ _SQUARE = "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"
 _SYMBOLOGY = QgsMapLayer.StyleCategory.Symbology
 
 
+def import_folder() -> str:
+    """Where Import… starts: the styles shipped with the plugin."""
+    from ..styles import STYLE_DIR
+    return str(STYLE_DIR / "boreholes")
+
+
 def is_remote(layer) -> bool:
     """A live web source: never read in full."""
     return layer.providerType() in REMOTE_PROVIDERS
@@ -179,7 +185,7 @@ class BoreholeStyleDialog(QDialog):
             self.export_to(path if path.lower().endswith(".qml") else path + ".qml")
 
     def _import(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Import borehole style", "",
+        path, _ = QFileDialog.getOpenFileName(self, "Import borehole style", import_folder(),
                                               "QGIS style (*.qml)")
         if path:
             self.import_from(path)
