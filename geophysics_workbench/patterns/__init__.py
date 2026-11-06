@@ -6,6 +6,7 @@ are offered, never assigned: no word or code is matched to a pattern. The path i
 QGIS *default* path for this session only; the user's SVG path settings are never written."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from qgis.core import QgsApplication, QgsSettings
@@ -13,6 +14,31 @@ from qgis.core import QgsApplication, QgsSettings
 PATTERN_DIR = Path(__file__).resolve().parent
 _USER_KEY = "svg/searchPathsForSVG"
 _previous: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class Pattern:
+    code: str           # FGDC code, e.g. "607"
+    name: str           # e.g. "Massive sand or sandstone"
+    path: Path
+
+    @property
+    def label(self) -> str:
+        return f"{self.code} – {self.name}"
+
+
+def catalogue() -> list[Pattern]:
+    """Every shipped pattern, in code order (from ``fgdc/index.csv``)."""
+    import csv
+    with open(PATTERN_DIR / "fgdc" / "index.csv", encoding="utf-8") as fh:
+        return [Pattern(r["code"], r["name"], PATTERN_DIR / "fgdc" / r["file"])
+                for r in csv.DictReader(fh)]
+
+
+def pattern_for(path: str) -> Pattern | None:
+    """The shipped pattern an SVG path points to, or ``None``."""
+    target = _norm(path).lower()
+    return next((p for p in catalogue() if _norm(p.path).lower() == target), None)
 
 
 def _norm(path: str) -> str:

@@ -133,8 +133,12 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
 - **Borehole style…**, in Context layers… or in the borehole viewer, opens QGIS's own style editor.
   - **Categorized** on `lithology`, then **Classify**, gives one class per value.
-  - For each class you can pick a colour, or an **SVG fill**. The plugin's FGDC lithology patterns are listed among the SVG fills: codes 601–686 are sediments, 701–733 metamorphic and igneous rocks.
-  - For a coloured pattern, put a simple fill under the SVG fill.
+  - **Patterns…** (button in the same window) gives every class a colour and an FGDC lithology pattern in one table.
+    - Type in a pattern box to search, e.g. "sand" or "607".
+    - OK hands the result to QGIS's editor as ordinary symbols: a colour fill with the pattern on top.
+  - You can also set any class by hand: double-click it, then pick a colour or an **SVG fill**.
+    - The FGDC patterns are listed among the SVG fills, named by code and name, e.g. "607 Massive sand or sandstone".
+    - Codes 601–686 are sediments, 701–733 metamorphic and igneous rocks.
   - **Export… / Import…** save the style as a `.qml` file for the next project.
 - **Curve style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
 - Without a saved style, each layer text gets its own neutral colour. The plugin never guesses a colour from the words.

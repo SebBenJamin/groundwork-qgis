@@ -1,117 +1,117 @@
 code,file,name
-601,601.svg,Gravel or conglomerate (1st option)
-602,602.svg,Gravel or conglomerate (2nd option)
-603,603.svg,Crossbedded gravel or conglomerate
-605,605.svg,Breccia (1st option)
-606,606.svg,Breccia (2nd option)
-607,607.svg,Massive sand or sandstone
-608,608.svg,Bedded sand or sandstone
-609,609.svg,Crossbedded sand or sandstone (1st option)
-610,610.svg,Crossbedded sand or sandstone (2nd option)
-611,611.svg,Ripple-bedded sand or sandstone
-612,612.svg,Argillaceous or shaly sandstone
-613,613.svg,Calcareous sandstone
-614,614.svg,Dolomitic sandstone
-616,616.svg,"Silt, siltstone, or shaly silt"
-617,617.svg,Calcareous siltstone
-618,618.svg,Dolomitic siltstone
-619,619.svg,Sandy or silty shale
-620,620.svg,Clay or clay shale
-621,621.svg,Cherty shale
-622,622.svg,Dolomitic shale
-623,623.svg,Calcareous shale or marl
-624,624.svg,Carbonaceous shale
-625,625.svg,Oil shale
-626,626.svg,Chalk
-627,627.svg,Limestone
-628,628.svg,Clastic limestone
-629,629.svg,Fossiliferous clastic limestone
-630,630.svg,Nodular or irregularly bedded limestone
-631,631.svg,"Limestone, irregular (burrow?) fillings of saccharoidal dolomite"
-632,632.svg,Crossbedded limestone
-633,633.svg,Cherty crossbedded limestone
-634,634.svg,Cherty and sandy crossbedded clastic limestone
-635,635.svg,Oolitic limestone
-636,636.svg,Sandy limestone
-637,637.svg,Silty limestone
-638,638.svg,Argillaceous or shaly limestone
-639,639.svg,Cherty limestone (1st option)
-640,640.svg,Cherty limestone (2nd option)
-641,641.svg,"Dolomitic limestone, limy dolostone, or limy dolomite"
-642,642.svg,Dolostone or dolomite
-643,643.svg,Cross-bedded dolostone or dolomite
-644,644.svg,Oolitic dolostone or dolomite
-645,645.svg,Sandy dolostone or dolomite
-646,646.svg,Silty dolostone or dolomite
-647,647.svg,Argillaceous or shaly dolostone or dolomite
-648,648.svg,Cherty dolostone or dolomite
-649,649.svg,Bedded chert (1st option)
-650,650.svg,Bedded chert (2nd option)
-651,651.svg,Fossiliferous bedded chert
-652,652.svg,Fossiliferous rock
-653,653.svg,Diatomaceous rock
-654,654.svg,Subgraywacke
-655,655.svg,Cross-bedded subgraywacke
-656,656.svg,Ripple-bedded subgraywacke
-657,657.svg,Peat
-658,658.svg,Coal
-659,659.svg,Bony coal or impure coal
-660,660.svg,Underclay
-661,661.svg,Flint clay
-662,662.svg,Bentonite
-663,663.svg,Glauconite
-664,664.svg,Limonite
-665,665.svg,Siderite
-666,666.svg,Phosphatic-nodular rock
-667,667.svg,Gypsum
-668,668.svg,Salt
-669,669.svg,Interbedded sandstone and siltstone
-670,670.svg,Interbedded sandstone and shale
-671,671.svg,Interbedded ripple-bedded sandstone and shale
-672,672.svg,Interbedded shale and silty limestone (shale dominant)
-673,673.svg,Interbedded shale and limestone (shale dominant) (1st option)
-674,674.svg,Interbedded shaleand limestone (shale dominant) (2nd option)
-675,675.svg,Interbedded calcareous shale and limestone (shale dominant)
-676,676.svg,Interbedded silty limestone and shale
-677,677.svg,Interbedded limestone and shale (1st option)
-678,678.svg,Interbedded limestone and shale (2nd option)
-679,679.svg,Interbedded limestone and shale (limestone dominant)
-680,680.svg,Interbedded limestone and calcareous shale
-681,681.svg,Till or diamicton (1st option)
-682,682.svg,Till or diamicton (2nd option)
-683,683.svg,Till or diamicton (3rd option)
-684,684.svg,Loess (1st option)
-685,685.svg,Loess (2nd option)
-686,686.svg,Loess (3rd option)
-701,701.svg,Metamorphism
-702,702.svg,Quartzite
-703,703.svg,Slate
-704,704.svg,Schistose or gneissoid granite
-705,705.svg,Schist
-706,706.svg,Contorted schist
-707,707.svg,Schist and gneiss
-708,708.svg,Gneiss
-709,709.svg,Contorted gneiss
-710,710.svg,"Soapstone, talc, or serpentinite"
-711,711.svg,Tuffaceous rock
-712,712.svg,Crystal tuff
-713,713.svg,Devitrified tuff
-714,714.svg,Volcanic breccia and tuff
-715,715.svg,Volcanic breccia or agglomerate
-716,716.svg,Zeolitic rock
-717,717.svg,Basaltic flows
-719,719.svg,Granite (2nd option)
-720,720.svg,Banded igneous rock
-721,721.svg,Igneous rock (1st option)
-722,722.svg,Igneous rock (2nd option)
-723,723.svg,Igneous rock (3rd option)
-724,724.svg,Igneous rock (4th option)
-725,725.svg,Igneous rock (5th option)
-726,726.svg,Igneous rock (6th option)
-727,727.svg,Igneous rock (7th option)
-728,728.svg,Igneous rock (8th option)
-729,729.svg,Porphyritic rock (1st option)
-730,730.svg,Porphyritic rock (2nd option)
-731,731.svg,Vitrophyre
-732,732.svg,Quartz
-733,733.svg,Ore
+601,601 Gravel or conglomerate (1st option).svg,Gravel or conglomerate (1st option)
+602,602 Gravel or conglomerate (2nd option).svg,Gravel or conglomerate (2nd option)
+603,603 Crossbedded gravel or conglomerate.svg,Crossbedded gravel or conglomerate
+605,605 Breccia (1st option).svg,Breccia (1st option)
+606,606 Breccia (2nd option).svg,Breccia (2nd option)
+607,607 Massive sand or sandstone.svg,Massive sand or sandstone
+608,608 Bedded sand or sandstone.svg,Bedded sand or sandstone
+609,609 Crossbedded sand or sandstone (1st option).svg,Crossbedded sand or sandstone (1st option)
+610,610 Crossbedded sand or sandstone (2nd option).svg,Crossbedded sand or sandstone (2nd option)
+611,611 Ripple-bedded sand or sandstone.svg,Ripple-bedded sand or sandstone
+612,612 Argillaceous or shaly sandstone.svg,Argillaceous or shaly sandstone
+613,613 Calcareous sandstone.svg,Calcareous sandstone
+614,614 Dolomitic sandstone.svg,Dolomitic sandstone
+616,"616 Silt, siltstone, or shaly silt.svg","Silt, siltstone, or shaly silt"
+617,617 Calcareous siltstone.svg,Calcareous siltstone
+618,618 Dolomitic siltstone.svg,Dolomitic siltstone
+619,619 Sandy or silty shale.svg,Sandy or silty shale
+620,620 Clay or clay shale.svg,Clay or clay shale
+621,621 Cherty shale.svg,Cherty shale
+622,622 Dolomitic shale.svg,Dolomitic shale
+623,623 Calcareous shale or marl.svg,Calcareous shale or marl
+624,624 Carbonaceous shale.svg,Carbonaceous shale
+625,625 Oil shale.svg,Oil shale
+626,626 Chalk.svg,Chalk
+627,627 Limestone.svg,Limestone
+628,628 Clastic limestone.svg,Clastic limestone
+629,629 Fossiliferous clastic limestone.svg,Fossiliferous clastic limestone
+630,630 Nodular or irregularly bedded limestone.svg,Nodular or irregularly bedded limestone
+631,"631 Limestone, irregular (burrow) fillings of saccharoidal dolomite.svg","Limestone, irregular (burrow?) fillings of saccharoidal dolomite"
+632,632 Crossbedded limestone.svg,Crossbedded limestone
+633,633 Cherty crossbedded limestone.svg,Cherty crossbedded limestone
+634,634 Cherty and sandy crossbedded clastic limestone.svg,Cherty and sandy crossbedded clastic limestone
+635,635 Oolitic limestone.svg,Oolitic limestone
+636,636 Sandy limestone.svg,Sandy limestone
+637,637 Silty limestone.svg,Silty limestone
+638,638 Argillaceous or shaly limestone.svg,Argillaceous or shaly limestone
+639,639 Cherty limestone (1st option).svg,Cherty limestone (1st option)
+640,640 Cherty limestone (2nd option).svg,Cherty limestone (2nd option)
+641,"641 Dolomitic limestone, limy dolostone, or limy dolomite.svg","Dolomitic limestone, limy dolostone, or limy dolomite"
+642,642 Dolostone or dolomite.svg,Dolostone or dolomite
+643,643 Cross-bedded dolostone or dolomite.svg,Cross-bedded dolostone or dolomite
+644,644 Oolitic dolostone or dolomite.svg,Oolitic dolostone or dolomite
+645,645 Sandy dolostone or dolomite.svg,Sandy dolostone or dolomite
+646,646 Silty dolostone or dolomite.svg,Silty dolostone or dolomite
+647,647 Argillaceous or shaly dolostone or dolomite.svg,Argillaceous or shaly dolostone or dolomite
+648,648 Cherty dolostone or dolomite.svg,Cherty dolostone or dolomite
+649,649 Bedded chert (1st option).svg,Bedded chert (1st option)
+650,650 Bedded chert (2nd option).svg,Bedded chert (2nd option)
+651,651 Fossiliferous bedded chert.svg,Fossiliferous bedded chert
+652,652 Fossiliferous rock.svg,Fossiliferous rock
+653,653 Diatomaceous rock.svg,Diatomaceous rock
+654,654 Subgraywacke.svg,Subgraywacke
+655,655 Cross-bedded subgraywacke.svg,Cross-bedded subgraywacke
+656,656 Ripple-bedded subgraywacke.svg,Ripple-bedded subgraywacke
+657,657 Peat.svg,Peat
+658,658 Coal.svg,Coal
+659,659 Bony coal or impure coal.svg,Bony coal or impure coal
+660,660 Underclay.svg,Underclay
+661,661 Flint clay.svg,Flint clay
+662,662 Bentonite.svg,Bentonite
+663,663 Glauconite.svg,Glauconite
+664,664 Limonite.svg,Limonite
+665,665 Siderite.svg,Siderite
+666,666 Phosphatic-nodular rock.svg,Phosphatic-nodular rock
+667,667 Gypsum.svg,Gypsum
+668,668 Salt.svg,Salt
+669,669 Interbedded sandstone and siltstone.svg,Interbedded sandstone and siltstone
+670,670 Interbedded sandstone and shale.svg,Interbedded sandstone and shale
+671,671 Interbedded ripple-bedded sandstone and shale.svg,Interbedded ripple-bedded sandstone and shale
+672,672 Interbedded shale and silty limestone (shale dominant).svg,Interbedded shale and silty limestone (shale dominant)
+673,673 Interbedded shale and limestone (shale dominant) (1st option).svg,Interbedded shale and limestone (shale dominant) (1st option)
+674,674 Interbedded shaleand limestone (shale dominant) (2nd option).svg,Interbedded shaleand limestone (shale dominant) (2nd option)
+675,675 Interbedded calcareous shale and limestone (shale dominant).svg,Interbedded calcareous shale and limestone (shale dominant)
+676,676 Interbedded silty limestone and shale.svg,Interbedded silty limestone and shale
+677,677 Interbedded limestone and shale (1st option).svg,Interbedded limestone and shale (1st option)
+678,678 Interbedded limestone and shale (2nd option).svg,Interbedded limestone and shale (2nd option)
+679,679 Interbedded limestone and shale (limestone dominant).svg,Interbedded limestone and shale (limestone dominant)
+680,680 Interbedded limestone and calcareous shale.svg,Interbedded limestone and calcareous shale
+681,681 Till or diamicton (1st option).svg,Till or diamicton (1st option)
+682,682 Till or diamicton (2nd option).svg,Till or diamicton (2nd option)
+683,683 Till or diamicton (3rd option).svg,Till or diamicton (3rd option)
+684,684 Loess (1st option).svg,Loess (1st option)
+685,685 Loess (2nd option).svg,Loess (2nd option)
+686,686 Loess (3rd option).svg,Loess (3rd option)
+701,701 Metamorphism.svg,Metamorphism
+702,702 Quartzite.svg,Quartzite
+703,703 Slate.svg,Slate
+704,704 Schistose or gneissoid granite.svg,Schistose or gneissoid granite
+705,705 Schist.svg,Schist
+706,706 Contorted schist.svg,Contorted schist
+707,707 Schist and gneiss.svg,Schist and gneiss
+708,708 Gneiss.svg,Gneiss
+709,709 Contorted gneiss.svg,Contorted gneiss
+710,"710 Soapstone, talc, or serpentinite.svg","Soapstone, talc, or serpentinite"
+711,711 Tuffaceous rock.svg,Tuffaceous rock
+712,712 Crystal tuff.svg,Crystal tuff
+713,713 Devitrified tuff.svg,Devitrified tuff
+714,714 Volcanic breccia and tuff.svg,Volcanic breccia and tuff
+715,715 Volcanic breccia or agglomerate.svg,Volcanic breccia or agglomerate
+716,716 Zeolitic rock.svg,Zeolitic rock
+717,717 Basaltic flows.svg,Basaltic flows
+719,719 Granite (2nd option).svg,Granite (2nd option)
+720,720 Banded igneous rock.svg,Banded igneous rock
+721,721 Igneous rock (1st option).svg,Igneous rock (1st option)
+722,722 Igneous rock (2nd option).svg,Igneous rock (2nd option)
+723,723 Igneous rock (3rd option).svg,Igneous rock (3rd option)
+724,724 Igneous rock (4th option).svg,Igneous rock (4th option)
+725,725 Igneous rock (5th option).svg,Igneous rock (5th option)
+726,726 Igneous rock (6th option).svg,Igneous rock (6th option)
+727,727 Igneous rock (7th option).svg,Igneous rock (7th option)
+728,728 Igneous rock (8th option).svg,Igneous rock (8th option)
+729,729 Porphyritic rock (1st option).svg,Porphyritic rock (1st option)
+730,730 Porphyritic rock (2nd option).svg,Porphyritic rock (2nd option)
+731,731 Vitrophyre.svg,Vitrophyre
+732,732 Quartz.svg,Quartz
+733,733 Ore.svg,Ore

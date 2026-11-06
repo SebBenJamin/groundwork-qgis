@@ -41,4 +41,25 @@ def test_attribution_names_source_and_licence():
 def test_zip_contains_patterns_and_attribution():
     from scripts.package import PLUGIN, files_under
     rel = {p.relative_to(PLUGIN).as_posix() for p in files_under(PLUGIN)}
-    assert "patterns/fgdc/607.svg" in rel and "patterns/fgdc/ATTRIBUTION.md" in rel
+    assert "patterns/fgdc/607 Massive sand or sandstone.svg" in rel
+    assert "patterns/fgdc/ATTRIBUTION.md" in rel
+
+
+def test_files_are_named_by_code_and_name():
+    """QGIS's SVG picker shows file names: "607 Massive sand or sandstone.svg", not 607.svg;
+    characters Windows does not allow in file names are left out."""
+    from geophysics_workbench.patterns import PATTERN_DIR
+    rows = list(csv.DictReader(open(PATTERN_DIR / "fgdc" / "index.csv", encoding="utf8")))
+    for r in rows:
+        assert r["file"].startswith(r["code"] + " ") and r["file"].endswith(".svg"), r
+        assert not any(c in r["file"] for c in r'<>:"/\|?*'), r
+    assert {r["code"]: r["file"] for r in rows}["607"] == "607 Massive sand or sandstone.svg"
+
+
+def test_catalogue_lists_every_pattern(qgis_app):
+    from geophysics_workbench.patterns import catalogue
+    items = catalogue()
+    assert len(items) == 116
+    sand = next(i for i in items if i.code == "607")
+    assert sand.name == "Massive sand or sandstone" and sand.path.is_file()
+    assert sand.label == "607 – Massive sand or sandstone"

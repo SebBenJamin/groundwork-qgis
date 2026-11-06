@@ -95,8 +95,12 @@ class BoreholeStyleDialog(QDialog):
         self.reload_editor()
         row = QHBoxLayout()
         export_btn, import_btn = QPushButton("Export…"), QPushButton("Import…")
+        patterns_btn = QPushButton("Patterns…")
+        patterns_btn.setToolTip("A colour and an FGDC pattern for every class, in one table")
         export_btn.clicked.connect(self._export)
         import_btn.clicked.connect(self._import)
+        patterns_btn.clicked.connect(self._open_patterns)
+        row.addWidget(patterns_btn)
         row.addWidget(export_btn)
         row.addWidget(import_btn)
         row.addStretch(1)
@@ -120,6 +124,31 @@ class BoreholeStyleDialog(QDialog):
         self.editor.setWindowFlags(Qt.WindowType.Widget)
         self._editor_box.addWidget(self.editor, 1)
         self.editor.show()
+
+    def patterns_table(self):
+        """The Patterns table for the editor's current style, or ``None`` (with a note) when
+        the style is not Categorized: the table needs classes."""
+        from .pattern_table import PatternTable
+        self.editor.apply()
+        renderer = self.copy.renderer()
+        if renderer is None or renderer.type() != "categorizedSymbol"                 or not renderer.categories():
+            self.note.setText("Patterns… works on classes: choose “Categorized”, "
+                              "press Classify, then Patterns… again.")
+            self.note.setVisible(True)
+            return None
+        return PatternTable(renderer, self)
+
+    def take_patterns(self, table) -> None:
+        """Hand the table's classes to QGIS's editor (saved on Apply/OK, as any edit)."""
+        self.copy.setRenderer(table.result())
+        self.reload_editor()
+
+    def _open_patterns(self) -> None:
+        table = self.patterns_table()
+        if table is not None and table.exec():
+            self.take_patterns(table)
+        if table is not None:
+            table.deleteLater()
 
     def apply(self) -> None:
         self.editor.apply()
