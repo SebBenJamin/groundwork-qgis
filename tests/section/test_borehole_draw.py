@@ -128,3 +128,17 @@ def test_frame_draws_many_shared_intervals_with_one_pool(qgis_app):
     img, _ = _draw(p, ColumnOptions(width_px=16))
     assert _close(img.pixel(100, 62), (shared.color().red(), shared.color().green(),
                                        shared.color().blue()))
+
+
+
+def test_log_scale_with_min_at_or_below_zero_uses_the_smallest_positive_value(qgis_app):
+    """Minor 3: a log track with min <= 0 still shows the curve (min = smallest positive
+    sample), instead of an empty track."""
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from geophysics_workbench.core.context import Curve
+    from geophysics_workbench.section.borehole_draw import curve_range
+    c = Curve("k", "res", "ohm.m", np.array([0.0, 1.0, 2.0]), np.array([0.0, 5.0, 500.0]))
+    assert curve_range(c, CurveStyle(log=True, vmin=0.0), None) == (5.0, 500.0)
+    assert curve_range(c, CurveStyle(log=True), (0.0, 500.0)) == (5.0, 500.0)
+    assert curve_range(Curve("k", "r", "", np.array([0.0]), np.array([-1.0])),
+                       CurveStyle(log=True), None) is None

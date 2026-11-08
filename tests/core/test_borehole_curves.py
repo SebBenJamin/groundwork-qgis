@@ -47,3 +47,11 @@ def test_data_range_over_curves_log_ignores_non_positive():
 def test_curve_style_defaults():
     s = CurveStyle()
     assert s.fill == "none" and s.log is False and s.vmin is None
+
+
+
+def test_value_at_on_a_log_scale_skips_non_positive_neighbours():
+    """Minor 4: on a log scale a sample <= 0 is a gap in the line; the readout agrees."""
+    c = _curve([1.0, 2.0, 3.0], [10.0, 0.0, 30.0])
+    assert value_at(c, 1.5) == pytest.approx(5.0)
+    assert value_at(c, 1.5, log=True) is None and value_at(c, 3.0, log=True) == 30.0

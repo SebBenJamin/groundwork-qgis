@@ -54,7 +54,8 @@ def _register_builtins() -> None:
     from .r2_res import R2ResReader
     from .vtk_legacy import VtkLegacyReader
     from .zondres import ZondResReader
-    for cls in (BertDataReader, R2ErrReader, R2ResReader, VtkLegacyReader, ZondResReader):   # most specific first
+    # most specific first
+    for cls in (BertDataReader, R2ErrReader, R2ResReader, VtkLegacyReader, ZondResReader):
         register(cls())
 
 

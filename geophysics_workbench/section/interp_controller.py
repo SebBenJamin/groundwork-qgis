@@ -144,7 +144,8 @@ class InterpController(QObject):
         if prov is None or prov.interp_version_id is None:
             return True
         store = prov.store
-        return not store.has_interpretation() or prov.interp_version_id ==             store.current_version().id
+        return not store.has_interpretation() or prov.interp_version_id == \
+                store.current_version().id
 
     def surface(self):
         """The drawn ground line of the open profile, or None."""

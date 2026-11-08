@@ -6,7 +6,8 @@ apparent resistivity of the model, the original and the final data weight (stand
 deviation in data units) and a flag. Electrodes are numbers only: their positions come from
 ``electrodes.dat`` (x, y[, z] per electrode, as ResIPy writes it next to its R2 files), or the
 ``electrodes`` reader option. The header must name columns 5..7 as R2 does, and R2.out's
-final RMS (when it sits next to the file) must agree with the misfit read. Electrode order within a reading changes neither the misfit
+final RMS (when it sits next to the file) must agree with the misfit read. Electrode order
+within a reading changes neither the misfit
 nor the pseudo-depth (reciprocity), so the four columns are taken as given.
 """
 from __future__ import annotations

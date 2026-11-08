@@ -55,7 +55,13 @@ def _text(value) -> str:
     return "" if QgsVariantUtils.isNull(value) else str(value).strip()
 
 
+_DECIMAL_COMMA = re.compile(r"\s*-?\d+,\d+\s*")
+
+
 def _number(value) -> float | None:
+    """A finite number; text with a decimal comma ("0,4" from a German CSV) is read too."""
+    if isinstance(value, str) and _DECIMAL_COMMA.fullmatch(value):
+        value = value.replace(",", ".")
     try:
         out = float(value)
     except (TypeError, ValueError):
@@ -473,16 +479,20 @@ class ContextGatherer:
                 _id_request_filter(layer, b.log_id_field, bid))
             request.setSubsetOfAttributes(sorted({f for f in fields if f} | styled),
                                           layer.fields())
-            rows, features = [], []
+            rows, features, swapped = [], [], 0
             for f in layer.getFeatures(request):
                 if _id_text(f[b.log_id_field]) != bid:
                     continue
                 top, bottom = _number(f[b.top_field]), _number(f[b.bottom_field])
                 if top is not None and bottom is not None:
+                    swapped += top > bottom
                     rows.append(LogInterval(min(top, bottom), max(top, bottom),
                                             _text(f[b.lithology_field])
                                             if b.lithology_field else ""))
                     features.append(QgsFeature(f))
+            if swapped:
+                self._warn(b.log_layer_id, f"{swapped} interval(s) of borehole {bid} have their "
+                                           f"top below the bottom; used swapped")
             pairs = (styler.symbols(features, [r.text for r in rows]) if styler is not None
                      else [(default_symbol(r.text), f) for r, f in zip(rows, features)])
             for row, (symbol, feature) in zip(rows, pairs):

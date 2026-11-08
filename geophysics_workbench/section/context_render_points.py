@@ -1,4 +1,5 @@
-"""Boreholes and plain points (glyphs only; labels are placed by ``context_render``) drawn on the section (see ``context_render``)."""
+"""Boreholes and plain points drawn on the section (glyphs only; labels are placed by
+``context_render``)."""
 from __future__ import annotations
 
 import numpy as np
@@ -29,6 +30,22 @@ def column_px(rc, items, p) -> float:
     """The drawn width of borehole ``p``'s column, in pixels."""
     view = items.borehole_views.get(p.entry)
     return float(view.column_px) if view is not None else mm(rc, COLUMN_WIDTH)
+
+
+CHAR_PX = 6.0               # a layer-text character, for hit tests and tie-strip room
+
+
+def right_extent_px(items, p) -> float:
+    """How far the section draws right of borehole ``p``'s column: its curve tracks and
+    layer text (pixels; the text estimated from its longest line)."""
+    from .borehole_draw import TEXT_GAP_PX, TRACK_GAP_PX
+    view = items.borehole_views.get(p.entry)
+    if view is None:
+        return 0.0
+    px = len(view.curve_keys) * (SECTION_TRACK_PX + TRACK_GAP_PX)
+    if view.layer_text:
+        px += TEXT_GAP_PX + CHAR_PX * max((len(iv.text) for iv in p.log), default=0)
+    return px
 
 
 def section_options(rc, items, p) -> ColumnOptions:

@@ -152,3 +152,33 @@ def test_per_borehole_half_widths():
     hits = context_hits(ContextItems(points=[near, wide]), 27.5, 98.0, 1.0,
                         lambda q: half[id(q)])
     assert any("Borehole W" in h for h in hits) and not any("Borehole N" in h for h in hits)
+
+
+
+def test_readout_shows_small_curve_values_and_respects_log_gaps():
+    """Minor 4: 0.004 S/m is not shown as 0.0; on a log scale no value across a <= 0 gap."""
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from geophysics_workbench.core.context import Curve
+    from geophysics_workbench.section.context_readout import curve_lines
+    p = ProjectedPoint(20.0, 0.0, "B1", "borehole", 100.0, curves=[
+        Curve("t:c", "cond", "S/m", np.array([1.0, 3.0]), np.array([0.004, 0.004])),
+        Curve("t:r", "res", "ohm.m", np.array([1.0, 2.0, 3.0]), np.array([10.0, 0.0, 30.0]))])
+    lines = curve_lines(p, 1.5, {"t:r": CurveStyle(log=True)})
+    assert "cond: 0.004 S/m (interpolated)" in lines
+    assert not any(line.startswith("res") for line in lines)
+
+
+
+def test_hover_over_a_curve_track_right_of_the_column():
+    """Minor 8: the curve track drawn right of the column also answers the readout."""
+    from geophysics_workbench.core.context import BoreholeView, Curve
+    p = ProjectedPoint(20.0, 4.0, "B1", "borehole", 100.0, [LogInterval(0.0, 4.0, "Sand")],
+                       entry=0, curves=[Curve("t:gr", "gr", "API", np.array([1.0, 3.0]),
+                                              np.array([40.0, 50.0]))])
+    items = ContextItems(points=[p], borehole_views={0: BoreholeView(16, 1.0, False,
+                                                                     ("t:gr",))})
+    half = lambda q: 0.5
+    right = lambda q: 3.0                                   # track: 3 m right of the column
+    hits = context_hits(items, 22.0, 98.0, 0.1, half, right_extent_s=right)
+    assert "Borehole B1 gr: 45.0 API (interpolated)" in hits
+    assert not any("B1" in h for h in context_hits(items, 22.0, 98.0, 0.1, half))

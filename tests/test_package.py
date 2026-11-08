@@ -19,7 +19,7 @@ def test_metadata_targets_qgis4():
     assert g["name"] == "Geophysics Workbench"
     assert g["qgisMinimumVersion"] == "4.2"
     assert g["supportsQt6"] == "True"
-    assert g["version"] == "0.5.0"
+    assert g["version"] == "0.5.1"
 
 
 def test_plugin_loads_and_unloads(fake_iface):
@@ -124,3 +124,14 @@ def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
         assert "context/synthetic_logs.gpkg" in names and "guelpe_project.qgz" in names
     finally:
         shutil.rmtree(fresh, ignore_errors=True)
+
+
+
+def test_plugin_lines_are_wrapped():
+    """Minor 10: no line in the plugin's Python is longer than 110 characters."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "geophysics_workbench"
+    long = [f"{p.relative_to(root)}:{i}" for p in root.rglob("*.py")
+            for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+            if len(line) > 110]
+    assert long == []

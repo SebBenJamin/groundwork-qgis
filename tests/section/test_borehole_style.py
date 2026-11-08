@@ -163,3 +163,44 @@ def test_snapshot_copy_clones_each_distinct_symbol_once(qgis_app):
     copied = copy.deepcopy(ContextItems(points=pts))
     syms = [iv.symbol for p in copied.points for iv in p.log]
     assert all(s is syms[0] for s in syms) and syms[0] is not sym
+
+
+
+def test_bad_curve_style_values_fall_back_one_by_one(project):
+    """Minor 2: a hand-edited project with wrong values gives the default for that value,
+    never a crash later when drawing."""
+    import json
+
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from geophysics_workbench.section.borehole_style import (CURVE_STYLES_KEY, STYLE_SCOPE,
+                                                             curve_styles)
+    project.writeEntry(STYLE_SCOPE, CURVE_STYLES_KEY, json.dumps({"k": {
+        "colour": "red", "width_mm": "x", "dash": "wiggly", "fill": "up", "log": "yes",
+        "vmin": "abc", "vmax": float("inf"), "fill_colour": "#11223344"}}))
+    s = curve_styles(project)["k"]
+    d = CurveStyle()
+    assert (s.colour, s.width_mm, s.dash, s.fill, s.log, s.vmin, s.vmax) == (
+        d.colour, d.width_mm, d.dash, d.fill, d.log, None, None)
+    assert s.fill_colour == "#11223344"
+
+
+def test_curve_style_dialog_rejects_nan_and_inf(qgis_app):
+    from geophysics_workbench.ui.curve_style_dialog import _number
+    assert _number("nan") is None and _number("inf") is None and _number("2,5") == 2.5
+
+
+
+def test_class_switched_off_is_left_unfilled(qgis_app):
+    """Minor 6: a category the user unticked draws no fill (not a neutral colour); values
+    without any class still get their neutral colour."""
+    from geophysics_workbench.core.lithology import label_colour
+    from geophysics_workbench.section.borehole_style import interval_symbols
+    fields = _fields("lithology")
+    r = _categorized()
+    r.updateCategoryRenderState(0, False)
+    (off, _f), (other, _g) = interval_symbols(
+        r, fields, [_feature(fields, lithology="Sand"), _feature(fields, lithology="Clay")],
+        texts=["Sand", "Clay"])
+    from qgis.PyQt.QtCore import Qt
+    assert off.symbolLayer(0).brushStyle() == Qt.BrushStyle.NoBrush
+    assert _rgb(other) == label_colour("Clay")

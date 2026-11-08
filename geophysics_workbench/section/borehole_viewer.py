@@ -353,6 +353,8 @@ class BoreholeViewer(QWidget):
         # how the section draws the columns: written to the borehole entries, so the
         # section follows (with layer text and the curves ticked above)
         section_box = QGroupBox("On the section")
+        section_box.setToolTip("Applies to every borehole entry; layer text and ticked curves "
+                               "are drawn on the section too")
         section_form = QFormLayout(section_box)
         self.column_spin = QSpinBox()
         self.column_spin.setRange(*COLUMN_PX_RANGE)
@@ -385,6 +387,8 @@ class BoreholeViewer(QWidget):
 
         self.load_options()
         self._syncing = False
+        self._detached = False
+        self._saved_options = json.dumps(self.options())
         self._sync_look()
         self.show_check["text"].toggled.connect(lambda _c: self._look_changed())
         self.column_spin.valueChanged.connect(lambda _v: self._look_changed())
@@ -535,6 +539,7 @@ class BoreholeViewer(QWidget):
             self.ve_spin.blockSignals(False)
 
     def _redraw(self, refit: bool = True) -> None:
+        self._save_if_changed()
         if refit or self.canvas.transform is None:
             self.canvas.fit_view()
         missing = [p.label for p in self.boreholes
@@ -604,7 +609,17 @@ class BoreholeViewer(QWidget):
                 "font_colour": self.font_button.textFormat().color().name()}
 
     def save_options(self) -> None:
-        self.project.writeEntry(SCOPE, OPTIONS_KEY, json.dumps(self.options()))
+        text = json.dumps(self.options())
+        self.project.writeEntry(SCOPE, OPTIONS_KEY, text)
+        self._saved_options = text
+
+    def _save_if_changed(self) -> None:
+        """Options go into the project when they change (not on close: by then the project
+        may already be cleared or another one loaded)."""
+        if getattr(self, "_detached", True) or not hasattr(self, "_saved_options"):
+            return
+        if json.dumps(self.options()) != self._saved_options:
+            self.save_options()
 
     def load_options(self) -> None:
         text, ok = self.project.readEntry(SCOPE, OPTIONS_KEY, "")
@@ -638,12 +653,12 @@ class BoreholeViewer(QWidget):
             self.font_button.setTextFormat(fmt)
 
     def closeEvent(self, event):
-        self.save_options()
         QgsSettings().setValue(GEOMETRY_KEY, self.saveGeometry())
         super().closeEvent(event)
 
     def detach(self) -> None:
         """Stop following the section (the plugin unloads or the project changes)."""
+        self._detached = True
         try:
             self.dock.profile_changed.disconnect(self._profile_changed)
         except (TypeError, RuntimeError):

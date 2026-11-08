@@ -62,8 +62,10 @@ def register_svg_path() -> None:
 
 
 def unregister_svg_path() -> None:
+    """Remove our folder from the default SVG paths, keeping any path added meanwhile."""
     global _previous
     if _previous is None:
         return
-    QgsApplication.setDefaultSvgPaths(_previous)
+    ours = _norm(PATTERN_DIR)
+    QgsApplication.setDefaultSvgPaths([p for p in _defaults() if _norm(p) != ours])
     _previous = None

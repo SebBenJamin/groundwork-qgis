@@ -21,10 +21,13 @@ def _hex(colour: QColor, alpha: bool = False) -> str:
 
 
 def _number(text: str) -> float | None:
+    """A finite number ("2,5" too), else ``None`` (empty: the data range)."""
+    import math
     try:
-        return float(text.replace(",", "."))
+        value = float(text.replace(",", "."))
     except ValueError:
         return None
+    return value if math.isfinite(value) else None
 
 
 class _CurveRow(QGroupBox):

@@ -43,7 +43,8 @@ def piece_symbols(pieces, features, layers: dict) -> dict:
     for p in pieces:
         layer = layers.get(LAYER_BY_KIND[p.kind])
         sym = None
-        qf = _feature_for(layer.fields(), features.get(p.feature_id), p)             if layer is not None else QgsFeature()
+        qf = _feature_for(layer.fields(), features.get(p.feature_id), p) \
+                if layer is not None else QgsFeature()
         if layer is not None and layer.renderer() is not None:
             rc = QgsRenderContext()
             renderer = layer.renderer().clone()
@@ -137,7 +138,7 @@ def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols,
     from .context_readout import strip_start
     from .context_render import TIE_STRIP_WIDTH, mm
     from ..core.context import ContextItems
-    from .context_render_points import column_px
+    from .context_render_points import column_px, right_extent_px
     items = ContextItems(borehole_views=dict(views or {}))
 
     width = mm(rc, TIE_STRIP_WIDTH)
@@ -150,7 +151,8 @@ def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols,
     painter.setFont(font)
     for s, marks in crossings:
         start = strip_start(points, s, width / px_per_m,
-                            lambda q: column_px(rc, items, q) / 2 / px_per_m)
+                            lambda q: column_px(rc, items, q) / 2 / px_per_m,
+                            lambda q: right_extent_px(items, q) / px_per_m)
         x0 = wt.map(QPointF(start, 0.0)).x()
         x1 = x0 + width
         for m in marks:

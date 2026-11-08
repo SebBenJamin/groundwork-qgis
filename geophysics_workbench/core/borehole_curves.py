@@ -60,10 +60,13 @@ def data_range(curves, log: bool) -> tuple[float, float] | None:
     return float(allv.min()), float(allv.max())
 
 
-def value_at(curve, depth: float) -> float | None:
+def value_at(curve, depth: float, log: bool = False) -> float | None:
     """The curve's value at ``depth``: linear between the two neighbouring samples, ``None``
-    outside the samples or when either neighbour is a gap."""
+    outside the samples or when either neighbour is a gap (on a ``log`` scale also a sample
+    <= 0, as in the drawn line)."""
     d, v = np.asarray(curve.depth, float), np.asarray(curve.values, float)
+    if log:
+        v = np.where(v > 0, v, np.nan)
     if d.size == 0 or depth < d[0] or depth > d[-1]:
         return None
     i = int(np.searchsorted(d, depth))

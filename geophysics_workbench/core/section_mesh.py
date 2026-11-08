@@ -14,7 +14,8 @@ from .cell_centres import cell_boxes, quads
 def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     """Median length of the unique Delaunay edges incident to each vertex (vectorised)."""
     n = len(pts)
-    e = np.sort(np.concatenate([simplices[:, [0, 1]], simplices[:, [1, 2]], simplices[:, [2, 0]]]).astype(np.int64), axis=1)
+    e = np.sort(np.concatenate([simplices[:, [0, 1]], simplices[:, [1, 2]],
+                                simplices[:, [2, 0]]]).astype(np.int64), axis=1)
     e = np.unique(e[:, 0] * n + e[:, 1])
     a, b = e // n, e % n
     length = np.linalg.norm(pts[a] - pts[b], axis=1)
@@ -235,8 +236,10 @@ class SectionMesh:
         cross = (d0 * d1 <= 0) & ~on & (dx != 0)
         with np.errstate(invalid="ignore", divide="ignore"):
             zc = p0[..., 1] + (s - p0[..., 0]) / dx * (p1[..., 1] - p0[..., 1])
-        z_lo = np.minimum(np.where(cross, zc, np.inf), np.where(on, np.minimum(p0[..., 1], p1[..., 1]), np.inf)).min(1)
-        z_hi = np.maximum(np.where(cross, zc, -np.inf), np.where(on, np.maximum(p0[..., 1], p1[..., 1]), -np.inf)).max(1)
+        z_lo = np.minimum(np.where(cross, zc, np.inf),
+                              np.where(on, np.minimum(p0[..., 1], p1[..., 1]), np.inf)).min(1)
+        z_hi = np.maximum(np.where(cross, zc, -np.inf),
+                              np.where(on, np.maximum(p0[..., 1], p1[..., 1]), -np.inf)).max(1)
         hit = np.isfinite(z_lo) & np.isfinite(z_hi)
         order = np.argsort(-z_hi[hit], kind="stable")
         return z_hi[hit][order], z_lo[hit][order], self.values[hit][order]

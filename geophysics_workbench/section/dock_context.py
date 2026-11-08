@@ -26,7 +26,15 @@ def context_lines(dock, s: float, z: float) -> list[str]:
     per_px = (rng.upper() - rng.lower()) / area.width()
     per_mm = per_px * dock.logicalDpiX() / 25.4
     return context_hits(ctx, s, z, TOLERANCE_PX * per_px, half_widths(ctx, per_px, per_mm),
-                        STRIP_MM * per_mm, surface=dock._topo, stations=stations)
+                        STRIP_MM * per_mm, surface=dock._topo, stations=stations,
+                        right_extent_s=right_extents(ctx, per_px))
+
+
+def right_extents(ctx, per_px: float):
+    """How far a borehole's curve tracks and layer text reach right of its column, in
+    metres of chainage, per point (as drawn)."""
+    from .context_render_points import right_extent_px
+    return lambda p: right_extent_px(ctx, p) * per_px
 
 
 def half_widths(ctx, per_px: float, per_mm: float):
@@ -48,7 +56,8 @@ def borehole_hit(dock, s: float, z: float):
     context_lines(dock, s, z)                   # fills the cached context
     if dock._ctx is None or dock._ctx[0] is None:
         return None
-    p = borehole_at(dock._ctx[0], s, z, half_widths(dock._ctx[0], per_px, per_mm), dock._topo)
+    p = borehole_at(dock._ctx[0], s, z, half_widths(dock._ctx[0], per_px, per_mm), dock._topo,
+                    right_extents(dock._ctx[0], per_px))
     return None if p is None else (p.entry, p.label)
 
 
@@ -69,7 +78,8 @@ def click_details(dock, s: float, z: float) -> list[str]:
     context_lines(dock, s, z)                   # fills the cached context
     if dock._ctx is not None and dock._ctx[0] is not None:
         lines += borehole_details(dock._ctx[0], s, z,
-                                  half_widths(dock._ctx[0], per_px, per_mm), dock._topo)
+                                  half_widths(dock._ctx[0], per_px, per_mm), dock._topo,
+                                  right_extents(dock._ctx[0], per_px))
     store = dock.provider.store
     version = dock.provider.shown_interp_version()
     if version is not None:

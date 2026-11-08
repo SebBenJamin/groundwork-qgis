@@ -137,7 +137,8 @@ class BoreholeStyleDialog(QDialog):
         from .pattern_table import PatternTable
         self.editor.apply()
         renderer = self.copy.renderer()
-        if renderer is None or renderer.type() != "categorizedSymbol"                 or not renderer.categories():
+        if renderer is None or renderer.type() != "categorizedSymbol" \
+                or not renderer.categories():
             self.note.setText("Patterns… works on classes: choose “Categorized”, "
                               "press Classify, then Patterns… again.")
             self.note.setVisible(True)

@@ -256,7 +256,7 @@ def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> Non
     """Dashed tie lines, each with a strip of the other profile's column just right of
     the line, or in the nearest free slot beside a borehole column (``strip_start``)."""
     from .context_readout import strip_start
-    from .context_render_points import column_px
+    from .context_render_points import column_px, right_extent_px
 
     if not items.ties or not z_range[0] < z_range[1]:
         return
@@ -271,7 +271,8 @@ def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> Non
         if col is None:
             continue
         start = strip_start(items.points, tie.s, width / px_per_m,
-                            lambda q: column_px(rc, items, q) / 2 / px_per_m)
+                            lambda q: column_px(rc, items, q) / 2 / px_per_m,
+                            lambda q: right_extent_px(items, q) / px_per_m)
         x = wt.map(QPointF(start, z_range[1])).x()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(Qt.PenStyle.NoPen)

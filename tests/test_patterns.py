@@ -63,3 +63,18 @@ def test_catalogue_lists_every_pattern(qgis_app):
     sand = next(i for i in items if i.code == "607")
     assert sand.name == "Massive sand or sandstone" and sand.path.is_file()
     assert sand.label == "607 – Massive sand or sandstone"
+
+
+
+def test_unregister_keeps_paths_added_by_others_meanwhile(qgis_app):
+    """Minor 9: another plugin's default SVG path, added after ours, survives our unload."""
+    from qgis.core import QgsApplication
+
+    from geophysics_workbench.patterns import _defaults, register_svg_path, unregister_svg_path
+    register_svg_path()
+    QgsApplication.setDefaultSvgPaths(_defaults() + ["C:/other_plugin/svg"])
+    unregister_svg_path()
+    paths = [p.replace("\\", "/") for p in QgsApplication.svgPaths()]
+    assert "C:/other_plugin/svg" in paths
+    assert not any(p.rstrip("/").endswith("geophysics_workbench/patterns") for p in paths)
+    QgsApplication.setDefaultSvgPaths([p for p in _defaults() if "other_plugin" not in p])

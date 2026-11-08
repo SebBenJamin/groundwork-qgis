@@ -850,3 +850,43 @@ def test_numeric_ids_match_however_stored(project, profile, point_type, point_id
     p = g.items_for(profile).points[0]
     g.close()
     assert p.label == "7" and [iv.text for iv in p.log] == ["sand"]
+
+
+
+def test_swapped_top_and_bottom_are_logged_once(project, profile, qgis_app):
+    """Minor 7: rows with top below bottom are used swapped, and the log says so (once)."""
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    got, stop = _capture_log(qgis_app)
+    try:
+        bh = _layer(project, "Point", "BH", "bid:string")
+        _add(bh, "POINT(20 1)", ["B1"])
+        log = _layer(project, "NoGeometry", "Log",
+                     "bid:string&field=top:double&field=bot:double&field=lith:string")
+        _add(log, None, ["B1", 3.0, 1.0, "clay"])
+        _add(log, None, ["B1", 5.0, 3.0, "sand"])
+        g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+            bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
+        g.items_for(profile)
+        g.items_for(profile)
+        g.close()
+    finally:
+        stop()
+    swapped = [m for m, _t, _l in got if "swapped" in m]
+    assert len(swapped) == 1 and "2 interval" in swapped[0]
+
+
+def test_decimal_comma_numbers_are_read(project, profile):
+    """Minor 11: "0,4" from a German CSV is 0.4, not a skipped row."""
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from geophysics_workbench.section.context_layers import _number
+    assert _number("0,4") == 0.4 and _number("-12,75") == -12.75 and _number("1.234,5") is None
+    bh = _layer(project, "Point", "BH", "bid:string&field=z:string")
+    _add(bh, "POINT(20 1)", ["B1", "31,2"])
+    log = _layer(project, "NoGeometry", "Log",
+                 "bid:string&field=top:string&field=bot:string&field=lith:string")
+    _add(log, None, ["B1", "0", "0,4", "topsoil"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "z", log.id(), "bid", "top", "bot", "lith")]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert p.z_top == approx(31.2) and [(iv.top, iv.bottom) for iv in p.log] == [(0.0, 0.4)]

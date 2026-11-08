@@ -126,6 +126,7 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 **How they look is set in the borehole viewer**, and the section follows:
 - **Layer text** and the ticked **Curves** in the viewer's side panel are drawn on the section too.
 - So are the **column width** and **opacity** under "On the section".
+- These settings apply to **every** borehole entry at once (e.g. your cores and the state boreholes).
 
 ---
 

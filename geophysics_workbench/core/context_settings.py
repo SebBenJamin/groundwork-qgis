@@ -161,7 +161,8 @@ def _item(data, kind):
                                           if isinstance(value, list)) if c is not None]
             continue
         if f.name == "section_curves":
-            kwargs[f.name] = [v for v in value if isinstance(v, str)]                 if isinstance(value, list) else []
+            kwargs[f.name] = [v for v in value if isinstance(v, str)] \
+                    if isinstance(value, list) else []
             continue
         want = bool if f.type in ("bool", bool) else str
         if isinstance(value, want):

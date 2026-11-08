@@ -206,7 +206,14 @@ def curve_range(curve, style: CurveStyle, given) -> tuple[float, float] | None:
                                               else None) or (None, None)
     lo = style.vmin if style.vmin is not None else lo
     hi = style.vmax if style.vmax is not None else hi
-    return None if lo is None or hi is None else (float(lo), float(hi))
+    if lo is None or hi is None:
+        return None
+    if style.log and lo <= 0:                     # a log scale cannot start at <= 0
+        positive = data_range([curve], True) if curve is not None else None
+        if positive is None or hi <= 0:
+            return None
+        lo = positive[0]
+    return float(lo), float(hi)
 
 
 def _track(painter, rc, track: QRectF, y_of_depth, curve, style: CurveStyle, given) -> None:
@@ -214,7 +221,10 @@ def _track(painter, rc, track: QRectF, y_of_depth, curve, style: CurveStyle, giv
     painter.setPen(_pen(rc, TRACK_FRAME_RGB, OUTLINE_MM))
     painter.drawRect(track)
     rng = curve_range(curve, style, given)
-    if curve is None or rng is None or len(curve.depth) == 0:
+    if curve is None or len(curve.depth) == 0:
+        return
+    if rng is None:                               # nothing to draw: say which curve it is
+        _header(painter, rc, track, curve, None)
         return
     f = track_fraction(curve.values, rng[0], rng[1], style.log)
     xs = track.left() + f * track.width()
@@ -243,7 +253,10 @@ def _header(painter, rc, track: QRectF, curve, rng) -> None:
     painter.setPen(QPen(QColor(*TEXT_RGB)))
     fm = painter.fontMetrics()
     y = track.top() - 2
-    painter.drawText(QPointF(track.left(), y - fm.height()), f"{curve.name} {curve.unit}".strip())
+    painter.drawText(QPointF(track.left(), y - fm.height()),
+                     f"{curve.name} {curve.unit}".strip())
+    if rng is None:
+        return
     lo, hi = f"{rng[0]:g}", f"{rng[1]:g}"
     painter.drawText(QPointF(track.left(), y), lo)
     painter.drawText(QPointF(track.right() - fm.horizontalAdvance(hi), y), hi)

@@ -192,7 +192,8 @@ def _intersections(a_xy: np.ndarray, b_xy: np.ndarray) -> list[tuple[float, floa
 def line_crossings(profile_xy, line_xy, label: str, kind: str = "line",
                    rgb: tuple = DEFAULT_LINE_RGB, layer: str = "") -> list[Crossing]:
     """Where ``line_xy`` crosses the profile, as chainage + acute angle."""
-    return [Crossing(sa, label, kind, ang, rgb, layer) for sa, _sb, ang in _intersections(profile_xy, line_xy)]
+    return [Crossing(sa, label, kind, ang, rgb, layer)
+            for sa, _sb, ang in _intersections(profile_xy, line_xy)]
 
 
 def project_points(profile_xy, points_xy, buffer: float) -> list[tuple[int, float, float]]:

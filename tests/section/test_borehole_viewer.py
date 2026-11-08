@@ -292,3 +292,22 @@ def test_section_curves_of_other_profiles_are_kept(fake_dock, qgis_app):
     v.curve_check("t:gr").setChecked(True)
     assert sorted(read_settings(prj).boreholes[0].section_curves) == ["t:gr", "t:res"]
     v.deleteLater()
+
+
+
+def test_options_saved_when_changed_not_on_close(fake_dock, qgis_app):
+    """Minor 1: options are written when they change; closing a detached viewer (project
+    being cleared) writes nothing into whatever project is current then."""
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.section.borehole_viewer import OPTIONS_KEY, SCOPE, BoreholeViewer
+    prj = QgsProject.instance()
+    prj.removeEntry(SCOPE, OPTIONS_KEY)
+    v = BoreholeViewer(fake_dock, prj)
+    v.set_mode("even")
+    assert '"even"' in prj.readEntry(SCOPE, OPTIONS_KEY, "")[0]
+    prj.removeEntry(SCOPE, OPTIONS_KEY)               # the project is cleared ...
+    v.detach()
+    v.close()                                         # ... then the viewer closes
+    assert prj.readEntry(SCOPE, OPTIONS_KEY, "")[0] == ""
+    v.deleteLater()

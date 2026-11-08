@@ -316,12 +316,14 @@ class SectionDock(QDockWidget):
                 self.cursor_left.emit()
             elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
                 self.fit.user_navigated()       # the user navigates: keep their view
-            if etype == QEvent.Type.MouseButtonPress and                     event.button() == Qt.MouseButton.LeftButton:
+            if etype == QEvent.Type.MouseButtonPress and \
+                    event.button() == Qt.MouseButton.LeftButton:
                 self._click_pos = event.position()
             elif etype == QEvent.Type.MouseButtonRelease and self._click_pos is not None:
                 moved = event.position() - self._click_pos
                 self._click_pos = None
-                if abs(moved.x()) + abs(moved.y()) <= 4 and                         self.canvas.tool() is self._pan_tool:
+                if abs(moved.x()) + abs(moved.y()) <= 4 and \
+                        self.canvas.tool() is self._pan_tool:
                     self.show_details(event.position(), event.globalPosition())
         elif obj is self.canvas:
             if etype == QEvent.Type.KeyPress:
