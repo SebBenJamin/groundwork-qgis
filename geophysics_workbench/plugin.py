@@ -138,6 +138,7 @@ class WorkbenchPlugin:
 
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
+        self._close_borehole_viewer()          # it follows the old store's data
         self._close_profile_dialog()
         self._close_context_dialog()
         self._close_ties_panel()

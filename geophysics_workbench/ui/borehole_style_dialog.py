@@ -44,9 +44,9 @@ def style_copy(log_layer: QgsVectorLayer, ids: list[str] | None,
     copy.updateFields()
     request = QgsFeatureRequest()
     if ids is not None:
+        # a plain IN the server can run (no trim/to_string: that downloads everything)
         quoted = ", ".join(QgsExpression.quotedString(i) for i in ids) or "''"
-        request.setFilterExpression(
-            f"trim(to_string({QgsExpression.quotedColumnRef(id_field)})) IN ({quoted})")
+        request.setFilterExpression(f"{QgsExpression.quotedColumnRef(id_field)} IN ({quoted})")
     square = QgsGeometry.fromWkt(_SQUARE)
     rows = []
     for f in log_layer.getFeatures(request):

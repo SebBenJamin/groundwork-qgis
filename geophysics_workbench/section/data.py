@@ -292,6 +292,12 @@ class SectionDataProvider:
         for callback in list(self.on_change):
             callback()
 
+    def set_borehole_views(self, views: dict) -> None:
+        """Only the boreholes' look changed (the viewer): patch the cached context and
+        redraw, without gathering every profile again."""
+        self._gathered.set_borehole_views(views)
+        self.notify_redraw()
+
     def notify_redraw(self, ties: bool = False) -> None:
         """Only what is drawn changed (a style, the interpretation): keep the gathered
         context (DEM, boreholes, crossings), drop the ties only when ``ties`` (they depend

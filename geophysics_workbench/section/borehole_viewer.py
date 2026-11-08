@@ -460,15 +460,18 @@ class BoreholeViewer(QWidget):
             return
         from ..ui.context_dialog import write_settings
         settings = self._entries()
+        from .context_layers import borehole_views
         chosen = self.chosen_curves()
+        shown = set(self._curve_checks)           # curves of this profile (others are kept)
         for b in settings.boreholes:
-            tables = {t.layer_id for t in b.curve_tables}
+            prefixes = tuple(f"{t.layer_id}:" for t in b.curve_tables)
             b.layer_text = self.show_check["text"].isChecked()
             b.column_px = self.column_spin.value()
             b.opacity = round(self.opacity_spin.value(), 2)
-            b.section_curves = [k for k in chosen if k.rsplit(":", 1)[0] in tables]
+            b.section_curves = [k for k in b.section_curves if k not in shown] + [
+                k for k in chosen if k.startswith(prefixes)]
         write_settings(self.project, settings)
-        self.dock.provider.notify_changed()
+        self.dock.provider.set_borehole_views(borehole_views(settings))
         self._redraw(refit=False)
 
     def curve_check(self, key: str):

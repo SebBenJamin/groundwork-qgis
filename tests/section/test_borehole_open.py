@@ -119,3 +119,49 @@ def test_plugin_opens_one_viewer_and_closes_it_on_unload(qgis_app, flushed, fake
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
         qgis_app.processEvents()
     assert plugin.borehole_viewer is None
+
+
+
+def test_new_store_closes_the_viewer(qgis_app, flushed, fake_iface, store_with_model, tmp_path):
+    """I5: switching the workbench store (New/Open workbench project) closes the viewer."""
+    from geophysics_workbench import classFactory
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    st, p, _ = store_with_model
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        plugin.dock.open_profile(p.id)
+        plugin.dock.borehole_clicked.emit(0, "RK1")
+        assert plugin.borehole_viewer is not None
+        plugin.set_store(ProjectStore.create(tmp_path / "other.gpkg", "EPSG:25832"))
+        assert plugin.borehole_viewer is None
+    finally:
+        plugin.unload()
+        from qgis.PyQt.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
+
+
+def test_details_popup_goes_away(qgis_app, dock):
+    """M7: the "Open in borehole viewer" popup hides on the next click and when the
+    profile closes."""
+    from geophysics_workbench.core.context import ContextItems
+    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    _visible(qgis_app, dock)
+    dock._ctx = (ContextItems(points=[_bh()]), None)
+    store = dock.provider.store
+    store.ensure_interpretation()
+    v = store.current_version()
+    f = InterpFeature(new_id(), v.id, type="lens", letter="L")
+    store.save_feature(f)
+    store.save_piece(InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "polygon",
+                                 [(3, 0), (8, 0), (8, -5), (3, -5)]))
+    dock.handle_click(5.0, -2.0, None)
+    assert dock.details_popup.isVisible()
+    dock.handle_click(15.0, -2.0, None)                 # a click elsewhere
+    assert not dock.details_popup.isVisible()
+    dock.handle_click(5.0, -2.0, None)
+    assert dock.details_popup.isVisible()
+    dock._close_profile()
+    assert not dock.details_popup.isVisible()

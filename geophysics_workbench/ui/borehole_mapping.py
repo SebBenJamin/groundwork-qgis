@@ -258,9 +258,10 @@ class BoreholeGroup(QGroupBox):
         keep_log = old is not None and old.log_layer_id == log_id \
             and self._layer(self.log_combo) is None
         tables = [t for t in (e.setting() for e in self.curve_editors) if t is not None]
-        # the look comes from the viewer: kept as saved, minus curves no longer set up
+        # the look comes from the viewer: taken as saved now (the viewer may have changed it
+        # while this dialog was open), minus curves no longer set up
         kept = {curve_key(t.layer_id, c.field) for t in tables for c in t.curves}
-        look = old if old is not None else BoreholeSetting("", "")
+        look = self._current_look(layer_id) or old or BoreholeSetting("", "")
         return BoreholeSetting(
             layer_id, old.id_field if keep else field_of(self.id_combo),
             old.elevation_field if keep else field_of(self.elevation_combo), log_id,
@@ -273,6 +274,12 @@ class BoreholeGroup(QGroupBox):
             curve_tables=tables, column_px=look.column_px, opacity=look.opacity,
             layer_text=look.layer_text,
             section_curves=[k for k in look.section_curves if k in kept])
+
+    def _current_look(self, layer_id: str):
+        from .context_dialog import read_settings
+        old_id = self.loaded.layer_id if self.loaded is not None else layer_id
+        return next((b for b in read_settings(self.project).boreholes
+                     if b.layer_id in (old_id, layer_id)), None)
 
     def missing_count(self) -> int:
         return sum(1 for c in [self.layer_combo, self.log_combo]

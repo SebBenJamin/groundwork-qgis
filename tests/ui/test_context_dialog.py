@@ -460,3 +460,20 @@ def test_style_button_disabled_without_interval_table(project, fake_iface):
     assert not dlg.borehole.style_button.isEnabled()
     dlg.borehole.set_log_layer(logs.id())
     assert dlg.borehole.style_button.isEnabled()
+
+
+
+def test_open_dialog_does_not_undo_the_viewers_look(project, fake_iface):
+    """I2: the viewer writes the look while Context layers… is open; Apply/OK keeps it."""
+    from geophysics_workbench.core.context_settings import BoreholeSetting
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
+    a, _b, logs, _c = _bh_layers(project)
+    write_settings(project, ContextSettings(boreholes=[BoreholeSetting(
+        a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith")]))
+    dlg = ContextDialog(fake_iface, project)
+    s = read_settings(project)                       # the viewer changes the look meanwhile
+    s.boreholes[0].column_px, s.boreholes[0].layer_text = 30, True
+    write_settings(project, s)
+    dlg.accept()
+    e = read_settings(project).boreholes[0]
+    assert (e.column_px, e.layer_text) == (30, True)

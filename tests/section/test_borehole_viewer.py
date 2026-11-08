@@ -50,6 +50,9 @@ def fake_dock(qgis_app):
         def notify_changed(self):
             self.changed += 1
 
+        def set_borehole_views(self, views):
+            self.views = views
+
     class Dock(QObject):
         profile_changed = pyqtSignal(object)
 
@@ -240,7 +243,9 @@ def test_viewer_layer_text_and_curves_reach_the_section_settings(fake_dock, qgis
     assert cores.section_curves == ["t:gr"] and state.section_curves == []   # only its table
     assert (cores.column_px, state.column_px) == (24, 24)
     assert cores.opacity == pytest.approx(0.6)
-    assert fake_dock.provider.changed > before                      # the section redraws
+    # the section redraws from the new look without gathering everything again (I4)
+    assert fake_dock.provider.changed == before
+    assert fake_dock.provider.views[0].column_px == 24 and fake_dock.provider.views[0].layer_text
     v.deleteLater()
 
 
@@ -260,4 +265,30 @@ def test_viewer_starts_from_the_section_settings(fake_dock, qgis_app):
     v.show_profile("p1")
     assert v.show_check["text"].isChecked() and v.curve_check("t:gr").isChecked()
     assert v.column_spin.value() == 30
+    v.deleteLater()
+
+
+
+def test_section_curves_of_other_profiles_are_kept(fake_dock, qgis_app):
+    """I3: a curve ticked for the section stays ticked when the look is changed while a
+    profile without that curve is shown."""
+    from qgis.core import QgsProject
+
+    from geophysics_workbench.core.context_settings import CurveField, CurveTableSetting
+    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from geophysics_workbench.ui.context_dialog import read_settings, write_settings
+    prj = QgsProject.instance()
+    _two_entries(prj)
+    s = read_settings(prj)
+    s.boreholes[0].curve_tables = [CurveTableSetting("t", "id", "d", [CurveField("gr"),
+                                                                     CurveField("res")])]
+    s.boreholes[0].section_curves = ["t:res"]
+    write_settings(prj, s)
+    _curve_bh(qgis_app, fake_dock)                     # this profile only has "gr"
+    v = BoreholeViewer(fake_dock, prj)
+    v.show_profile("p1")
+    v.column_spin.setValue(20)
+    assert read_settings(prj).boreholes[0].section_curves == ["t:res"]
+    v.curve_check("t:gr").setChecked(True)
+    assert sorted(read_settings(prj).boreholes[0].section_curves) == ["t:gr", "t:res"]
     v.deleteLater()

@@ -343,3 +343,20 @@ def test_snapshot_copies_styled_intervals_and_curves(store_with_model, qgis_app)
     assert copied.text == "sand" and isinstance(copied.feature, QgsFeature)
     np.testing.assert_array_equal(snap.context.points[0].curves[0].values, [40.0, 50.0])
     assert prov.snapshot(p.id, reverse=True).context.points[0].log[0].symbol is not None
+
+
+
+def test_new_borehole_look_patches_the_cached_context(store_with_model, qgis_app):
+    """I4: a look-only change (from the viewer) updates the cached items and redraws,
+    without gathering the profile again."""
+    from geophysics_workbench.core.context import BoreholeView, ContextItems
+    from geophysics_workbench.section.data import SectionDataProvider
+    st, p, _ = store_with_model
+    calls, redraws = [], []
+    prov = SectionDataProvider(st)
+    prov.context_source = lambda profile: calls.append(1) or ContextItems()
+    prov.on_change.append(lambda: redraws.append(1))
+    prov.context(p.id)
+    prov.set_borehole_views({0: BoreholeView(30, 0.5, True, ())})
+    assert prov.context(p.id).borehole_views[0].column_px == 30
+    assert len(calls) == 1 and redraws == [1]

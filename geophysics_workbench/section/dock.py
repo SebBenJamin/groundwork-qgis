@@ -252,6 +252,7 @@ class SectionDock(QDockWidget):
                                                    for x, y in profile.xy]))
 
     def _close_profile(self) -> None:
+        self.hide_details_popup()
         self._profile = None
         if self.provider is not None:
             self.provider.active_profile_id = None
@@ -352,6 +353,7 @@ class SectionDock(QDockWidget):
         viewer; together with an interpretation piece the details show as before, with an
         "Open in borehole viewer" link; anywhere else the details tooltip as before."""
         from .dock_context import borehole_hit, click_details
+        self.hide_details_popup()
         hit = borehole_hit(self, s, z)
         lines = click_details(self, s, z)
         piece = any(line.startswith("Interpretation") for line in lines)
@@ -363,6 +365,10 @@ class SectionDock(QDockWidget):
             return
         if lines and global_point is not None:
             QToolTip.showText(global_point, "\n".join(lines), self.canvas)
+
+    def hide_details_popup(self) -> None:
+        if self.details_popup is not None:
+            self.details_popup.hide()
 
     def _show_popup(self, lines: list[str], hit, global_point) -> None:
         import html

@@ -800,3 +800,53 @@ def test_interval_top_bottom_swapped_and_null_rows_skipped(project, profile):
     p = g.items_for(profile).points[0]
     g.close()
     assert [(i.top, i.bottom, i.text) for i in p.log] == [(1.0, 3.0, "clay")]
+
+
+
+# -- final review fixes ------------------------------------------------------------------
+def test_remote_tables_get_a_server_side_id_filter():
+    """C1: a WFS/OAPIF table gets a plain equality the server can run (trim/to_string would
+    make QGIS download the whole table); local tables keep the forgiving form."""
+    from geophysics_workbench.section.context_layers import _id_filter
+    assert _id_filter("bid", "B1", remote=True, numeric=False) == "\"bid\" = 'B1'"
+    assert _id_filter("bid", "7", remote=True, numeric=True) == "\"bid\" = 7"
+    assert _id_filter("bid", "x7", remote=True, numeric=True) == "\"bid\" = 'x7'"
+    assert "trim(to_string(" in _id_filter("bid", "B1", remote=False, numeric=False)
+
+
+def test_remote_interval_table_still_links(project, profile, monkeypatch):
+    from qgis.core import QgsVectorLayer
+
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    bh = _layer(project, "Point", "BH", "bid:string")
+    _add(bh, "POINT(20 1)", ["B1"])
+    log = _layer(project, "NoGeometry", "Log",
+                 "bid:string&field=top:double&field=bot:double&field=lith:string")
+    _add(log, None, ["B1", 0.0, 2.0, "sand"])
+    _add(log, None, ["B2", 0.0, 1.0, "clay"])
+    monkeypatch.setattr(QgsVectorLayer, "providerType",
+                        lambda self: "WFS" if self.id() == log.id() else "memory")
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert [iv.text for iv in p.log] == ["sand"]
+
+
+@pytest.mark.parametrize("point_type,point_id,log_type,log_id", [
+    ("integer", 7, "double", 7.0), ("double", 7.0, "double", 7.0),
+    ("double", 7.0, "string", " 7 ")])
+def test_numeric_ids_match_however_stored(project, profile, point_type, point_id, log_type,
+                                           log_id):
+    """I1: ids stored as Real (7.0, common after Excel imports) still match 7 / " 7 "."""
+    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    bh = _layer(project, "Point", "BH", f"bid:{point_type}")
+    _add(bh, "POINT(20 1)", [point_id])
+    log = _layer(project, "NoGeometry", "Log",
+                 f"bid:{log_type}&field=top:double&field=bot:double&field=lith:string")
+    _add(log, None, [log_id, 0.0, 2.0, "sand"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
+        bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
+    p = g.items_for(profile).points[0]
+    g.close()
+    assert p.label == "7" and [iv.text for iv in p.log] == ["sand"]

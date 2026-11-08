@@ -75,11 +75,39 @@ def _value(value) -> float:
     return np.nan if out is None else out
 
 
-def _id_filter(field: str, bid: str) -> str:
-    """Rows whose id equals ``bid`` as stripped text, whatever the field's type (7 vs " 7 ").
-    The caller re-checks with ``_text``, so the match is exact either way."""
-    return (f"trim(to_string({QgsExpression.quotedColumnRef(field)})) = "
-            f"{QgsExpression.quotedString(bid)}")
+REMOTE_PROVIDERS = ("WFS", "OAPIF", "arcgisfeatureserver")
+
+
+def _id_text(value) -> str:
+    """A borehole id as text: stripped, and a whole number without ".0" (7, 7.0 and " 7 "
+    are the same borehole; Excel imports often store ids as Real)."""
+    if QgsVariantUtils.isNull(value):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _id_filter(field: str, bid: str, remote: bool = False, numeric: bool = False) -> str:
+    """Rows whose id may equal ``bid``; the caller re-checks every row with ``_id_text``.
+    Local tables: compared as stripped text, whatever the field's type. Remote (WFS/OAPIF)
+    tables: a plain equality the server can run (trim/to_string would make QGIS download
+    the whole table)."""
+    column = QgsExpression.quotedColumnRef(field)
+    if remote:
+        if numeric:
+            try:
+                return f"{column} = {float(bid):g}"
+            except ValueError:
+                pass
+        return f"{column} = {QgsExpression.quotedString(bid)}"
+    return f"trim(to_string({column})) = {QgsExpression.quotedString(bid)}"
+
+
+def _id_request_filter(layer, field: str, bid: str) -> str:
+    idx = layer.fields().indexOf(field)
+    numeric = idx >= 0 and layer.fields().at(idx).isNumeric()
+    return _id_filter(field, bid, layer.providerType() in REMOTE_PROVIDERS, numeric)
 
 
 class _Skip(Exception):
@@ -136,10 +164,7 @@ class ContextGatherer:
             items.points += self._try(s.layer_id, "point layer", lambda: self._points(
                 s, xy, box, settings.buffer)) or []
         from .borehole_style import curve_styles
-        from ..core.context import BoreholeView
-        items.borehole_views = {i: BoreholeView(b.column_px, b.opacity, b.layer_text,
-                                                tuple(b.section_curves))
-                                for i, b in enumerate(settings.boreholes)}
+        items.borehole_views = borehole_views(settings)
         items.curve_styles = curve_styles(self._project)
         for index, b in enumerate(settings.boreholes):
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
@@ -383,7 +408,7 @@ class ContextGatherer:
                          styler) -> list[ProjectedPoint]:
         out = []
         for (feature, (x, y)), (s, off) in _project(xy, found, buffer):
-            bid = _text(feature[b.id_field])
+            bid = _id_text(feature[b.id_field])
             field_z = _number(feature[b.elevation_field]) if b.elevation_field else None
             dem_z = None
             if dem_layer is not None:
@@ -412,11 +437,12 @@ class ContextGatherer:
         fields = (t.id_field, t.depth_field, *names)
         try:
             layer = self._vector(t.layer_id, None, fields)
-            request = QgsFeatureRequest().setFilterExpression(_id_filter(t.id_field, bid))
+            request = QgsFeatureRequest().setFilterExpression(
+                _id_request_filter(layer, t.id_field, bid))
             request.setSubsetOfAttributes(list(fields), layer.fields())
             rows = []
             for f in layer.getFeatures(request):
-                if _text(f[t.id_field]) != bid:
+                if _id_text(f[t.id_field]) != bid:
                     continue
                 d = _number(f[t.depth_field])
                 if d is not None:
@@ -443,12 +469,13 @@ class ContextGatherer:
         try:
             layer = self._vector(b.log_layer_id, None, fields)
             styled = styler.used if styler is not None else set()
-            request = QgsFeatureRequest().setFilterExpression(_id_filter(b.log_id_field, bid))
+            request = QgsFeatureRequest().setFilterExpression(
+                _id_request_filter(layer, b.log_id_field, bid))
             request.setSubsetOfAttributes(sorted({f for f in fields if f} | styled),
                                           layer.fields())
             rows, features = [], []
             for f in layer.getFeatures(request):
-                if _text(f[b.log_id_field]) != bid:
+                if _id_text(f[b.log_id_field]) != bid:
                     continue
                 top, bottom = _number(f[b.top_field]), _number(f[b.bottom_field])
                 if top is not None and bottom is not None:
@@ -510,6 +537,13 @@ class ContextGatherer:
         for seg in segments:
             seg.rgb = colours.get(seg.label) or label_colour(seg.label)
         return segments
+
+
+def borehole_views(settings) -> dict:
+    """How the section draws each borehole entry (from its settings, set in the viewer)."""
+    from ..core.context import BoreholeView
+    return {i: BoreholeView(b.column_px, b.opacity, b.layer_text, tuple(b.section_curves))
+            for i, b in enumerate(settings.boreholes)}
 
 
 def _project(xy, found, buffer):

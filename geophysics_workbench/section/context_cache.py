@@ -20,6 +20,10 @@ class GatheredContext:
     def clear(self) -> None:
         self._items.clear()
 
+    def set_borehole_views(self, views: dict) -> None:
+        for items in self._items.values():
+            items.borehole_views = dict(views)
+
     def items(self, profile: Profile,
               on_error: Callable[[str, str], None] | None = None) -> ContextItems:
         """The source's items for ``profile`` (no ties), cached until ``clear()``: the
