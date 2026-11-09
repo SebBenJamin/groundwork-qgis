@@ -134,3 +134,39 @@ def test_title_reads_project_variables(env):
     label = layout.itemById("wb_title_client")
     assert "@wb_client" in label.text() and label.currentText().endswith("LfU")
     assert layout.itemById("wb_title_plate").text() == "Plate 3 – Transect"
+
+
+def test_colour_bars_survive_python_garbage_collection(env):
+    """A colour bar made by the builder stays a colour bar once Python lets go of the layout
+    (it was saved as a plain item, and lost, in the demo build)."""
+    import gc
+
+    from geophysics_workbench.plates.build import create_or_update_plate
+    from geophysics_workbench.plates.items import COLOUR_BAR_TYPE, ColourBarItem
+    st, p, prov, prj = env
+    create_or_update_plate(prj, st, prov, _plate(st, p))
+    gc.collect()
+    layout = prj.layoutManager().layoutByName("Plate 3 – Transect")
+    bar = layout.itemById("wb_colourbar_1_1")
+    assert isinstance(bar, ColourBarItem) and bar.type() == COLOUR_BAR_TYPE
+    assert bar.dataset_id == st.datasets(p.id)[0].id
+
+
+def test_plate_items_survive_project_reload(env, tmp_path):
+    import gc
+
+    from geophysics_workbench.plates.build import create_or_update_plate
+    from geophysics_workbench.plates.items import BoreholeLegendItem, ColourBarItem
+    from geophysics_workbench.plates.sources import detach_frame_items
+    st, p, prov, prj = env
+    create_or_update_plate(prj, st, prov, _plate(st, p))
+    path = tmp_path / "plates.qgz"
+    assert prj.write(str(path))
+    detach_frame_items(prj)
+    prj.clear()
+    assert prj.read(str(path))
+    gc.collect()
+    layout = prj.layoutManager().layoutByName("Plate 3 – Transect")
+    bar = layout.itemById("wb_colourbar_1_1")
+    assert isinstance(bar, ColourBarItem) and bar.dataset_id == st.datasets(p.id)[0].id
+    assert isinstance(layout.itemById("wb_legend_boreholes"), BoreholeLegendItem)

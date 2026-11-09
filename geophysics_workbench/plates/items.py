@@ -24,6 +24,17 @@ BOREHOLE_LEGEND_TYPE = QgsLayoutItemRegistry.PluginItem + 4713
 STEPS = 96
 _metadata: list = []                    # keeps the registered metadata alive
 _provider = None                        # the section data provider (set by the plugin)
+#: every live plate item's Python object. A Python subclass of a QGIS item lives as long as
+#: something in Python holds it; the layout (C++) owning the item does not count, so without
+#: this the item turns into a plain QgsLayoutItem (draws nothing, saved without its settings)
+#: as soon as Python lets go of the layout. Dropped when QGIS deletes the item.
+_alive: dict[int, object] = {}
+
+
+def _keep_alive(item) -> None:
+    key = id(item)
+    _alive[key] = item
+    item.destroyed.connect(lambda _obj=None, k=key: _alive.pop(k, None))
 
 
 def set_context_provider(provider) -> None:
@@ -90,6 +101,7 @@ def tick_labels(values: list[float], settings: QgsColorRampLegendNodeSettings) -
 class ColourBarItem(QgsLayoutItem):
     def __init__(self, layout):
         super().__init__(layout)
+        _keep_alive(self)
         self.frame_id = ""
         self.dataset_id = ""
         self.ticks = "auto"
@@ -265,6 +277,7 @@ def curve_rows(points, views: dict, styles: dict) -> list[tuple[str, object]]:
 class BoreholeLegendItem(QgsLayoutItem):
     def __init__(self, layout):
         super().__init__(layout)
+        _keep_alive(self)
         self.frame_ids: list[str] = []
         self.text_format = QgsTextFormat()
         self.text_format.setSize(8.0)
