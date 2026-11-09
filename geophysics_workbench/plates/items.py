@@ -409,6 +409,11 @@ class _Metadata(QgsLayoutItemAbstractMetadata):
         return self.cls(layout)
 
 
+def items_registered() -> bool:
+    """Whether QGIS already knows the plate item types (it drops unknown ones on reading)."""
+    return QgsApplication.layoutItemRegistry().itemMetadata(COLOUR_BAR_TYPE) is not None
+
+
 def register_items() -> None:
     """Register the item types once per QGIS session (and their property widgets when a
     GUI is running)."""

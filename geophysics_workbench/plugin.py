@@ -53,9 +53,14 @@ class WorkbenchPlugin:
 
     def initGui(self):
         from .patterns import register_svg_path
-        from .plates.items import register_items
+        from .plates import items as plate_items
+        from .plates.sources import read_plates
         register_svg_path()                              # FGDC patterns in the SVG pickers
-        register_items()                                 # colour bar, borehole legend
+        # a project with plates read before the item types existed lost its colour bars and
+        # borehole legends (QGIS drops unknown items): say so before the user saves
+        read_too_early = not plate_items.items_registered() and \
+            bool(read_plates(QgsProject.instance()))
+        plate_items.register_items()                     # colour bar, borehole legend
         main_window = self.iface.mainWindow()
         self.menu = QMenu(MENU_TITLE, main_window)
         self.menu.setObjectName("GeophysicsWorkbenchMenu")
@@ -92,6 +97,10 @@ class WorkbenchPlugin:
         if self.provider is None:
             self._project_read()                         # plugin enabled with a project open
         self._update_actions()
+        if read_too_early:
+            self._warn("Plates: this project was opened before the plugin was loaded, so its "
+                       "plate colour bars and borehole legends were not read. Please reopen "
+                       "the project before saving it (saving now would lose them).")
 
     def unload(self):
         for signal, slot in self._project_signals:
