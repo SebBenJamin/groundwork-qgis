@@ -16,7 +16,8 @@ from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QPen
 from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
                                  QToolTip,
-                                 QHBoxLayout, QLabel, QSplitter, QToolButton, QVBoxLayout,
+                                 QHBoxLayout, QLabel, QSizePolicy, QSplitter, QToolButton,
+                                 QVBoxLayout,
                                  QWidget)
 
 from .data import identify_layers, layer_name
@@ -39,6 +40,21 @@ MISSING_PROFILE = "Profile not found in the workbench project; it may have been 
 def _registered_source_for(provider):
     source = QgsApplication.profileSourceRegistry().findSourceById(SOURCE_ID)
     return source if getattr(source, "provider", None) is provider else None
+
+
+class _Readout(QLabel):
+    """One line under the section. Its text never sizes the panel (a long readout over
+    cores or crossings widened the panel, and the locked-scale canvas seemed to zoom in);
+    what does not fit is cut off, and the tooltip shows it all."""
+
+    def __init__(self):
+        super().__init__()
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setMinimumWidth(1)
+
+    def setText(self, text):
+        super().setText(text)
+        self.setToolTip(text)
 
 
 class SectionDock(QDockWidget):
@@ -106,7 +122,7 @@ class SectionDock(QDockWidget):
         self.canvas.scene().addItem(self.guide_line)
 
         self.layer_list = LayerList()
-        self.readout = QLabel()
+        self.readout = _Readout()
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.readout.setMinimumHeight(self.readout.sizeHint().height())
         self.errors = QLabel()

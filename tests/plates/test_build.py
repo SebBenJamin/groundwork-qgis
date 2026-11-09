@@ -225,3 +225,23 @@ def test_untouched_provenance_is_refreshed(env):
     plate.frames[0].scale = 1250
     create_or_update_plate(prj, st, prov, plate)
     assert "1:1250" in layout.itemById("wb_provenance_1").text()
+
+
+def test_frame_leaves_room_for_labels_above_the_data(env):
+    """Labels of notes, cores and crossings sit in rows above the ground; the plate keeps
+    room for them (they were cut off at the top of the frame)."""
+    from geophysics_workbench.core.field_notes import FieldNote
+    from geophysics_workbench.plates.build import (create_or_update_plate, frame_scale_and_ve,
+                                                   label_room_mm, snapshot_extent)
+    st, p, prov, prj = env
+    st.save_field_note(FieldNote("a", p.id, 1.0, 8.0, "wet ground"))
+    st.save_field_note(FieldNote("b", p.id, 4.0, None, "fence"))
+    plate = _plate(st, p)
+    layout = create_or_update_plate(prj, st, prov, plate)
+    snap = prov.snapshot(p.id, look=plate.frames[0].look)
+    room = label_room_mm(snap)
+    assert room > 10.0                                  # band/lanes + three label rows
+    item = layout.itemById("wb_frame_1")
+    scale, ve = frame_scale_and_ve(item)
+    top = snapshot_extent(snap, p.chainage.length)[3]
+    assert item.plot().yMaximum() - top >= room * scale / (1000.0 * ve) * 0.98

@@ -44,10 +44,12 @@ def headroom_px(dock) -> float:
     ctx = dock.provider.context(dock._profile.id)
     if ctx is None:
         return 0.0
-    labels = bool(ctx.crossings or ctx.points or ctx.ties)
+    from .field_notes_render import lanes_px
+    labels = bool(ctx.crossings or ctx.points or ctx.ties or ctx.field_notes)
     if not (labels or ctx.band):
         return 0.0
     px_per_mm = dock.canvas.logicalDpiY() / 25.4
     font = QFont(dock.canvas.font())
     font.setPixelSize(label_font_px(px_per_mm))
-    return context_headroom_px(px_per_mm, QFontMetrics(font).height(), labels)
+    return context_headroom_px(px_per_mm, QFontMetrics(font).height(), labels) + \
+        lanes_px(px_per_mm, ctx.field_notes)

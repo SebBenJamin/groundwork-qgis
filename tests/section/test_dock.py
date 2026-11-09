@@ -373,3 +373,18 @@ def test_format_value_keeps_small_values_visible():
     assert format_value(0.5) == "0.5" and format_value(-0.00456) == "-0.00456"
     assert format_value(0.0) == "0.0"
     assert format_value(27.34) == "27.3" and format_value(1234.6) == "1235"
+
+
+def test_long_readout_never_resizes_the_canvas(qgis_app, store_with_model, make_dock):
+    """Hovering a core, crossing or note made the readout longer; the label grew the
+    panel's minimum width, the canvas shrank and the section seemed to zoom in."""
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    qgis_app.processEvents()
+    before = (dock.canvas.width(), dock.canvas.height())
+    dock.readout.setText("s = 5.0 m · " + " · ".join(f"Core EN-RK {i} (+2 m): SU5.2 silty, "
+                                                    f"humic, calcareous" for i in range(40)))
+    qgis_app.processEvents()
+    assert (dock.canvas.width(), dock.canvas.height()) == before
+    assert "EN-RK 39" in dock.readout.toolTip()                 # the full text on hover

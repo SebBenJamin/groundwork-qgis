@@ -104,3 +104,17 @@ def test_interpretation_menu_switches_field_notes(qgis_app, store_with_model, ma
     assert dock.provider.show_field_notes is False
     act.setChecked(True)
     assert dock.provider.show_field_notes is True
+
+
+def test_stretches_get_their_own_lanes():
+    """Long stretches clutter no labels: each lies in a lane along the ground, overlapping
+    stretches in separate lanes."""
+    from geophysics_workbench.core.field_notes import FieldNote
+    from geophysics_workbench.section.field_notes_render import stretch_lanes
+    a = FieldNote("a", "p", 0.0, 80.0, "wet ground")
+    b = FieldNote("b", "p", 50.0, 120.0, "fence")
+    c = FieldNote("c", "p", 100.0, 140.0, "cows")
+    d = FieldNote("d", "p", 60.0, None, "single")
+    lanes = stretch_lanes([a, b, c, d])
+    assert lanes == {"a": 0, "b": 1, "c": 0}
+    assert stretch_lanes([d]) == {}

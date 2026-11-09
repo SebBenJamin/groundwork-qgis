@@ -203,6 +203,8 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
         if n.shown:
             lo, hi = note_range(n)
             specs.append((n, (lo + hi) / 2, label_text(n.text), NOTE_RGB))
+    from .field_notes_render import lanes_px
+    lanes = lanes_px(mm(rc, 1.0), items.field_notes)        # stretch lanes under the labels
     rows: list[list[tuple[float, float]]] = [[] for _ in range(LABEL_ROWS)]
     out = {}
     for item, s, text, rgb in specs:
@@ -214,7 +216,7 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
                     if all(x + half_w + 2 <= a or x - half_w - 2 >= b for a, b in rows[r])),
                    LABEL_ROWS - 1)
         rows[row].append((x - half_w, x + half_w))
-        y = surface_y(wt, surface, s) - far - mm(rc, 1.0) - row * h
+        y = surface_y(wt, surface, s) - far - mm(rc, 1.0) - lanes - row * h
         out[id(item)] = Label(x, y, text, rgb)
     return out
 

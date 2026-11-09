@@ -48,7 +48,7 @@ BAR_COLUMN = 0.18       # landscape: colour-bar column, share of the area width
 BAR_ROW = 0.12          # portrait: colour-bar row, share of a frame slot's height
 BAR_MAX_MM = 20.0       # a new vertical colour bar's width (the bar is 30 % of it) ...
 BAR_MAX_LEN_MM = 80.0   # ... and its greatest length (horizontal bars: their width)
-TOP_PAD = 0.08          # share of the depth range added above the data (labels, band)
+TOP_PAD = 0.02          # share of the depth range added above the data (labels: label_room_mm)
 DETAILS = (("project", "Project"), ("client", "Client"), ("job", "Job no."),
            ("date", "Date"), ("author", "Drawn"), ("revision", "Revision"))
 INTERP_LEGEND_LAYERS = ("interp_polygons_3d", "interp_lines_3d", "interp_points_3d")
@@ -192,19 +192,40 @@ def _optimise_intervals(item) -> None:
     plot.calculateOptimisedIntervals(rc, QgsPlotRenderContext())
 
 
-def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float) -> None:
+LABEL_LINE_MM = 3.3     # one row of section labels (2.6 mm font) on a plate
+
+
+def label_room_mm(snap) -> float:
+    """Millimetres above the ground the section draws into: the geology band, the field-note
+    lanes and the label rows (as ``context_render.plan_labels`` places them)."""
+    from ..section.context_render import context_headroom_px
+    from ..section.field_notes_render import lanes_px
+    ctx = snap.context
+    if ctx is None:
+        return 0.0
+    labels = bool(ctx.crossings or ctx.points or ctx.ties or ctx.field_notes)
+    if not (labels or ctx.band):
+        return 0.0
+    return context_headroom_px(1.0, LABEL_LINE_MM, labels) + lanes_px(1.0, ctx.field_notes)
+
+
+def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float,
+              top_mm: float = 0.0) -> None:
     """Set the plot range so the plot area shows 1:``scale`` horizontally and ``ve`` times
-    that vertically, centred on the data (axis labels change the plot area: settle twice)."""
+    that vertically: the data and ``top_mm`` above it for the labels, centred (axis labels
+    change the plot area: settle three times)."""
     plot = item.plot()
     for _ in range(3):
         w_mm, h_mm = _interior_mm(item)
         span_s = w_mm * scale / 1000.0
         span_z = h_mm * scale / (1000.0 * ve)
-        sc, zc = (s0 + s1) / 2.0, (z0 + z1) / 2.0
+        room = top_mm * scale / (1000.0 * ve)
+        sc = (s0 + s1) / 2.0
+        y_min = z0 - (span_z - (z1 - z0) - room) / 2.0
         plot.setXMinimum(sc - span_s / 2.0)
         plot.setXMaximum(sc + span_s / 2.0)
-        plot.setYMinimum(zc - span_z / 2.0)
-        plot.setYMaximum(zc + span_z / 2.0)
+        plot.setYMinimum(y_min)
+        plot.setYMaximum(y_min + span_z)
         _optimise_intervals(item)
 
 
@@ -534,7 +555,10 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     layout.setCustomProperty(COUNT_PROPERTY, count)
 
     # fit to page: frames of one profile share scale, VE and range
-    sizes = [_interior_mm(item) for item in frame_items]
+    room = {f.frame_id: label_room_mm(snaps[f.frame_id]) for f in plate.frames
+            if f.frame_id in snaps}
+    sizes = [(w, max(h - room.get(f.frame_id, 0.0), 5.0)) for f, (w, h)
+             in zip(plate.frames, (_interior_mm(item) for item in frame_items))]
     fits = stack_fit(plate.frames, extents, sizes)
     not_fitting: list[str] = []
     for n, (f, item, fit, models) in enumerate(zip(plate.frames, frame_items, fits, shown),
@@ -548,7 +572,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
                  if g.profile_id == f.profile_id and g.frame_id in extents]
         z0, z1 = min(e[2] for e in group), max(e[3] for e in group)
         fit_frame(item, scale, ve, s0 if s0 != s1 else ext[0], s1 if s0 != s1 else ext[1],
-                  z0, z1)
+                  z0, z1, room.get(f.frame_id, 0.0))
         ok = frame_fits(s1 - s0, z1 - z0, sizes[n - 1], scale, ve)
         if not ok:
             not_fitting.append(f"frame {n} ({profile.name})")
