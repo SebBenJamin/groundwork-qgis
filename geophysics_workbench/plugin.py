@@ -51,7 +51,9 @@ class WorkbenchPlugin:
 
     def initGui(self):
         from .patterns import register_svg_path
+        from .plates.items import register_items
         register_svg_path()                              # FGDC patterns in the SVG pickers
+        register_items()                                 # colour bar, borehole legend
         main_window = self.iface.mainWindow()
         self.menu = QMenu(MENU_TITLE, main_window)
         self.menu.setObjectName("GeophysicsWorkbenchMenu")
@@ -173,13 +175,17 @@ class WorkbenchPlugin:
                                      register_frame_sources)
         if self.provider is None:
             return
+        from .plates.items import set_context_provider
         project = QgsProject.instance()
+        set_context_provider(self.provider)
         detach_frame_items(project)
         sources = register_frame_sources(self.provider, read_plates(project))
         attach_frame_sources(project, self.provider.store, sources)
 
     def _drop_plate_sources(self) -> None:
+        from .plates.items import set_context_provider
         from .plates.sources import detach_frame_items, unregister_frame_sources
+        set_context_provider(None)
         detach_frame_items(QgsProject.instance())
         unregister_frame_sources()
 
