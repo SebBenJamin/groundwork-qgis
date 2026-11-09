@@ -22,6 +22,7 @@ DISPLAY_FIELDS = ("scale", "mode", "contour_step", "grid_cell", "fade_coverage",
                   "coverage_threshold", "fade_mode", "shown")
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
+INFO_TEXT = "Dataset info…"
 
 
 def _scale_text(layer: SectionLayer) -> str:
@@ -225,9 +226,19 @@ class LayerList(QWidget):
         if readings is not None and readings.has_calculated:
             menu.addAction(MISFIT_TEXT).triggered.connect(
                 lambda: self.show_misfit(dataset_id))
+        menu.addAction(INFO_TEXT).triggered.connect(lambda: self.edit_info(dataset_id))
         menu.addSeparator()
         menu.addAction(REMOVE_TEXT).triggered.connect(lambda: self.remove_dataset(dataset_id))
         return menu
+
+    def edit_info(self, dataset_id: str) -> None:
+        """Dataset info…: method, array, spacing, inversion, reference (for provenance)."""
+        from ..ui.dataset_info_dialog import DatasetInfoDialog
+        if self.provider is None:
+            return
+        dlg = DatasetInfoDialog(self.provider.store, dataset_id, self)
+        dlg.exec()
+        dlg.deleteLater()
 
     def remove_dataset(self, dataset_id: str) -> bool:
         """Ask, then remove the dataset from its profile (store, provider; the section panel
