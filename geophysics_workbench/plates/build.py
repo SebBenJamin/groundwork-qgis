@@ -24,7 +24,7 @@ from qgis.PyQt.QtCore import QSizeF, Qt
 from qgis.PyQt.QtXml import QDomDocument
 
 from ..core.dataset_info import provenance_line
-from ..core.plates import stack_fit
+from ..core.plates import frame_fits, stack_fit
 from .items import ColourBarItem, register_items
 from .sources import (FRAME_PROPERTY, attach_frame_sources, detach_frame_items, read_plates,
                       register_frame_sources, write_plates)
@@ -34,6 +34,7 @@ TEMPLATES = {name: TEMPLATE_DIR / f"{name}.qpt"
              for name in ("A4_landscape", "A4_portrait", "A3_landscape", "A3_portrait")}
 PLATE_PROPERTY = "wb_plate_id"
 COUNT_PROPERTY = "wb_frame_count"
+FIT_PROPERTY = "wb_not_fitting"         # frames the last update could not fit (for messages)
 MM = QgsUnitTypes.LayoutMillimeters
 GAP = 4.0               # mm between stacked frames
 PROVENANCE_MM = 8.0     # height of a frame's provenance line
@@ -262,11 +263,16 @@ def field_notes_text(store, plate, names: dict) -> str:
     return "\n".join(["Field notes"] + (lines or ["(none)"]))
 
 
-def provenance_text(profile, datasets: list, scale: int, ve: float) -> str:
+NOT_FIT = "does not fit the frame at this scale: part of the section is cut off"
+
+
+def provenance_text(profile, datasets: list, scale: int, ve: float, fits: bool = True) -> str:
     heads = [provenance_line(profile.name, d) for d in datasets] or [profile.name]
     (x0, y0), (x1, y1) = profile.chainage.xy[0], profile.chainage.xy[-1]
     where = (f"1:{scale} · VE {ve:g}× · start E {x0:.0f} N {y0:.0f} · "
              f"end E {x1:.0f} N {y1:.0f}")
+    if not fits:
+        where += f" · {NOT_FIT}"
     return "\n".join([" / ".join(heads), where])
 
 
@@ -465,6 +471,7 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     # fit to page: frames of one profile share scale, VE and range
     sizes = [_interior_mm(item) for item in frame_items]
     fits = stack_fit(plate.frames, extents, sizes)
+    not_fitting: list[str] = []
     for n, (f, item, fit, models) in enumerate(zip(plate.frames, frame_items, fits, shown),
                                                start=1):
         profile = profiles.get(f.profile_id)
@@ -477,8 +484,11 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
         z0, z1 = min(e[2] for e in group), max(e[3] for e in group)
         fit_frame(item, scale, ve, s0 if s0 != s1 else ext[0], s1 if s0 != s1 else ext[1],
                   z0, z1)
+        ok = frame_fits(s1 - s0, z1 - z0, sizes[n - 1], scale, ve)
+        if not ok:
+            not_fitting.append(f"frame {n} ({profile.name})")
         layout.itemById(f"wb_provenance_{n}").setText(
-            provenance_text(profile, models, scale, ve))
+            provenance_text(profile, models, scale, ve, fits=ok))
 
     # content of the template's own items
     names = {pid: p.name for pid, p in profiles.items()}
@@ -499,6 +509,7 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     _update_minimap(layout, store, project, on_plate)
     _update_title(layout, plate, store.crs_authid)
 
+    layout.setCustomProperty(FIT_PROPERTY, "; ".join(not_fitting))
     sources = register_frame_sources(provider, read_plates(project))
     attach_frame_sources(project, store, sources)
     layout.refresh()

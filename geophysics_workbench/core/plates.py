@@ -85,6 +85,14 @@ def nice_ve(z_range_m: float, height_mm: float, scale: int) -> float:
     return max((v for v in VES if v <= most), default=VES[0])
 
 
+def frame_fits(range_m: float, z_range_m: float, size_mm, scale: float, ve: float) -> bool:
+    """Whether ``range_m`` x ``z_range_m`` fits a frame of ``size_mm`` (width, height) at
+    1:``scale`` with vertical exaggeration ``ve``."""
+    width, height = size_mm
+    return (abs(range_m) * 1000.0 / scale <= width + 1e-6
+            and abs(z_range_m) * 1000.0 * ve / scale <= height + 1e-6)
+
+
 def stack_fit(frames: list, extents: dict, sizes_mm: list) -> list[tuple]:
     """Per frame ``(scale, ve, s0, s1)``. ``extents[frame_id] = (s0, s1, z0, z1)`` of the
     frame's data; ``sizes_mm`` the frames' (width, height). Frames of one profile share
@@ -105,8 +113,10 @@ def stack_fit(frames: list, extents: dict, sizes_mm: list) -> list[tuple]:
         z1 = max((e[3] for e in exts), default=0.0)
         width = min(sizes_mm[i][0] for i in indices)
         height = min(sizes_mm[i][1] for i in indices)
+        # a scale at which the range fits the width AND the depth fits the height at VE 1
+        # (a finer scale would cut the depth off); the user's own scale is kept
         scale = next((f.scale for f in members if f.scale), None) or \
-            nice_scale(abs(s1 - s0), width)[0]
+            max(nice_scale(abs(s1 - s0), width)[0], nice_scale(abs(z1 - z0), height)[0])
         ve = next((f.ve for f in members if f.ve), None) or nice_ve(abs(z1 - z0), height, scale)
         for i in indices:
             out[i] = (scale, ve, s0, s1)

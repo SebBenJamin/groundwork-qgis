@@ -415,6 +415,11 @@ class PlatesDialog(QDialog):
         self.plates = read_plates(self.project)
         self._fill_list(self.plate_list.currentRow())
         text = f"{len(layouts)} plate(s) created or updated – open them from the Layout Manager."
+        tight = [f"{layout.name()}: {layout.customProperty('wb_not_fitting')}"
+                 for layout in layouts if layout.customProperty("wb_not_fitting")]
+        if tight:
+            text += (" Does not fit even at the smallest scale (set a From/To range or a "
+                     "scale): " + "; ".join(tight) + ".")
         if failed:
             text += " Failed: " + "; ".join(failed)
         self.message.setText(text)
