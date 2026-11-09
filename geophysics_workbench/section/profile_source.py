@@ -21,7 +21,7 @@ from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPai
                              QPolygonF)
 
 from .context_render import context_z_values, draw_band, draw_over_stations
-from .data import SectionDataProvider, SectionSnapshot, identify_layers
+from .data import SectionDataProvider, SectionSnapshot, identify_layers, matching_profiles
 from .topography import measured_line
 
 SOURCE_ID = "geophysics_workbench"
@@ -507,8 +507,8 @@ def unregister_source(source: WorkbenchProfileSource) -> None:
 
 
 class FrameProfileSource(WorkbenchProfileSource):
-    """One plate frame: its profile with the frame's own look, whatever curve QGIS asks for
-    (the frame item is given its profile's curve)."""
+    """One plate frame: its profile with the frame's own look (the frame item is given its
+    profile's curve; any other curve gets nothing drawn)."""
 
     def __init__(self, provider: SectionDataProvider, frame):
         super().__init__(provider)
@@ -521,10 +521,18 @@ class FrameProfileSource(WorkbenchProfileSource):
         return f"{SOURCE_NAME} (plate frame)"
 
     def createProfileGenerator(self, request):
+        # QGIS hands every registered source to every profile canvas and layout item: draw
+        # only for this frame's own profile line (either direction), nothing elsewhere
         snapshot = None
         try:
-            if self.provider.store_has_profile(self.frame.profile_id):
-                snapshot = self.provider.snapshot(self.frame.profile_id, look=self.frame.look)
+            xy = self._curve_xy(request)
+            profile = self.provider._profile(self.frame.profile_id)
+            match = None
+            if xy is not None and profile is not None:
+                match = matching_profiles([profile], xy, CURVE_TOLERANCE)
+            if match:
+                snapshot = self.provider.snapshot(self.frame.profile_id, reverse=match[0][2],
+                                                  look=self.frame.look)
         except Exception as exc:              # never raise into QGIS' C++ caller
             _log_failure("plate frame", exc)
             snapshot = None

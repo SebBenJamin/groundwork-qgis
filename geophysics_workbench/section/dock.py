@@ -81,6 +81,8 @@ class SectionDock(QDockWidget):
         zoom_button.clicked.connect(self.zoom_full)
 
         self.canvas = QgsElevationProfileCanvas()
+        QgsApplication.profileSourceRegistry().profileSourceRegistered.connect(
+            self._keep_own_source)
         self.canvas.setProject(QgsProject.instance())
         self.canvas.setLockAxisScales(True)
         self.canvas.setMinimumHeight(180)
@@ -166,6 +168,15 @@ class SectionDock(QDockWidget):
                 self.canvas.setSources([self._source])
         self._fill_combo()
         self._set_hint()
+
+    def _keep_own_source(self, *_args) -> None:
+        """QGIS adds every newly registered profile source (e.g. a plate frame's) to every
+        profile canvas: the panel draws its own source only."""
+        if self._source is None:
+            return
+        own = self._source.profileSourceId()
+        if [s.profileSourceId() for s in self.canvas.sources()] != [own]:
+            self.canvas.setSources([self._source])
 
     def _on_provider_changed(self) -> None:
         if not sip.isdeleted(self):
