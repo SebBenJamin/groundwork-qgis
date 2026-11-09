@@ -45,7 +45,8 @@ def set_context_provider(provider) -> None:
 
 # -- colour bar ----------------------------------------------------------------------------
 def colour_bar_ticks(vmin: float, vmax: float, log: bool, spec: str) -> list[float]:
-    """Tick values: "auto" (decades on a log scale, 1-2-5 steps otherwise), "step:<v>" or
+    """Tick values: "auto" (decades on a log scale, 1-2-5 steps within decades when there are
+    fewer than three, and otherwise 1-2-5 steps), "step:<v>" or
     "list:<a,b,c>" (values outside the scale left out)."""
     lo, hi = min(vmin, vmax), max(vmin, vmax)
     if hi == lo:
@@ -69,7 +70,13 @@ def colour_bar_ticks(vmin: float, vmax: float, log: bool, spec: str) -> list[flo
             step = 0.0
     elif log and lo > 0:
         k0, k1 = math.ceil(math.log10(lo) - 1e-9), math.floor(math.log10(hi) + 1e-9)
-        return [float(10.0 ** k) for k in range(k0, k1 + 1)]
+        decades = [float(10.0 ** k) for k in range(k0, k1 + 1)]
+        if len(decades) >= 3:
+            return decades
+        # a narrow range: 1-2-5 per decade, so the bar still gets labels
+        return [float(round(m * 10.0 ** k, 12))
+                for k in range(math.floor(math.log10(lo)), math.floor(math.log10(hi)) + 1)
+                for m in (1, 2, 5) if lo - eps <= m * 10.0 ** k <= hi + eps]
     else:
         raw = (hi - lo) / 5.0
         mag = 10.0 ** math.floor(math.log10(raw))

@@ -9,6 +9,8 @@ def test_colour_bar_ticks_auto_step_list():
     assert colour_bar_ticks(1.0, 1000.0, True, "list:5, 50,500, 5000") == [5.0, 50.0, 500.0]
     assert colour_bar_ticks(0.0, 10.0, False, "auto") == [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
     assert colour_bar_ticks(5.0, 5.0, False, "auto") == [5.0]
+    # under three decades: 1-2-5 steps, so a narrow log range still gets labels
+    assert colour_bar_ticks(10.5, 141.6, True, "auto") == [20.0, 50.0, 100.0]
 
 
 def test_colour_bar_renders_log_scale_tick_labels(qgis_app):

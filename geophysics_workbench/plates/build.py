@@ -39,6 +39,7 @@ GAP = 4.0               # mm between stacked frames
 PROVENANCE_MM = 8.0     # height of a frame's provenance line
 BAR_COLUMN = 0.18       # landscape: colour-bar column, share of the area width
 BAR_ROW = 0.12          # portrait: colour-bar row, share of a frame slot's height
+BAR_MAX_MM = 30.0       # landscape: a new colour bar's width (the bar is 30 % of it)
 TOP_PAD = 0.08          # share of the depth range added above the data (labels, band)
 DETAILS = (("project", "Project"), ("client", "Client"), ("job", "Job no."),
            ("date", "Date"), ("author", "Drawn"), ("revision", "Revision"))
@@ -131,8 +132,8 @@ def _slots(area, count: int, portrait: bool, bars: list[int]) -> list[dict]:
             frame_w = w - bar_w - GAP
             frame_h = slot_h - PROVENANCE_MM
             frame = (x, sy, frame_w, frame_h)
-            bar_rects = [(x + frame_w + GAP, sy + j * frame_h / k, bar_w, frame_h / k)
-                         for j in range(k)]
+            bar_rects = [(x + frame_w + GAP, sy + j * frame_h / k, min(bar_w, BAR_MAX_MM),
+                          frame_h / k) for j in range(k)]
             prov = (x, sy + frame_h, frame_w, PROVENANCE_MM)
         out.append({"frame": frame, "bars": bar_rects, "provenance": prov})
     return out

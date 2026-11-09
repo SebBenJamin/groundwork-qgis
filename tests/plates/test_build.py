@@ -65,6 +65,8 @@ def test_two_frames_same_profile_share_scale_and_ve(env):
     assert a.plot().xMinimum() == b.plot().xMinimum()
     assert a.rect().width() == pytest.approx(b.rect().width())
     assert "VE" in layout.itemById("wb_provenance_1").text()
+    bar = layout.itemById("wb_colourbar_1_1")             # a slim bar, not the whole column
+    assert bar.rect().width() <= 30.0 + 1e-6
 
 
 def test_update_keeps_user_edits(env):
