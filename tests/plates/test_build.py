@@ -172,3 +172,20 @@ def test_plate_items_survive_project_reload(env, tmp_path):
     bar = layout.itemById("wb_colourbar_1_1")
     assert isinstance(bar, ColourBarItem) and bar.dataset_id == st.datasets(p.id)[0].id
     assert isinstance(layout.itemById("wb_legend_boreholes"), BoreholeLegendItem)
+
+
+def test_colour_bars_follow_their_model_not_their_position(env):
+    """Review I4: removing frame 1 must not hand frame 2's tuned bar to another model or
+    reset it."""
+    from geophysics_workbench.plates.build import create_or_update_plate
+    from geophysics_workbench.plates.items import ColourBarItem
+    st, p, prov, prj = env
+    plate = _plate(st, p, frames=2)
+    layout = create_or_update_plate(prj, st, prov, plate)
+    second = next(i for i in layout.items() if isinstance(i, ColourBarItem)
+                  and i.frame_id == "f1")
+    second.title, second.ticks = "Tuned", "list:10,100"
+    plate.frames.pop(0)
+    create_or_update_plate(prj, st, prov, plate)
+    bars = [i for i in layout.items() if isinstance(i, ColourBarItem)]
+    assert [(b.frame_id, b.title, b.ticks) for b in bars] == [("f1", "Tuned", "list:10,100")]

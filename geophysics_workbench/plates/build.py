@@ -456,10 +456,10 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
         if profile is None:
             prov.setText(f"Profile {f.profile_id} not found")
     for n in range(count + 1, _highest(layout, "wb_frame_") + 1):     # frames removed
-        for item_id in [f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}"] + \
-                [i.id() for i in layout.items() if hasattr(i, "id") and
-                 i.id().startswith(f"wb_colourbar_{n}_")]:
+        for item_id in (f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}"):
             _remove(layout, item_id)
+    _remove_stale_bars(layout, {(f.frame_id, d.id)
+                                for f, models in zip(plate.frames, shown) for d in models})
     layout.setCustomProperty(COUNT_PROPERTY, count)
 
     # fit to page: frames of one profile share scale, VE and range
@@ -519,32 +519,41 @@ def _highest(layout, prefix: str) -> int:
     return best
 
 
+def _free_id(layout, n: int, k: int) -> str:
+    while layout.itemById(f"wb_colourbar_{n}_{k}") is not None:
+        k += 1
+    return f"wb_colourbar_{n}_{k}"
+
+
 def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool) -> None:
+    """One colour bar per shown model, found by (frame, model), never by position: a tuned
+    bar stays with its model when frames or models are removed or reordered."""
     from ..section.readout import unit_label
     portrait = slot["bars"] and slot["bars"][0][2] > slot["bars"][0][3]
+    mine = {i.dataset_id: i for i in layout.items()
+            if isinstance(i, ColourBarItem) and i.frame_id == frame.frame_id}
     for k, d in enumerate(models, start=1):
-        item_id = f"wb_colourbar_{n}_{k}"
-        bar = layout.itemById(item_id)
-        fresh = not isinstance(bar, ColourBarItem)
+        bar = mine.get(d.id)
+        fresh = bar is None
         if fresh:
-            if bar is not None:
-                layout.removeLayoutItem(bar)
             bar = ColourBarItem(layout)
-            bar.setId(item_id)
+            bar.setId(_free_id(layout, n, k))
             bar.settings.setOrientation(Qt.Orientation.Horizontal if portrait
                                         else Qt.Orientation.Vertical)
-            layout.addLayoutItem(bar)
-        if fresh or bar.dataset_id != d.id:
             bar.title = (d.quantity or "").capitalize()
             bar.unit = unit_label(d.unit)
+            layout.addLayoutItem(bar)
         if fresh or relayout:
             _place(bar, *slot["bars"][k - 1])
         bar.frame_id, bar.dataset_id = frame.frame_id, d.id
         bar.refresh()
-    k = len(models) + 1
-    while layout.itemById(f"wb_colourbar_{n}_{k}") is not None:
-        _remove(layout, f"wb_colourbar_{n}_{k}")
-        k += 1
+
+
+def _remove_stale_bars(layout, wanted: set) -> None:
+    """Colour bars whose (frame, model) is no longer on the plate."""
+    for item in list(layout.items()):
+        if isinstance(item, ColourBarItem) and (item.frame_id, item.dataset_id) not in wanted:
+            layout.removeLayoutItem(item)
 
 
 __all__ = ["TEMPLATES", "create_or_update_plate", "frame_scale_and_ve", "plate_details",
