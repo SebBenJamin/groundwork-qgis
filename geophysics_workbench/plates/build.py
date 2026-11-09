@@ -39,7 +39,8 @@ GAP = 4.0               # mm between stacked frames
 PROVENANCE_MM = 8.0     # height of a frame's provenance line
 BAR_COLUMN = 0.18       # landscape: colour-bar column, share of the area width
 BAR_ROW = 0.12          # portrait: colour-bar row, share of a frame slot's height
-BAR_MAX_MM = 30.0       # landscape: a new colour bar's width (the bar is 30 % of it)
+BAR_MAX_MM = 20.0       # a new vertical colour bar's width (the bar is 30 % of it) ...
+BAR_MAX_LEN_MM = 80.0   # ... and its greatest length (horizontal bars: their width)
 TOP_PAD = 0.08          # share of the depth range added above the data (labels, band)
 DETAILS = (("project", "Project"), ("client", "Client"), ("job", "Job no."),
            ("date", "Date"), ("author", "Drawn"), ("revision", "Revision"))
@@ -125,7 +126,8 @@ def _slots(area, count: int, portrait: bool, bars: list[int]) -> list[dict]:
             bar_h = slot_h * BAR_ROW
             frame_h = slot_h - bar_h - PROVENANCE_MM
             frame = (x, sy, w, frame_h)
-            bar_rects = [(x + j * w / k, sy + frame_h, w / k, bar_h) for j in range(k)]
+            bar_rects = [(x + j * w / k, sy + frame_h, min(w / k, BAR_MAX_LEN_MM), bar_h)
+                         for j in range(k)]
             prov = (x, sy + frame_h + bar_h, w, PROVENANCE_MM)
         else:
             bar_w = w * BAR_COLUMN
@@ -133,7 +135,7 @@ def _slots(area, count: int, portrait: bool, bars: list[int]) -> list[dict]:
             frame_h = slot_h - PROVENANCE_MM
             frame = (x, sy, frame_w, frame_h)
             bar_rects = [(x + frame_w + GAP, sy + j * frame_h / k, min(bar_w, BAR_MAX_MM),
-                          frame_h / k) for j in range(k)]
+                          min(frame_h / k, BAR_MAX_LEN_MM)) for j in range(k)]
             prov = (x, sy + frame_h, frame_w, PROVENANCE_MM)
         out.append({"frame": frame, "bars": bar_rects, "provenance": prov})
     return out
@@ -347,6 +349,15 @@ def _update_minimap(layout, store, project, profiles: list) -> None:
         except Exception:                       # QgsCsException: keep the store extent
             pass
     m.zoomToExtent(rect)
+    bar = layout.itemById("wb_map_scalebar")
+    invalid = bar is not None and hasattr(bar, "unitsPerSegment") and \
+        not (bar.unitsPerSegment() > 0)                 # nan: sized before the map had an extent
+    if invalid:
+        bar.setSegmentSizeMode(Qgis.ScaleBarSegmentSizeMode.FitWidth)
+        bar.setMinimumBarWidth(15.0)
+        bar.setMaximumBarWidth(min(45.0, max(m.rect().width() * 0.5, 16.0)))
+        bar.applyDefaultSize(Qgis.DistanceUnit.Meters)
+        bar.update()
 
 
 def _update_title(layout, plate, crs_authid: str) -> None:

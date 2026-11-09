@@ -37,6 +37,15 @@ def _keep_alive(item) -> None:
     item.destroyed.connect(lambda _obj=None, k=key: _alive.pop(k, None))
 
 
+def current_provider():
+    """The provider of the plugin as loaded now. Read through ``sys.modules``: QGIS keeps the
+    item classes registered first until it restarts, so after a plugin reinstall the old
+    classes would otherwise read the old module's (cleared) provider."""
+    import sys
+    module = sys.modules.get(__name__)
+    return getattr(module, "_provider", None) if module is not None else _provider
+
+
 def set_context_provider(provider) -> None:
     """The provider the items read sections and styles from (None when no store)."""
     global _provider
@@ -106,6 +115,10 @@ def tick_labels(values: list[float], settings: QgsColorRampLegendNodeSettings) -
 
 
 class ColourBarItem(QgsLayoutItem):
+    @staticmethod
+    def provider():
+        return current_provider()
+
     def __init__(self, layout):
         super().__init__(layout)
         _keep_alive(self)
@@ -139,8 +152,9 @@ class ColourBarItem(QgsLayoutItem):
                 return ColorScale(**model.scale)
             except (TypeError, ValueError):
                 pass
-        if _provider is not None:
-            return _provider.style(self.dataset_id).scale
+        provider = self.provider()
+        if provider is not None:
+            return provider.style(self.dataset_id).scale
         return None
 
     # -- drawing ---------------------------------------------------------------------------
@@ -282,6 +296,10 @@ def curve_rows(points, views: dict, styles: dict) -> list[tuple[str, object]]:
 
 
 class BoreholeLegendItem(QgsLayoutItem):
+    @staticmethod
+    def provider():
+        return current_provider()
+
     def __init__(self, layout):
         super().__init__(layout)
         _keep_alive(self)
@@ -301,7 +319,8 @@ class BoreholeLegendItem(QgsLayoutItem):
         from ..ui.context_dialog import read_settings
         from .sources import read_plates
         project = self.layout().project() if self.layout() else None
-        if project is None or _provider is None:
+        provider = self.provider()
+        if project is None or provider is None:
             return []
         frames = [f for p in read_plates(project) for f in p.frames
                   if f.frame_id in self.frame_ids and f.look.boreholes]
@@ -309,9 +328,9 @@ class BoreholeLegendItem(QgsLayoutItem):
         by_entry: dict[int, list] = {}
         curves: list = []
         for f in frames:
-            if not _provider.store_has_profile(f.profile_id):
+            if not provider.store_has_profile(f.profile_id):
                 continue
-            ctx = _provider.context(f.profile_id)
+            ctx = provider.context(f.profile_id)
             for p in ctx.points if ctx is not None else []:
                 if p.kind == "borehole" and 0 <= p.entry < len(entries):
                     by_entry.setdefault(p.entry, []).extend(p.log)

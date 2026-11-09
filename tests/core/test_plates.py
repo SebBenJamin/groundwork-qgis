@@ -8,8 +8,8 @@ from geophysics_workbench.core.plates import (FrameLook, FrameSpec, ModelLook, P
 
 
 def test_nice_scale_picks_the_largest_standard_scale_that_fits():
-    assert nice_scale(200, 380) == (1000, True)
-    assert nice_scale(150, 380) == (500, True)
+    assert nice_scale(200, 380) == (750, True)             # 267 mm of 380
+    assert nice_scale(150, 380) == (400, True)             # 375 mm of 380
 
 
 def test_nice_scale_too_long_and_degenerate():
@@ -36,8 +36,8 @@ def test_stack_fit_frames_of_one_profile_share_scale_ve_and_range():
     out = stack_fit(frames, extents, [(380, 80), (380, 80), (380, 80)])
     assert out[0] == out[1]
     scale, ve, s0, s1 = out[0]
-    assert (scale, s0, s1) == (1000, 0, 200)           # union of a and b
-    assert ve == nice_ve(15, 80, 1000)
+    assert (scale, s0, s1) == (750, 0, 200)            # union of a and b
+    assert ve == nice_ve(15, 80, 750)
     assert out[2][0] == 250
 
 

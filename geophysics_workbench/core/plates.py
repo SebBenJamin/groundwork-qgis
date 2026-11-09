@@ -12,8 +12,11 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 
-SCALES = (100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000)
-VES = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0, 20.0)
+#: standard scales, close enough together that a fitted section fills most of its frame
+#: (a 1:100 -> 1:200 jump left half of the frame empty)
+SCALES = (100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000,
+          4000, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000)
+VES = (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 15.0, 20.0)
 
 
 @dataclass
