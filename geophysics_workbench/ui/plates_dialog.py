@@ -102,6 +102,7 @@ class PlatesDialog(QDialog):
         self.panel_profile = panel_profile
         self.plates: list[PlateSpec] = read_plates(project)
         self._filling = False
+        self.failed: list[str] = []
 
         self.plate_list = QListWidget()
         self.plate_list.currentRowChanged.connect(self._show_plate)
@@ -422,6 +423,7 @@ class PlatesDialog(QDialog):
                      "scale): " + "; ".join(tight) + ".")
         if failed:
             text += " Failed: " + "; ".join(failed)
+        self.failed = failed
         self.message.setText(text)
         return layouts
 
@@ -431,9 +433,13 @@ class PlatesDialog(QDialog):
         if not folder:
             return
         self.create_plates()
+        if self.failed:                         # never export plates that failed to update
+            self.message.setText(self.message.text() + " Nothing was exported.")
+            return
         try:
             paths = export_plates(self.project, Path(folder), self.combined.isChecked())
         except OSError as exc:
             self.message.setText(f"Export failed: {exc}")
             return
-        self.message.setText(f"Exported {len(paths)} PDF file(s) to {folder}.")
+        self.message.setText(f"{self.message.text()} Exported {len(paths)} PDF file(s) to "
+                             f"{folder}.")

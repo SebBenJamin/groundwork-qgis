@@ -67,7 +67,7 @@ def _combined(plates, path: Path) -> None:
     try:
         for plate, layout in plates:
             context = layout.renderContext()
-            old_flags = context.flags()
+            old_flags, old_dpi = context.flags(), context.dpi()
             context.setFlag(QgsLayoutRenderContext.Flag.FlagForceVectorOutput, True)
             context.setDpi(DPI)
             exporter = QgsLayoutExporter(layout)
@@ -80,11 +80,15 @@ def _combined(plates, path: Path) -> None:
                                                      QMarginsF(0, 0, 0, 0)))
                     if painter is None:
                         painter = QPainter(writer)
+                        if not painter.isActive():      # e.g. open (locked) in a PDF viewer
+                            painter = None
+                            raise OSError(f"could not write {path} (is it open elsewhere?)")
                     else:
                         writer.newPage()
                     exporter.renderPage(painter, i)
             finally:
                 context.setFlags(old_flags)
+                context.setDpi(old_dpi)
     finally:
         if painter is not None:
             painter.end()

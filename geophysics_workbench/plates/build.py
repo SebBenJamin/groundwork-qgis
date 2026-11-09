@@ -451,10 +451,17 @@ def _concrete_scales(frame, snap) -> None:
 
 def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     register_items()
+    detach_frame_items(project)                     # before their sources are replaced
+    try:
+        return _build_plate(project, store, provider, plate)
+    finally:                                        # also when it failed: no blank plates
+        sources = register_frame_sources(provider, read_plates(project))
+        attach_frame_sources(project, store, sources)
+
+
+def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     profiles = {p.id: p for p in store.profiles()}
     plates = [p for p in read_plates(project) if p.plate_id != plate.plate_id]
-    detach_frame_items(project)                     # before their sources are replaced
-
     layout = find_plate_layout(project, plate)
     if layout is None:
         layout = _new_layout(project, plate)
@@ -568,8 +575,6 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     _update_title(layout, plate, store.crs_authid)
 
     layout.setCustomProperty(FIT_PROPERTY, "; ".join(not_fitting))
-    sources = register_frame_sources(provider, read_plates(project))
-    attach_frame_sources(project, store, sources)
     layout.refresh()
     return layout
 
