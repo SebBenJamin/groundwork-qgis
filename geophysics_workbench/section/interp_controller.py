@@ -20,11 +20,12 @@ from .interp_tools import DrawTool, EditTool, plot_tolerance
 from .interp_undo import InterpUndo
 
 TOOLS = (("pan", "Pan"), ("line", "Line"), ("polygon", "Polygon"), ("point", "Point"),
-         ("edit", "Edit"))
+         ("edit", "Edit"), ("note", "Note"))
 #: QGIS theme icons of the row's buttons (the text is the fallback and the tooltip)
 ICONS = {"pan": "mActionPan.svg", "line": "mActionCaptureLine.svg",
          "polygon": "mActionCapturePolygon.svg", "point": "mActionCapturePoint.svg",
          "edit": "mActionVertexToolActiveLayer.svg", "snap": "mIconSnapping.svg",
+         "note": "mActionTextAnnotation.svg",
          "undo": "mActionUndo.svg", "redo": "mActionRedo.svg"}
 
 
@@ -71,6 +72,9 @@ class InterpController(QObject):
         #: Every drawn piece starts its own feature: interpretation stays per profile;
         #: linking across profiles is a separate, deliberate step.
         self.form_factory = lambda f, s, letters: ask_feature(self.dock, f, s, letters)
+        #: (note, known categories) -> edited note or None (cancel)
+        from ..ui.field_notes_dialog import ask_note
+        self.note_form_factory = lambda note, cats: ask_note(self.dock, note, cats)
         self.bar = QHBoxLayout()
         self.buttons: dict = {}
         self.group = QButtonGroup(self)
@@ -111,6 +115,10 @@ class InterpController(QObject):
         act.triggered.connect(self.export)
         self.buttons["export"] = act
         self.menu.addSeparator()
+        act = self.menu.addAction("Field notes…")
+        act.setToolTip("The field notes of this profile: add, edit, switch off, delete")
+        act.triggered.connect(self.show_field_notes)
+        self.buttons["field_notes"] = act
         act = self.menu.addAction("Show field notes")
         act.setCheckable(True)
         act.setChecked(True)
@@ -249,6 +257,9 @@ class InterpController(QObject):
 
     def start(self, kind: str) -> None:
         self._targets = None
+        if kind == "note":
+            self._start_note()
+            return
         if (self.dock.provider is None or self.dock.current_profile_id() is None
                 or not self.writable()):
             self.stop()
@@ -396,6 +407,41 @@ class InterpController(QObject):
         if piece is not None:
             store.save_piece(copy.deepcopy(piece))
         self.changed(version)
+
+    def _start_note(self) -> None:
+        from .interp_tools import NoteTool
+        if self.dock.provider is None or self.dock.current_profile_id() is None:
+            self.stop()
+            return
+        self.tool = NoteTool(self.dock.canvas, self._note_finished, on_cancel=self.stop)
+        self.dock.canvas.setTool(self.tool)
+        self.buttons["note"].setChecked(True)
+        self.dock.canvas.setFocus()
+
+    def _note_finished(self, s_from: float, s_to: float | None) -> None:
+        from ..core.field_notes import FieldNote
+        from ..core.interpretation import new_id
+        from ..ui.field_notes_dialog import after_change, categories, save_note
+        store, profile_id = self.dock.provider.store, self.dock.current_profile_id()
+        if profile_id is None:
+            return
+        note = self.note_form_factory(FieldNote(new_id(), profile_id, s_from, s_to, ""),
+                                      categories(store))
+        if note is None:
+            return
+        save_note(store, note)
+        after_change(store, self.dock.provider)
+
+    def show_field_notes(self) -> None:
+        from ..ui.field_notes_dialog import FieldNotesDialog, after_change
+        profile_id = self.dock.current_profile_id()
+        if self.dock.provider is None or profile_id is None:
+            return
+        store = self.dock.provider.store
+        dlg = FieldNotesDialog(store, profile_id,
+                               lambda: after_change(store, self.dock.provider), self.dock)
+        dlg.exec()
+        dlg.deleteLater()
 
     def _show_field_notes(self, on: bool) -> None:
         provider = self.dock.provider

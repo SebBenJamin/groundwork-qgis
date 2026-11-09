@@ -405,3 +405,51 @@ class EditTool(QgsPlotTool):
     def deactivate(self):
         self.select(None)
         super().deactivate()
+
+
+class NoteTool(QgsPlotTool):
+    """Field notes: a click gives a note at one chainage, a drag along the section a stretch;
+    ``on_finished(s_from, s_to)`` (``s_to`` None for a click). Middle-drag pans."""
+
+    DRAG_PX = 4
+
+    def __init__(self, canvas, on_finished: Callable[[float, float | None], None],
+                 on_cancel: Callable[[], None] | None = None):
+        super().__init__(canvas, "field-note")
+        sip.transferto(self, canvas)            # the canvas owns its tools (see DrawTool)
+        self.on_finished, self.on_cancel = on_finished, on_cancel
+        self.panner = Panner(canvas)
+        self._start = None                      # (canvas x, chainage) of the press
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    def _s(self, event):
+        pp = self.canvas().canvasPointToPlotPoint(QPointF(event.pos()))
+        return None if pp.isEmpty() else float(pp.distance())
+
+    def plotPressEvent(self, event):
+        if self.panner.press(event) or event.button() != Qt.MouseButton.LeftButton:
+            return
+        s = self._s(event)
+        if s is not None:
+            self._start = (float(event.pos().x()), s)
+            event.accept()
+
+    def plotMoveEvent(self, event):
+        self.panner.move(event)
+
+    def plotReleaseEvent(self, event):
+        if self.panner.release(event) or self._start is None:
+            return
+        x0, s0 = self._start
+        self._start = None
+        s1 = self._s(event)
+        if s1 is None or abs(float(event.pos().x()) - x0) < self.DRAG_PX:
+            self.on_finished(s0, None)
+        else:
+            self.on_finished(min(s0, s1), max(s0, s1))
+        event.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.on_cancel is not None:
+            self.on_cancel()
+            event.accept()

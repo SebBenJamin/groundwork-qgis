@@ -136,12 +136,12 @@ def test_row_is_compact(bar):
     _vb, _store, dock = bar
     row = dock.interp.bar
     widgets = [row.itemAt(i).widget() for i in range(row.count()) if row.itemAt(i).widget()]
-    assert len(widgets) == 10
+    assert len(widgets) == 11              # + Note (field notes)
     assert not any(isinstance(w, QPushButton) for w in widgets)
     assert all(
         w.text() not in ("Freeze…", "Start from this version") for w in dock.findChildren(QPushButton))
     menu = dock.interp.menu
     texts = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert texts[:5] == ["Types…", "Export…", "Show field notes", "Freeze…",
+    assert texts[:6] == ["Types…", "Export…", "Field notes…", "Show field notes", "Freeze…",
                          "Start from this version"]
-    assert texts[5] == "Compare with"
+    assert texts[6] == "Compare with"
