@@ -33,3 +33,29 @@ def test_plugin_attaches_frames_on_store_and_detaches_on_unload(qgis_app, fake_i
         qgis_app.processEvents()
     assert item.sources() == []
     prj.clear()
+
+
+def test_plates_menu_entry_opens_dialog_with_store(qgis_app, fake_iface, store_with_model):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench import classFactory
+    st, p, _ = store_with_model
+    prj = QgsProject.instance()
+    prj.clear()
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        action = next(a for a in plugin.actions if a.text() == "Plates…")
+        assert not action.isEnabled()                     # no workbench project yet
+        plugin.set_store(st)
+        assert action.isEnabled()
+        action.trigger()
+        assert plugin._plates_dialog is not None and plugin._plates_dialog.isVisible()
+    finally:
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
+    assert plugin._plates_dialog is None
+    prj.removeAllMapLayers()
+    prj.clear()

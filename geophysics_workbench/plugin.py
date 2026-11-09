@@ -43,6 +43,8 @@ class WorkbenchPlugin:
         self.ties_panel = None
         self._profile_dialog = None
         self._context_dialog = None
+        self._plates_dialog = None
+        self.plates_action = None
         self._project_signals = []
 
     @property
@@ -70,6 +72,7 @@ class WorkbenchPlugin:
         self.add_model_action = self.add_action("Add ERT model…", self.add_model)
         self.context_action = self.add_action("Context layers…", self.edit_context)
         self.ties_action = self.add_action("Profile ties…", self.show_ties_panel)
+        self.plates_action = self.add_action("Plates…", self.show_plates)
         self.menu.addSeparator()
         self.add_action("Show section panel", self.show_section_panel)
         self.pick_action = self.add_action("Pick profile on map", self.toggle_pick_tool,
@@ -99,6 +102,7 @@ class WorkbenchPlugin:
         self._project_signals.clear()
         self._close_profile_dialog()
         self._close_context_dialog()
+        self._close_plates_dialog()
         self._close_ties_panel()
         self._close_borehole_viewer()
         if self.map_link is not None:
@@ -119,7 +123,7 @@ class WorkbenchPlugin:
             self.menu = None
         self.actions.clear()
         self.pick_action = self.new_profile_action = self.add_model_action = None
-        self.context_action = self.ties_action = None
+        self.context_action = self.ties_action = self.plates_action = None
         from .patterns import unregister_svg_path
         unregister_svg_path()
 
@@ -144,6 +148,7 @@ class WorkbenchPlugin:
         self._close_borehole_viewer()          # it follows the old store's data
         self._close_profile_dialog()
         self._close_context_dialog()
+        self._close_plates_dialog()           # it edits the old store's plates
         self._close_ties_panel()
         if self.dock is not None:
             self.dock.set_provider(None)
@@ -274,6 +279,8 @@ class WorkbenchPlugin:
             self.context_action.setEnabled(self.store is not None)
         if self.ties_action is not None:
             self.ties_action.setEnabled(self.store is not None)
+        if self.plates_action is not None:
+            self.plates_action.setEnabled(self.store is not None)
         if self.add_model_action is not None:
             self.add_model_action.setEnabled(
                 self.dock is not None and self.dock.current_profile_id() is not None)
@@ -387,6 +394,35 @@ class WorkbenchPlugin:
         if self._context_dialog is dialog:
             self._context_dialog = None
         dialog.deleteLater()
+
+    def show_plates(self):
+        """Plates…: report plates (non-modal, one at a time)."""
+        from .ui.plates_dialog import PlatesDialog
+        if self.store is None:
+            return
+        if self._plates_dialog is not None:
+            self._plates_dialog.show()
+            self._plates_dialog.raise_()
+            self._plates_dialog.activateWindow()
+            return
+        dialog = PlatesDialog(QgsProject.instance(), self.store, self.provider,
+                              panel_profile=lambda: self.dock.current_profile_id()
+                              if self.dock is not None else None,
+                              parent=self.iface.mainWindow())
+        dialog.finished.connect(lambda _r, d=dialog: self._plates_finished(d))
+        self._plates_dialog = dialog
+        dialog.show()
+
+    def _plates_finished(self, dialog):
+        if self._plates_dialog is dialog:
+            self._plates_dialog = None
+            dialog.deleteLater()
+
+    def _close_plates_dialog(self):
+        dialog, self._plates_dialog = self._plates_dialog, None
+        if dialog is not None:
+            dialog.reject()
+            dialog.deleteLater()
 
     def _close_context_dialog(self):
         dialog, self._context_dialog = self._context_dialog, None
