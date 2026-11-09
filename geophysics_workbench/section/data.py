@@ -266,6 +266,8 @@ class SectionDataProvider:
         self.on_context_error: Callable[[str, str], None] | None = None
         #: interpretation version shown on the section; None = the current one
         self.interp_version_id: str | None = None
+        #: draw the profiles' field notes (the section's "Show field notes" switch)
+        self.show_field_notes: bool = True
         #: frozen version drawn faintly behind the shown one; None = no comparison
         self.interp_compare_version_id: str | None = None
         #: returns the derived interpretation layers (name -> layer) whose styles are used
@@ -496,7 +498,9 @@ class SectionDataProvider:
         profile = self._profile(profile_id)
         if profile is None:
             return None
-        return replace(self._items(profile), ties=self.ties(profile_id))
+        notes = [n for n in self.store.field_notes(profile_id) if n.shown] \
+            if self.show_field_notes else []
+        return replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
 
     def snapshot(self, profile_id: str, reverse: bool = False) -> SectionSnapshot:
         """Detached plain-data copy for a generator thread. ``reverse`` mirrors chainage

@@ -122,6 +122,8 @@ class ContextItems:
     #: section look per borehole entry (``ProjectedPoint.entry``) and the curve styles by key
     borehole_views: dict = field(default_factory=dict)
     curve_styles: dict = field(default_factory=dict)
+    #: the profile's field notes that are shown (``core.field_notes.FieldNote``)
+    field_notes: list = field(default_factory=list)
 
     def mirrored(self, length: float) -> "ContextItems":
         """The same items for the reversed profile: every s becomes ``length - s``. Offsets,
@@ -138,7 +140,17 @@ class ContextItems:
                         key=lambda b: b.s0),
             ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
             dem=dem, dem_tolerance=self.dem_tolerance,
-            borehole_views=dict(self.borehole_views), curve_styles=dict(self.curve_styles))
+            borehole_views=dict(self.borehole_views), curve_styles=dict(self.curve_styles),
+            field_notes=sorted((_mirrored_note(n, length) for n in self.field_notes),
+                               key=lambda n: n.s_from))
+
+
+def _mirrored_note(note, length: float):
+    """A field note on the reversed profile (a stretch keeps from < to)."""
+    if note.s_to is None:
+        return replace(note, s_from=length - note.s_from)
+    lo, hi = min(note.s_from, note.s_to), max(note.s_from, note.s_to)
+    return replace(note, s_from=length - hi, s_to=length - lo)
 
 
 def _cum(xy: np.ndarray) -> np.ndarray:

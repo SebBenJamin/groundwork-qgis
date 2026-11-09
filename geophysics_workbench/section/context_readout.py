@@ -149,6 +149,8 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
                 lines.append(f"Tie {tie.other_name}: {format_value(float(v))}"
                              + (f" {unit}" if unit else ""))
                 break
+    from .field_notes_render import field_note_lines
+    lines += field_note_lines(items.field_notes, s, tol_s)
     dem = _dem_line(items, s, stations)
     if dem is not None:
         lines.append(dem)

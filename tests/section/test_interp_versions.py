@@ -142,5 +142,6 @@ def test_row_is_compact(bar):
         w.text() not in ("Freeze…", "Start from this version") for w in dock.findChildren(QPushButton))
     menu = dock.interp.menu
     texts = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert texts[:4] == ["Types…", "Export…", "Freeze…", "Start from this version"]
-    assert texts[4] == "Compare with"
+    assert texts[:5] == ["Types…", "Export…", "Show field notes", "Freeze…",
+                         "Start from this version"]
+    assert texts[5] == "Compare with"

@@ -197,6 +197,12 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
         text = (f"{p.label} {offset_text(p.offset)}".strip()
                 if p.kind == "borehole" and p.log else p.label)
         specs.append((p, p.s, text, (0, 0, 0)))
+    from ..core.field_notes import note_range
+    from .field_notes_render import NOTE_RGB, label_text
+    for n in items.field_notes:
+        if n.shown:
+            lo, hi = note_range(n)
+            specs.append((n, (lo + hi) / 2, label_text(n.text), NOTE_RGB))
     rows: list[list[tuple[float, float]]] = [[] for _ in range(LABEL_ROWS)]
     out = {}
     for item, s, text, rgb in specs:
@@ -337,4 +343,6 @@ def draw_over_stations(painter, rc, wt, items, stations, heights, surface, z_ran
     draw_crossings(painter, rc, wt, items, z_range, plan)
     draw_points(painter, rc, wt, items, surface)
     draw_ties(painter, rc, wt, items, z_range, plan, host_layers)
+    from .field_notes_render import draw_field_notes
+    draw_field_notes(painter, rc, wt, items, surface, plan)
     draw_labels(painter, rc, items, plan)

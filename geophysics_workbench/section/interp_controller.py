@@ -110,6 +110,13 @@ class InterpController(QObject):
                        "the shown version, to GeoPackage or DXF")
         act.triggered.connect(self.export)
         self.buttons["export"] = act
+        self.menu.addSeparator()
+        act = self.menu.addAction("Show field notes")
+        act.setCheckable(True)
+        act.setChecked(True)
+        act.setToolTip("Draw the field notes along the top of the section")
+        act.toggled.connect(self._show_field_notes)
+        self.buttons["show_notes"] = act
         menu_button = QToolButton()
         menu_button.setText("Interpretation")
         menu_button.setMenu(self.menu)
@@ -389,6 +396,12 @@ class InterpController(QObject):
         if piece is not None:
             store.save_piece(copy.deepcopy(piece))
         self.changed(version)
+
+    def _show_field_notes(self, on: bool) -> None:
+        provider = self.dock.provider
+        if provider is not None:
+            provider.show_field_notes = bool(on)
+            provider.notify_redraw()                # notes are read with each context
 
     def show_types(self) -> None:
         from ..ui.interp_types import TypesDialog
