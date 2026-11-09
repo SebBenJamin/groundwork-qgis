@@ -125,7 +125,10 @@ def _layers_for_look(layers: list, look) -> list:
             except (TypeError, ValueError):
                 pass
         out.append(SectionLayer(la.dataset, la.mesh, replace(
-            style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale), la.error))
+            style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale,
+            contour_step=m.contour_step, grid_cell=m.grid_cell, fade_coverage=m.fade_coverage,
+            coverage_threshold=m.coverage_threshold, fade_mode=m.fade_mode,
+            shown=m.shown if m.shown is not None else style.shown), la.error))
     return out
 
 
@@ -547,7 +550,9 @@ class SectionDataProvider:
         coverage = station_coverage(sets)
         context = copy.deepcopy(self.context(profile_id))
         if look is not None and context is not None:
-            context = _context_for_look(context, look)
+            # the plate's own notes switch, not the panel's
+            notes = [n for n in self.store.field_notes(profile_id) if n.shown]
+            context = _context_for_look(replace(context, field_notes=notes), look)
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for la in layers:
@@ -563,7 +568,7 @@ class SectionDataProvider:
         snap = SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
                                dem_topo)
         version = None if look is None else (look.interp_version or self._latest_version())
-        self._add_interpretation(snap, profile_id, reverse, version)
+        self._add_interpretation(snap, profile_id, reverse, version, compare=look is None)
         return snap
 
     def _latest_version(self) -> str | None:
@@ -578,7 +583,7 @@ class SectionDataProvider:
         return self.interp_version_id or self.store.current_version().id
 
     def _add_interpretation(self, snap: SectionSnapshot, profile_id: str, reverse: bool,
-                            version: str | None = None) -> None:
+                            version: str | None = None, compare: bool = True) -> None:
         version = version or self.shown_interp_version()
         if version is None:
             return
@@ -595,7 +600,7 @@ class SectionDataProvider:
             marks = crossing_marks(others[tie.other_id], tie.s_other, self.near_miss)
             if marks:
                 crossings.append((tie.s, marks))
-        compare_id = self.interp_compare_version_id
+        compare_id = self.interp_compare_version_id if compare else None
         compare = []
         if compare_id and compare_id != version and any(
                 v.id == compare_id for v in self.store.versions()):

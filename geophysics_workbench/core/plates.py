@@ -26,6 +26,13 @@ class ModelLook:
     opacity: float = 1.0
     scale: dict | None = None        # ColorScale as a dict (cmap, vmin, vmax, log); None = auto
     mode: str = "cells"
+    #: display settings as in the section's Display dialog (None = automatic)
+    contour_step: float | None = None
+    grid_cell: float | None = None
+    fade_coverage: bool = False
+    coverage_threshold: float | None = None
+    fade_mode: str = "fade"
+    shown: str | None = None                            # readings: misfit/measured/calculated
 
 
 @dataclass
@@ -120,9 +127,15 @@ def _model(d) -> ModelLook | None:
     if not isinstance(d, dict) or not isinstance(d.get("dataset_id"), str):
         return None
     scale = d.get("scale") if isinstance(d.get("scale"), dict) else None
+    def text(key, default):
+        return d.get(key) if isinstance(d.get(key), str) else default
+
     return ModelLook(d["dataset_id"], bool(d.get("visible", True)),
                      _num(d.get("opacity")) if _num(d.get("opacity")) is not None else 1.0,
-                     scale, d.get("mode") if isinstance(d.get("mode"), str) else "cells")
+                     scale, text("mode", "cells"), _num(d.get("contour_step")),
+                     _num(d.get("grid_cell")), bool(d.get("fade_coverage", False)),
+                     _num(d.get("coverage_threshold")), text("fade_mode", "fade"),
+                     text("shown", None))
 
 
 def _look(d) -> FrameLook:

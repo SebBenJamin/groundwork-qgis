@@ -41,7 +41,9 @@ def panel_look(provider, profile_id: str) -> FrameLook:
         style = provider.style(d.id)
         models.append(ModelLook(d.id, style.visible, style.opacity,
                                 asdict(style.scale) if style.scale is not None else None,
-                                style.mode))
+                                style.mode, style.contour_step, style.grid_cell,
+                                style.fade_coverage, style.coverage_threshold, style.fade_mode,
+                                style.shown))
     return FrameLook(models, getattr(provider, "interp_version_id", None), True,
                      bool(provider.show_field_notes), True)
 
