@@ -135,6 +135,9 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         topo = self.snapshot.topo
         painter.save()
         try:
+            clip = _plot_rect(context, wt)
+            if clip is not None:                # never draw past the canvas or layout frame
+                painter.setClipRect(clip, Qt.ClipOperation.IntersectClip)
             painter.save()
             try:
                 painter.setTransform(wt, True)      # draw in (chainage, elevation) space
@@ -352,6 +355,17 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                                  label)
 
 
+def _plot_rect(context, wt):
+    """The plot area in device units, from the context's distance and elevation ranges."""
+    d, e = context.distanceRange(), context.elevationRange()
+    values = (d.lower(), d.upper(), e.lower(), e.upper())
+    if d.isInfinite() or e.isInfinite() or not all(np.isfinite(v) for v in values):
+        return None
+    a = wt.map(QPointF(d.lower(), e.upper()))
+    b = wt.map(QPointF(d.upper(), e.lower()))
+    return QRectF(a, b).normalized()
+
+
 class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
     def __init__(self, snapshot: SectionSnapshot | None, owner: "WorkbenchProfileSource"):
         super().__init__()
@@ -361,7 +375,8 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
         self._results = None
 
     def sourceId(self):
-        return SOURCE_ID
+        owner = getattr(self, "_owner_id", None)
+        return owner or SOURCE_ID
 
     def type(self):
         return RESULTS_TYPE
@@ -489,3 +504,34 @@ def unregister_source(source: WorkbenchProfileSource) -> None:
     registry = QgsApplication.profileSourceRegistry()
     if registry.findSourceById(SOURCE_ID) is source:
         registry.unregisterProfileSource(SOURCE_ID)
+
+
+class FrameProfileSource(WorkbenchProfileSource):
+    """One plate frame: its profile with the frame's own look, whatever curve QGIS asks for
+    (the frame item is given its profile's curve)."""
+
+    def __init__(self, provider: SectionDataProvider, frame):
+        super().__init__(provider)
+        self.frame = frame
+
+    def profileSourceId(self):
+        return frame_source_id(self.frame.frame_id)
+
+    def profileSourceName(self):
+        return f"{SOURCE_NAME} (plate frame)"
+
+    def createProfileGenerator(self, request):
+        snapshot = None
+        try:
+            if self.provider.store_has_profile(self.frame.profile_id):
+                snapshot = self.provider.snapshot(self.frame.profile_id, look=self.frame.look)
+        except Exception as exc:              # never raise into QGIS' C++ caller
+            _log_failure("plate frame", exc)
+            snapshot = None
+        gen = WorkbenchProfileGenerator(snapshot, self)
+        gen._owner_id = self.profileSourceId()
+        return gen
+
+
+def frame_source_id(frame_id: str) -> str:
+    return f"{SOURCE_ID}:frame:{frame_id}"

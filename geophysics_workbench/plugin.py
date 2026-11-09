@@ -107,6 +107,7 @@ class WorkbenchPlugin:
             self.iface.removeDockWidget(self.dock)
             self.dock.deleteLater()
             self.dock = None
+        self._drop_plate_sources()
         self._drop_source()
         self._close_gatherer()
         self.provider = None
@@ -144,6 +145,7 @@ class WorkbenchPlugin:
         self._close_ties_panel()
         if self.dock is not None:
             self.dock.set_provider(None)
+        self._drop_plate_sources()
         self._drop_source()
         self._close_gatherer()
         self.provider = None
@@ -161,7 +163,25 @@ class WorkbenchPlugin:
             self.source = register_source(self.provider)
             if self.dock is not None:
                 self.dock.set_provider(self.provider, self.source)
+            self.attach_plates()
         self._update_actions()
+
+    def attach_plates(self) -> None:
+        """Register one source per plate frame and give the frame items their sources (also
+        after the plates change)."""
+        from .plates.sources import (attach_frame_sources, detach_frame_items, read_plates,
+                                     register_frame_sources)
+        if self.provider is None:
+            return
+        project = QgsProject.instance()
+        detach_frame_items(project)
+        sources = register_frame_sources(self.provider, read_plates(project))
+        attach_frame_sources(project, self.provider.store, sources)
+
+    def _drop_plate_sources(self) -> None:
+        from .plates.sources import detach_frame_items, unregister_frame_sources
+        detach_frame_items(QgsProject.instance())
+        unregister_frame_sources()
 
     def _drop_source(self):
         if self.source is not None:

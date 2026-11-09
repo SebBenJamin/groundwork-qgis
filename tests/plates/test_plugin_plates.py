@@ -1,0 +1,35 @@
+"""The plugin re-attaches plate frames when the store is set (project read) and lets go on
+unload."""
+
+
+def test_plugin_attaches_frames_on_store_and_detaches_on_unload(qgis_app, fake_iface,
+                                                               store_with_model):
+    from qgis.core import QgsLayoutItemElevationProfile, QgsPrintLayout, QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench import classFactory
+    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
+    from geophysics_workbench.plates.sources import write_plates
+    st, p, _ = store_with_model
+    prj = QgsProject.instance()
+    prj.clear()
+    write_plates(prj, [PlateSpec("pl", "1", "P1", "A4_landscape",
+                                 [FrameSpec("f9", p.id, FrameLook())])])
+    layout = QgsPrintLayout(prj)
+    layout.setName("Plate 1 – P1")
+    item = QgsLayoutItemElevationProfile(layout)
+    item.setCustomProperty("wb_frame_id", "f9")
+    layout.addLayoutItem(item)
+    prj.layoutManager().addLayout(layout)
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        assert [s.profileSourceId() for s in item.sources()] == [
+            "geophysics_workbench:frame:f9"]
+    finally:
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
+    assert item.sources() == []
+    prj.clear()

@@ -109,6 +109,35 @@ def _copy_style(style: LayerStyle) -> LayerStyle:
     return replace(style, scale=None if style.scale is None else replace(style.scale))
 
 
+def _layers_for_look(layers: list, look) -> list:
+    """The frame's models only, styled as the frame says (a bad stored scale: the layer's)."""
+    by_id = {m.dataset_id: m for m in look.models}
+    out = []
+    for la in layers:
+        m = by_id.get(la.dataset.id)
+        if m is None or not m.visible:
+            continue
+        style = _copy_style(la.style)
+        scale = style.scale
+        if m.scale:
+            try:
+                scale = ColorScale(**m.scale)
+            except (TypeError, ValueError):
+                pass
+        out.append(SectionLayer(la.dataset, la.mesh, replace(
+            style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale), la.error))
+    return out
+
+
+def _context_for_look(context, look):
+    points = [p for p in context.points
+              if (p.kind == "borehole" and look.boreholes) or (p.kind != "borehole" and look.context)]
+    if not look.context:
+        context = replace(context, crossings=[], band=[], ties=[])
+    return replace(context, points=points,
+                   field_notes=context.field_notes if look.field_notes else [])
+
+
 def _polyline_length(xy: np.ndarray) -> float:
     return float(np.hypot(*np.diff(xy, axis=0).T).sum()) if len(xy) > 1 else 0.0
 
@@ -502,10 +531,14 @@ class SectionDataProvider:
             if self.show_field_notes else []
         return replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
 
-    def snapshot(self, profile_id: str, reverse: bool = False) -> SectionSnapshot:
+    def snapshot(self, profile_id: str, reverse: bool = False, look=None) -> SectionSnapshot:
         """Detached plain-data copy for a generator thread. ``reverse`` mirrors chainage
-        (s -> length - s) for a profile curve drawn end-to-start."""
+        (s -> length - s) for a profile curve drawn end-to-start. ``look`` (a plate frame's
+        ``core.plates.FrameLook``) replaces the panel's look: only its models, with its scale,
+        mode and opacity; its interpretation version; boreholes, notes, context as it says."""
         layers, sets, topo, dem_topo = self._assemble(profile_id)
+        if look is not None:
+            layers = _layers_for_look(layers, look)
         stations, heights = station_marks(sets)     # heights: plain z, unchanged by mirroring
         if topo is not None:
             topo = (topo[0].copy(), topo[1].copy())
@@ -513,6 +546,8 @@ class SectionDataProvider:
                   for la in layers]
         coverage = station_coverage(sets)
         context = copy.deepcopy(self.context(profile_id))
+        if look is not None and context is not None:
+            context = _context_for_look(context, look)
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for la in layers:
@@ -527,16 +562,24 @@ class SectionDataProvider:
                 context = context.mirrored(length)
         snap = SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
                                dem_topo)
-        self._add_interpretation(snap, profile_id, reverse)
+        version = None if look is None else (look.interp_version or self._latest_version())
+        self._add_interpretation(snap, profile_id, reverse, version)
         return snap
+
+    def _latest_version(self) -> str | None:
+        return self.store.current_version().id if self.store.has_interpretation() else None
+
+    def store_has_profile(self, profile_id: str) -> bool:
+        return self._profile(profile_id) is not None
 
     def shown_interp_version(self) -> str | None:
         if not self.store.has_interpretation():
             return None
         return self.interp_version_id or self.store.current_version().id
 
-    def _add_interpretation(self, snap: SectionSnapshot, profile_id: str, reverse: bool) -> None:
-        version = self.shown_interp_version()
+    def _add_interpretation(self, snap: SectionSnapshot, profile_id: str, reverse: bool,
+                            version: str | None = None) -> None:
+        version = version or self.shown_interp_version()
         if version is None:
             return
         from ..core.interp_cross import crossing_marks
