@@ -268,6 +268,37 @@ def apply_core_style(project, logs_id: str, style: Path) -> None:
         unregister_svg_path()
 
 
+#: title block values of the demo's plate (Plate details… in the Plates dialog)
+DEMO_DETAILS = {"project": "Gülpe demo", "client": "(example)", "job": "(example)",
+                "date": "(example)", "author": "(example)", "revision": "–"}
+
+
+def demo_plate(profile_id: str, dataset_id: str):
+    """The demo's report plate: A3 landscape, Transect 3's model with the interpretation and
+    the boreholes. No field notes are added: the published data has none, and invented field
+    observations do not belong in a real-data demo."""
+    from geophysics_workbench.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+    look = FrameLook([ModelLook(dataset_id)], None, boreholes=True, field_notes=True,
+                     context=False)
+    return PlateSpec("demo_plate_t3", "1", "Transect 3", "A3_landscape",
+                     [FrameSpec("demo_t3_model", profile_id, look)])
+
+
+def add_demo_plate(project, store) -> None:
+    """Make the demo plate's layout (its section is drawn live when the project is open)."""
+    from geophysics_workbench.plates.build import create_or_update_plate, set_plate_details
+    from geophysics_workbench.plates.sources import detach_frame_items, unregister_frame_sources
+    from geophysics_workbench.section.data import SectionDataProvider
+    [p3] = [p for p in store.profiles() if p.name == "Transect 3"]
+    set_plate_details(project, **DEMO_DETAILS)
+    try:
+        create_or_update_plate(project, store, SectionDataProvider(store),
+                               demo_plate(p3.id, "T3_model"))
+    finally:
+        detach_frame_items(project)              # the sources go with this process
+        unregister_frame_sources()
+
+
 def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
     """guelpe_project.qgz; returns its path and how geology was added ("WFS" or "WMS")."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -339,6 +370,7 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
             geology_field, dem.id()))
         apply_core_style(project, logs.id(), ctx / "core_logs_style.qml")
         store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top
+        add_demo_plate(project, store)
         xy = np.vstack([p.xy for p in store.profiles()])
         (x0, y0), (x1, y1) = xy.min(axis=0) - 150.0, xy.max(axis=0) + 150.0
         project.viewSettings().setDefaultViewExtent(

@@ -19,7 +19,7 @@ def test_metadata_targets_qgis4():
     assert g["name"] == "Geophysics Workbench"
     assert g["qgisMinimumVersion"] == "4.2"
     assert g["supportsQt6"] == "True"
-    assert g["version"] == "0.5.1"
+    assert g["version"] == "0.6.0"
 
 
 def test_plugin_loads_and_unloads(fake_iface):

@@ -184,3 +184,37 @@ def test_demo_build_styles_the_core_logs(qgis_app):
     assert {c.value() for c in r.categories()} == {"sand", "loam", "clay", "peat", "Oh"}
     text = prj.readEntry("geophysics_workbench", "borehole_style/logs_id", "")[0]
     assert "fgdc/607" in text and ":/" not in text.replace("qrc:/", "")
+
+
+def test_demo_plate_spec():
+    """One A3 landscape plate of Transect 3: the model with interpretation and boreholes."""
+    import build_demo_guelpe
+    plate = build_demo_guelpe.demo_plate("p3", "T3_model")
+    assert (plate.number, plate.title, plate.template) == ("1", "Transect 3", "A3_landscape")
+    [frame] = plate.frames
+    assert frame.profile_id == "p3" and [m.dataset_id for m in frame.look.models] == ["T3_model"]
+    assert frame.look.boreholes and frame.look.field_notes and frame.look.interp_version is None
+    assert not frame.look.context                       # dense at plate scale; user's choice
+    assert build_demo_guelpe.DEMO_DETAILS["project"] == "Gülpe demo"
+
+
+def test_demo_build_adds_one_plate_and_no_field_notes(tmp_path, qgis_app):
+    if not (CACHE / "ert").exists():
+        pytest.skip("raw cache missing: run scripts/fetch_demo_guelpe.py")
+    from qgis.core import QgsExpressionContextUtils, QgsProject
+
+    import build_demo_guelpe
+    from geophysics_workbench.plates.sources import read_plates
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from geophysics_workbench.ui.project_actions import use_store
+    build_demo_guelpe.build_data(out=tmp_path)
+    st = ProjectStore.open(build_demo_guelpe.build_workbench(out=tmp_path))
+    prj = QgsProject()
+    use_store(st, prj)
+    build_demo_guelpe.add_demo_plate(prj, st)
+    [plate] = read_plates(prj)
+    assert plate.title == "Transect 3"
+    assert prj.layoutManager().layoutByName("Plate 1 – Transect 3") is not None
+    assert QgsExpressionContextUtils.projectScope(prj).variable("wb_project") == "Gülpe demo"
+    assert st.field_notes() == []                        # no invented field observations
+    prj.clear()
