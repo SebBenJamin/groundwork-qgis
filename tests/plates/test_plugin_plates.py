@@ -99,3 +99,49 @@ def test_plate_frames_never_reach_other_canvases(qgis_app, fake_iface, store_wit
         qgis_app.processEvents()
     prj.removeAllMapLayers()
     prj.clear()
+
+
+def test_plugin_started_after_plates_were_read_warns(qgis_app, fake_iface, monkeypatch):
+    """Review I6: QGIS drops item types it does not know while reading a project. When the
+    plugin starts after a project with plates was read, it says to reopen the project
+    before saving (else colour bars and borehole legends are lost)."""
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench import classFactory
+    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
+    from geophysics_workbench.plates import items
+    from geophysics_workbench.plates.sources import write_plates
+    prj = QgsProject.instance()
+    prj.clear()
+    write_plates(prj, [PlateSpec("pl", "1", "P1", "A4_landscape",
+                                 [FrameSpec("f1", "p", FrameLook())])])
+    monkeypatch.setattr(items, "items_registered", lambda: False)
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        texts = [i.text() for i in fake_iface.messageBar().items()]
+        assert any("reopen the project" in t for t in texts), texts
+    finally:
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
+    prj.clear()
+
+
+def test_no_warning_when_items_were_known(qgis_app, fake_iface):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench import classFactory
+    prj = QgsProject.instance()
+    prj.clear()
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        assert not any("reopen the project" in i.text()
+                       for i in fake_iface.messageBar().items())
+    finally:
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()

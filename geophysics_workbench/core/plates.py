@@ -26,6 +26,13 @@ class ModelLook:
     opacity: float = 1.0
     scale: dict | None = None        # ColorScale as a dict (cmap, vmin, vmax, log); None = auto
     mode: str = "cells"
+    #: display settings as in the section's Display dialog (None = automatic)
+    contour_step: float | None = None
+    grid_cell: float | None = None
+    fade_coverage: bool = False
+    coverage_threshold: float | None = None
+    fade_mode: str = "fade"
+    shown: str | None = None                            # readings: misfit/measured/calculated
 
 
 @dataclass
@@ -78,6 +85,14 @@ def nice_ve(z_range_m: float, height_mm: float, scale: int) -> float:
     return max((v for v in VES if v <= most), default=VES[0])
 
 
+def frame_fits(range_m: float, z_range_m: float, size_mm, scale: float, ve: float) -> bool:
+    """Whether ``range_m`` x ``z_range_m`` fits a frame of ``size_mm`` (width, height) at
+    1:``scale`` with vertical exaggeration ``ve``."""
+    width, height = size_mm
+    return (abs(range_m) * 1000.0 / scale <= width + 1e-6
+            and abs(z_range_m) * 1000.0 * ve / scale <= height + 1e-6)
+
+
 def stack_fit(frames: list, extents: dict, sizes_mm: list) -> list[tuple]:
     """Per frame ``(scale, ve, s0, s1)``. ``extents[frame_id] = (s0, s1, z0, z1)`` of the
     frame's data; ``sizes_mm`` the frames' (width, height). Frames of one profile share
@@ -98,8 +113,10 @@ def stack_fit(frames: list, extents: dict, sizes_mm: list) -> list[tuple]:
         z1 = max((e[3] for e in exts), default=0.0)
         width = min(sizes_mm[i][0] for i in indices)
         height = min(sizes_mm[i][1] for i in indices)
+        # a scale at which the range fits the width AND the depth fits the height at VE 1
+        # (a finer scale would cut the depth off); the user's own scale is kept
         scale = next((f.scale for f in members if f.scale), None) or \
-            nice_scale(abs(s1 - s0), width)[0]
+            max(nice_scale(abs(s1 - s0), width)[0], nice_scale(abs(z1 - z0), height)[0])
         ve = next((f.ve for f in members if f.ve), None) or nice_ve(abs(z1 - z0), height, scale)
         for i in indices:
             out[i] = (scale, ve, s0, s1)
@@ -120,9 +137,15 @@ def _model(d) -> ModelLook | None:
     if not isinstance(d, dict) or not isinstance(d.get("dataset_id"), str):
         return None
     scale = d.get("scale") if isinstance(d.get("scale"), dict) else None
+    def text(key, default):
+        return d.get(key) if isinstance(d.get(key), str) else default
+
     return ModelLook(d["dataset_id"], bool(d.get("visible", True)),
                      _num(d.get("opacity")) if _num(d.get("opacity")) is not None else 1.0,
-                     scale, d.get("mode") if isinstance(d.get("mode"), str) else "cells")
+                     scale, text("mode", "cells"), _num(d.get("contour_step")),
+                     _num(d.get("grid_cell")), bool(d.get("fade_coverage", False)),
+                     _num(d.get("coverage_threshold")), text("fade_mode", "fade"),
+                     text("shown", None))
 
 
 def _look(d) -> FrameLook:

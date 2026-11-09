@@ -55,3 +55,26 @@ def test_plate_round_trip_and_bad_json():
     assert plates_from_json(plates_to_json(plates)) == plates
     assert plates_from_json("nonsense") == [] and plates_from_json(json.dumps({"x": 1})) == []
     assert plates_from_json(json.dumps([{"plate_id": "x"}])) == []
+
+
+def test_stack_fit_coarsens_the_scale_until_the_depth_fits():
+    """Review I2: three stacked frames on A4 (interior ~230 x 25 mm), a 50 m profile 10 m
+    deep: 1:250 would need 40 mm at VE 1, so the depth was cut off silently."""
+    from geophysics_workbench.core.plates import frame_fits
+    [(scale, ve, s0, s1)] = stack_fit([_frame("a", "P1")], {"a": (0, 50, 0, 10)}, [(230, 25)])
+    assert scale == 400 and ve == 1.0                   # 10 m -> 25 mm at 1:400
+    assert frame_fits(50, 10, (230, 25), scale, ve)
+    assert not frame_fits(40000, 10, (230, 25), 50000, 1.0)     # even 1:50000 too small
+
+
+def test_provenance_says_when_a_frame_does_not_fit():
+    import numpy as np
+
+    from geophysics_workbench.core.model import Chainage
+    from geophysics_workbench.plates.build import provenance_text
+
+    class P:
+        name = "Long line"
+        chainage = Chainage(np.array([[0.0, 0.0], [40000.0, 0.0]]))
+    assert "does not fit" in provenance_text(P(), [], 50000, 1.0, fits=False)
+    assert "does not fit" not in provenance_text(P(), [], 50000, 1.0)

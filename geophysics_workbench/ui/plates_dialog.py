@@ -41,7 +41,9 @@ def panel_look(provider, profile_id: str) -> FrameLook:
         style = provider.style(d.id)
         models.append(ModelLook(d.id, style.visible, style.opacity,
                                 asdict(style.scale) if style.scale is not None else None,
-                                style.mode))
+                                style.mode, style.contour_step, style.grid_cell,
+                                style.fade_coverage, style.coverage_threshold, style.fade_mode,
+                                style.shown))
     return FrameLook(models, getattr(provider, "interp_version_id", None), True,
                      bool(provider.show_field_notes), True)
 
@@ -100,6 +102,7 @@ class PlatesDialog(QDialog):
         self.panel_profile = panel_profile
         self.plates: list[PlateSpec] = read_plates(project)
         self._filling = False
+        self.failed: list[str] = []
 
         self.plate_list = QListWidget()
         self.plate_list.currentRowChanged.connect(self._show_plate)
@@ -413,8 +416,14 @@ class PlatesDialog(QDialog):
         self.plates = read_plates(self.project)
         self._fill_list(self.plate_list.currentRow())
         text = f"{len(layouts)} plate(s) created or updated – open them from the Layout Manager."
+        tight = [f"{layout.name()}: {layout.customProperty('wb_not_fitting')}"
+                 for layout in layouts if layout.customProperty("wb_not_fitting")]
+        if tight:
+            text += (" Does not fit even at the smallest scale (set a From/To range or a "
+                     "scale): " + "; ".join(tight) + ".")
         if failed:
             text += " Failed: " + "; ".join(failed)
+        self.failed = failed
         self.message.setText(text)
         return layouts
 
@@ -424,9 +433,13 @@ class PlatesDialog(QDialog):
         if not folder:
             return
         self.create_plates()
+        if self.failed:                         # never export plates that failed to update
+            self.message.setText(self.message.text() + " Nothing was exported.")
+            return
         try:
             paths = export_plates(self.project, Path(folder), self.combined.isChecked())
         except OSError as exc:
             self.message.setText(f"Export failed: {exc}")
             return
-        self.message.setText(f"Exported {len(paths)} PDF file(s) to {folder}.")
+        self.message.setText(f"{self.message.text()} Exported {len(paths)} PDF file(s) to "
+                             f"{folder}.")

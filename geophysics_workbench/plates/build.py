@@ -24,7 +24,7 @@ from qgis.PyQt.QtCore import QSizeF, Qt
 from qgis.PyQt.QtXml import QDomDocument
 
 from ..core.dataset_info import provenance_line
-from ..core.plates import stack_fit
+from ..core.plates import frame_fits, stack_fit
 from .items import ColourBarItem, register_items
 from .sources import (FRAME_PROPERTY, attach_frame_sources, detach_frame_items, read_plates,
                       register_frame_sources, write_plates)
@@ -34,6 +34,13 @@ TEMPLATES = {name: TEMPLATE_DIR / f"{name}.qpt"
              for name in ("A4_landscape", "A4_portrait", "A3_landscape", "A3_portrait")}
 PLATE_PROPERTY = "wb_plate_id"
 COUNT_PROPERTY = "wb_frame_count"
+FIT_PROPERTY = "wb_not_fitting"         # frames the last update could not fit (for messages)
+#: what the plugin last wrote into an item; a different current value means the user edited
+#: it, and an update then leaves it alone
+WRITTEN = "wb_written"
+WRITTEN_STYLE = "wb_written_style"
+WRITTEN_EXTENT = "wb_written_extent"
+PROFILES_PROPERTY = "wb_plate_profiles"
 MM = QgsUnitTypes.LayoutMillimeters
 GAP = 4.0               # mm between stacked frames
 PROVENANCE_MM = 8.0     # height of a frame's provenance line
@@ -262,11 +269,16 @@ def field_notes_text(store, plate, names: dict) -> str:
     return "\n".join(["Field notes"] + (lines or ["(none)"]))
 
 
-def provenance_text(profile, datasets: list, scale: int, ve: float) -> str:
+NOT_FIT = "does not fit the frame at this scale: part of the section is cut off"
+
+
+def provenance_text(profile, datasets: list, scale: int, ve: float, fits: bool = True) -> str:
     heads = [provenance_line(profile.name, d) for d in datasets] or [profile.name]
     (x0, y0), (x1, y1) = profile.chainage.xy[0], profile.chainage.xy[-1]
     where = (f"1:{scale} · VE {ve:g}× · start E {x0:.0f} N {y0:.0f} · "
              f"end E {x1:.0f} N {y1:.0f}")
+    if not fits:
+        where += f" · {NOT_FIT}"
     return "\n".join([" / ".join(heads), where])
 
 
@@ -276,16 +288,20 @@ def _update_interp_legend(layout, store, project, plate, versions: dict) -> None
     legend = layout.itemById("wb_legend_interp")
     if not isinstance(legend, QgsLayoutItemLegend):
         return
-    legend.setSyncMode(Qgis.LegendSyncMode.Manual)
-    legend.setLegendFilterByMapEnabled(False)
+    root = legend.model().rootGroup()
+    last = legend.customProperty(WRITTEN)
+    if last is not None and _legend_signature(root) != last:
+        return                                  # the user changed the legend's content
+    if last is None:                            # first time: the plugin's legend settings
+        legend.setSyncMode(Qgis.LegendSyncMode.Manual)
+        legend.setLegendFilterByMapEnabled(False)
     minimap = layout.itemById("wb_minimap")
     if legend.linkedMap() is None and isinstance(minimap, QgsLayoutItemMap):
         legend.setLinkedMap(minimap)            # QGIS applies expression filters via a map
-    root = legend.model().rootGroup()
     root.removeAllChildren()
     layers = interp_layers(store, project)
     pairs = sorted({(pid, v) for pid, v in versions.items() if v})
-    expr = " OR ".join(f"(\"profile_id\" = '{pid}' AND \"version_id\" = '{v}')"
+    expr = " OR ".join(f"(\"profile_id\" = {_quoted(pid)} AND \"version_id\" = {_quoted(v)})"
                        for pid, v in pairs) or "FALSE"
     for name in INTERP_LEGEND_LAYERS:
         layer = layers.get(name)
@@ -293,13 +309,39 @@ def _update_interp_legend(layout, store, project, plate, versions: dict) -> None
             continue
         node = root.addLayer(layer)
         QgsLayerTreeUtils.setLegendFilterByExpression(node, expr)
+    legend.setCustomProperty(WRITTEN, _legend_signature(root))
     legend.updateLegend()
+
+
+def _quoted(value: str) -> str:
+    from qgis.core import QgsExpression
+    return QgsExpression.quotedValue(value)
+
+
+def _legend_signature(root) -> str:
+    """What the plugin wrote into a legend: its layers and their filter expressions."""
+    parts = []
+    for node in root.children():
+        layer_id = node.layerId() if hasattr(node, "layerId") else f"group:{node.name()}"
+        expr = QgsLayerTreeUtils.legendFilterByExpression(node)[0] \
+            if hasattr(node, "layerId") else ""
+        parts.append(f"{layer_id}|{expr}")
+    return "\n".join(parts)
+
+
+def _write_text(label, text: str) -> None:
+    """Set a plugin-written label unless the user edited it since the plugin last did."""
+    last = label.customProperty(WRITTEN)
+    if last is not None and label.text() != last:
+        return
+    label.setText(text)
+    label.setCustomProperty(WRITTEN, text)
 
 
 def _highlight_style(layer, profile_ids: list[str]) -> str:
     """The workbench profiles layer styled for the mini-map: the plate's profiles strong
     (start dot, end triangle), the others faint."""
-    ids = ", ".join(f"'{p}'" for p in profile_ids) or "''"
+    ids = ", ".join(_quoted(p) for p in profile_ids) or "''"
     strong = QgsLineSymbol.createSimple({"color": "200,30,30", "width": "0.9"})
     for placement, shape in ((Qgis.MarkerLinePlacement.FirstVertex, "circle"),
                              (Qgis.MarkerLinePlacement.LastVertex, "filled_arrowhead")):
@@ -329,14 +371,26 @@ def _update_minimap(layout, store, project, profiles: list) -> None:
         item = layout.itemById(item_id)
         if item is not None and hasattr(item, "setLinkedMap") and item.linkedMap() is None:
             item.setLinkedMap(m)
-    layer = store_layers(store, project).get("profiles")
-    if layer is not None and profiles:
-        overrides = dict(m.layerStyleOverrides())
-        overrides[layer.id()] = _highlight_style(layer, [p.id for p in profiles])
-        m.setKeepLayerStyles(True)
-        m.setLayerStyleOverrides(overrides)
     if not profiles:
         return
+    # the plate's profiles changed: show them; otherwise keep what the user did to the map
+    key = ",".join(sorted(p.id for p in profiles))
+    changed = m.customProperty(PROFILES_PROPERTY) != key
+    m.setCustomProperty(PROFILES_PROPERTY, key)
+    layer = store_layers(store, project).get("profiles")
+    if layer is not None:
+        overrides = dict(m.layerStyleOverrides())
+        last = m.customProperty(WRITTEN_STYLE)
+        if changed or last is None or overrides.get(layer.id()) == last:
+            style = _highlight_style(layer, [p.id for p in profiles])
+            overrides[layer.id()] = style
+            m.setKeepLayerStyles(True)
+            m.setLayerStyleOverrides(overrides)
+            m.setCustomProperty(WRITTEN_STYLE, style)
+    last_extent = m.customProperty(WRITTEN_EXTENT)
+    if not (changed or last_extent is None or last_extent == _extent_key(m.extent())):
+        _repair_scalebar(layout, m)
+        return                                  # the user panned or zoomed the mini-map
     xy = np.vstack([p.chainage.xy for p in profiles])
     rect = QgsRectangle(float(xy[:, 0].min()), float(xy[:, 1].min()),
                         float(xy[:, 0].max()), float(xy[:, 1].max()))
@@ -349,6 +403,16 @@ def _update_minimap(layout, store, project, profiles: list) -> None:
         except Exception:                       # QgsCsException: keep the store extent
             pass
     m.zoomToExtent(rect)
+    m.setCustomProperty(WRITTEN_EXTENT, _extent_key(m.extent()))
+    _repair_scalebar(layout, m)
+
+
+def _extent_key(rect) -> str:
+    return ",".join(f"{v:.2f}" for v in (rect.xMinimum(), rect.yMinimum(),
+                                          rect.xMaximum(), rect.yMaximum()))
+
+
+def _repair_scalebar(layout, m) -> None:
     bar = layout.itemById("wb_map_scalebar")
     invalid = bar is not None and hasattr(bar, "unitsPerSegment") and \
         not (bar.unitsPerSegment() > 0)                 # nan: sized before the map had an extent
@@ -387,10 +451,17 @@ def _concrete_scales(frame, snap) -> None:
 
 def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     register_items()
+    detach_frame_items(project)                     # before their sources are replaced
+    try:
+        return _build_plate(project, store, provider, plate)
+    finally:                                        # also when it failed: no blank plates
+        sources = register_frame_sources(provider, read_plates(project))
+        attach_frame_sources(project, store, sources)
+
+
+def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     profiles = {p.id: p for p in store.profiles()}
     plates = [p for p in read_plates(project) if p.plate_id != plate.plate_id]
-    detach_frame_items(project)                     # before their sources are replaced
-
     layout = find_plate_layout(project, plate)
     if layout is None:
         layout = _new_layout(project, plate)
@@ -454,17 +525,18 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
         if new or relayout:
             _place(prov, *slot["provenance"])
         if profile is None:
-            prov.setText(f"Profile {f.profile_id} not found")
+            _write_text(prov, f"Profile {f.profile_id} not found")
     for n in range(count + 1, _highest(layout, "wb_frame_") + 1):     # frames removed
-        for item_id in [f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}"] + \
-                [i.id() for i in layout.items() if hasattr(i, "id") and
-                 i.id().startswith(f"wb_colourbar_{n}_")]:
+        for item_id in (f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}"):
             _remove(layout, item_id)
+    _remove_stale_bars(layout, {(f.frame_id, d.id)
+                                for f, models in zip(plate.frames, shown) for d in models})
     layout.setCustomProperty(COUNT_PROPERTY, count)
 
     # fit to page: frames of one profile share scale, VE and range
     sizes = [_interior_mm(item) for item in frame_items]
     fits = stack_fit(plate.frames, extents, sizes)
+    not_fitting: list[str] = []
     for n, (f, item, fit, models) in enumerate(zip(plate.frames, frame_items, fits, shown),
                                                start=1):
         profile = profiles.get(f.profile_id)
@@ -477,8 +549,11 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
         z0, z1 = min(e[2] for e in group), max(e[3] for e in group)
         fit_frame(item, scale, ve, s0 if s0 != s1 else ext[0], s1 if s0 != s1 else ext[1],
                   z0, z1)
-        layout.itemById(f"wb_provenance_{n}").setText(
-            provenance_text(profile, models, scale, ve))
+        ok = frame_fits(s1 - s0, z1 - z0, sizes[n - 1], scale, ve)
+        if not ok:
+            not_fitting.append(f"frame {n} ({profile.name})")
+        _write_text(layout.itemById(f"wb_provenance_{n}"),
+                    provenance_text(profile, models, scale, ve, fits=ok))
 
     # content of the template's own items
     names = {pid: p.name for pid, p in profiles.items()}
@@ -499,8 +574,7 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     _update_minimap(layout, store, project, on_plate)
     _update_title(layout, plate, store.crs_authid)
 
-    sources = register_frame_sources(provider, read_plates(project))
-    attach_frame_sources(project, store, sources)
+    layout.setCustomProperty(FIT_PROPERTY, "; ".join(not_fitting))
     layout.refresh()
     return layout
 
@@ -519,32 +593,41 @@ def _highest(layout, prefix: str) -> int:
     return best
 
 
+def _free_id(layout, n: int, k: int) -> str:
+    while layout.itemById(f"wb_colourbar_{n}_{k}") is not None:
+        k += 1
+    return f"wb_colourbar_{n}_{k}"
+
+
 def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool) -> None:
+    """One colour bar per shown model, found by (frame, model), never by position: a tuned
+    bar stays with its model when frames or models are removed or reordered."""
     from ..section.readout import unit_label
     portrait = slot["bars"] and slot["bars"][0][2] > slot["bars"][0][3]
+    mine = {i.dataset_id: i for i in layout.items()
+            if isinstance(i, ColourBarItem) and i.frame_id == frame.frame_id}
     for k, d in enumerate(models, start=1):
-        item_id = f"wb_colourbar_{n}_{k}"
-        bar = layout.itemById(item_id)
-        fresh = not isinstance(bar, ColourBarItem)
+        bar = mine.get(d.id)
+        fresh = bar is None
         if fresh:
-            if bar is not None:
-                layout.removeLayoutItem(bar)
             bar = ColourBarItem(layout)
-            bar.setId(item_id)
+            bar.setId(_free_id(layout, n, k))
             bar.settings.setOrientation(Qt.Orientation.Horizontal if portrait
                                         else Qt.Orientation.Vertical)
-            layout.addLayoutItem(bar)
-        if fresh or bar.dataset_id != d.id:
             bar.title = (d.quantity or "").capitalize()
             bar.unit = unit_label(d.unit)
+            layout.addLayoutItem(bar)
         if fresh or relayout:
             _place(bar, *slot["bars"][k - 1])
         bar.frame_id, bar.dataset_id = frame.frame_id, d.id
         bar.refresh()
-    k = len(models) + 1
-    while layout.itemById(f"wb_colourbar_{n}_{k}") is not None:
-        _remove(layout, f"wb_colourbar_{n}_{k}")
-        k += 1
+
+
+def _remove_stale_bars(layout, wanted: set) -> None:
+    """Colour bars whose (frame, model) is no longer on the plate."""
+    for item in list(layout.items()):
+        if isinstance(item, ColourBarItem) and (item.frame_id, item.dataset_id) not in wanted:
+            layout.removeLayoutItem(item)
 
 
 __all__ = ["TEMPLATES", "create_or_update_plate", "frame_scale_and_ve", "plate_details",

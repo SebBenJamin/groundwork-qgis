@@ -155,3 +155,48 @@ def test_frame_source_draws_only_its_own_profile(store_with_model, qgis_app):
     assert generator(xy)._snapshot is not None
     assert generator(xy[::-1])._snapshot is not None            # drawn end-to-start
     assert generator(xy + 500.0)._snapshot is None               # another line
+
+
+def test_plate_look_ignores_panel_notes_switch_and_compare(store_with_model, qgis_app):
+    """Review I1: the panel's "Show field notes" and Compare must not reach a plate."""
+    from geophysics_workbench.core.field_notes import FieldNote
+    from geophysics_workbench.core.context import ContextItems
+    from geophysics_workbench.section.data import SectionDataProvider
+    st, p, _ = store_with_model
+    st.save_field_note(FieldNote("n1", p.id, 3.0, None, "fence"))
+    prov = SectionDataProvider(st)
+    prov.context_source = lambda profile: ContextItems()
+    prov.show_field_notes = False                       # switched off in the panel
+    prov.interp_compare_version_id = "some-frozen-version"
+    snap = prov.snapshot(p.id, look=_look(st, p))       # the look shows notes
+    assert [n.text for n in snap.context.field_notes] == ["fence"]
+    assert snap.interp_compare == []
+    assert prov.context(p.id).field_notes == []         # the panel itself still hides them
+
+
+def test_model_look_keeps_display_settings(store_with_model, qgis_app):
+    """Review I1: contour step, grid cell, coverage fade and shown values are part of a
+    frame's look, so restyling the panel later does not change a plate."""
+    from dataclasses import replace
+
+    from geophysics_workbench.core.plates import ModelLook, plates_from_json, plates_to_json
+    from geophysics_workbench.core.plates import FrameSpec, PlateSpec
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.ui.plates_dialog import panel_look
+    st, p, _ = store_with_model
+    prov = SectionDataProvider(st)
+    ds = st.datasets(p.id)[0]
+    prov.set_style(ds.id, replace(prov.style(ds.id), mode="contours", contour_step=0.5,
+                                  grid_cell=0.25, fade_coverage=True, coverage_threshold=2.0,
+                                  fade_mode="blank"))
+    look = panel_look(prov, p.id)
+    prov.set_style(ds.id, replace(prov.style(ds.id), contour_step=0.1, grid_cell=2.0,
+                                  fade_coverage=False))
+    [layer] = prov.snapshot(p.id, look=look).layers
+    s = layer.style
+    assert (s.contour_step, s.grid_cell, s.fade_coverage, s.coverage_threshold, s.fade_mode) \
+        == (0.5, 0.25, True, 2.0, "blank")
+    [back] = plates_from_json(plates_to_json([PlateSpec("a", "1", "t", "A4_landscape",
+                                                        [FrameSpec("f", p.id, look)])]))
+    assert back.frames[0].look.models[0] == look.models[0]
+    assert ModelLook("d").contour_step is None              # old plates: the defaults
