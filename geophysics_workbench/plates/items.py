@@ -17,6 +17,8 @@ from qgis.core import (Qgis, QgsApplication, QgsColorRampLegendNodeSettings,
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QPen, QPolygonF
 
+from ..core.borehole_curves import CurveStyle
+
 COLOUR_BAR_TYPE = QgsLayoutItemRegistry.PluginItem + 4712
 BOREHOLE_LEGEND_TYPE = QgsLayoutItemRegistry.PluginItem + 4713
 STEPS = 96
@@ -246,6 +248,20 @@ def legend_rows(intervals, renderer, fields) -> list[tuple[str, object]]:
     return rows
 
 
+def curve_rows(points, views: dict, styles: dict) -> list[tuple[str, object]]:
+    """(label, CurveStyle) of the log curves the section draws (the curves picked for each
+    borehole entry's section look), once per curve, with the user's curve style."""
+    out, seen = [], set()
+    for p in points:
+        view = views.get(p.entry) if p.kind == "borehole" else None
+        for c in p.curves if view is not None else []:
+            if c.key in view.curve_keys and c.key not in seen:
+                seen.add(c.key)
+                out.append((f"{c.name} ({c.unit})" if c.unit else c.name,
+                            styles.get(c.key) or CurveStyle()))
+    return out
+
+
 class BoreholeLegendItem(QgsLayoutItem):
     def __init__(self, layout):
         super().__init__(layout)
@@ -271,6 +287,7 @@ class BoreholeLegendItem(QgsLayoutItem):
                   if f.frame_id in self.frame_ids and f.look.boreholes]
         entries = read_settings(project).boreholes
         by_entry: dict[int, list] = {}
+        curves: list = []
         for f in frames:
             if not _provider.store_has_profile(f.profile_id):
                 continue
@@ -278,6 +295,8 @@ class BoreholeLegendItem(QgsLayoutItem):
             for p in ctx.points if ctx is not None else []:
                 if p.kind == "borehole" and 0 <= p.entry < len(entries):
                     by_entry.setdefault(p.entry, []).extend(p.log)
+            if ctx is not None:
+                curves += curve_rows(ctx.points, ctx.borehole_views, ctx.curve_styles)
         out = []
         for entry, intervals in sorted(by_entry.items()):
             layer = project.mapLayer(entries[entry].log_layer_id)
@@ -285,6 +304,11 @@ class BoreholeLegendItem(QgsLayoutItem):
                 continue
             out += legend_rows(intervals, load_renderer(project, entries[entry].log_layer_id),
                                layer.fields())
+        seen: set = set()
+        for label, style in curves:                     # once per curve across frames
+            if label not in seen:
+                seen.add(label)
+                out.append((label, style))
         return out
 
     def draw(self, context):
@@ -299,14 +323,23 @@ class BoreholeLegendItem(QgsLayoutItem):
         swatch_w, swatch_h, gap = 6.0 * px, max(line_h * 1.2, 3.0 * px), 1.5 * px
         y = 0.0
         for label, symbol in rows:
-            poly = QPolygonF([QPointF(0, y), QPointF(swatch_w, y),
-                              QPointF(swatch_w, y + swatch_h), QPointF(0, y + swatch_h),
-                              QPointF(0, y)])
-            symbol.startRender(rc)
-            try:
-                symbol.renderPolygon(poly, None, None, rc)
-            finally:
-                symbol.stopRender(rc)
+            if isinstance(symbol, CurveStyle):          # a log curve: its line
+                from ..section.borehole_draw import _DASH
+                painter = rc.painter()
+                painter.save()
+                painter.setPen(QPen(QColor(symbol.colour), max(symbol.width_mm * px, 1.0),
+                                    _DASH.get(symbol.dash, Qt.PenStyle.SolidLine)))
+                painter.drawLine(QPointF(0, y + swatch_h / 2), QPointF(swatch_w, y + swatch_h / 2))
+                painter.restore()
+            else:
+                poly = QPolygonF([QPointF(0, y), QPointF(swatch_w, y),
+                                  QPointF(swatch_w, y + swatch_h), QPointF(0, y + swatch_h),
+                                  QPointF(0, y)])
+                symbol.startRender(rc)
+                try:
+                    symbol.renderPolygon(poly, None, None, rc)
+                finally:
+                    symbol.stopRender(rc)
             QgsTextRenderer.drawText(QPointF(swatch_w + gap, y + swatch_h / 2 + line_h / 3), 0,
                                      Qgis.TextHorizontalAlignment.Left, [label], rc,
                                      self.text_format)

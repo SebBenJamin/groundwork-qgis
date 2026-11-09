@@ -84,3 +84,24 @@ def test_items_registered_once(qgis_app):
     reg = QgsApplication.layoutItemRegistry()
     assert reg.itemMetadata(COLOUR_BAR_TYPE) is not None
     assert reg.itemMetadata(BOREHOLE_LEGEND_TYPE) is not None
+
+
+def test_borehole_legend_lists_curves_shown(qgis_app):
+    """Spec: the borehole legend also lists the curves shown (name, unit, line style)."""
+    import numpy as np
+
+    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from geophysics_workbench.core.context import BoreholeView, Curve, ProjectedPoint
+    from geophysics_workbench.plates.items import curve_rows
+
+    def curve(key, name, unit):
+        return Curve(key, name, unit, np.array([0.0, 1.0]), np.array([1.0, 2.0]))
+
+    a = ProjectedPoint(1.0, 0.0, "B1", "borehole", entry=0,
+                       curves=[curve("k:gr", "GR", "API"), curve("k:res", "Res", "")])
+    b = ProjectedPoint(2.0, 0.0, "B2", "borehole", entry=0, curves=[curve("k:gr", "GR", "API")])
+    styles = {"k:gr": CurveStyle(colour="#ff0000", dash="dot")}
+    rows = curve_rows([a, b], {0: BoreholeView(curve_keys=("k:gr",))}, styles)
+    assert [label for label, _ in rows] == ["GR (API)"]          # only shown, once
+    assert rows[0][1].dash == "dot"
+    assert curve_rows([a], {}, styles) == []                      # entry not drawn
