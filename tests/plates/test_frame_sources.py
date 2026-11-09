@@ -133,3 +133,25 @@ def test_reopened_project_frames_draw(store_with_model, qgis_app, tmp_path):
                 it.setSources([])
     unregister_frame_sources()
     prj.clear()
+
+
+def test_frame_source_draws_only_its_own_profile(store_with_model, qgis_app):
+    """Review C1: QGIS hands every registered source to every profile canvas; a frame
+    source asked for another line (or QGIS's own Elevation Profile tool) draws nothing."""
+    from qgis.core import QgsCoordinateReferenceSystem, QgsLineString, QgsPoint, QgsProfileRequest
+
+    from geophysics_workbench.core.plates import FrameSpec
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.section.profile_source import FrameProfileSource
+    st, p, _ = store_with_model
+    source = FrameProfileSource(SectionDataProvider(st), FrameSpec("fz", p.id, _look(st, p)))
+
+    def generator(xy):
+        request = QgsProfileRequest(QgsLineString([QgsPoint(float(x), float(y)) for x, y in xy]))
+        request.setCrs(QgsCoordinateReferenceSystem(st.crs_authid))
+        return source.createProfileGenerator(request)
+
+    xy = np.asarray(p.chainage.xy, float)
+    assert generator(xy)._snapshot is not None
+    assert generator(xy[::-1])._snapshot is not None            # drawn end-to-start
+    assert generator(xy + 500.0)._snapshot is None               # another line

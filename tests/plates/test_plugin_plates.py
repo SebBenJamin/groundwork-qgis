@@ -59,3 +59,43 @@ def test_plates_menu_entry_opens_dialog_with_store(qgis_app, fake_iface, store_w
     assert plugin._plates_dialog is None
     prj.removeAllMapLayers()
     prj.clear()
+
+
+def test_plate_frames_never_reach_other_canvases(qgis_app, fake_iface, store_with_model):
+    """Review C1: QGIS adds every registered source to every elevation-profile canvas, so the
+    section panel drew the plate's profile over the open one. The panel keeps its own source
+    only."""
+    from qgis.core import QgsLayoutItemElevationProfile, QgsPrintLayout, QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from geophysics_workbench import classFactory
+    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
+    from geophysics_workbench.plates.sources import write_plates
+    st, p, _ = store_with_model
+    prj = QgsProject.instance()
+    prj.clear()
+    write_plates(prj, [PlateSpec("pl", "1", "P1", "A4_landscape",
+                                 [FrameSpec("f7", p.id, FrameLook())])])
+    layout = QgsPrintLayout(prj)
+    layout.setName("Plate 1 – P1")
+    item = QgsLayoutItemElevationProfile(layout)
+    item.setCustomProperty("wb_frame_id", "f7")
+    layout.addLayoutItem(item)
+    prj.layoutManager().addLayout(layout)
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        plugin.attach_plates()                                 # e.g. after Create
+        assert [s.profileSourceId() for s in item.sources()] == [
+            "geophysics_workbench:frame:f7"]
+        assert [s.profileSourceId() for s in plugin.dock.canvas.sources()] == [
+            plugin.source.profileSourceId()]
+        dock_sources = [s.profileSourceId() for s in plugin.dock.canvas.sources()]
+        assert dock_sources == [plugin.source.profileSourceId()]   # also after Create again
+    finally:
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        qgis_app.processEvents()
+    prj.removeAllMapLayers()
+    prj.clear()
