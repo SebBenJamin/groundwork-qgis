@@ -189,3 +189,39 @@ def test_colour_bars_follow_their_model_not_their_position(env):
     create_or_update_plate(prj, st, prov, plate)
     bars = [i for i in layout.items() if isinstance(i, ColourBarItem)]
     assert [(b.frame_id, b.title, b.ticks) for b in bars] == [("f1", "Tuned", "list:10,100")]
+
+
+def test_update_keeps_user_edits_to_minimap_provenance_and_legend(env):
+    """Review I3: a panned mini-map, an edited provenance line and a legend the user
+    changed survive Create; untouched ones are still refreshed."""
+    from qgis.core import QgsRectangle
+
+    from geophysics_workbench.plates.build import create_or_update_plate
+    from geophysics_workbench.ui.project_actions import store_layers
+    st, p, prov, prj = env
+    plate = _plate(st, p)
+    layout = create_or_update_plate(prj, st, prov, plate)
+    m = layout.itemById("wb_minimap")
+    mine = QgsRectangle(0, 0, 1000, 700)
+    m.zoomToExtent(mine)
+    panned = m.extent()
+    prov_label = layout.itemById("wb_provenance_1")
+    prov_label.setText("Our own wording")
+    legend = layout.itemById("wb_legend_interp")
+    legend.model().rootGroup().addLayer(store_layers(st, prj)["profiles"])
+    plate.title = "Renamed"                                  # something else to refresh
+    create_or_update_plate(prj, st, prov, plate)
+    assert m.extent() == panned
+    assert prov_label.text() == "Our own wording"
+    assert [n.name() for n in legend.model().rootGroup().children()] == ["profiles"]
+    assert layout.itemById("wb_title_plate").text() == "Plate 3 – Renamed"
+
+
+def test_untouched_provenance_is_refreshed(env):
+    from geophysics_workbench.plates.build import create_or_update_plate
+    st, p, prov, prj = env
+    plate = _plate(st, p)
+    layout = create_or_update_plate(prj, st, prov, plate)
+    plate.frames[0].scale = 1250
+    create_or_update_plate(prj, st, prov, plate)
+    assert "1:1250" in layout.itemById("wb_provenance_1").text()

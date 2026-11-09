@@ -35,6 +35,12 @@ TEMPLATES = {name: TEMPLATE_DIR / f"{name}.qpt"
 PLATE_PROPERTY = "wb_plate_id"
 COUNT_PROPERTY = "wb_frame_count"
 FIT_PROPERTY = "wb_not_fitting"         # frames the last update could not fit (for messages)
+#: what the plugin last wrote into an item; a different current value means the user edited
+#: it, and an update then leaves it alone
+WRITTEN = "wb_written"
+WRITTEN_STYLE = "wb_written_style"
+WRITTEN_EXTENT = "wb_written_extent"
+PROFILES_PROPERTY = "wb_plate_profiles"
 MM = QgsUnitTypes.LayoutMillimeters
 GAP = 4.0               # mm between stacked frames
 PROVENANCE_MM = 8.0     # height of a frame's provenance line
@@ -282,16 +288,20 @@ def _update_interp_legend(layout, store, project, plate, versions: dict) -> None
     legend = layout.itemById("wb_legend_interp")
     if not isinstance(legend, QgsLayoutItemLegend):
         return
-    legend.setSyncMode(Qgis.LegendSyncMode.Manual)
-    legend.setLegendFilterByMapEnabled(False)
+    root = legend.model().rootGroup()
+    last = legend.customProperty(WRITTEN)
+    if last is not None and _legend_signature(root) != last:
+        return                                  # the user changed the legend's content
+    if last is None:                            # first time: the plugin's legend settings
+        legend.setSyncMode(Qgis.LegendSyncMode.Manual)
+        legend.setLegendFilterByMapEnabled(False)
     minimap = layout.itemById("wb_minimap")
     if legend.linkedMap() is None and isinstance(minimap, QgsLayoutItemMap):
         legend.setLinkedMap(minimap)            # QGIS applies expression filters via a map
-    root = legend.model().rootGroup()
     root.removeAllChildren()
     layers = interp_layers(store, project)
     pairs = sorted({(pid, v) for pid, v in versions.items() if v})
-    expr = " OR ".join(f"(\"profile_id\" = '{pid}' AND \"version_id\" = '{v}')"
+    expr = " OR ".join(f"(\"profile_id\" = {_quoted(pid)} AND \"version_id\" = {_quoted(v)})"
                        for pid, v in pairs) or "FALSE"
     for name in INTERP_LEGEND_LAYERS:
         layer = layers.get(name)
@@ -299,13 +309,39 @@ def _update_interp_legend(layout, store, project, plate, versions: dict) -> None
             continue
         node = root.addLayer(layer)
         QgsLayerTreeUtils.setLegendFilterByExpression(node, expr)
+    legend.setCustomProperty(WRITTEN, _legend_signature(root))
     legend.updateLegend()
+
+
+def _quoted(value: str) -> str:
+    from qgis.core import QgsExpression
+    return QgsExpression.quotedValue(value)
+
+
+def _legend_signature(root) -> str:
+    """What the plugin wrote into a legend: its layers and their filter expressions."""
+    parts = []
+    for node in root.children():
+        layer_id = node.layerId() if hasattr(node, "layerId") else f"group:{node.name()}"
+        expr = QgsLayerTreeUtils.legendFilterByExpression(node)[0] \
+            if hasattr(node, "layerId") else ""
+        parts.append(f"{layer_id}|{expr}")
+    return "\n".join(parts)
+
+
+def _write_text(label, text: str) -> None:
+    """Set a plugin-written label unless the user edited it since the plugin last did."""
+    last = label.customProperty(WRITTEN)
+    if last is not None and label.text() != last:
+        return
+    label.setText(text)
+    label.setCustomProperty(WRITTEN, text)
 
 
 def _highlight_style(layer, profile_ids: list[str]) -> str:
     """The workbench profiles layer styled for the mini-map: the plate's profiles strong
     (start dot, end triangle), the others faint."""
-    ids = ", ".join(f"'{p}'" for p in profile_ids) or "''"
+    ids = ", ".join(_quoted(p) for p in profile_ids) or "''"
     strong = QgsLineSymbol.createSimple({"color": "200,30,30", "width": "0.9"})
     for placement, shape in ((Qgis.MarkerLinePlacement.FirstVertex, "circle"),
                              (Qgis.MarkerLinePlacement.LastVertex, "filled_arrowhead")):
@@ -335,14 +371,26 @@ def _update_minimap(layout, store, project, profiles: list) -> None:
         item = layout.itemById(item_id)
         if item is not None and hasattr(item, "setLinkedMap") and item.linkedMap() is None:
             item.setLinkedMap(m)
-    layer = store_layers(store, project).get("profiles")
-    if layer is not None and profiles:
-        overrides = dict(m.layerStyleOverrides())
-        overrides[layer.id()] = _highlight_style(layer, [p.id for p in profiles])
-        m.setKeepLayerStyles(True)
-        m.setLayerStyleOverrides(overrides)
     if not profiles:
         return
+    # the plate's profiles changed: show them; otherwise keep what the user did to the map
+    key = ",".join(sorted(p.id for p in profiles))
+    changed = m.customProperty(PROFILES_PROPERTY) != key
+    m.setCustomProperty(PROFILES_PROPERTY, key)
+    layer = store_layers(store, project).get("profiles")
+    if layer is not None:
+        overrides = dict(m.layerStyleOverrides())
+        last = m.customProperty(WRITTEN_STYLE)
+        if changed or last is None or overrides.get(layer.id()) == last:
+            style = _highlight_style(layer, [p.id for p in profiles])
+            overrides[layer.id()] = style
+            m.setKeepLayerStyles(True)
+            m.setLayerStyleOverrides(overrides)
+            m.setCustomProperty(WRITTEN_STYLE, style)
+    last_extent = m.customProperty(WRITTEN_EXTENT)
+    if not (changed or last_extent is None or last_extent == _extent_key(m.extent())):
+        _repair_scalebar(layout, m)
+        return                                  # the user panned or zoomed the mini-map
     xy = np.vstack([p.chainage.xy for p in profiles])
     rect = QgsRectangle(float(xy[:, 0].min()), float(xy[:, 1].min()),
                         float(xy[:, 0].max()), float(xy[:, 1].max()))
@@ -355,6 +403,16 @@ def _update_minimap(layout, store, project, profiles: list) -> None:
         except Exception:                       # QgsCsException: keep the store extent
             pass
     m.zoomToExtent(rect)
+    m.setCustomProperty(WRITTEN_EXTENT, _extent_key(m.extent()))
+    _repair_scalebar(layout, m)
+
+
+def _extent_key(rect) -> str:
+    return ",".join(f"{v:.2f}" for v in (rect.xMinimum(), rect.yMinimum(),
+                                          rect.xMaximum(), rect.yMaximum()))
+
+
+def _repair_scalebar(layout, m) -> None:
     bar = layout.itemById("wb_map_scalebar")
     invalid = bar is not None and hasattr(bar, "unitsPerSegment") and \
         not (bar.unitsPerSegment() > 0)                 # nan: sized before the map had an extent
@@ -460,7 +518,7 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
         if new or relayout:
             _place(prov, *slot["provenance"])
         if profile is None:
-            prov.setText(f"Profile {f.profile_id} not found")
+            _write_text(prov, f"Profile {f.profile_id} not found")
     for n in range(count + 1, _highest(layout, "wb_frame_") + 1):     # frames removed
         for item_id in (f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}"):
             _remove(layout, item_id)
@@ -487,8 +545,8 @@ def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
         ok = frame_fits(s1 - s0, z1 - z0, sizes[n - 1], scale, ve)
         if not ok:
             not_fitting.append(f"frame {n} ({profile.name})")
-        layout.itemById(f"wb_provenance_{n}").setText(
-            provenance_text(profile, models, scale, ve, fits=ok))
+        _write_text(layout.itemById(f"wb_provenance_{n}"),
+                    provenance_text(profile, models, scale, ve, fits=ok))
 
     # content of the template's own items
     names = {pid: p.name for pid, p in profiles.items()}
