@@ -118,3 +118,19 @@ def test_own_layer_ids_are_store_layers(project, store_with_model):
     added = project_actions.add_store_layers(st, project)
     assert own_layer_ids(st, project) == {layer.id() for layer in added.values()}
     assert len(added) == 2
+
+
+def test_field_note_layers_are_own_layers(project, store_with_model):
+    """Usability review: the plugin's own field-note map layers were drawn on the section
+    as crossing lines (and offered as context)."""
+    from geophysics_workbench.core.field_notes import FieldNote
+    from geophysics_workbench.section.crossing_lines import own_layer_ids
+    from geophysics_workbench.ui.field_note_layers import add_field_note_layers, field_note_layers
+    from geophysics_workbench.ui.project_actions import add_store_layers
+    st, p, _ = store_with_model
+    add_store_layers(st, project)
+    st.save_field_note(FieldNote("n", p.id, 1.0, 5.0, "boggy"))
+    st.rebuild_field_note_geometry({p.id: p.chainage})
+    add_field_note_layers(st, project)
+    notes = field_note_layers(st, project)
+    assert notes and {layer.id() for layer in notes.values()} <= own_layer_ids(st, project)

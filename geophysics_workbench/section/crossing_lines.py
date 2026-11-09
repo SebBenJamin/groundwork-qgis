@@ -13,10 +13,13 @@ from ..ui import project_actions
 
 
 def own_layer_ids(store, project) -> set[str]:
-    """Ids of the store's own layers in ``project``: profiles, stations, interpretation."""
+    """Ids of the store's own layers in ``project``: profiles, stations, interpretation,
+    field notes."""
+    from ..ui.field_note_layers import field_note_layers
     from ..ui.interp_layers import interp_layers
     own = list(project_actions.store_layers(store, project).values())
     own += list(interp_layers(store, project).values())
+    own += list(field_note_layers(store, project).values())
     return {layer.id() for layer in own}
 
 
