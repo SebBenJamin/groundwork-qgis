@@ -311,3 +311,14 @@ def test_options_saved_when_changed_not_on_close(fake_dock, qgis_app):
     v.close()                                         # ... then the viewer closes
     assert prj.readEntry(SCOPE, OPTIONS_KEY, "")[0] == ""
     v.deleteLater()
+
+
+def test_settings_column_never_cut_off(viewer, qgis_app):
+    """Usability review 2: the settings column was clipped (Font button a cut-off box)."""
+    from qgis.PyQt.QtWidgets import QScrollArea
+    scroll = next(w for w in viewer.findChildren(QScrollArea) if w.widget() is not None
+                  and w.widget().findChild(type(viewer.font_button)) is not None)
+    from qgis.PyQt.QtCore import Qt
+    qgis_app.processEvents()
+    assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert scroll.minimumWidth() >= scroll.widget().minimumSizeHint().width()

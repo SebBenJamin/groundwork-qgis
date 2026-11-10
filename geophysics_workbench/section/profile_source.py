@@ -340,7 +340,12 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(QPen(QColor(0, 0, 0), 1))
         painter.setBrush(QBrush(QColor(0, 0, 0)))
+        fm = painter.fontMetrics()
+        spans = [(wt.map(QPointF(si, 0.0)).x(), fm.horizontalAdvance(label))
+                 for si, label in stations if label]
+        keep = iter(station_labels_to_draw(spans))
         for (si, label), zi in zip(stations, z.tolist()):
+            show = bool(label) and next(keep)           # consumed for every labelled station
             if not math.isfinite(zi):                   # no measured height and no surface
                 continue
             p = wt.map(QPointF(si, zi))
@@ -348,11 +353,24 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             # apex on the surface, base above it
             painter.drawPolygon(QPolygonF([QPointF(x, y), QPointF(x - half, y - 2 * half),
                                            QPointF(x + half, y - 2 * half)]))
-            if label:
+            if show:
                 fs = font.pixelSize()
                 box = QRectF(x - 4 * fs, y - 2 * half - fs * 1.6, 8 * fs, fs * 1.4)
                 painter.drawText(box, int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom),
                                  label)
+
+
+def station_labels_to_draw(spans, gap: float = 6.0) -> list[bool]:
+    """Which station numbers to draw: ``spans`` are (centre x, text width) in drawing order;
+    a number that would touch the last drawn one is skipped (its triangle stays)."""
+    out, last_right, last_left = [], None, None
+    for x, width in spans:
+        left, right = x - width / 2, x + width / 2
+        ok = last_right is None or left >= last_right + gap or right <= last_left - gap
+        if ok:
+            last_left, last_right = left, right
+        out.append(ok)
+    return out
 
 
 def _plot_rect(context, wt):

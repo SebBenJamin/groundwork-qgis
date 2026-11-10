@@ -190,8 +190,8 @@ class BoreholeCanvas(QWidget):
         return lines
 
     def _draw_labels(self, painter, pending) -> None:
-        """The columns' labels; one that would overlap another is left out (the clicked
-        borehole's always shows; hover reads every column)."""
+        """The columns' labels, in rows so they never overlap (the clicked borehole's
+        first); only when the room above the columns is full is a label left out."""
         v = self.viewer
         fmt = v.font_button.textFormat()
         painter.save()
@@ -202,10 +202,12 @@ class BoreholeCanvas(QWidget):
         spans = [(x - w / 2 - 3, x + w / 2 + 3) for lines, x, _y in blocks
                  for w in [max((fm.horizontalAdvance(t) for t in lines), default=0)]]
         highlight = next((i for i, item in enumerate(pending) if item[4]), None)
-        for (lines, x, y_top), show in zip(blocks, choose_viewer_labels(spans, highlight)):
-            if not show or not lines:
+        block = max((len(lines) for lines, _x, _y in blocks), default=1) * fm.height()
+        rows = max(1, int((LABEL_PX - 10) // max(block, 1)))
+        for (lines, x, y_top), row in zip(blocks, choose_viewer_labels(spans, highlight, rows)):
+            if row is None or not lines:
                 continue
-            y = y_top - 10
+            y = y_top - 10 - row * block
             for text in reversed(lines):
                 painter.drawText(QPointF(x - fm.horizontalAdvance(text) / 2, y), text)
                 y -= fm.height()
@@ -385,7 +387,11 @@ class BoreholeViewer(QWidget):
         scroll = QScrollArea()
         scroll.setWidget(panel)
         scroll.setWidgetResizable(True)
-        scroll.setMaximumWidth(220)
+        # as wide as its content needs (never cut off, no sideways scrolling); it scrolls
+        # only up and down
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(panel.minimumSizeHint().width()
+                               + scroll.verticalScrollBar().sizeHint().width() + 4)
 
         self.canvas = BoreholeCanvas(self)
         self.status = QLabel("")
@@ -680,10 +686,10 @@ class BoreholeViewer(QWidget):
             self.dock.provider.on_change.remove(self.refresh)
 
 
-def choose_viewer_labels(spans, highlight=None) -> list[bool]:
-    """Which column labels to draw: ``spans`` are their (x0, x1); one row, the clicked
-    column first, then left to right (``context_render.place_labels``)."""
+def choose_viewer_labels(spans, highlight=None, rows: int = 1) -> list:
+    """Row (0 = nearest the columns) of each column label, or None when there is no room:
+    ``spans`` are their (x0, x1); the clicked column first, then left to right
+    (``context_render.place_labels``)."""
     from .context_render import place_labels
-    rows = place_labels([(a, b, 0 if i == highlight else 1) for i, (a, b) in enumerate(spans)],
-                        1)
-    return [r is not None for r in rows]
+    return place_labels([(a, b, 0 if i == highlight else 1)
+                         for i, (a, b) in enumerate(spans)], rows)

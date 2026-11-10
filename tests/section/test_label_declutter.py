@@ -58,7 +58,22 @@ def test_section_labels_do_not_overlap(qgis_app):
         painter.end()
 
 
-def test_viewer_drops_overlapping_labels_keeps_highlight():
+def test_viewer_stacks_overlapping_labels_keeps_highlight():
+    """Usability review 2: in true-distance mode names of covered columns were left out —
+    in the window made to compare those boreholes. They now go in further rows."""
     from geophysics_workbench.section.borehole_viewer import choose_viewer_labels
     spans = [(100.0, 160.0), (110.0, 170.0), (300.0, 360.0)]
-    assert choose_viewer_labels(spans, highlight=1) == [False, True, True]
+    assert choose_viewer_labels(spans, highlight=1, rows=3) == [1, 0, 0]
+    crowded = [(100.0 + i, 160.0 + i) for i in range(4)]
+    assert choose_viewer_labels(crowded, rows=3) == [0, 1, 2, None]
+
+
+def test_station_numbers_never_run_together():
+    """Usability review 2, R4: "…90100110120…" on a long profile."""
+    from geophysics_workbench.section.profile_source import station_labels_to_draw
+    spans = [(i * 12.0, 18.0) for i in range(10)]          # numbers 18 px wide, 12 px apart
+    keep = station_labels_to_draw(spans)
+    drawn = [x for (x, _w), k in zip(spans, keep) if k]
+    assert keep[0] and all(b - a >= 18.0 + 6.0 for a, b in zip(drawn, drawn[1:]))
+    reverse = station_labels_to_draw(list(reversed(spans)))  # a profile drawn end to start
+    assert sum(reverse) == sum(keep)
