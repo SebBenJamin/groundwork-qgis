@@ -110,8 +110,12 @@ class BertDataReader(Reader):
             tok = [name for name, _u in tok_units]
             rows = [ln.split()[:len(tok)] for ln in lines[i + 2:i + 2 + n_d]]
             data = np.array([[float(v) for v in r] for r in rows])
-        except (IndexError, ValueError, TypeError) as exc:
-            raise ValueError(f"{path.name}: not a readable BERT/pyGIMLi data file ({exc})")
+        except (IndexError, ValueError, TypeError):
+            # the file's layout is not BERT's (counts, electrode block, data block): say so
+            # in the user's terms, never with Python's own message
+            raise ValueError(f"{path.name}: not a BERT/pyGIMLi data file (expected the "
+                             "electrode count, the electrodes, the reading count and the "
+                             "readings)") from None
         if n_el is None or n_d is None or len(el) != n_el or data.shape[0] != n_d:
             raise ValueError(f"{path.name}: the electrode or reading count does not match "
                              f"the rows that follow")
