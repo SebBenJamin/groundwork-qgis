@@ -25,6 +25,7 @@ from ..core.borehole_layout import (ViewTransform, column_depth, extent_z, fit, 
 from ..core.context import collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
 from .borehole_draw import ColumnOptions, SymbolPool, draw_borehole, draw_flag
+from ..core.numbers import fmt
 
 SCOPE = "geophysics_workbench"
 OPTIONS_KEY = "borehole_viewer"
@@ -165,7 +166,7 @@ class BoreholeCanvas(QWidget):
         if v.mode == "true":
             painter.setPen(QPen(QColor(*AXIS_RGB)))
             painter.drawText(QPointF(AXIS_PX + 4, painter.device().height() - 6),
-                             f"VE {vertical_exaggeration(t):.1f}×")
+                             f"VE {fmt(vertical_exaggeration(t), 1)}×")
 
     def _ground(self, painter) -> None:
         topo = self.viewer.topo
@@ -183,9 +184,9 @@ class BoreholeCanvas(QWidget):
         if v.label_check["name"].isChecked():
             lines.append(p.label)
         if v.label_check["elevation"].isChecked() and v.axis == "elevation" and z_top is not None:
-            lines.append(f"{z_top:.1f} m")
+            lines.append(f"{fmt(z_top, 1)} m")
         if v.label_check["distance"].isChecked():
-            lines.append(f"{p.s:.0f} m, {p.offset:+.0f} m")
+            lines.append(f"{fmt(p.s, 0)} m, {fmt(p.offset, 0, sign=True)} m")
         return lines
 
     def _draw_labels(self, painter, pending) -> None:
@@ -251,11 +252,11 @@ class BoreholeCanvas(QWidget):
                 depth = self._z_top(p) - z
             if depth < -0.05 or depth > column_depth(p) + 0.05:
                 continue
-            head = f"{p.label} · depth {depth:.2f} m"
+            head = f"{p.label} · depth {fmt(depth, 2)} m"
             if elevation is not None:
-                head += f" · elevation {elevation:.2f} m"
+                head += f" · elevation {fmt(elevation, 2)} m"
             lines = [head]
-            lines += [f"{iv.top:.2f}–{iv.bottom:.2f} m {iv.text}" for iv in p.log
+            lines += [f"{fmt(iv.top, 2)}–{fmt(iv.bottom, 2)} m {iv.text}" for iv in p.log
                       if iv.top <= depth <= iv.bottom]
             return lines + curve_lines(p, depth)
         return []

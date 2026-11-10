@@ -8,6 +8,7 @@ from qgis.PyQt.QtCore import QPointF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QPen, QPolygonF
 
 from ..core.field_notes import note_range
+from ..core.numbers import fmt
 
 NOTE_RGB = (176, 82, 0)
 NOTE_BAR_PX = 3
@@ -23,7 +24,7 @@ def label_text(text: str) -> str:
 
 def _position(note) -> str:
     lo, hi = note_range(note)
-    where = f"{lo:.1f} m" if note.s_to is None else f"{lo:.1f}–{hi:.1f} m"
+    where = f"{fmt(lo, 1)} m" if note.s_to is None else f"{fmt(lo, 1)}–{fmt(hi, 1)} m"
     return where + (f" (electrodes {note.stations})" if note.stations else "")
 
 

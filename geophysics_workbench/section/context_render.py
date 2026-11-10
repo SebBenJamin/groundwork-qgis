@@ -167,7 +167,9 @@ def draw_dem(painter, rc, wt, items, stations, heights) -> None:
 
 # -- crossings and ties ------------------------------------------------------------------------
 def offset_text(offset: float) -> str:
-    return f"({'+' if offset >= 0 else '−'}{abs(round(offset))} m)"
+    """Side and distance of a borehole off the line, e.g. "(+2 m)", "(0 m)", never "−0"."""
+    from ..core.numbers import fmt
+    return f"({fmt(offset, 0, sign=True)} m)"
 
 
 @dataclass

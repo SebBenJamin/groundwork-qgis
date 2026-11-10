@@ -1,6 +1,8 @@
 """Text of the section panel's cursor readout. QGIS-free."""
 from __future__ import annotations
 
+from ..core.numbers import fmt, fmt_sig
+
 SEP = " · "
 UNIT_LABELS = {"ohm.m": "Ω·m", "ohm-m": "Ω·m", "ohmm": "Ω·m", "ohm m": "Ω·m"}
 
@@ -14,10 +16,10 @@ def format_value(value: float) -> str:
     small value never shows as 0.0); zero is "0.0"."""
     size = abs(value)
     if size >= 100:
-        return f"{value:.0f}"
+        return f"{fmt(value, 0)}"
     if size >= 1 or size == 0:
-        return f"{value:.1f}"
-    return f"{value:.3g}"
+        return f"{fmt(value, 1)}"
+    return fmt_sig(value, 3)
 
 
 BEYOND = "beyond stations"
@@ -29,19 +31,19 @@ def format_readout(s: float, z: float | None = None, depth: float | None = None,
     Parts whose input is ``None`` are left out; ``hits`` are ``identify`` dicts. ``beyond``
     (s outside the station coverage) appends `` · beyond stations``. ``extra`` (context lines)
     follow on a second line, joined by `` · ``."""
-    parts = [f"s = {s:.1f} m"]
+    parts = [f"s = {fmt(s, 1)} m"]
     if z is not None:
-        parts.append(f"z = {z:.1f} m")
+        parts.append(f"z = {fmt(z, 1)} m")
     if depth is not None:
-        parts.append(f"depth = {depth:.1f} m")
+        parts.append(f"depth = {fmt(depth, 1)} m")
     if xy is not None:
-        parts.append(f"X {xy[0]:.1f} Y {xy[1]:.1f}")
+        parts.append(f"X {fmt(xy[0], 1)} Y {fmt(xy[1], 1)}")
     for hit in hits:
         unit = unit_label(hit.get("unit", ""))
         text = f"{hit['name']}: {format_value(hit['value'])}" + (f" {unit}" if unit else "")
         reading = hit.get("reading")
         if reading:
-            abmn = " ".join(f"{k.upper()} {reading[k]:.1f}" for k in "abmn"
+            abmn = " ".join(f"{k.upper()} {fmt(reading[k], 1)}" for k in "abmn"
                             if reading[k] == reading[k])          # skip absent poles (NaN)
             vals = f"meas {format_value(reading['measured'])}"
             if reading["calculated"] == reading["calculated"]:

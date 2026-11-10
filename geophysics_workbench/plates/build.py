@@ -266,7 +266,8 @@ def _label(layout, item_id: str, size: float = 7.0):
 
 # -- text ------------------------------------------------------------------------------------
 def _metres(v: float) -> str:
-    return f"{v:.1f}".rstrip("0").rstrip(".")
+    from ..core.numbers import fmt_trim
+    return fmt_trim(v, 1)
 
 
 def field_notes_text(store, plate, names: dict) -> str:
@@ -294,9 +295,10 @@ NOT_FIT = "does not fit the frame at this scale: part of the section is cut off"
 
 
 def provenance_text(profile, datasets: list, scale: int, ve: float, fits: bool = True) -> str:
+    from ..core.numbers import fmt_trim
     heads = [provenance_line(profile.name, d) for d in datasets] or [profile.name]
     (x0, y0), (x1, y1) = profile.chainage.xy[0], profile.chainage.xy[-1]
-    where = (f"1:{scale} · VE {ve:g}× · start E {x0:.0f} N {y0:.0f} · "
+    where = (f"1:{scale} · VE {fmt_trim(ve, 2)}× · start E {x0:.0f} N {y0:.0f} · "
              f"end E {x1:.0f} N {y1:.0f}")
     if not fits:
         where += f" · {NOT_FIT}"

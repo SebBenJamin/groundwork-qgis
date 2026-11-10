@@ -7,12 +7,13 @@ from ..core.borehole_curves import value_at
 from ..core.context import ContextItems, collar_height
 from ..core.ties import strip_column
 from .readout import format_value, unit_label
+from ..core.numbers import fmt
 
 MINUS = "\u2212"
 
 
 def _signed(value: float) -> str:
-    return f"{MINUS if value < 0 else '+'}{abs(value):.1f}"
+    return fmt(value, 1, sign=True)                 # never "−0.0"
 
 
 def _half_of(column_half_width_s):
@@ -97,7 +98,7 @@ def _dem_line(items: ContextItems, s: float, stations) -> str | None:
         if not (np.isfinite(dz[below][np.argmax(ds[below])])
                 and np.isfinite(dz[above][np.argmin(ds[above])])):
             return None
-    text = f"DEM {height:.1f} m"
+    text = f"DEM {fmt(height, 1)} m"
     if stations is not None and len(stations[0]) > 1 and stations[0][0] <= s <= stations[0][-1]:
         gap = float(np.interp(s, *stations)) - height
         text += f" (stations {_signed(gap)} m)"
@@ -123,7 +124,7 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
     for c in items.crossings:
         if abs(s - c.s) <= tol_s:
             source = f" \u00b7 {c.layer}" if c.layer and c.layer != c.label else ""
-            lines.append(f"Crossing: {c.label}{source}, {c.angle_deg:.0f}\u00b0")
+            lines.append(f"Crossing: {c.label}{source}, {fmt(c.angle_deg, 0)}\u00b0")
     for p in items.points:
         if p.kind != "borehole" or not _beside(p, s, half, right):
             continue
@@ -133,8 +134,8 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
         depth = z_top - z
         for iv in p.log:
             if iv.top <= depth <= iv.bottom:
-                lines.append(f"Borehole {p.label} ({p.offset:+.0f} m): "
-                             f"{iv.top:.1f}\u2013{iv.bottom:.1f} m {iv.text}")
+                lines.append(f"Borehole {p.label} ({fmt(p.offset, 0, sign=True)} m): "
+                             f"{fmt(iv.top, 1)}\u2013{fmt(iv.bottom, 1)} m {iv.text}")
                 break
         lines += [f"Borehole {p.label} {line}"
                   for line in curve_lines(p, depth, items.curve_styles)]
@@ -190,12 +191,12 @@ def borehole_details(items: ContextItems, s: float, z: float, column_half_width_
         if not z_top - bottom - 0.2 <= z <= z_top + 0.2:
             continue
         depth = z_top - z
-        top = f"Top {z_top:.2f} m ({source}"
+        top = f"Top {fmt(z_top, 2)} m ({source}"
         if p.flagged and p.z_dem is not None:
-            top += f"; DEM {p.z_dem:.2f} m, differs by {abs(z_top - p.z_dem):.2f} m"
-        lines = [f"Borehole {p.label} ({p.offset:+.0f} m from the line)", top + ")",
-                 f"Down to {bottom:.2f} m depth"]
-        lines += [f"  {iv.top:.2f}–{iv.bottom:.2f} m  {iv.text}"
+            top += f"; DEM {fmt(p.z_dem, 2)} m, differs by {fmt(abs(z_top - p.z_dem), 2)} m"
+        lines = [f"Borehole {p.label} ({fmt(p.offset, 0, sign=True)} m from the line)", top + ")",
+                 f"Down to {fmt(bottom, 2)} m depth"]
+        lines += [f"  {fmt(iv.top, 2)}–{fmt(iv.bottom, 2)} m  {iv.text}"
                   + ("  ← here" if iv.top <= depth <= iv.bottom else "") for iv in p.log]
         lines += curve_lines(p, depth, items.curve_styles)
         return lines

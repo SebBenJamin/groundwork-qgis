@@ -14,6 +14,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialo
 
 from ..core.field_notes import FieldNote, clamp_to_profile, note_range, stations_to_chainage
 from ..core.interpretation import new_id
+from ..core.numbers import fmt
 
 COLUMNS = ("From (m)", "To (m)", "Stations", "Category", "Text", "Shown")
 
@@ -54,7 +55,7 @@ class NoteForm(QDialog):
         self.setWindowTitle("Field note")
         self._note = note
         lo, hi = note_range(note)
-        where = f"{lo:.1f} m" if note.s_to is None else f"{lo:.1f}–{hi:.1f} m"
+        where = f"{fmt(lo, 1)} m" if note.s_to is None else f"{fmt(lo, 1)}–{fmt(hi, 1)} m"
         self.text_edit = QPlainTextEdit(note.text)
         self.category_combo = QComboBox()
         self.category_combo.setEditable(True)
@@ -155,7 +156,7 @@ class FieldNotesDialog(QDialog):
             r = self.table.rowCount()
             self.table.insertRow(r)
             lo, hi = note_range(n)
-            values = (f"{lo:.1f}", "" if n.s_to is None else f"{hi:.1f}", n.stations,
+            values = (f"{fmt(lo, 1)}", "" if n.s_to is None else f"{fmt(hi, 1)}", n.stations,
                       n.category, n.text.replace("\n", " / "))
             for c, v in enumerate(values):
                 self.table.setItem(r, c, QTableWidgetItem(v))

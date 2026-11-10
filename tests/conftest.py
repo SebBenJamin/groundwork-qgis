@@ -40,6 +40,8 @@ def qgis_app():
 
     app = QgsApplication([], True)
     app.initQgis()
+    from qgis.PyQt.QtCore import QLocale
+    QLocale.setDefault(QLocale.c())     # numbers as "24.5" whatever the machine's locale
     import qgis.testing
     qgis.testing.QGISAPP = app          # so qgis.testing helpers never build a second app
     yield app
