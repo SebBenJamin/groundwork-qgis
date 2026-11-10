@@ -343,10 +343,8 @@ class InterpController(QObject):
         if edited is None:
             return
         edited.author = edited.author or feature.author
-        store.save_feature(edited)
         piece.feature_id = edited.id
-        store.save_piece(piece)
-        self.changed(version.id)
+        self.undo.push("Add piece", (None, None), (edited, piece))     # saves it (redo)
 
     def changed(self, _version_id: str | None = None) -> None:
         """Rebuild the derived layers from the current version (map and 3D never show a
@@ -421,7 +419,7 @@ class InterpController(QObject):
     def _note_finished(self, s_from: float, s_to: float | None) -> None:
         from ..core.field_notes import FieldNote
         from ..core.interpretation import new_id
-        from ..ui.field_notes_dialog import after_change, categories, save_note
+        from ..ui.field_notes_dialog import categories
         store, profile_id = self.dock.provider.store, self.dock.current_profile_id()
         if profile_id is None:
             return
@@ -429,7 +427,17 @@ class InterpController(QObject):
                                       categories(store))
         if note is None:
             return
-        save_note(store, note)
+        self.undo.push_with(self._apply_note, "Add note", (None,), (note,))
+
+    def _apply_note(self, state: tuple, other: tuple) -> None:
+        """Undo/redo of a field note: save the state's note, or delete the other one."""
+        from ..ui.field_notes_dialog import after_change, save_note
+        store = self.dock.provider.store
+        (note,), (other_note,) = state, other
+        if note is not None:
+            save_note(store, note)
+        elif other_note is not None:
+            store.delete_field_note(other_note.id)
         after_change(store, self.dock.provider)
 
     def show_field_notes(self) -> None:

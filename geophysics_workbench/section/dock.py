@@ -13,7 +13,7 @@ from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsLineStri
 from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QPen
+from qgis.PyQt.QtGui import QColor, QKeySequence, QPen, QShortcut
 from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
                                  QToolTip,
                                  QHBoxLayout, QLabel, QSizePolicy, QSplitter, QToolButton,
@@ -152,6 +152,15 @@ class SectionDock(QDockWidget):
         layout.addLayout(top)
         from .interp_controller import InterpController
         self.interp = InterpController(self)
+        # Ctrl+Z / Ctrl+Y (and Ctrl+Shift+Z) while the panel has focus, as in QGIS
+        stack = self.interp.undo.stack
+        self.undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
+        self.redo_shortcut = QShortcut(QKeySequence("Ctrl+Y"), self)
+        self.redo_shortcut_alt = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
+        for shortcut, slot in ((self.undo_shortcut, stack.undo), (self.redo_shortcut, stack.redo),
+                               (self.redo_shortcut_alt, stack.redo)):
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(slot)
         layout.addLayout(self.interp.bar)
         layout.addWidget(splitter, 1)
         layout.addWidget(self.readout)

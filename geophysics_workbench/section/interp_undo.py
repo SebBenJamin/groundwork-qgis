@@ -34,6 +34,10 @@ class InterpUndo:
         self.stack.push(_Command(self._apply, text, copy.deepcopy(before),
                                  copy.deepcopy(after)))
 
+    def push_with(self, apply, text: str, before: tuple, after: tuple) -> None:
+        """A command applied by ``apply(state, other)`` (e.g. field notes)."""
+        self.stack.push(_Command(apply, text, copy.deepcopy(before), copy.deepcopy(after)))
+
     def push_rows(self, text: str, before: tuple, after: tuple) -> None:
         """Several rows at once: ``(features, pieces)`` before and after. Applying a state
         saves its rows and deletes the rows only the other state has."""
