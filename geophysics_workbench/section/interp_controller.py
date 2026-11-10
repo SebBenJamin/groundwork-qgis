@@ -19,6 +19,14 @@ from ..ui.interp_form import ask_feature
 from .interp_tools import DrawTool, EditTool, plot_tolerance
 from .interp_undo import InterpUndo
 
+#: one line per tool in the panel's hint line: how to use it (as in QGIS digitising)
+TOOL_HINTS = {
+    "line": "Line: click to add points, right-click to finish, Esc to cancel",
+    "polygon": "Polygon: click to add corners, right-click to close, Esc to cancel",
+    "point": "Point: click to place it",
+    "note": "Note: click for a note at one place, drag for a stretch",
+    "edit": "Edit: click a piece to select it, drag its points, right-click for more",
+}
 TOOLS = (("pan", "Pan"), ("line", "Line"), ("polygon", "Polygon"), ("point", "Point"),
          ("edit", "Edit"), ("note", "Note"))
 #: QGIS theme icons of the row's buttons (the text is the fallback and the tooltip)
@@ -269,6 +277,7 @@ class InterpController(QObject):
             self.dock.canvas.setTool(self.tool)
             self.buttons["edit"].setChecked(True)
             self.dock.canvas.setFocus()
+            self._show_hint("edit")
             return
         canvas = self.dock.canvas
         self.tool = DrawTool(canvas, kind, lambda pts, k=kind: self._finished(k, pts),
@@ -279,6 +288,7 @@ class InterpController(QObject):
         self.dock.canvas.setTool(self.tool)
         self.buttons[kind].setChecked(True)
         self.dock.canvas.setFocus()
+        self._show_hint(kind)
 
     def ensure_sync(self) -> None:
         """Rebuild the derived layers when attributes are edited in QGIS's own tools."""
@@ -312,6 +322,10 @@ class InterpController(QObject):
         dock.canvas.setTool(dock._pan_tool)
         self.tool = None
         self.buttons["pan"].setChecked(True)
+        dock.set_tool_hint(None)
+
+    def _show_hint(self, kind: str) -> None:
+        self.dock.set_tool_hint(TOOL_HINTS.get(kind))
 
     # -- saving ------------------------------------------------------------------------------
     def _based_on(self, profile_id: str) -> tuple[str, str]:
@@ -415,6 +429,7 @@ class InterpController(QObject):
         self.dock.canvas.setTool(self.tool)
         self.buttons["note"].setChecked(True)
         self.dock.canvas.setFocus()
+        self._show_hint("note")
 
     def _note_finished(self, s_from: float, s_to: float | None) -> None:
         from ..core.field_notes import FieldNote

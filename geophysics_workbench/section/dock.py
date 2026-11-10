@@ -484,11 +484,16 @@ class SectionDock(QDockWidget):
         self.guide_line.setLine(QLineF(x, area.top(), x, area.bottom()))
         self.guide_line.show()
 
+    def set_tool_hint(self, text: str | None) -> None:
+        """The active tool's one-line hint (None: back to the panel's own hint)."""
+        self._tool_hint = text
+        self._set_hint()
+
     def _set_hint(self) -> None:
         if self.provider is None:
             text = HINT_NO_PROJECT
         elif self._profile is None:
             text = HINT_NO_PROFILE
         else:
-            text = HINT_HOVER
+            text = getattr(self, "_tool_hint", None) or HINT_HOVER
         self.readout.setText(text)

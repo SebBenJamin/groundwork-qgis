@@ -11,8 +11,8 @@ from typing import Callable
 from qgis.gui import QgsPlotTool
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QPointF, Qt
-from qgis.PyQt.QtGui import QColor, QPainterPath, QPen
-from qgis.PyQt.QtWidgets import QGraphicsPathItem
+from qgis.PyQt.QtGui import QBrush, QColor, QPainterPath, QPen
+from qgis.PyQt.QtWidgets import QGraphicsPathItem, QGraphicsRectItem
 
 SKETCH_RGB = (170, 0, 140)
 from ..core.interpretation import MIN_VERTICES as MIN_POINTS  # noqa: E402
@@ -150,6 +150,10 @@ class DrawTool(QgsPlotTool):
         return xy, pp
 
     def plotPressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton and self.kind != "point":
+            event.accept()                      # as in QGIS: right-click finishes the shape
+            self._finish()
+            return
         if self.panner.press(event) or event.button() != Qt.MouseButton.LeftButton:
             return
         xy, _ = self._plot(event)
@@ -421,6 +425,35 @@ class NoteTool(QgsPlotTool):
         self.panner = Panner(canvas)
         self._start = None                      # (canvas x, chainage) of the press
         self.setCursor(Qt.CursorShape.CrossCursor)
+        # the stretch being dragged, shown before release (field-note colour, translucent)
+        from .field_notes_render import NOTE_RGB
+        self.preview = QGraphicsRectItem()
+        self.preview.setPen(QPen(Qt.PenStyle.NoPen))
+        self.preview.setBrush(QBrush(QColor(*NOTE_RGB, 60)))
+        self.preview.setZValue(1000)
+        self.preview.hide()
+        self.preview_range = None
+
+    def activate(self):
+        if self.preview.scene() is None:
+            self.canvas().scene().addItem(self.preview)
+        super().activate()
+
+    def _show_preview(self, x0: float, x1: float, s0: float, s1: float) -> None:
+        top, height = 0.0, float(self.canvas().viewport().height())
+        self.preview.setRect(min(x0, x1), top, abs(x1 - x0), height)
+        self.preview.show()
+        self.preview_range = (min(s0, s1), max(s0, s1))
+
+    def _hide_preview(self) -> None:
+        self.preview.hide()
+        self.preview_range = None
+
+    def deactivate(self):
+        self._hide_preview()
+        if self.preview.scene() is not None:
+            self.preview.scene().removeItem(self.preview)
+        super().deactivate()
 
     def _s(self, event):
         pp = self.canvas().canvasPointToPlotPoint(QPointF(event.pos()))
@@ -435,9 +468,15 @@ class NoteTool(QgsPlotTool):
             event.accept()
 
     def plotMoveEvent(self, event):
-        self.panner.move(event)
+        if self.panner.move(event) or self._start is None:
+            return
+        x0, s0 = self._start
+        x1, s1 = float(event.pos().x()), self._s(event)
+        if s1 is not None and abs(x1 - x0) >= self.DRAG_PX:
+            self._show_preview(x0, x1, s0, s1)
 
     def plotReleaseEvent(self, event):
+        self._hide_preview()
         if self.panner.release(event) or self._start is None:
             return
         x0, s0 = self._start
