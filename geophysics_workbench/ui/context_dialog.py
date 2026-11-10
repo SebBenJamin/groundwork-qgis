@@ -5,11 +5,20 @@ The choice is kept in the QGIS project as JSON (entry ``geophysics_workbench/con
 because it refers to QGIS layer ids. ``read_settings`` / ``write_settings`` need no widgets."""
 from __future__ import annotations
 
-from qgis.core import QgsMapLayer, QgsProject, QgsVectorLayer, QgsWkbTypes
-from qgis.PyQt.QtCore import pyqtSignal
-from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                                 QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox, QLabel,
-                                 QScrollArea, QVBoxLayout, QWidget)
+from qgis.core import QgsMapLayer, QgsProject, QgsSettings, QgsVectorLayer, QgsWkbTypes
+from qgis.PyQt.QtCore import QSize, pyqtSignal
+from qgis.PyQt.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
+                                 QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGridLayout,
+                                 QGroupBox, QLabel, QScrollArea, QTabWidget, QVBoxLayout,
+                                 QWidget)
+
+SIZE_KEY = "geophysics_workbench/context_dialog/size"
+
+
+def initial_size(available) -> QSize:
+    """The dialog's first size: at most 580 px tall (QGIS HIG) and 80 % of the screen."""
+    return QSize(min(720, int(available.width() * 0.8)),
+                 min(580, int(available.height() * 0.8)))
 
 from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings,
                                      PointLayerSetting)
@@ -90,18 +99,25 @@ class ContextDialog(QDialog):
                    for kind in ("point", "polygon")}
         rasters = [lyr for lyr in layers if lyr.type() == QgsMapLayer.LayerType.RasterLayer]
 
-        content = QWidget()
-        outer = QVBoxLayout(content)
+        self.buffer_spin = _spin(0, MAX_DISTANCE, 25.0)
+        self.near_miss_spin = _spin(0, MAX_DISTANCE, 10.0)
+        self.dem_tolerance_spin = _spin(0, MAX_DISTANCE, 1.0)
+        self.tabs = QTabWidget()
+
+        # Lines: crossing line layers, and how near two profiles must pass to be tied
         self.lines = CrossingLinesGroup(self.project, exclude)
-        outer.addWidget(self.lines)
+        ties = QFormLayout()
+        ties.addRow("Tie profiles that pass within (m)", self.near_miss_spin)
+        self._add_tab("Lines", [self.lines], ties)
+
+        # Points: point layers near the line, with column headers
         self.point_rows, box = self._layer_group(
             "Points Near the Line", [lyr for lyr in by_geom["point"] if lyr.id() not in exclude])
-        outer.addWidget(box)
+        self._add_tab("Points", [box])
+
         self.boreholes = BoreholeEntries(self.project, vectors, by_geom["point"],
                                          current_boreholes, self.applied.emit)
-        borehole_box = QGroupBox("Boreholes")
-        QVBoxLayout(borehole_box).addWidget(self.boreholes)
-        outer.addWidget(borehole_box)
+        self._add_tab("Boreholes", [self.boreholes])
 
         self.band_combo, self.band_label = QComboBox(), QComboBox()
         fill_layer_combo(self.band_combo, by_geom["polygon"])
@@ -110,27 +126,22 @@ class ContextDialog(QDialog):
         form = QFormLayout(band_box)
         form.addRow("Polygon layer", self.band_combo)
         form.addRow("Label field", self.band_label)
-        outer.addWidget(band_box)
         self._band_layer_changed()
-
         self.dem_combo = QComboBox()
         fill_layer_combo(self.dem_combo, rasters)
         dem_box = QGroupBox("DEM")
-        QFormLayout(dem_box).addRow("Raster layer", self.dem_combo)
-        outer.addWidget(dem_box)
+        dem_form = QFormLayout(dem_box)
+        dem_form.addRow("Raster layer", self.dem_combo)
+        dem_form.addRow("Warn when station and DEM heights differ by more than (m)",
+                        self.dem_tolerance_spin)
+        self._add_tab("Band and DEM", [band_box, dem_box])
 
-        self.buffer_spin = _spin(0, MAX_DISTANCE, 25.0)
-        self.near_miss_spin = _spin(0, MAX_DISTANCE, 10.0)
-        self.dem_tolerance_spin = _spin(0, MAX_DISTANCE, 1.0)
-        values = QFormLayout()
-        values.addRow("Buffer (m)", self.buffer_spin)
-        values.addRow("Near-miss ties within (m)", self.near_miss_spin)
-        values.addRow("DEM vs station height tolerance (m)", self.dem_tolerance_spin)
-        outer.addLayout(values)
+        # applies to points and boreholes: below the tabs
+        common = QFormLayout()
+        common.addRow("Search distance from the line (m)", self.buffer_spin)
+        self.buffer_spin.setToolTip("Points and boreholes this close to the profile line are "
+                                    "drawn on the section")
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(content)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Apply
                                    | QDialogButtonBox.StandardButton.Cancel)
@@ -139,23 +150,51 @@ class ContextDialog(QDialog):
         self.apply_button.clicked.connect(lambda _checked=False: self.apply())
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addWidget(scroll)
+        layout.addWidget(self.tabs, 1)
+        layout.addLayout(common)
         layout.addWidget(buttons)
-        self.resize(640, 720)
+        saved = QgsSettings().value(SIZE_KEY)
+        screen = self.screen() or QApplication.primaryScreen()
+        size = initial_size(screen.availableGeometry())
+        if isinstance(saved, QSize) and saved.isValid():
+            size = saved.boundedTo(screen.availableGeometry().size())
+        self.resize(size)
         self.note = QLabel()
         self.note.setStyleSheet("color: grey;")
         layout.insertWidget(1, self.note)
         self.stale_points, self.loaded_band = [], None
         self._load(read_settings(self.project))
 
+    def _add_tab(self, title: str, widgets: list, form=None) -> None:
+        """A tab whose content scrolls (never taller than the dialog)."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        for w in widgets:
+            lay.addWidget(w)
+        if form is not None:
+            lay.addLayout(form)
+        lay.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(page)
+        self.tabs.addTab(scroll, title)
+
     def _layer_group(self, title, layers):
         box = QGroupBox(title)
         grid = QGridLayout(box)
         rows = {}
+        if layers:
+            for col, text in enumerate(("Layer", "Label field", "Depth field")):
+                head = QLabel(text)
+                font = head.font()
+                font.setBold(True)
+                head.setFont(font)
+                grid.addWidget(head, 0, col)
         for i, layer in enumerate(layers):
-            rows[layer.id()] = LayerRow(layer, grid, i)
+            rows[layer.id()] = LayerRow(layer, grid, i + 1)
         if not rows:
-            grid.addWidget(QLabel("No matching layers in this project."), 0, 0)
+            grid.addWidget(QLabel("No point layers in this project."), 0, 0)
         return rows, box
 
     def _band_layer_changed(self):
@@ -224,4 +263,5 @@ class ContextDialog(QDialog):
 
     def done(self, result):
         self.lines.detach()                             # a deleted dialog must get no signals
+        QgsSettings().setValue(SIZE_KEY, self.size())    # opens at the user's size next time
         super().done(result)
