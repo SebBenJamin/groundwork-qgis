@@ -65,7 +65,7 @@ def test_empty_panel_shows_hint_not_axes(qgis_app, store_with_model, make_dock):
     dock.show()
     qgis_app.processEvents()
     assert dock.empty_hint.isVisible() and not dock.canvas.isVisible()
-    assert HINT_NO_PROFILE in dock.empty_hint.text()
+    assert HINT_NO_PROFILE.split(",")[0] in dock.empty_hint.text()   # (the rest is a link)
     dock.open_profile(p.id)
     qgis_app.processEvents()
     assert dock.canvas.isVisible() and not dock.empty_hint.isVisible()

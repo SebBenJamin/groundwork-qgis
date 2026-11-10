@@ -36,6 +36,7 @@ SPLITTER_KEY = "geophysics_workbench/section/splitter"
 DEFAULT_VE = AUTO_VE
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
+HINT_NO_PROFILE_LINK = ('Choose a profile above, or <a href="pick">pick one on the map</a>.')
 HINT_HOVER = "Move the mouse over the section to read values."
 MISSING_PROFILE = "Profile not found in the workbench project; it may have been deleted."
 
@@ -144,6 +145,10 @@ class SectionDock(QDockWidget):
         top = QHBoxLayout()
         top.addWidget(QLabel("Profile"))
         top.addWidget(self.profile_combo)
+        # Pick on Map next to the list (the plugin gives it its map tool action)
+        self.pick_button = QToolButton()
+        self.pick_button.setAutoRaise(True)
+        top.addWidget(self.pick_button)
         top.addWidget(self.topo.label)
         top.addWidget(self.topo_combo)
         top.addStretch(1)
@@ -152,6 +157,7 @@ class SectionDock(QDockWidget):
         top.addWidget(zoom_button)
         # an empty panel says what to do instead of showing empty axes
         self.empty_hint = QLabel(HINT_NO_PROFILE)
+        self.empty_hint.linkActivated.connect(self._hint_link)
         self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setMinimumHeight(180)
@@ -529,6 +535,15 @@ class SectionDock(QDockWidget):
             action.triggered.connect(slot)
         return menu
 
+    def set_pick_action(self, action) -> None:
+        """The plugin's Pick Profile on Map action, on the button next to the profile list."""
+        self.pick_button.setDefaultAction(action)          # its tooltip follows the action
+
+    def _hint_link(self, _href: str) -> None:
+        action = self.pick_button.defaultAction()
+        if action is not None and action.isEnabled() and not action.isChecked():
+            action.trigger()
+
     def _show_profile_menu(self, pos) -> None:
         menu = self.profile_menu()
         menu.exec(self.profile_combo.mapToGlobal(pos))
@@ -556,4 +571,4 @@ class SectionDock(QDockWidget):
             text = getattr(self, "_tool_hint", None) or HINT_HOVER
         self.readout.setText(text)
         if self._profile is None:
-            self.empty_hint.setText(text)
+            self.empty_hint.setText(HINT_NO_PROFILE_LINK if text == HINT_NO_PROFILE else text)

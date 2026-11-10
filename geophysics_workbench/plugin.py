@@ -3,7 +3,8 @@ and the registered profile source, and follows the QGIS project: the workbench p
 (GeoPackage) it refers to is attached on load and detached when the project is cleared."""
 from pathlib import Path
 
-from qgis.core import Qgis, QgsCoordinateReferenceSystem, QgsMessageLog, QgsProject
+from qgis.core import (Qgis, QgsApplication, QgsCoordinateReferenceSystem, QgsMessageLog,
+                       QgsProject)
 from qgis.gui import QgsProjectionSelectionDialog
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QAction, QIcon
@@ -87,6 +88,9 @@ class WorkbenchPlugin:
         self.pick_action = self.add_action("Pick Profile on Map", self.toggle_pick_tool,
                                            checkable=True)
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
+        self.pick_action.setIcon(QgsApplication.getThemeIcon("/mActionSelect.svg"))
+        self.pick_action.setProperty("enabled_tip", "Pick a profile on the map")
+        self.dock.set_pick_action(self.pick_action)
         self.dock.profile_changed.connect(self._update_actions)
         self.dock.borehole_clicked.connect(self.open_borehole_viewer)
         self.dock.rename_requested.connect(self.rename_profile)
@@ -307,7 +311,8 @@ class WorkbenchPlugin:
             if action is None:
                 continue
             action.setEnabled(ok)
-            action.setToolTip(action.text().replace("…", "") if ok else why)
+            tip = action.property("enabled_tip") or action.text().replace("…", "")
+            action.setToolTip(tip if ok else why)
 
     def _warn(self, text: str):
         bar = getattr(self.iface, "messageBar", None)
