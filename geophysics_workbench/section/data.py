@@ -609,12 +609,16 @@ class SectionDataProvider:
             return
         marked = {m.piece_id for _s, marks in crossings for m in marks}
         other_pieces = [p for ps in others.values() for p in ps if p.id in marked]
-        from .interp_render import piece_symbols
+        from .interp_render import piece_symbols, twin_features
         features = {f.id: f for f in self.store.features(version)}
         if compare:
             features.update({f.id: f for f in self.store.features(compare_id)})
         layers = self.interp_layers() if self.interp_layers is not None else {}
-        snap.interp_symbols = piece_symbols(pieces + other_pieces + compare, features, layers)
+        current_id = self.store.current_version().id
+        twins = twin_features([f for f in features.values() if f.version_id != current_id],
+                              self.store.features(current_id))
+        snap.interp_symbols = piece_symbols(pieces + other_pieces + compare, features, layers,
+                                            twins)
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for p in pieces + compare:

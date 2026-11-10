@@ -36,26 +36,47 @@ def _feature_for(fields, feat, piece=None) -> QgsFeature:
     return f
 
 
-def piece_symbols(pieces, features, layers: dict) -> dict:
+def _fallback(kind: str):
+    """A symbol that never hides the model: an outline without fill for polygons."""
+    if kind == "polygon":
+        return QgsFillSymbol.createSimple({"style": "no", "outline_style": "solid"})
+    return _DEFAULT[kind].createSimple({})
+
+
+def piece_symbols(pieces, features, layers: dict, twins: dict | None = None) -> dict:
     """piece id -> (cloned QgsSymbol, QgsFeature with the layer's fields) from the derived
-    layer's renderer (main thread only); the feature drives data-defined properties."""
+    layer's renderer (main thread only); the feature drives data-defined properties.
+    ``twins`` maps a frozen version's feature id to the current version's feature with the
+    same letter and type: frozen copies have new ids, and the layer style is keyed by id."""
     out = {}
+    twins = twins or {}
     for p in pieces:
         layer = layers.get(LAYER_BY_KIND[p.kind])
         sym = None
         qf = _feature_for(layer.fields(), features.get(p.feature_id), p) \
-                if layer is not None else QgsFeature()
+            if layer is not None else QgsFeature()
         if layer is not None and layer.renderer() is not None:
+            look_up = QgsFeature(qf)
+            twin = twins.get(p.feature_id)
+            if twin and layer.fields().indexOf("feature_id") >= 0:
+                look_up["feature_id"] = twin
             rc = QgsRenderContext()
             renderer = layer.renderer().clone()
             renderer.startRender(rc, layer.fields())
             try:
-                syms = renderer.symbolsForFeature(qf, rc)
+                syms = renderer.symbolsForFeature(look_up, rc)
                 sym = syms[0].clone() if syms else None
             finally:
                 renderer.stopRender(rc)
-        out[p.id] = (sym or _DEFAULT[p.kind].createSimple({}), QgsFeature(qf))
+        out[p.id] = (sym or _fallback(p.kind), QgsFeature(qf))
     return out
+
+
+def twin_features(frozen_features, current_features) -> dict:
+    """frozen feature id -> current feature id with the same (letter, type)."""
+    current = {(f.letter, f.type): f.id for f in current_features}
+    return {f.id: current[(f.letter, f.type)] for f in frozen_features
+            if (f.letter, f.type) in current}
 
 
 COMPARE_OPACITY = 0.35
