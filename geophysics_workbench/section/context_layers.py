@@ -1,4 +1,4 @@
-"""Gather third-party context for one profile from the layers chosen in 'Context layers…'.
+"""Gather third-party context for one profile from the layers chosen in 'Context Layers…'.
 
 Runs on the main thread only (it reads QGIS layers) and hands back a plain-data
 ``ContextItems``. Every layer is gathered in its own try/except: a missing or invalid

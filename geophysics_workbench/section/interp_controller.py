@@ -123,11 +123,11 @@ class InterpController(QObject):
         act.triggered.connect(self.export)
         self.buttons["export"] = act
         self.menu.addSeparator()
-        act = self.menu.addAction("Field notes…")
+        act = self.menu.addAction("Field Notes…")
         act.setToolTip("The field notes of this profile: add, edit, switch off, delete")
         act.triggered.connect(self.show_field_notes)
         self.buttons["field_notes"] = act
-        act = self.menu.addAction("Show field notes")
+        act = self.menu.addAction("Show Field Notes")
         act.setCheckable(True)
         act.setChecked(True)
         act.setToolTip("Draw the field notes along the top of the section")
@@ -135,6 +135,7 @@ class InterpController(QObject):
         self.buttons["show_notes"] = act
         menu_button = QToolButton()
         menu_button.setText("Interpretation")
+        menu_button.setToolTip("Types, export, field notes and versions of the interpretation")
         menu_button.setMenu(self.menu)
         menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.bar.addWidget(menu_button)

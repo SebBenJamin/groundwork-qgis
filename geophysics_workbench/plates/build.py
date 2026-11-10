@@ -150,7 +150,7 @@ def _slots(area, count: int, portrait: bool, bars: list[int]) -> list[dict]:
 
 # -- frames and fit to page ------------------------------------------------------------------
 def snapshot_extent(snap, length: float) -> tuple[float, float, float, float]:
-    """(s0, s1, z0, z1) of a frame's data, like the panel's "Zoom full"."""
+    """(s0, s1, z0, z1) of a frame's data, like the panel's "Zoom Full"."""
     from ..section.context_render import context_z_values
     s, z = [0.0, float(length)], []
     for layer in snap.layers:

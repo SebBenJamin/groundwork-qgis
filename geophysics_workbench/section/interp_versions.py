@@ -25,9 +25,9 @@ class VersionBar:
         self.freeze_button = QAction("Freeze…", self.widget)
         self.freeze_button.setToolTip("Keep the current interpretation as a named, read-only "
                                       "version and carry on working")
-        self.restore_button = QAction("Start from this version", self.widget)
+        self.restore_button = QAction("Start from This Version", self.widget)
         self.restore_button.setEnabled(False)
-        self.compare_menu = QMenu("Compare with", self.widget)
+        self.compare_menu = QMenu("Compare With", self.widget)
         self.compare_menu.setToolTipsVisible(True)
         self._compare_group = QActionGroup(self.widget)
         self._compare_group.setExclusive(True)
@@ -170,7 +170,7 @@ def _ask_name(parent, title: str) -> str | None:
 
 def _ask_restore(parent) -> str | None:
     box = QMessageBox(parent)
-    box.setWindowTitle("Start from this version")
+    box.setWindowTitle("Start from This Version")
     box.setText("The current interpretation will be replaced by a copy of this version.")
     keep = box.addButton("Freeze current first", QMessageBox.ButtonRole.AcceptRole)
     replace = box.addButton("Replace", QMessageBox.ButtonRole.DestructiveRole)

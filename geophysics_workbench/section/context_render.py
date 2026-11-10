@@ -337,7 +337,7 @@ def draw_ties(painter, rc, wt, items, z_range, plan=None, host_layers=()) -> Non
 def context_z_values(items, topo) -> list[float]:
     """Elevations the context ``items`` need on the z axis: borehole log bottoms and the
     drawn tie columns; ``topo`` is the surface a borehole without its own top hangs from.
-    Used by the generator's ``zRange`` and the section panel's "Zoom full"."""
+    Used by the generator's ``zRange`` and the section panel's "Zoom Full"."""
     if items is None:
         return []
     out: list[float] = []

@@ -13,12 +13,12 @@ Field notes are what the crew experienced along the line: "electrodes 23–28 di
 2. Click once for a note at one place, or drag along the profile for a stretch (e.g. 115–140 m).
 3. Type the text. Pick a category if you like, e.g. "access" or "equipment". Untick **Shown** to keep the note but hide it from the section and the plates.
 
-**The Field notes list** is in the section's Interpretation menu, under **Field notes…**. There you can:
+**The Field notes list** is in the section's Interpretation menu, under **Field Notes…**. There you can:
 - see every note of the profile, in chainage order;
 - edit, hide or delete notes;
 - add a note by electrode numbers, e.g. from 23 to 28. The plugin works out the chainage from the station set.
 
-**Show field notes**, in the same menu, switches all notes off or on in the panel.
+**Show Field Notes**, in the same menu, switches all notes off or on in the panel.
 
 On the section, a note shows as an orange mark (a stretch as a bar) with the first line of its text. The full text is shown when you hover or click. A stretch that runs past the ends of the profile is cut to the profile, and the note says so.
 
@@ -57,12 +57,12 @@ Open **Geophysics Workbench → Plates…**.
 1. **Add** a plate. It starts with one frame showing the profile and look of the section panel.
 2. Set its **number**, **title** and **template**: A4 or A3, portrait or landscape. You can also choose **Own template…** (see section 5).
 3. **Section frames** are stacked top to bottom. Each row is a profile with its own look. To show the ERT model and the seismics of the same line, add two rows with the same profile.
-   - **Take from section panel** copies the panel's profile and look into the selected frame. The look covers which models are shown, their colour scale, display mode and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
+   - **Take from Section Panel** copies the panel's profile and look into the selected frame. The look covers which models are shown, their colour scale, display mode and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
    - **From / To** limit the chainage range. Leave them empty for the full data range.
    - **Scale / VE** fix the scale (e.g. 2500 for 1:2500) or the vertical exaggeration. Leave them empty to fit the page.
-4. **Plate details…** sets project, client, job number, date, author and revision. They are entered once per project and shown on every plate.
-5. **Create / update plates** makes the layouts. They are ordinary QGIS print layouts, named e.g. "Plate 1 – Transect 3", and you open them from QGIS's Layout Manager.
-6. **Export plates…** updates every plate and writes one vector PDF per plate (`Plate_1_Transect_3.pdf`) into a folder you choose. Tick **One combined PDF** to get all pages in one file instead.
+4. **Plate Details…** sets project, client, job number, date, author and revision. They are entered once per project and shown on every plate.
+5. **Create / Update Plates** makes the layouts. They are ordinary QGIS print layouts, named e.g. "Plate 1 – Transect 3", and you open them from QGIS's Layout Manager.
+6. **Export Plates…** updates every plate and writes one vector PDF per plate (`Plate_1_Transect_3.pdf`) into a folder you choose. Tick **One combined PDF** to get all pages in one file instead.
 
 ### Fit to page
 
@@ -73,7 +73,7 @@ Open **Geophysics Workbench → Plates…**.
 
 ### What updating keeps
 
-Running **Create / update plates** or **Export plates…** again refreshes only the plugin's own content:
+Running **Create / Update Plates** or **Export Plates…** again refreshes only the plugin's own content:
 - the sections;
 - the colour bars;
 - the contents of the legends;

@@ -1,4 +1,4 @@
-"""Borehole style…: QGIS's own style editor for a borehole interval table.
+"""Borehole Style…: QGIS's own style editor for a borehole interval table.
 
 QGIS keeps no style on a table without geometry, so the editor works on a temporary memory
 **polygon** copy of the table (same fields, one dummy square per row). The copy is never

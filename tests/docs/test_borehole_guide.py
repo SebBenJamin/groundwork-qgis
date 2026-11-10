@@ -1,6 +1,6 @@
 """The borehole guide's steps work on its templates (docs/user/boreholes.md): the Excel sheets
 open in QGIS with typed columns, QGIS's "Create points layer from table" makes the collars,
-and Context layers… with the guide's field names gives boreholes with layers and curves."""
+and Context Layers… with the guide's field names gives boreholes with layers and curves."""
 import sys
 from pathlib import Path
 
@@ -45,7 +45,7 @@ def test_excel_sheets_open_with_typed_columns(templates):
 
 def test_guide_steps_give_boreholes_with_layers_and_curves(templates, project):
     """Points from the collars sheet (QGIS's processing tool, as in the guide), then the
-    guide's Context layers… settings: every borehole is found on a line along them, with its
+    guide's Context Layers… settings: every borehole is found on a line along them, with its
     layers and both curves."""
     from qgis.core import QgsApplication, QgsCoordinateReferenceSystem, QgsVectorLayer
     sys.path.insert(0, str(Path(QgsApplication.pkgDataPath()) / "python" / "plugins"))

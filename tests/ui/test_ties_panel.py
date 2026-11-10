@@ -135,7 +135,7 @@ def test_show_in_section_brings_a_closed_section_panel_back(qgis_app, fake_iface
     plugin.initGui()
     try:
         plugin.set_store(st)
-        next(a for a in plugin.actions if a.text() == "Profile ties…").trigger()
+        next(a for a in plugin.actions if a.text() == "Profile Ties…").trigger()
         panel, dock = plugin.ties_panel, plugin.dock
         dock.close()
         qgis_app.processEvents()
@@ -183,7 +183,7 @@ def test_plugin_menu_action_and_lifecycle(qgis_app, fake_iface, store_with_model
     plugin = WorkbenchPlugin(fake_iface)
     plugin.initGui()
     try:
-        action = next(a for a in plugin.actions if a.text() == "Profile ties…")
+        action = next(a for a in plugin.actions if a.text() == "Profile Ties…")
         assert not action.isEnabled()
         plugin.set_store(store_with_model[0])
         assert action.isEnabled()

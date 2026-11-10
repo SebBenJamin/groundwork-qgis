@@ -2,7 +2,7 @@
 
 This guide shows how to get borehole data, as clients usually deliver it, onto your sections and into the borehole viewer.
 
-The plugin reads boreholes from ordinary QGIS layers. You set those up once per project in **Context layers…**. There is no import dialog yet: you bring the data in with QGIS's own tools, as shown below.
+The plugin reads boreholes from ordinary QGIS layers. You set those up once per project in **Context Layers…**. There is no import dialog yet: you bring the data in with QGIS's own tools, as shown below.
 
 Templates and a small made-up example are in [`templates/`](templates/):
 - `boreholes_template.xlsx`, with the sheets `collars`, `layers` and `curves`;
@@ -14,7 +14,7 @@ You can fill them in yourself, or send them to a client.
 
 ## 1. What the plugin needs
 
-Three tables, linked by a **borehole ID**. Column names are free: you pick them in Context layers….
+Three tables, linked by a **borehole ID**. Column names are free: you pick them in Context Layers….
 
 ### Collars: one point per borehole (required)
 
@@ -50,12 +50,12 @@ Three tables, linked by a **borehole ID**. Column names are free: you pick them 
 - **If top > bottom in a row, the two are swapped.** Rows with an empty top or bottom are left out.
 - **Where a borehole's top comes from:**
   1. the `elevation` column;
-  2. if that is empty, the DEM chosen in Context layers…;
+  2. if that is empty, the DEM chosen in Context Layers…;
   3. if there is no DEM either, the section's surface line.
 
   The readout says which one was used.
-- **Height check:** when the elevation column and the DEM differ by more than the tolerance in Context layers…, the borehole gets a **red triangle**, and hovering shows both numbers. Nothing is corrected for you.
-- **Which boreholes appear on a section:** collar points within the **buffer** (Context layers…, distance from the profile line) are projected onto it.
+- **Height check:** when the elevation column and the DEM differ by more than the tolerance in Context Layers…, the borehole gets a **red triangle**, and hovering shows both numbers. Nothing is corrected for you.
+- **Which boreholes appear on a section:** collar points within the **buffer** (Context Layers…, distance from the profile line) are projected onto it.
 - **Coordinates:** the collar points can be in any coordinate system QGIS knows. They are transformed to the workbench's system.
 
 ---
@@ -106,9 +106,9 @@ Client exports differ every time. These are the layouts we see, and what to do w
 
 ---
 
-## 4. Context layers…: field by field
+## 4. Context Layers…: field by field
 
-**Geophysics Workbench** menu → **Context layers…** → **Boreholes**. Each borehole entry is one set of collars with its tables. Use **Add** for a second set, e.g. state boreholes next to your own.
+**Geophysics Workbench** menu → **Context Layers…** → **Boreholes**. Each borehole entry is one set of collars with its tables. Use **Add** for a second set, e.g. state boreholes next to your own.
 
 | Field in the dialog | What to choose |
 |---|---|
@@ -119,7 +119,7 @@ Client exports differ every time. These are the layouts we see, and what to do w
 | Interval table | your layer table |
 | Intervals: borehole id / top / bottom field | `id`, `top`, `bottom` |
 | Intervals: text field | `lithology` |
-| Add curve table | the curve table, its id and depth fields; tick each curve and give its unit |
+| Add Curve Table | the curve table, its id and depth fields; tick each curve and give its unit |
 
 Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
@@ -132,7 +132,7 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
 ## 5. Styling
 
-- **Borehole style…**, in Context layers… or in the borehole viewer, opens QGIS's own style editor.
+- **Borehole Style…**, in Context Layers… or in the borehole viewer, opens QGIS's own style editor.
   - **Categorized** on `lithology`, then **Classify**, gives one class per value.
   - **Patterns…** (button in the same window) gives every class a colour and an FGDC lithology pattern in one table.
     - Type in a pattern box to search, e.g. "sand" or "607".
@@ -156,14 +156,14 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
 | What you see | Usual cause | Fix |
 |---|---|---|
-| No boreholes on the section | Points are farther from the line than the **buffer** | Raise the buffer in Context layers… |
+| No boreholes on the section | Points are farther from the line than the **buffer** | Raise the buffer in Context Layers… |
 | No boreholes on the section | Wrong coordinate system when you made the points | Make the points again with the right CRS (step 3) |
 | A column but no layers in it | The layer table's IDs don't match the collars (spelling, `BH 1` vs `BH1`) | Compare the ID columns in both attribute tables |
 | Some layers are missing | Empty top or bottom, or a decimal comma in a CSV | Fill in the cells; use the decimal-comma option (step 3) |
 | Boreholes far too high or low | Layer table holds elevations, not depths; or the elevation column uses another height system | Convert to depths; check the heights against the DEM (the red triangle shows large differences) |
 | Red triangle at the top | Elevation column and DEM disagree by more than the tolerance | Check which one is right; hover the top to see both numbers |
-| "No height" in the viewer | No elevation, no DEM, no surface line at that point | Fill in the elevation, or choose a DEM in Context layers… |
-| No curves in the viewer | No curve table set up, or its IDs don't match | Context layers… → Add curve table; compare IDs |
+| "No height" in the viewer | No elevation, no DEM, no surface line at that point | Fill in the elevation, or choose a DEM in Context Layers… |
+| No curves in the viewer | No curve table set up, or its IDs don't match | Context Layers… → Add Curve Table; compare IDs |
 
 ---
 

@@ -291,7 +291,7 @@ def test_plugin_reload_leaves_no_dock_marker_tool_or_source(qgis_app, store_with
         plugin = WorkbenchPlugin(fake_iface)
         plugin.initGui()
         texts = [a.text() for a in plugin.menu.actions()]
-        assert "Show section panel" in texts and "Pick profile on map" in texts
+        assert "Show Section Panel" in texts and "Pick Profile on Map" in texts
         plugin.set_store(st)
         assert _registered_ids().count(SOURCE_ID) == 1
         assert plugin.dock.canvas.sources() == [plugin.source]

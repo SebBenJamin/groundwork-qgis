@@ -1,4 +1,4 @@
-"""Field notes: the form for one note and the Field notes… list of the current profile.
+"""Field notes: the form for one note and the Field Notes… list of the current profile.
 
 Every change is saved to the workbench GeoPackage right away, the map layers are rebuilt
 and the section redraws (``after_change``)."""
@@ -16,7 +16,7 @@ from ..core.field_notes import FieldNote, clamp_to_profile, note_range, stations
 from ..core.interpretation import new_id
 from ..core.numbers import fmt
 
-COLUMNS = ("From (m)", "To (m)", "Stations", "Category", "Text", "Shown")
+COLUMNS = ("From (m)", "To (m)", "Electrodes", "Category", "Text", "Shown")
 
 
 def after_change(store, provider=None, project=None) -> None:
@@ -109,13 +109,13 @@ class FieldNotesDialog(QDialog):
         for spin in (self.s_from, self.s_to):
             spin.setRange(-1.0, 1e6)
             spin.setDecimals(1)
-            spin.setSpecialValueText("")            # -1 in "to": a note at one chainage
+            spin.setSpecialValueText("No end")      # -1 in "To": a note at one chainage
         self.s_to.setValue(-1.0)
         self.first_station, self.last_station = QLineEdit(), QLineEdit()
         self.first_station.setPlaceholderText("e.g. 23")
         self.last_station.setPlaceholderText("e.g. 28 (optional)")
         self.message = QLabel("")
-        add_m, add_st = QPushButton("Add at chainage…"), QPushButton("Add by electrodes…")
+        add_m, add_st = QPushButton("Add at Chainage…"), QPushButton("Add by Electrodes…")
         add_m.clicked.connect(self._add_by_chainage)
         add_st.clicked.connect(lambda: self.add_by_stations(
             self.first_station.text(), self.last_station.text() or None, "", "", ask=True))
@@ -123,10 +123,10 @@ class FieldNotesDialog(QDialog):
         edit.clicked.connect(lambda: self.edit_row(self.table.currentRow()))
         delete.clicked.connect(lambda: self.delete_row(self.table.currentRow()))
         by_m = QHBoxLayout()
-        for w in (QLabel("From"), self.s_from, QLabel("to"), self.s_to, add_m):
+        for w in (QLabel("From"), self.s_from, QLabel("To"), self.s_to, add_m):
             by_m.addWidget(w)
         by_st = QHBoxLayout()
-        for w in (QLabel("Electrodes"), self.first_station, QLabel("to"), self.last_station,
+        for w in (QLabel("Electrodes"), self.first_station, QLabel("To"), self.last_station,
                   add_st):
             by_st.addWidget(w)
         row = QHBoxLayout()

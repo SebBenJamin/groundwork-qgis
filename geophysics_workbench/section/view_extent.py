@@ -1,4 +1,4 @@
-"""What the section panel's "Zoom full" fits: the box of the data, topography, station
+"""What the section panel's "Zoom Full" fits: the box of the data, topography, station
 heights and context (borehole logs, tie strips), and the pixels the geology band and the
 context labels need above it. The pixel figures come from ``context_render``, which draws
 them, so the view and the drawing cannot drift apart."""

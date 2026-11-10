@@ -1,4 +1,4 @@
-"""Field notes… list for the current profile: add (also by electrodes), edit, switch, delete."""
+"""Field Notes… list for the current profile: add (also by electrodes), edit, switch, delete."""
 import numpy as np
 import pytest
 

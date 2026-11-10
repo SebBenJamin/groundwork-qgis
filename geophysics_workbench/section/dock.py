@@ -96,7 +96,8 @@ class SectionDock(QDockWidget):
         self.ve_spin.setToolTip("Vertical exaggeration (Auto: fill the panel)")
         self.ve_spin.valueChanged.connect(self._ve_changed)
         zoom_button = QToolButton()
-        zoom_button.setText("Zoom full")
+        zoom_button.setText("Zoom Full")
+        zoom_button.setToolTip("Show the whole section in the panel")
         zoom_button.clicked.connect(self.zoom_full)
 
         self.canvas = QgsElevationProfileCanvas()

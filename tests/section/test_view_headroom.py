@@ -1,5 +1,5 @@
 """Room for the geology band and the context labels above the section: a fixed pixel
-height, so a short bottom dock still shows them (Important 1), and "Zoom full" covers the
+height, so a short bottom dock still shows them (Important 1), and "Zoom Full" covers the
 context z (borehole logs, tie strips; R19b)."""
 import numpy as np
 import pytest

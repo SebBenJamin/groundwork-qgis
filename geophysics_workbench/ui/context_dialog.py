@@ -95,7 +95,7 @@ class ContextDialog(QDialog):
         self.lines = CrossingLinesGroup(self.project, exclude)
         outer.addWidget(self.lines)
         self.point_rows, box = self._layer_group(
-            "Points near the line", [lyr for lyr in by_geom["point"] if lyr.id() not in exclude])
+            "Points Near the Line", [lyr for lyr in by_geom["point"] if lyr.id() not in exclude])
         outer.addWidget(box)
         self.boreholes = BoreholeEntries(self.project, vectors, by_geom["point"],
                                          current_boreholes, self.applied.emit)
@@ -106,7 +106,7 @@ class ContextDialog(QDialog):
         self.band_combo, self.band_label = QComboBox(), QComboBox()
         fill_layer_combo(self.band_combo, by_geom["polygon"])
         self.band_combo.currentIndexChanged.connect(lambda _i: self._band_layer_changed())
-        band_box = QGroupBox("Surface geology band")
+        band_box = QGroupBox("Surface Geology Band")
         form = QFormLayout(band_box)
         form.addRow("Polygon layer", self.band_combo)
         form.addRow("Label field", self.band_label)

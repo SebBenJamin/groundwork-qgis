@@ -158,7 +158,7 @@ def test_frame_source_draws_only_its_own_profile(store_with_model, qgis_app):
 
 
 def test_plate_look_ignores_panel_notes_switch_and_compare(store_with_model, qgis_app):
-    """Review I1: the panel's "Show field notes" and Compare must not reach a plate."""
+    """Review I1: the panel's "Show Field Notes" and Compare must not reach a plate."""
     from geophysics_workbench.core.field_notes import FieldNote
     from geophysics_workbench.core.context import ContextItems
     from geophysics_workbench.section.data import SectionDataProvider

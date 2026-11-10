@@ -64,23 +64,24 @@ class WorkbenchPlugin:
         main_window = self.iface.mainWindow()
         self.menu = QMenu(MENU_TITLE, main_window)
         self.menu.setObjectName("GeophysicsWorkbenchMenu")
+        self.menu.setToolTipsVisible(True)               # greyed-out entries say why
         main_window.menuBar().addMenu(self.menu)
 
         self.dock = SectionDock(main_window)
         self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         self.dock.hide()
         self.map_link = MapLink(self.iface, self.dock)
-        self.add_action("New workbench project…", self.new_workbench_project)
-        self.add_action("Open workbench project…", self.open_workbench_project)
+        self.add_action("New Workbench Project…", self.new_workbench_project)
+        self.add_action("Open Workbench Project…", self.open_workbench_project)
         self.menu.addSeparator()
-        self.new_profile_action = self.add_action("New profile…", self.new_profile)
-        self.add_model_action = self.add_action("Add ERT model…", self.add_model)
-        self.context_action = self.add_action("Context layers…", self.edit_context)
-        self.ties_action = self.add_action("Profile ties…", self.show_ties_panel)
+        self.new_profile_action = self.add_action("New Profile…", self.new_profile)
+        self.add_model_action = self.add_action("Add ERT Model…", self.add_model)
+        self.context_action = self.add_action("Context Layers…", self.edit_context)
+        self.ties_action = self.add_action("Profile Ties…", self.show_ties_panel)
         self.plates_action = self.add_action("Plates…", self.show_plates)
         self.menu.addSeparator()
-        self.add_action("Show section panel", self.show_section_panel)
-        self.pick_action = self.add_action("Pick profile on map", self.toggle_pick_tool,
+        self.add_action("Show Section Panel", self.show_section_panel)
+        self.pick_action = self.add_action("Pick Profile on Map", self.toggle_pick_tool,
                                            checkable=True)
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
         self.dock.profile_changed.connect(self._update_actions)
@@ -282,17 +283,21 @@ class WorkbenchPlugin:
             project_actions.write_store_entry(project, self.store.path)
 
     def _update_actions(self, *_):
-        if self.new_profile_action is not None:
-            self.new_profile_action.setEnabled(self.store is not None)
-        if self.context_action is not None:
-            self.context_action.setEnabled(self.store is not None)
-        if self.ties_action is not None:
-            self.ties_action.setEnabled(self.store is not None)
-        if self.plates_action is not None:
-            self.plates_action.setEnabled(self.store is not None)
-        if self.add_model_action is not None:
-            self.add_model_action.setEnabled(
-                self.dock is not None and self.dock.current_profile_id() is not None)
+        """Enable what can be used now; a greyed-out entry says why in its tooltip."""
+        no_project = "Open or create a workbench project first"
+        has_store = self.store is not None
+        has_profile = self.dock is not None and self.dock.current_profile_id() is not None
+        for action, ok, why in ((self.new_profile_action, has_store, no_project),
+                                (self.context_action, has_store, no_project),
+                                (self.ties_action, has_store, no_project),
+                                (self.plates_action, has_store, no_project),
+                                (self.pick_action, has_store, no_project),
+                                (self.add_model_action, has_profile,
+                                 "Open a profile in the section panel first")):
+            if action is None:
+                continue
+            action.setEnabled(ok)
+            action.setToolTip(action.text().replace("…", "") if ok else why)
 
     def _warn(self, text: str):
         bar = getattr(self.iface, "messageBar", None)
@@ -352,7 +357,7 @@ class WorkbenchPlugin:
         dialog = NewProfileDialog(self.iface, self.store, provider=self.provider)
         dialog.accepted.connect(lambda: self._profile_created(dialog))
         self._profile_dialog = dialog
-        dialog.show()                                    # non-modal: "Pick on map" needs the map
+        dialog.show()                                    # non-modal: "Pick on Map" needs the map
 
     def _profile_created(self, dialog):
         if dialog.profile is not None and self.dock is not None and self.provider is not None:

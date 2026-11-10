@@ -18,7 +18,7 @@ HINTS = {"method": "e.g. ERT, seismic refraction", "array": "e.g. dipole-dipole,
 
 def _detected(d) -> str:
     p = d.provenance or {}
-    parts = [f"file: {d.source_path}"] if d.source_path else []
+    parts = [f"File: {d.source_path}"] if d.source_path else []
     for key, label in (("rms_percent", "RMS {:.1f} %"), ("chi2", "χ² {:.2f}"),
                        ("n_readings", "{} readings")):
         value = p.get(key)

@@ -1,4 +1,4 @@
-"""The 'Crossing lines' rows of the Context layers dialog.
+"""The 'Crossing Lines' rows of the Context layers dialog.
 
 A row is automatic until the user clicks its tick box: until then it follows the layer's
 visibility in the layer tree, live, and saves ``checked=None``."""
@@ -22,7 +22,7 @@ def _guarded(slot):
         try:
             slot(self, *args)
         except Exception as exc:
-            QgsMessageLog.logMessage(f"Crossing lines dialog: {type(exc).__name__}: {exc}",
+            QgsMessageLog.logMessage(f"Crossing Lines dialog: {type(exc).__name__}: {exc}",
                                      "Geophysics Workbench", Qgis.MessageLevel.Warning)
     run.__name__ = slot.__name__
     return run
@@ -39,6 +39,7 @@ class LineRow:
         fill_field_combo(self.label, layer)
         self.selected_only = QCheckBox("Only selected")
         self.colour = QgsColorButton()
+        self.colour.setToolTip("Colour of this layer's crossing lines on the section")
         default = QColor(*symbol_colour(layer))
         self.colour.setDefaultColor(default)
         self.colour.setColor(default)
@@ -77,7 +78,7 @@ class CrossingLinesGroup(QGroupBox):
     """Rows for every candidate line layer, kept in step with the project while open."""
 
     def __init__(self, project, exclude: set[str]):
-        super().__init__("Crossing lines")
+        super().__init__("Crossing Lines")
         self.project = project
         self.exclude = set(exclude)
         self.rows: dict[str, LineRow] = {}

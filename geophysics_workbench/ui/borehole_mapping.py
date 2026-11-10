@@ -145,7 +145,7 @@ class BoreholeGroup(QGroupBox):
     def __init__(self, project, vector_layers: list[QgsVectorLayer], point_layers,
                  current_boreholes: Callable[[], tuple] = lambda: ([], ""), on_styled=None,
                  on_layer_changed=None):
-        super().__init__("Borehole entry")
+        super().__init__("Borehole Entry")
         self.project = project
         self.vector_layers = vector_layers
         self.current_boreholes, self.on_styled = current_boreholes, on_styled
@@ -161,7 +161,7 @@ class BoreholeGroup(QGroupBox):
         self.lithology_combo = QComboBox()
         fill_layer_combo(self.layer_combo, point_layers)
         fill_layer_combo(self.log_combo, vector_layers)
-        self.style_button = QPushButton("Borehole style…")
+        self.style_button = QPushButton("Borehole Style…")
         self.style_button.setToolTip("Style the intervals with QGIS's own style editor")
         self.style_button.clicked.connect(self._open_style)
         form = QFormLayout(self)
@@ -179,7 +179,7 @@ class BoreholeGroup(QGroupBox):
         # viewer, for the viewer and the section alike; kept unchanged here
         self.curves_box = QVBoxLayout()
         form.addRow(self.curves_box)
-        add_curves = QPushButton("Add curve table")
+        add_curves = QPushButton("Add Curve Table")
         add_curves.clicked.connect(lambda: self.add_curve_table())
         form.addRow(add_curves)
         self.curve_editors: list[CurveTableEditor] = []

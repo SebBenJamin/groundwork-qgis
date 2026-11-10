@@ -202,7 +202,7 @@ def test_menu_action_enabled_only_with_store(qgis_app, fake_iface, store_with_mo
     plugin = WorkbenchPlugin(fake_iface)
     plugin.initGui()
     try:
-        assert plugin.context_action.text() == "Context layers…"
+        assert plugin.context_action.text() == "Context Layers…"
         plugin.set_store(None)
         assert not plugin.context_action.isEnabled()
         plugin.set_store(store)
@@ -432,7 +432,7 @@ def test_curve_table_editor_returns_checked_fields_with_units(project, qgis_app)
 
 
 def test_section_look_is_kept_but_not_edited_here(project, fake_iface):
-    """How the section draws boreholes is set in the borehole viewer; Context layers… keeps
+    """How the section draws boreholes is set in the borehole viewer; Context Layers… keeps
     those settings unchanged on OK and has no switches for them."""
     from geophysics_workbench.core.context_settings import (BoreholeSetting, CurveField,
                                                             CurveTableSetting)
@@ -464,7 +464,7 @@ def test_style_button_disabled_without_interval_table(project, fake_iface):
 
 
 def test_open_dialog_does_not_undo_the_viewers_look(project, fake_iface):
-    """I2: the viewer writes the look while Context layers… is open; Apply/OK keeps it."""
+    """I2: the viewer writes the look while Context Layers… is open; Apply/OK keeps it."""
     from geophysics_workbench.core.context_settings import BoreholeSetting
     from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
     a, _b, logs, _c = _bh_layers(project)

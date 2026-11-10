@@ -321,7 +321,7 @@ class BoreholeViewer(QWidget):
         self.ve_spin.setPrefix("VE ")
         self.ve_spin.setSuffix("×")
         fit_btn = QPushButton("Fit")
-        style_btn = QPushButton("Borehole style…")
+        style_btn = QPushButton("Borehole Style…")
         curve_btn = QPushButton("Curve style…")
         bar = QHBoxLayout()
         for w in (QLabel("Spacing"), self.mode_combo, QLabel("Axis"), self.axis_combo,
@@ -575,7 +575,7 @@ class BoreholeViewer(QWidget):
         entries = [(i, b) for i, b in enumerate(read_settings(self.project).boreholes)
                    if b.log_layer_id]
         if not entries:
-            self.status.setText("No borehole entry has an interval table (Context layers…).")
+            self.status.setText("No borehole entry has an interval table (Context Layers…).")
             return
         if len(entries) == 1:
             self.open_style(*entries[0])
@@ -606,7 +606,7 @@ class BoreholeViewer(QWidget):
             for c in p.curves:
                 names.setdefault(c.key, f"{c.name} {c.unit}".strip())
         if not names:
-            self.status.setText("No curves for these boreholes (Context layers…).")
+            self.status.setText("No curves for these boreholes (Context Layers…).")
             return
         dlg = CurveStyleDialog(self.project, names, self.dock.provider.notify_changed, self)
         dlg.exec()

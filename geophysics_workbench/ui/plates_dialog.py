@@ -1,9 +1,9 @@
 """Plates…: report plates with stacked section frames, each with its own look.
 
 Left the plates; right the selected plate's number, title, template and its frames (profile,
-look, from–to, scale, VE). "Take from section panel" copies the panel's current look into a
-frame; restyling the panel later does not change the plate. "Create / update plates" makes or
-refreshes the layouts; "Export plates…" refreshes them and writes the PDFs."""
+look, from–to, scale, VE). "Take from Section Panel" copies the panel's current look into a
+frame; restyling the panel later does not change the plate. "Create / Update Plates" makes or
+refreshes the layouts; "Export Plates…" refreshes them and writes the PDFs."""
 from __future__ import annotations
 
 import copy
@@ -141,7 +141,7 @@ class PlatesDialog(QDialog):
                                "fit the page; frames of one profile share them.")
         self.frames.cellChanged.connect(self._cell_changed)
         add_frame, remove_frame, take = (QPushButton(t) for t in (
-            "Add frame", "Remove frame", "Take from section panel"))
+            "Add Frame", "Remove Frame", "Take from Section Panel"))
         add_frame.clicked.connect(lambda: self.add_frame())
         remove_frame.clicked.connect(lambda: self.remove_frame(self.frames.currentRow()))
         take.clicked.connect(lambda: self.take_from_panel(max(self.frames.currentRow(), 0)))
@@ -168,11 +168,11 @@ class PlatesDialog(QDialog):
         split.addWidget(self.editor)
         split.setStretchFactor(1, 3)
 
-        details = QPushButton("Plate details…")
+        details = QPushButton("Plate Details…")
         details.clicked.connect(self.edit_details)
-        create = QPushButton("Create / update plates")
+        create = QPushButton("Create / Update Plates")
         create.clicked.connect(lambda: self.create_plates())
-        export = QPushButton("Export plates…")
+        export = QPushButton("Export Plates…")
         export.clicked.connect(lambda: self.export_dialog())
         self.combined = QCheckBox("One combined PDF")
         close = QPushButton("Close")

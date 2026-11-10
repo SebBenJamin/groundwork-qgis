@@ -304,7 +304,7 @@ class SectionDataProvider:
         self.on_context_error: Callable[[str, str], None] | None = None
         #: interpretation version shown on the section; None = the current one
         self.interp_version_id: str | None = None
-        #: draw the profiles' field notes (the section's "Show field notes" switch)
+        #: draw the profiles' field notes (the section's "Show Field Notes" switch)
         self.show_field_notes: bool = True
         #: frozen version drawn faintly behind the shown one; None = no comparison
         self.interp_compare_version_id: str | None = None

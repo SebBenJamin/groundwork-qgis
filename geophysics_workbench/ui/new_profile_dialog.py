@@ -1,7 +1,7 @@
 """'New profile' dialog: from a station file, a selected line feature or two points.
 
 Coordinates typed or picked here are in the workbench project's CRS. The dialog is meant
-to be shown non-modally (``show()``), so "Pick on map" can use the map canvas; it hides
+to be shown non-modally (``show()``), so "Pick on Map" can use the map canvas; it hides
 itself while picking and comes back after the second click.
 """
 from __future__ import annotations
@@ -63,9 +63,9 @@ class NewProfileDialog(QDialog):
         form.addRow("Method", self.method_combo)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._file_tab(), "From station file")
-        self.tabs.addTab(self._line_tab(), "From selected line feature")
-        self.tabs.addTab(self._points_tab(), "From start/end points")
+        self.tabs.addTab(self._file_tab(), "From Station File")
+        self.tabs.addTab(self._line_tab(), "From Selected Line Feature")
+        self.tabs.addTab(self._points_tab(), "From Start/End Points")
         self.tabs.currentChanged.connect(lambda _i: self._update_line_info())
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
@@ -117,7 +117,7 @@ class NewProfileDialog(QDialog):
         page = QWidget()
         self.x1, self.y1, self.x2, self.y2 = (_spin(-1e9, 1e9, 0.0) for _ in range(4))
         self.points_spacing = _spin(0.0, 1e4, 5.0, suffix=" m")
-        pick = QPushButton("Pick on map")
+        pick = QPushButton("Pick on Map")
         pick.setToolTip("Click the start point, then the end point on the map")
         pick.clicked.connect(self.start_pick)
         form = QFormLayout(page)
@@ -314,7 +314,7 @@ class NewProfileDialog(QDialog):
         twins apart by their line (the section panel shows the profile it opened)."""
         names = ", ".join(f"“{p.name or p.id}”" for p in twins)
         self.last_warning = (f"Profile “{profile.name}” lies on the same line as {names}. "
-                             "Pick profile on map and QGIS's own elevation profile tool "
+                             "Pick Profile on Map and QGIS's own elevation profile tool "
                              "cannot tell them apart; choose it in the section panel's "
                              "Profile list.")
         bar = self.iface.messageBar() if hasattr(self.iface, "messageBar") else None
