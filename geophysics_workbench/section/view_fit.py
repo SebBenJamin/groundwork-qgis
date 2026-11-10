@@ -10,6 +10,7 @@ from qgis.PyQt.QtCore import QTimer
 
 PAD = 0.06                      # fraction of the data extent added on each side by zoom_full
 MAX_HEADROOM = 0.6              # of the plot height at most goes to the room above the data
+AUTO_MIN, AUTO_MAX = 0.5, 50.0  # the range "Auto" chooses the vertical exaggeration from
 
 Extent = tuple[float, float, float, float]
 
@@ -77,6 +78,7 @@ class ViewFitter:
         s0, s1, z0, z1 = extent
         ds, dz = (s1 - s0) * (1 + 2 * PAD), (z1 - z0) * (1 + 2 * PAD)
         sc = (s0 + s1) / 2
+        auto = self.ve_spin.value() <= self.ve_spin.minimum()     # "Auto": fill the panel
         ve = self.ve_spin.value()
         need = self._headroom()
         canvas = self.canvas
@@ -87,6 +89,8 @@ class ViewFitter:
             if w < 20 or h < 20:
                 w, h = max(canvas.width() - 80.0, 200.0), max(canvas.height() - 40.0, 100.0)
             room = min(need, MAX_HEADROOM * h)  # pixels kept free above the padded data
+            if auto:                            # the exaggeration that fills both ways
+                ve = min(max((ds / w) / (dz / (h - room)), AUTO_MIN), AUTO_MAX)
             # elevation per pixel; distance per pixel = ve * epp
             epp = max(dz / (h - room), ds / (w * ve))
             dpp = ve * epp
@@ -95,6 +99,9 @@ class ViewFitter:
                                        zc - epp * h / 2, zc + epp * h / 2)
         canvas.setAxisScaleRatio(ve)
         canvas.setLockAxisScales(True)
+        self.ve_spin.setToolTip(f"Vertical exaggeration: Auto, now {ve:.1f} × (fills the "
+                                f"panel)" if auto else "Vertical exaggeration (Auto: fill "
+                                "the panel)")
         self.fit_view = self._view()
         self._on_fitted()
 
@@ -103,8 +110,8 @@ class ViewFitter:
         return d.lower(), d.upper(), e.lower(), e.upper()
 
     def ve_changed(self, value: float) -> None:
-        if self.pending:
-            self.zoom_full()                    # untouched view: keep showing everything
+        if self.pending or value <= self.ve_spin.minimum():
+            self.zoom_full()                    # untouched view, or Auto: fit again
         else:
             self.canvas.setAxisScaleRatio(value)
             self._on_fitted()

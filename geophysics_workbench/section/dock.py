@@ -30,7 +30,8 @@ from .view_extent import data_extent, headroom_px
 from .view_fit import ViewFitter
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
-DEFAULT_VE = 2.0
+AUTO_VE = 0.0                   # the VE box's "Auto": the exaggeration that fills the panel
+DEFAULT_VE = AUTO_VE
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
 HINT_HOVER = "Move the mouse over the section to read values."
@@ -85,12 +86,13 @@ class SectionDock(QDockWidget):
         self.topo = TopoSwitch(self)
         self.topo_combo = self.topo.combo
         self.ve_spin = QDoubleSpinBox()
-        self.ve_spin.setRange(1.0, 20.0)
+        self.ve_spin.setRange(AUTO_VE, 20.0)
         self.ve_spin.setDecimals(1)
         self.ve_spin.setSingleStep(0.5)
+        self.ve_spin.setSpecialValueText("Auto")     # the minimum: fill the panel
         self.ve_spin.setValue(DEFAULT_VE)
         self.ve_spin.setSuffix(" ×")
-        self.ve_spin.setToolTip("Vertical exaggeration")
+        self.ve_spin.setToolTip("Vertical exaggeration (Auto: fill the panel)")
         self.ve_spin.valueChanged.connect(self._ve_changed)
         zoom_button = QToolButton()
         zoom_button.setText("Zoom full")
@@ -140,8 +142,19 @@ class SectionDock(QDockWidget):
         top.addWidget(QLabel("Vertical exaggeration"))
         top.addWidget(self.ve_spin)
         top.addWidget(zoom_button)
+        # an empty panel says what to do instead of showing empty axes
+        self.empty_hint = QLabel(HINT_NO_PROFILE)
+        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_hint.setWordWrap(True)
+        self.empty_hint.setMinimumHeight(180)
+        view = QWidget()
+        view_layout = QVBoxLayout(view)
+        view_layout.setContentsMargins(0, 0, 0, 0)
+        view_layout.addWidget(self.canvas)
+        view_layout.addWidget(self.empty_hint)
+        self.canvas.hide()
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.canvas)
+        splitter.addWidget(view)
         splitter.addWidget(self.layer_list)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
@@ -267,6 +280,8 @@ class SectionDock(QDockWidget):
             self.readout.setText(MISSING_PROFILE)
             return False
         self._profile = profile
+        self.empty_hint.hide()
+        self.canvas.show()
         self.provider.active_profile_id = profile.id    # wins over profiles on the same line
         self._layers = self._ctx = None
         self._fill_combo()
@@ -290,6 +305,8 @@ class SectionDock(QDockWidget):
     def _close_profile(self) -> None:
         self.hide_details_popup()
         self._profile = None
+        self.canvas.hide()
+        self.empty_hint.show()
         if self.provider is not None:
             self.provider.active_profile_id = None
         self._layers = self._topo = self._coverage = self._ctx = None
@@ -497,3 +514,5 @@ class SectionDock(QDockWidget):
         else:
             text = getattr(self, "_tool_hint", None) or HINT_HOVER
         self.readout.setText(text)
+        if self._profile is None:
+            self.empty_hint.setText(text)

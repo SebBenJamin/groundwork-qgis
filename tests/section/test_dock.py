@@ -104,7 +104,9 @@ def test_open_profile_zooms_to_data_and_topography_with_exaggeration(qgis_app, s
                                                                      make_dock):
     st, p, _ = store_with_model
     dock = make_dock(st)
-    assert dock.ve_spin.value() == 2 and dock.ve_spin.minimum() == 1 and dock.ve_spin.maximum() == 20
+    assert dock.ve_spin.value() == 0 and dock.ve_spin.specialValueText() == "Auto"
+    assert dock.ve_spin.maximum() == 20
+    dock.ve_spin.setValue(2.0)                  # a typed exaggeration is kept exactly
     dock.open_profile(p.id)
     d, e = dock.canvas.visibleDistanceRange(), dock.canvas.visibleElevationRange()
     assert d.lower() <= 0 and d.upper() >= p.chainage.length          # whole profile
