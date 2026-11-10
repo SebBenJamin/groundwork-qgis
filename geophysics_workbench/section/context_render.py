@@ -218,13 +218,23 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
     # the visible plot's top (the panel and plates clip to it): a label above it is left
     # out rather than cut off
     top = painter.clipBoundingRect().top() if painter.hasClipping() else None
-    for (item, s, text, rgb), x, row in zip(specs, xs, place_labels(spans, LABEL_ROWS)):
-        if row is None:                                 # no room: left out, not on top
-            continue
-        y = surface_y(wt, surface, s) - far - mm(rc, 1.0) - lanes - row * h
-        if top is not None and y - h < top:
-            continue
-        out[id(item)] = Label(x, y, text, rgb)
+    # rows follow the ground under each label, so over a dip two different rows can meet:
+    # every candidate row is checked against the rectangles already placed
+    placed: list[tuple[float, float, float, float]] = []
+    order = sorted(range(len(specs)), key=lambda i: (spans[i][2], spans[i][0]))
+    for i in order:
+        item, s, text, rgb = specs[i]
+        x0, x1 = spans[i][0], spans[i][1]
+        base = surface_y(wt, surface, s) - far - mm(rc, 1.0) - lanes
+        for row in range(LABEL_ROWS):
+            y = base - row * h
+            if top is not None and y - h < top:
+                break                                   # higher rows are further out of view
+            if all(x1 <= a0 or x0 >= a1 or y <= b0 or y - h >= b1
+                   for a0, b0, a1, b1 in placed):
+                placed.append((x0, y - h, x1, y))
+                out[id(item)] = Label(xs[i], y, text, rgb)
+                break                                   # no room in any row: left out
     return out
 
 

@@ -77,3 +77,31 @@ def test_station_numbers_never_run_together():
     assert keep[0] and all(b - a >= 18.0 + 6.0 for a, b in zip(drawn, drawn[1:]))
     reverse = station_labels_to_draw(list(reversed(spans)))  # a profile drawn end to start
     assert sum(reverse) == sum(keep)
+
+
+def test_labels_over_sloping_ground_do_not_overlap(qgis_app):
+    """Usability review 2: on a plate "RK12 (−1 m)" and "RK13 (−1 m)" overlapped — rows
+    follow the ground under each label, so over a dip two rows meet."""
+    from qgis.core import QgsRenderContext
+    from qgis.PyQt.QtGui import QImage, QPainter, QTransform
+
+    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
+    from geophysics_workbench.section.context_render import plan_labels, set_label_font
+    img = QImage(900, 500, QImage.Format.Format_ARGB32)
+    painter = QPainter(img)
+    try:
+        rc = QgsRenderContext.fromQPainter(painter)
+        wt = QTransform(10, 0, 0, -10, 0, 250)
+        items = ContextItems(points=[ProjectedPoint(s, 0.5, f"RK{12 + i} (-1 m)", "point")
+                                     for i, s in enumerate((35.0, 41.0, 44.0, 47.0))])
+        surface = (np.array([0.0, 35.0, 44.0, 80.0]), np.array([0.0, 0.0, -2.2, -2.2]))
+        plan = plan_labels(painter, rc, wt, items, surface)
+        set_label_font(painter, rc)
+        fm = painter.fontMetrics()
+        rects = [(lab.x - fm.horizontalAdvance(lab.text) / 2, lab.y - fm.height(),
+                  lab.x + fm.horizontalAdvance(lab.text) / 2, lab.y) for lab in plan.values()]
+        for i, a in enumerate(rects):
+            for b in rects[i + 1:]:
+                assert not (a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]), (a, b)
+    finally:
+        painter.end()
