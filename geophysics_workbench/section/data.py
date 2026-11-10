@@ -105,6 +105,12 @@ class SectionSnapshot:
     interp_compare: list = field(default_factory=list)
 
 
+def starts_hidden(d, datasets) -> bool:
+    """Measured data start hidden when the profile has a model: the readings' dots would
+    cover the model (a misfit layer is added on purpose and shows)."""
+    return d.kind == "ert_measured" and any(o.kind == "ert_model" for o in datasets)
+
+
 def _copy_style(style: LayerStyle) -> LayerStyle:
     return replace(style, scale=None if style.scale is None else replace(style.scale))
 
@@ -478,6 +484,8 @@ class SectionDataProvider:
             if mesh.readings is not None and d.id not in self._readings_seen:
                 self._readings_seen.add(d.id)
                 style.mode = "points"              # a pseudosection: one marker per reading
+                if starts_hidden(d, self.store.datasets(d.profile_id)):
+                    style.visible = False          # don't cover the model; tick to show
             if style.scale is None:
                 style.scale = _auto_scale(mesh, d)
         except FileNotFoundError:

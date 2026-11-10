@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsLineString, QgsPoint,
-                       QgsProfilePoint, QgsProject)
+                       QgsProfilePoint, QgsProject, QgsSettings)
 from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
@@ -31,6 +31,7 @@ from .view_fit import ViewFitter
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
 AUTO_VE = 0.0                   # the VE box's "Auto": the exaggeration that fills the panel
+SPLITTER_KEY = "geophysics_workbench/section/splitter"
 DEFAULT_VE = AUTO_VE
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
@@ -159,6 +160,12 @@ class SectionDock(QDockWidget):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
         splitter.setCollapsible(0, False)
+        self.splitter = splitter
+        state = QgsSettings().value(SPLITTER_KEY)       # the width the user dragged to
+        if state is not None:
+            splitter.restoreState(state)
+        splitter.splitterMoved.connect(
+            lambda *_a: QgsSettings().setValue(SPLITTER_KEY, splitter.saveState()))
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 4, 4, 4)

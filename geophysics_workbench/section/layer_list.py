@@ -13,8 +13,8 @@ from .data import SectionLayer, layer_name
 from .readout import format_value, unit_label
 from .scale_dialog import DisplayDialog, ramp_icon
 
-MIN_WIDTH = 300
-MAX_HINT_WIDTH = 480            # preferred width: full layer names, up to this
+MIN_WIDTH = 240
+MAX_HINT_WIDTH = 300            # preferred width: full layer names, up to this (the section gets the room)
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
 REMOVE_TEXT = "Remove from profile…"
 #: style fields the Display dialog edits
@@ -39,18 +39,42 @@ def _exec_once(menu: QMenu, pos) -> None:
     menu.deleteLater()
 
 
+class _ElidedCheck(QCheckBox):
+    """A check box whose text ends in "…" when cut (the full name is in the tooltip)."""
+
+    def __init__(self, text: str):
+        super().__init__(text)
+        self._full = text
+
+    def full_text(self) -> str:
+        return self._full
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        cut = self.fontMetrics().horizontalAdvance(self.text())
+        full = self.fontMetrics().horizontalAdvance(self._full)
+        return QSize(hint.width() - cut + full, hint.height())
+
+    def resizeEvent(self, event):
+        indicator = self.style().pixelMetric(self.style().PixelMetric.PM_IndicatorWidth) + 8
+        room = max(10, self.width() - indicator)
+        super().setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight,
+                                                      room))
+        super().resizeEvent(event)
+
+
 class _LayerRow(QWidget):
     def __init__(self, layer: SectionLayer, owner: "LayerList"):
         super().__init__()
         self.dataset_id = layer.dataset.id
         self._owner = owner
-        self.check = QCheckBox(layer_name(layer.dataset))
+        self.check = _ElidedCheck(layer_name(layer.dataset))
         self.check.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.check.setMinimumWidth(MIN_NAME_WIDTH)
         self.check.toggled.connect(lambda on: owner.set_visible(self.dataset_id, on))
         self.opacity = QSlider(Qt.Orientation.Horizontal)
         self.opacity.setRange(0, 100)
-        self.opacity.setFixedWidth(80)
+        self.opacity.setFixedWidth(60)
         self.opacity.setToolTip("Opacity")
         self.opacity.valueChanged.connect(self._opacity_changed)
         self.opacity.sliderReleased.connect(self._opacity_changed)

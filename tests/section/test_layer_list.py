@@ -64,7 +64,12 @@ def test_layer_list_widens_in_its_splitter_for_full_names(qgis_app, store_with_m
         ll.set_layers(prov, layers)
         qgis_app.processEvents()
         [row] = ll._rows.values()
-        assert row.check.width() >= row.check.sizeHint().width()
+        from geophysics_workbench.section.layer_list import MAX_HINT_WIDTH, MIN_NAME_WIDTH
+        # usability round 1: the list stays at most 300 px wide; a longer name is cut and the
+        # tooltip has it all
+        assert splitter.sizes()[1] <= MAX_HINT_WIDTH
+        assert row.check.width() >= MIN_NAME_WIDTH
+        assert "P2 P2_model_it2.dat" in row.check.toolTip()
         assert splitter.sizes()[0] > 800                         # the section keeps the rest
     finally:
         splitter.close()
