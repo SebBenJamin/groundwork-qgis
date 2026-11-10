@@ -35,7 +35,7 @@ def test_missing_source_reports_error_not_raise(store_with_model):
     st, p, src = store_with_model
     src.unlink()
     [layer] = SectionDataProvider(st).layers(p.id)
-    assert layer.mesh is None and layer.error.startswith("source missing")
+    assert layer.mesh is None and "file not found" in layer.error
 
 
 # -- additional behaviour -------------------------------------------------------------------
@@ -104,7 +104,7 @@ def test_depth_model_without_topography_is_an_error(tmp_path):
     assert prov.topography(p.id) is None
     [layer] = prov.layers(p.id)
     assert layer.mesh is None
-    assert layer.error == "depth model needs station elevations or a DEM"
+    assert "depth model needs station elevations or a DEM" in layer.error
 
 
 def test_reader_value_error_becomes_layer_error(store_with_model, tmp_path):
@@ -239,7 +239,7 @@ def test_identify_skips_error_layers_and_nan_cells(store_with_model, tmp_path):
                             "", "r2_res_dat", {}, {}, name="top"))   # drawn on top, missing
     prov = SectionDataProvider(st)
     layers = prov.layers(p.id)
-    assert layers[1].error.startswith("source missing")
+    assert "file not found" in layers[1].error
     assert [h["name"] for h in prov.identify(p.id, 5.0, -2.0)] == ["P1 model"]
 
     verts = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=float)
@@ -257,7 +257,7 @@ def test_relative_source_path_resolves_against_store_folder(store_with_model, tm
     st.save_dataset(d)
     prov = SectionDataProvider(st)
     [layer] = prov.layers(p.id)
-    assert layer.error.startswith("source missing") and "models" in layer.error
+    assert "file not found" in layer.error and "models" in layer.error
     (tmp_path / "models").mkdir()
     shutil.move(src, tmp_path / "models" / "f001_res.dat")
     [layer] = prov.layers(p.id)

@@ -185,7 +185,7 @@ def test_layer_errors_shown_in_red(qgis_app, store_with_model, make_dock):
     st, p, src = store_with_model
     src.unlink()
     dock = make_dock(st); dock.open_profile(p.id)
-    assert "P1 model: source missing" in dock.errors.text()
+    assert "P1 model:" in dock.errors.text() and "file not found" in dock.errors.text()
     assert "red" in dock.errors.styleSheet() or "#" in dock.errors.styleSheet()
     assert not dock.errors.isHidden()
 

@@ -15,6 +15,7 @@ from typing import Callable
 import numpy as np
 
 from .. import readers
+from ..readers.errors import plain_error
 from ..core.colors import ColorScale
 from ..core.context import ContextItems
 from ..core.coverage import station_coverage
@@ -489,14 +490,16 @@ class SectionDataProvider:
             if style.scale is None:
                 style.scale = _auto_scale(mesh, d)
         except FileNotFoundError:
-            return SectionLayer(d, None, style, f"source missing: {self.source_path(d)}")
+            src = self.source_path(d)
+            return SectionLayer(d, None, style, plain_error(
+                FileNotFoundError(2, "No such file", src), src))
         except ValueError as exc:
-            return SectionLayer(d, None, style, str(exc))
+            return SectionLayer(d, None, style, plain_error(exc, self.source_path(d)))
         except OSError as exc:
-            return SectionLayer(d, None, style,
-                                f"cannot read {self.source_path(d)}: {exc.strerror or exc}")
+            return SectionLayer(d, None, style, plain_error(
+                OSError(f"cannot read the file ({exc.strerror or exc})"), self.source_path(d)))
         except Exception as exc:                # never raise from layers()
-            return SectionLayer(d, None, style, f"{type(exc).__name__}: {exc}")
+            return SectionLayer(d, None, style, plain_error(exc, self.source_path(d)))
         return SectionLayer(d, mesh, style, None)
 
     def _assemble(self, profile_id: str):

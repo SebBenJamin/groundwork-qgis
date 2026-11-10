@@ -11,8 +11,10 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSp
 from .. import readers
 from ..core.coverage import overhang_message
 from ..core.model import x_to_chainage
+from ..readers.errors import plain_error
 from .project_actions import add_model
 
+CHOOSE_OTHER = "Choose another file, or another format above."
 Z_ITEMS = [("Choose…", None), ("Elevation", "elevation"), ("Depth below surface", "depth")]
 FILE_FILTER = ("Model and data files (*.dat *.txt *.xyz *.vtk *.data *.ohm);;"
                "All files (*)")
@@ -227,11 +229,11 @@ class AddModelDialog(QDialog):
         options.update(self._reader_options())
         try:
             self._result = readers.read(path, reader=reader, **options)
-        except FileNotFoundError:
-            self._show_error(f"File not found: {path}")
+        except FileNotFoundError as exc:
+            self._show_error(plain_error(exc, path, CHOOSE_OTHER))
             return False
         except (ValueError, OSError) as exc:
-            self._show_error(str(exc))
+            self._show_error(plain_error(exc, path, CHOOSE_OTHER))
             return False
         self._key = (path, reader, z_kind)
         return True
@@ -281,11 +283,11 @@ class AddModelDialog(QDialog):
             self.dataset = add_model(self.store, self.profile_id, self.set_combo.currentData(),
                                      Path(path), self.reader_combo.currentData(), options,
                                      self.name_edit.text().strip(), provider=self.provider)
-        except FileNotFoundError:
-            self._error(f"File not found: {path}")
+        except FileNotFoundError as exc:
+            self._error(plain_error(exc, path, CHOOSE_OTHER))
             return
         except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
-            self._error(str(exc))
+            self._error(plain_error(exc, path, CHOOSE_OTHER))
             return
         super().accept()
 
