@@ -8,15 +8,20 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                  QPushButton, QRadioButton, QVBoxLayout)
 
-from ..core.colors import COLORMAPS, ColorScale
+from ..core.colors import ColorScale
 
 LIMIT = 1e12            # spin box range for linear scales
 LOG_MIN = 0.001         # smallest minimum on a log scale (= the spin boxes' 3 decimals)
 
 
-def ramp_icon(cmap: str, width: int = 64, height: int = 14) -> QIcon:
-    """A horizontal swatch of ``cmap``."""
-    rgba = ColorScale(cmap, 0.0, 1.0, False).rgba(np.linspace(0.0, 1.0, width))
+def ramp_icon(scale, width: int = 64, height: int = 14) -> QIcon:
+    """A horizontal swatch of a ``ColorScale`` (or an old colour-map name)."""
+    from dataclasses import replace
+    if isinstance(scale, str):
+        base = ColorScale(scale, 0.0, 1.0, False)
+    else:
+        base = replace(scale, vmin=0.0, vmax=1.0, log=False)
+    rgba = base.rgba(np.linspace(0.0, 1.0, width))
     pix = QPixmap(width, height)
     painter = QPainter(pix)
     try:
@@ -47,12 +52,21 @@ class ColorScaleDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self._values = None if values is None else np.asarray(values, dtype=float)
+        self._unit = unit
         scale = scale or ColorScale()
 
-        self.cmap_combo = QComboBox()
-        for name in COLORMAPS:
-            self.cmap_combo.addItem(ramp_icon(name), name)
-        self.cmap_combo.setCurrentText(scale.cmap)
+        # QGIS's own colour ramp button (QGIS ramps, the user's ramps, inverted, edit);
+        # the scale changes to the chosen ramp only when the user picks one
+        from qgis.gui import QgsColorRampButton
+
+        from .ramps import scale_ramp
+        self._scale = scale
+        self.ramp_button = QgsColorRampButton()
+        self.ramp_button.setShowNull(False)
+        self.ramp_button.setColorRamp(scale_ramp(scale))
+        self.ramp_button.setToolTip("Colour ramp: click for the QGIS ramps (and your own)")
+        self._ramp_changed = False
+        self.ramp_button.colorRampChanged.connect(self._ramp_picked)
         self.min_spin, self.max_spin = _spin(), _spin()
         if unit:
             self.min_spin.setSuffix(f" {unit}")
@@ -73,7 +87,7 @@ class ColorScaleDialog(QDialog):
         self.message.hide()
 
         form = QFormLayout()
-        form.addRow("Colour map", self.cmap_combo)
+        form.addRow("Colour ramp", self.ramp_button)
         form.addRow("Minimum", self.min_spin)
         form.addRow("Maximum", self.max_spin)
         row = QHBoxLayout()
@@ -97,15 +111,33 @@ class ColorScaleDialog(QDialog):
         for spin in (self.min_spin, self.max_spin):
             spin.setMinimum(low)
 
+    def _mode_changed(self) -> None:
+        group = getattr(self, "contours_group", None)
+        if group is not None:
+            group.setEnabled("contours" in (self.mode_combo.currentData() or ""))
+
+    def _step_unit(self) -> None:
+        if hasattr(self, "step_spin"):
+            self.step_spin.setSuffix(" decades" if self.log_check.isChecked()
+                                     else (f" {self._unit}" if self._unit else ""))
+
+    def _ramp_picked(self, *_args) -> None:
+        self._ramp_changed = True
+
     def scale(self) -> ColorScale:
         """The edited scale; raises ``ValueError`` when it is not valid."""
-        return ColorScale(self.cmap_combo.currentText(), self.min_spin.value(),
-                          self.max_spin.value(), self.log_check.isChecked())
+        from .ramps import with_ramp
+        old = self._scale
+        scale = ColorScale(old.cmap, self.min_spin.value(), self.max_spin.value(),
+                           self.log_check.isChecked(), old.ramp, old.lut)
+        if self._ramp_changed and self.ramp_button.colorRamp() is not None:
+            scale = with_ramp(scale, self.ramp_button.colorRamp())
+        return scale
 
     def auto(self) -> None:
         try:
             s = ColorScale.auto(self._values, log=self.log_check.isChecked(),
-                                cmap=self.cmap_combo.currentText())
+                                cmap=self._scale.cmap)
         except ValueError as exc:
             self._show_error(str(exc))
             return
@@ -217,6 +249,13 @@ class DisplayDialog(ColorScaleDialog):
         self.step_spin.setEnabled(style.contour_step is not None)
         form.addRow(self.auto_step)
         form.addRow("Spacing", self.step_spin)
+        self.contours_group = contours
+        # contour settings only matter when contours are drawn; the spacing's unit follows
+        # the scale (decades on a logarithmic one)
+        self.mode_combo.currentIndexChanged.connect(lambda _i: self._mode_changed())
+        self.log_check.toggled.connect(lambda _on: self._step_unit())
+        self._mode_changed()
+        self._step_unit()
 
         self.coverage_group = QGroupBox("Coverage")
         form = QFormLayout(self.coverage_group)

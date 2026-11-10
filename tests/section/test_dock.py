@@ -199,7 +199,7 @@ def test_scale_dialog_auto_apply_and_validation(qgis_app, store_with_model, make
     ds_id = st.datasets(p.id)[0].id
     [layer] = dock.provider.layers(p.id)
     dlg = ColorScaleDialog(ColorScale("viridis", 1, 10, True), layer.mesh.values, "Ω·m")
-    assert [dlg.cmap_combo.itemText(i) for i in range(dlg.cmap_combo.count())] == COLORMAPS
+    assert dlg.ramp_button.colorRamp() is not None                    # QGIS colour ramps
     applied = []
     dlg.applied.connect(applied.append)
     dlg.auto()

@@ -108,7 +108,7 @@ class _LayerRow(QWidget):
         self.scale_button.setEnabled(ok)
         self.scale_button.setText(_scale_text(layer))
         if style.scale is not None:
-            self.scale_button.setIcon(ramp_icon(style.scale.cmap, 40, 10))
+            self.scale_button.setIcon(ramp_icon(style.scale, 40, 10))
         d = layer.dataset
         tip = f"{layer_name(d)} (version {d.version})\n{d.source_path}"
         self.check.setToolTip(tip if ok else f"{tip}\n\n{layer.error}")

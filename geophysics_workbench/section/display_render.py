@@ -57,7 +57,7 @@ def _key(layer, topo, shape):
     cov = getattr(mesh, "coverage", None)
     return (layer.dataset.id, hash(mesh.vertices.tobytes()), hash(mesh.values.tobytes()),
             None if cov is None else hash(cov.tobytes()), topo_key, shape,
-            (sc.cmap, sc.vmin, sc.vmax, sc.log), st.mode, st.contour_step,
+            (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp), st.mode, st.contour_step,
             st.fade_coverage, st.coverage_threshold, st.fade_mode)
 
 

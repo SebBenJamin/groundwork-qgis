@@ -15,8 +15,14 @@ class ColorScale:
     vmin: float = 1.0
     vmax: float = 1000.0
     log: bool = True
+    #: a QGIS colour ramp the user chose (its XML, to edit it again) and its colours as a
+    #: 256-entry table (r, g, b, a) made on the main thread; empty / None: ``cmap`` draws
+    ramp: str = ""
+    lut: tuple | None = None
 
     def __post_init__(self):
+        if self.lut is not None:
+            self.lut = tuple(tuple(int(c) for c in row) for row in self.lut)
         if self.cmap not in COLORMAPS:
             raise ValueError(f"Unknown colormap {self.cmap!r}; choose one of {COLORMAPS}")
         if not self.vmax > self.vmin:
@@ -37,7 +43,11 @@ class ColorScale:
             else:
                 t = (v - self.vmin) / (self.vmax - self.vmin)
         t = np.clip(np.where(valid, t, 0.0), 0.0, 1.0)
-        out = np.rint(colormaps[self.cmap](t) * 255).astype(np.uint8)
+        if self.lut:
+            table = np.asarray(self.lut, dtype=np.uint8).reshape(-1, 4)
+            out = table[np.rint(t * (len(table) - 1)).astype(int)].copy()
+        else:
+            out = np.rint(colormaps[self.cmap](t) * 255).astype(np.uint8)
         out[~valid, :] = 0
         return out
 
