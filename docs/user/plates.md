@@ -20,7 +20,7 @@ Field notes are what the crew experienced along the line: "electrodes 23–28 di
 
 **Show Field Notes**, in the same menu, switches all notes off or on in the panel.
 
-On the section, a note shows as an orange mark (a stretch as a bar) with the first line of its text. The full text is shown when you hover or click. A stretch that runs past the ends of the profile is cut to the profile, and the note says so.
+On the section, a note at one place shows as an orange mark down to the ground; a stretch as a bar in its own lane just above the ground (overlapping stretches get separate lanes). Each has a label with the first line of its text. The full text is shown when you hover or click. A stretch that runs past the ends of the profile is cut to the profile, and the note says so.
 
 **On the map**, the layers "Field notes" and "Field notes (stretches)" in the Geophysics Workbench group show the notes. They are read-only and are updated when you change a note.
 
@@ -66,8 +66,9 @@ Open **Geophysics Workbench → Plates…**.
 
 ### Fit to page
 
-- The **horizontal scale** is the largest standard scale (1:100, 1:200, 1:250, 1:500, 1:1000, 1:2000, 1:2500, 1:5000, 1:10000, 1:20000, 1:25000, 1:50000) at which the frame's range fits its width.
-- The **VE** is the largest standard value (1, 1.5, 2, 2.5, 3, 4, 5, 10, 20) at which the depth range fits the frame's height.
+- The **horizontal scale** is the largest standard scale (1:100, 1:125, 1:150, 1:200, 1:250, 1:300, 1:400, 1:500, 1:750, 1:1000, 1:1250, 1:1500, 1:2000, 1:2500, 1:3000, 1:4000, 1:5000, 1:7500, 1:10000 … 1:50000) at which the frame's range fits its width and its depth fits the height.
+- The **VE** is the largest standard value (1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 20) at which the depth range fits the frame's height. Room for the labels above the ground is kept.
+- A frame that does not fit even at 1:50000 says so in its provenance line, and **Create / Update Plates** says so too. Set a From/To range or a scale.
 - **Frames of the same profile** share scale, range and VE, so features line up vertically.
 - The provenance line under each frame states the scale and the VE ("1:2500 · VE 2×"), plus the start and end coordinates of the profile.
 

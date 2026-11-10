@@ -4,13 +4,14 @@ qgisMinimumVersion=4.2
 supportsQt6=True
 description=Georeferenced geophysical profiles, sections and interpretation
 about=Load, display and interpret georeferenced geophysical profiles and sections (e.g. ERT) in QGIS.
-version=0.6.0
+version=0.7.0
 author=Sebastian Benjamin
 email=8215349+SebBenJamin@users.noreply.github.com
 license=GPL-2.0-or-later
 experimental=True
 icon=icons/workbench.svg
-changelog=0.6.0: field notes along profiles (Note tool, list, map layers), Dataset info for provenance, report plates (Plates…: A4/A3 templates, stacked frames with their own look, fit to page, colour bars, interpretation and borehole legends, mini-map, title block, vector PDF export)
+changelog=0.7.0: usability round 1 - undo for all drawing (Ctrl+Z/Y), right-click finishes, Auto vertical exaggeration fills the panel, no overlapping labels, QGIS wording and locale numbers, Context Layers in tabs, rename/delete profiles, Pick on Map button, QGIS colour ramps, plain error messages
+    0.6.0: field notes along profiles (Note tool, list, map layers), Dataset info for provenance, report plates (Plates…: A4/A3 templates, stacked frames with their own look, fit to page, colour bars, interpretation and borehole legends, mini-map, title block, vector PDF export)
     0.5.1: fixes - viewer options, curve style checks, log scales, readout values, switched-off classes, swapped intervals logged, hover over curve tracks, SVG path unload, decimal commas
     0.5.0: borehole viewer window (several boreholes side by side, even or true spacing, zoom, log curves), boreholes styled through QGIS (Borehole style, FGDC patterns) on the section and in the viewer, several borehole entries in Context layers
     0.4.5: measured data and inversion misfit as section layers (pyGIMLi/BERT data + response, R2/ResIPy f001_err.dat), Points mode, misfit summary
