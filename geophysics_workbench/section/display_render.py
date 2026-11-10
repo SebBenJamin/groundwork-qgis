@@ -84,6 +84,7 @@ def _field_image(grid, rgba) -> tuple[QImage, QRectF]:
 
 
 def _contours(grid, scale, step) -> list:
+    from ..core.numbers import fmt_trim
     out = []
     for level, lines in contour_lines(grid, default_levels(scale, step), scale.log):
         if not lines:
@@ -94,7 +95,7 @@ def _contours(grid, scale, step) -> list:
             path.moveTo(QPointF(*line[0]))
             for p in line[1:]:
                 path.lineTo(QPointF(*p))
-        out.append((QColor(r, g, b).darker(CONTOUR_DARKER), path, lines, f"{level:g}"))
+        out.append((QColor(r, g, b).darker(CONTOUR_DARKER), path, lines, fmt_trim(level, 3)))
     return out
 
 

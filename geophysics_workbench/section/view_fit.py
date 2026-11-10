@@ -123,8 +123,13 @@ class ViewFitter:
             self._on_fitted()
 
     def _refit(self) -> None:
-        if self._extent() is not None:
-            self.ve_changed(self.ve_spin.value())
+        """After a resize: re-fit an untouched view; once the user has zoomed or panned,
+        keep their view (also with Auto — only choosing Auto in the box re-fits then)."""
+        if self._extent() is None:
+            return
+        if self.ve_spin.value() <= self.ve_spin.minimum() and not self.pending:
+            return
+        self.ve_changed(self.ve_spin.value())
 
     def jobs_changed(self, count: int) -> None:
         self.jobs = count

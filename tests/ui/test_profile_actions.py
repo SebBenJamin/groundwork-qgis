@@ -30,7 +30,8 @@ def test_delete_message_lists_what_goes():
     from geophysics_workbench.ui.profile_actions import delete_message
     text = delete_message("P1", {"stations": 24, "datasets": 2, "pieces": 3, "notes": 1})
     assert text.startswith("Delete profile “P1”?")
-    assert "2 model link(s)" in text and "3 interpretation piece(s)" in text
+    assert "24 station(s)" in text and "2 model link(s)" in text
+    assert "3 interpretation piece(s)" in text
     assert "1 field note(s)" in text and "data files and layers are not touched" in text
 
 

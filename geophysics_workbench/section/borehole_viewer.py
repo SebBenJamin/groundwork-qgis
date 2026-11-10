@@ -232,7 +232,7 @@ class BoreholeCanvas(QWidget):
             if y >= LABEL_PX:
                 painter.drawLine(QPointF(AXIS_PX - 8, y), QPointF(AXIS_PX - 4, y))
                 value = -z if v.axis == "depth" else z
-                painter.drawText(QPointF(2, y + 4), f"{value:g}")
+                painter.drawText(QPointF(2, y + 4), tick_text(value))
             z -= step
         painter.drawText(QPointF(2, LABEL_PX - 6),
                          "Depth (m)" if v.axis == "depth" else "Elevation (m)")
@@ -693,3 +693,9 @@ def choose_viewer_labels(spans, highlight=None, rows: int = 1) -> list:
     from .context_render import place_labels
     return place_labels([(a, b, 0 if i == highlight else 1)
                          for i, (a, b) in enumerate(spans)], rows)
+
+
+def tick_text(value: float) -> str:
+    """An axis tick in QGIS's locale ("0,5", "180")."""
+    from ..core.numbers import fmt_trim
+    return fmt_trim(value, 3)

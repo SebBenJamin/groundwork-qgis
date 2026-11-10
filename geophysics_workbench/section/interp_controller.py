@@ -336,7 +336,10 @@ class InterpController(QObject):
         store = self.dock.provider.store
         fresh = next((p for p in store.pieces(selected.version_id, selected.profile_id)
                       if p.id == selected.id), None)
-        tool.select(fresh)
+        vertex = getattr(tool, "vertex", None)
+        if fresh is None or vertex is None or vertex >= len(fresh.vertices):
+            vertex = None
+        tool.select(fresh, vertex)                      # a dragged vertex stays selected
 
     def _show_hint(self, kind: str) -> None:
         self.dock.set_tool_hint(TOOL_HINTS.get(kind))
@@ -475,10 +478,16 @@ class InterpController(QObject):
         if self.dock.provider is None or profile_id is None:
             return
         store = self.dock.provider.store
-        dlg = FieldNotesDialog(store, profile_id,
-                               lambda: after_change(store, self.dock.provider), self.dock)
+        changed = []
+
+        def on_change():
+            changed.append(True)
+            after_change(store, self.dock.provider)
+        dlg = FieldNotesDialog(store, profile_id, on_change, self.dock)
         dlg.exec()
         dlg.deleteLater()
+        if changed:     # the list's edits are not on the stack: its note commands are stale
+            self.undo.clear()
 
     def _show_field_notes(self, on: bool) -> None:
         provider = self.dock.provider

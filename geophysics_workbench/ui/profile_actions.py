@@ -16,6 +16,7 @@ def ask_new_name(parent, current: str) -> str | None:
 
 def delete_message(name: str, counts: dict) -> str:
     return (f"Delete profile “{name}”? Also removed from the workbench: "
+            f"{counts.get('stations', 0)} station(s), "
             f"{counts.get('datasets', 0)} model link(s), "
             f"{counts.get('pieces', 0)} interpretation piece(s), "
             f"{counts.get('notes', 0)} field note(s). "

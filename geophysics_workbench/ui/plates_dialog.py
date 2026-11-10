@@ -61,14 +61,26 @@ def parse_cell(attr: str, text: str):
         return None
     if attr == "scale":
         t = re.sub(r"^1\s*:\s*", "", t)
-        digits = re.sub(r"[.,'\s ]", "", t)
-        if not digits.isdigit() or int(digits) < 1:
+        # a whole number; separators only between groups of three ("2.500", "1 000 000"),
+        # so "2500.0" is refused instead of read as 25000
+        if not re.fullmatch(r"\d{1,3}([.,'\s ]\d{3})*|\d+", t):
             raise ValueError(text)
-        return int(digits)
+        value = int(re.sub(r"\D", "", t))
+        if value < 1:
+            raise ValueError(text)
+        return value
     value = parse(t)
     if not math.isfinite(value) or (attr == "ve" and value <= 0):
         raise ValueError(text)
     return value
+
+
+def cell_text(attr: str, value) -> str:
+    """How a frame cell shows its value: in QGIS's locale; empty for automatic."""
+    from ..core.numbers import fmt_trim
+    if value is None:
+        return ""
+    return str(int(value)) if attr == "scale" else fmt_trim(value, 3)
 
 
 def look_summary(look: FrameLook, names: dict) -> str:
@@ -285,8 +297,9 @@ class PlatesDialog(QDialog):
                 look = QTableWidgetItem(look_summary(f.look, names))
                 look.setFlags(look.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.frames.setItem(r, 1, look)
-                for c, v in ((2, f.s_from), (3, f.s_to), (4, f.scale), (5, f.ve)):
-                    self.frames.setItem(r, c, QTableWidgetItem("" if v is None else f"{v:g}"))
+                for c, attr in ((2, "s_from"), (3, "s_to"), (4, "scale"), (5, "ve")):
+                    self.frames.setItem(r, c, QTableWidgetItem(cell_text(attr,
+                                                                         getattr(f, attr))))
         finally:
             self._filling = was
 
