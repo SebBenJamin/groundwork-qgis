@@ -138,6 +138,7 @@ class BoreholeCanvas(QWidget):
         styles = v.items.curve_styles if v.items is not None else {}
         ranges = v.curve_ranges(keys)
         xs = self._x_layout(points)
+        pending = []                      # labels, placed after all columns (no overlaps)
         with SymbolPool(rc) as pool:      # each interval symbol started once per frame
             for p, x in zip(points, xs):
                 z_top = self._z_top(p) if v.axis == "elevation" else 0.0
@@ -158,7 +159,8 @@ class BoreholeCanvas(QWidget):
                 self.column_rects.append((p, col))
                 if v.show_check["flags"].isChecked() and p.flagged:
                     draw_flag(painter, px, col.top(), 5.0)
-                self._labels(painter, p, px, col.top(), z_top)
+                pending.append((p, px, col.top(), z_top, highlight))
+        self._draw_labels(painter, pending)
         self._axis(painter)
         if v.mode == "true":
             painter.setPen(QPen(QColor(*AXIS_RGB)))
@@ -175,7 +177,7 @@ class BoreholeCanvas(QWidget):
             painter.setPen(QPen(QColor(*GROUND_RGB), 1.5))
             painter.drawPolyline(QPolygonF(pts))
 
-    def _labels(self, painter, p, x: float, y_top: float, z_top) -> None:
+    def _label_lines(self, p, z_top) -> list[str]:
         v = self.viewer
         lines = []
         if v.label_check["name"].isChecked():
@@ -184,18 +186,28 @@ class BoreholeCanvas(QWidget):
             lines.append(f"{z_top:.1f} m")
         if v.label_check["distance"].isChecked():
             lines.append(f"{p.s:.0f} m, {p.offset:+.0f} m")
-        if not lines:
-            return
+        return lines
+
+    def _draw_labels(self, painter, pending) -> None:
+        """The columns' labels; one that would overlap another is left out (the clicked
+        borehole's always shows; hover reads every column)."""
+        v = self.viewer
         fmt = v.font_button.textFormat()
-        font = fmt.toQFont()
         painter.save()
-        painter.setFont(font)
+        painter.setFont(fmt.toQFont())
         painter.setPen(QPen(fmt.color()))
         fm = painter.fontMetrics()
-        y = y_top - 10
-        for text in reversed(lines):
-            painter.drawText(QPointF(x - fm.horizontalAdvance(text) / 2, y), text)
-            y -= fm.height()
+        blocks = [(self._label_lines(p, z_top), x, y_top) for p, x, y_top, z_top, _h in pending]
+        spans = [(x - w / 2 - 3, x + w / 2 + 3) for lines, x, _y in blocks
+                 for w in [max((fm.horizontalAdvance(t) for t in lines), default=0)]]
+        highlight = next((i for i, item in enumerate(pending) if item[4]), None)
+        for (lines, x, y_top), show in zip(blocks, choose_viewer_labels(spans, highlight)):
+            if not show or not lines:
+                continue
+            y = y_top - 10
+            for text in reversed(lines):
+                painter.drawText(QPointF(x - fm.horizontalAdvance(text) / 2, y), text)
+                y -= fm.height()
         painter.restore()
 
     def _axis(self, painter) -> None:
@@ -665,3 +677,12 @@ class BoreholeViewer(QWidget):
             pass
         if self.refresh in self.dock.provider.on_change:
             self.dock.provider.on_change.remove(self.refresh)
+
+
+def choose_viewer_labels(spans, highlight=None) -> list[bool]:
+    """Which column labels to draw: ``spans`` are their (x0, x1); one row, the clicked
+    column first, then left to right (``context_render.place_labels``)."""
+    from .context_render import place_labels
+    rows = place_labels([(a, b, 0 if i == highlight else 1) for i, (a, b) in enumerate(spans)],
+                        1)
+    return [r is not None for r in rows]

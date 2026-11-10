@@ -205,19 +205,50 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
             specs.append((n, (lo + hi) / 2, label_text(n.text), NOTE_RGB))
     from .field_notes_render import lanes_px
     lanes = lanes_px(mm(rc, 1.0), items.field_notes)        # stretch lanes under the labels
-    rows: list[list[tuple[float, float]]] = [[] for _ in range(LABEL_ROWS)]
-    out = {}
-    for item, s, text, rgb in specs:
-        if not text:
-            continue
+    specs = [sp for sp in specs if sp[2]]
+    spans, xs = [], []
+    for item, s, text, _rgb in specs:
         x = wt.map(QPointF(s, float(np.interp(s, *surface)))).x()
-        half_w = (fm.horizontalAdvance(text) + 4) / 2
-        row = next((r for r in range(LABEL_ROWS)
-                    if all(x + half_w + 2 <= a or x - half_w - 2 >= b for a, b in rows[r])),
-                   LABEL_ROWS - 1)
-        rows[row].append((x - half_w, x + half_w))
+        half_w = (fm.horizontalAdvance(text) + 4) / 2 + 2
+        spans.append((x - half_w, x + half_w, _label_priority(item)))
+        xs.append(x)
+    out = {}
+    for (item, s, text, rgb), x, row in zip(specs, xs, place_labels(spans, LABEL_ROWS)):
+        if row is None:                                 # no room: left out, not on top
+            continue
         y = surface_y(wt, surface, s) - far - mm(rc, 1.0) - lanes - row * h
         out[id(item)] = Label(x, y, text, rgb)
+    return out
+
+
+def _label_priority(item) -> int:
+    """Which labels get a row first: field notes, ties, crossings, boreholes, points."""
+    from ..core.context import Crossing, ProjectedPoint
+    from ..core.field_notes import FieldNote
+    from ..core.ties import Tie
+    if isinstance(item, FieldNote):
+        return 0
+    if isinstance(item, Tie):
+        return 1
+    if isinstance(item, Crossing):
+        return 2
+    if isinstance(item, ProjectedPoint):
+        return 3 if item.kind == "borehole" else 4
+    return 5
+
+
+def place_labels(spans, rows: int) -> list:
+    """Row (0 = lowest) of each ``(x0, x1, priority)`` span, or None when no row has room.
+    Lower priority numbers are placed first; within a priority, left to right."""
+    taken: list[list[tuple[float, float]]] = [[] for _ in range(rows)]
+    out: list = [None] * len(spans)
+    for i in sorted(range(len(spans)), key=lambda i: (spans[i][2], spans[i][0])):
+        x0, x1, _p = spans[i]
+        row = next((r for r in range(rows)
+                    if all(x1 <= a or x0 >= b for a, b in taken[r])), None)
+        if row is not None:
+            taken[row].append((x0, x1))
+            out[i] = row
     return out
 
 
