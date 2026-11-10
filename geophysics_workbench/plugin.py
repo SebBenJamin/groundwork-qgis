@@ -45,6 +45,7 @@ class WorkbenchPlugin:
         self._context_dialog = None
         self._plates_dialog = None
         self.plates_action = None
+        self.rename_action = self.delete_action = None
         self._project_signals = []
 
     @property
@@ -76,6 +77,8 @@ class WorkbenchPlugin:
         self.menu.addSeparator()
         self.new_profile_action = self.add_action("New Profile…", self.new_profile)
         self.add_model_action = self.add_action("Add ERT Model…", self.add_model)
+        self.rename_action = self.add_action("Rename Profile…", lambda: self.rename_profile())
+        self.delete_action = self.add_action("Delete Profile…", lambda: self.delete_profile())
         self.context_action = self.add_action("Context Layers…", self.edit_context)
         self.ties_action = self.add_action("Profile Ties…", self.show_ties_panel)
         self.plates_action = self.add_action("Plates…", self.show_plates)
@@ -86,6 +89,8 @@ class WorkbenchPlugin:
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
         self.dock.profile_changed.connect(self._update_actions)
         self.dock.borehole_clicked.connect(self.open_borehole_viewer)
+        self.dock.rename_requested.connect(self.rename_profile)
+        self.dock.delete_requested.connect(self.delete_profile)
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
 
@@ -133,6 +138,7 @@ class WorkbenchPlugin:
             self.menu = None
         self.actions.clear()
         self.pick_action = self.new_profile_action = self.add_model_action = None
+        self.rename_action = self.delete_action = None
         self.context_action = self.ties_action = self.plates_action = None
         from .patterns import unregister_svg_path
         unregister_svg_path()
@@ -292,6 +298,10 @@ class WorkbenchPlugin:
                                 (self.ties_action, has_store, no_project),
                                 (self.plates_action, has_store, no_project),
                                 (self.pick_action, has_store, no_project),
+                                (self.rename_action, has_profile,
+                                 "Open a profile in the section panel first"),
+                                (self.delete_action, has_profile,
+                                 "Open a profile in the section panel first"),
                                 (self.add_model_action, has_profile,
                                  "Open a profile in the section panel first")):
             if action is None:
@@ -408,6 +418,60 @@ class WorkbenchPlugin:
         if self._context_dialog is dialog:
             self._context_dialog = None
         dialog.deleteLater()
+
+    # -- profiles: rename and delete ---------------------------------------------------------
+    def rename_profile(self, profile_id: str | None = None) -> None:
+        from .ui import profile_actions
+        from .ui.project_actions import refresh_layers
+        pid = profile_id or (self.dock.current_profile_id() if self.dock else None)
+        if self.store is None or not pid:
+            return
+        old = self.store.profile(pid).name
+        name = profile_actions.ask_new_name(self.iface.mainWindow(), old)
+        if name is None or name.strip() == old:
+            return
+        try:
+            self.store.rename_profile(pid, name)
+        except ValueError as exc:
+            self._warn(str(exc))
+            return
+        refresh_layers(self.store, QgsProject.instance())
+        self.provider.notify_changed()
+        if self.dock is not None:
+            self.dock._fill_combo()
+        self._info(f"Profile “{old}” renamed to “{name.strip()}”.")
+
+    def delete_profile(self, profile_id: str | None = None) -> None:
+        from .ui import profile_actions
+        from .ui.field_notes_dialog import after_change
+        from .ui.project_actions import refresh_layers
+        pid = profile_id or (self.dock.current_profile_id() if self.dock else None)
+        if self.store is None or not pid:
+            return
+        name = self.store.profile(pid).name
+        counts = self.store.profile_contents(pid)
+        if not profile_actions.confirm_delete(self.iface.mainWindow(), name, counts):
+            return
+        if self.dock is not None and self.dock.current_profile_id() == pid:
+            self.dock._close_profile()
+        self.store.delete_profile(pid)
+        project = QgsProject.instance()
+        refresh_layers(self.store, project)
+        if self.store.has_interpretation() and self.dock is not None:
+            self.dock.interp.changed()               # rebuild the 3D and map layers
+        if self.store.has_field_notes():
+            after_change(self.store, self.provider, project)
+        self.provider.notify_changed()
+        if self.dock is not None:
+            self.dock._fill_combo()
+        self.attach_plates()                         # a plate of it shows "not found"
+        self._update_actions()
+        self._info(f"Profile “{name}” deleted from the workbench.")
+
+    def _info(self, text: str):
+        bar = getattr(self.iface, "messageBar", None)
+        if bar is not None:
+            bar().pushInfo(MENU_TITLE, text)
 
     def show_plates(self):
         """Plates…: report plates (non-modal, one at a time)."""

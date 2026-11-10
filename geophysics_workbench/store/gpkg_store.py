@@ -296,6 +296,44 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin):
                 None if f.IsFieldNull("parent_id") else f.GetFieldAsString("parent_id"),
                 _text(f, "quantity"), _text(f, "unit"), _text(f, "name")) for f in rows]
 
+    def rename_profile(self, profile_id: str, name: str) -> None:
+        """Give a profile a new name (its id, and everything linked to it, stay)."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("A profile name cannot be empty.")
+        if any(p.id != profile_id and p.name.casefold() == name.casefold()
+               for p in self.profiles()):
+            raise ValueError(f"Another profile is already called “{name}”.")
+        p = self.profile(profile_id)
+        self.save_profile(Profile(p.id, name, p.xy, p.crs_authid, p.metadata))
+
+    def profile_contents(self, profile_id: str) -> dict[str, int]:
+        """What deleting the profile removes from the workbench: stations, dataset links,
+        interpretation pieces (current version) and field notes."""
+        pieces = (len(self.pieces(self.current_version().id, profile_id))
+                  if self.has_interpretation() else 0)
+        notes = len(self.field_notes(profile_id)) if self.has_field_notes() else 0
+        stations = sum(len(s.numbers) for s in self.station_sets(profile_id))
+        return {"stations": stations, "datasets": len(self.datasets(profile_id)),
+                "pieces": pieces, "notes": notes}
+
+    def delete_profile(self, profile_id: str) -> dict[str, int]:
+        """Remove a profile and what belongs to it from the workbench; returns the counts
+        (``profile_contents``). Data files are never touched, and frozen interpretation
+        versions keep their pieces (the record of what was delivered)."""
+        counts = self.profile_contents(profile_id)
+        if counts["pieces"]:
+            for piece in self.pieces(self.current_version().id, profile_id):
+                self.delete_piece(piece.id)
+        for note in self.field_notes(profile_id) if counts["notes"] else []:
+            self.delete_field_note(note.id)
+        with self._tx() as ds:
+            where = f"profile_id = {_q(profile_id)}"
+            for table in ("stations", "station_sets", "datasets"):
+                self._delete_where(ds.GetLayerByName(table), where)
+            self._delete_where(ds.GetLayerByName("profiles"), f"id = {_q(profile_id)}")
+        return counts
+
     def delete_dataset(self, dataset_id: str) -> None:
         with self._tx() as ds:
             self._delete_where(ds.GetLayerByName("datasets"), f"id = {_q(dataset_id)}")

@@ -16,7 +16,8 @@ from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QKeySequence, QPen, QShortcut
 from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
                                  QToolTip,
-                                 QHBoxLayout, QLabel, QSizePolicy, QSplitter, QToolButton,
+                                 QHBoxLayout, QLabel, QMenu, QSizePolicy, QSplitter,
+                                 QToolButton,
                                  QVBoxLayout,
                                  QWidget)
 
@@ -64,6 +65,8 @@ class SectionDock(QDockWidget):
     cursor_left = pyqtSignal()                  # the mouse left the section
     profile_changed = pyqtSignal(object)        # open profile id, or None when closed
     borehole_clicked = pyqtSignal(int, str)     # (borehole entry, label): open the viewer
+    rename_requested = pyqtSignal(str)          # profile id: "Rename Profile…"
+    delete_requested = pyqtSignal(str)          # profile id: "Delete Profile…"
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -84,6 +87,9 @@ class SectionDock(QDockWidget):
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
         self.profile_combo.currentIndexChanged.connect(self._combo_changed)
+        self.profile_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.profile_combo.customContextMenuRequested.connect(self._show_profile_menu)
+        self.profile_combo.setToolTip("Right-click to rename or delete the profile")
         self.topo = TopoSwitch(self)
         self.topo_combo = self.topo.combo
         self.ve_spin = QDoubleSpinBox()
@@ -508,6 +514,33 @@ class SectionDock(QDockWidget):
             QgsProfilePoint(s, (e.lower() + e.upper()) / 2)).x()
         self.guide_line.setLine(QLineF(x, area.top(), x, area.bottom()))
         self.guide_line.show()
+
+    def profile_menu(self):
+        """Right-click menu of the profile list: rename or delete the open profile. The menu
+        has no parent and its actions call bound methods (no lambda holding the dock: such a
+        reference cycle lets Python free the dock while Qt still uses it)."""
+        from ..ui.profile_actions import DELETE_TEXT, RENAME_TEXT
+        menu = QMenu()
+        enabled = self.current_profile_id() is not None
+        for text, slot in ((RENAME_TEXT, self._rename_open_profile),
+                           (DELETE_TEXT, self._delete_open_profile)):
+            action = menu.addAction(text)
+            action.setEnabled(enabled)
+            action.triggered.connect(slot)
+        return menu
+
+    def _show_profile_menu(self, pos) -> None:
+        menu = self.profile_menu()
+        menu.exec(self.profile_combo.mapToGlobal(pos))
+        menu.deleteLater()
+
+    def _rename_open_profile(self, *_args) -> None:
+        if self.current_profile_id():
+            self.rename_requested.emit(self.current_profile_id())
+
+    def _delete_open_profile(self, *_args) -> None:
+        if self.current_profile_id():
+            self.delete_requested.emit(self.current_profile_id())
 
     def set_tool_hint(self, text: str | None) -> None:
         """The active tool's one-line hint (None: back to the panel's own hint)."""
