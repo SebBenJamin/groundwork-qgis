@@ -49,7 +49,8 @@ def test_take_from_panel_copies_current_look(env):
     assert frame.profile_id == p.id
     model = frame.look.models[0]
     assert (model.dataset_id, model.opacity, model.mode) == (ds.id, 0.6, "smooth")
-    assert model.scale == {"cmap": "viridis", "vmin": 5.0, "vmax": 500.0, "log": True}
+    assert model.scale == {"cmap": "viridis", "vmin": 5.0, "vmax": 500.0, "log": True,
+                           "ramp": "", "lut": None}
     assert frame.look.field_notes is False
     # restyling the panel afterwards leaves the plate's look alone
     prov.set_style(ds.id, replace(prov.style(ds.id), opacity=1.0))
