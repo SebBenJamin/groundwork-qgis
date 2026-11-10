@@ -51,6 +51,7 @@ def test_short_dock_keeps_the_label_rows_inside_the_plot(qgis_app, store_with_mo
     dock = make_dock(st)
     dock.provider.context_source = _context
     dock.resize(1100, 260)
+    dock.ve_spin.setValue(2.0)               # a typed VE keeps every label row inside the plot
     qgis_app.processEvents()
     dock.open_profile(p.id)
     qgis_app.processEvents()

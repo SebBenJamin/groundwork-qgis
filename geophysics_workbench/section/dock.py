@@ -55,6 +55,9 @@ class _Readout(QLabel):
         super().__init__()
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.setMinimumWidth(1)
+        # always two lines tall: a second line (e.g. over a borehole) must not shrink the
+        # canvas, which would re-fit the section while the user reads it
+        self.setFixedHeight(2 * self.fontMetrics().lineSpacing() + 4)
 
     def setText(self, text):
         super().setText(text)
@@ -135,7 +138,6 @@ class SectionDock(QDockWidget):
         self.layer_list = LayerList()
         self.readout = _Readout()
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.readout.setMinimumHeight(self.readout.sizeHint().height())
         self.errors = QLabel()
         self.errors.setStyleSheet("color: #c00000;")
         self.errors.setWordWrap(True)

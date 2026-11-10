@@ -104,7 +104,7 @@ def test_open_profile_zooms_to_data_and_topography_with_exaggeration(qgis_app, s
                                                                      make_dock):
     st, p, _ = store_with_model
     dock = make_dock(st)
-    assert dock.ve_spin.value() == 0 and dock.ve_spin.specialValueText() == "Auto"
+    assert dock.ve_spin.value() == 0 and dock.ve_spin.specialValueText().startswith("Auto")
     assert dock.ve_spin.maximum() == 20
     dock.ve_spin.setValue(2.0)                  # a typed exaggeration is kept exactly
     dock.open_profile(p.id)
@@ -390,3 +390,17 @@ def test_long_readout_never_resizes_the_canvas(qgis_app, store_with_model, make_
     qgis_app.processEvents()
     assert (dock.canvas.width(), dock.canvas.height()) == before
     assert "EN-RK 39" in dock.readout.toolTip()                 # the full text on hover
+
+
+def test_second_readout_line_never_resizes_the_canvas(qgis_app, store_with_model, make_dock):
+    """Usability review 2, R2: hovering a borehole added a readout line, the canvas lost
+    16 px and the section re-fitted (twitched)."""
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    dock.readout.setText("s = 5.0 m")
+    qgis_app.processEvents()
+    before = dock.canvas.height()
+    dock.readout.setText("s = 5.0 m\nBorehole EN-RK 4 (0 m): 1.9–3.0 m SU2")
+    qgis_app.processEvents()
+    assert dock.canvas.height() == before

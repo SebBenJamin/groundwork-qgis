@@ -215,10 +215,15 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
         spans.append((x - half_w, x + half_w, _label_priority(item)))
         xs.append(x)
     out = {}
+    # the visible plot's top (the panel and plates clip to it): a label above it is left
+    # out rather than cut off
+    top = painter.clipBoundingRect().top() if painter.hasClipping() else None
     for (item, s, text, rgb), x, row in zip(specs, xs, place_labels(spans, LABEL_ROWS)):
         if row is None:                                 # no room: left out, not on top
             continue
         y = surface_y(wt, surface, s) - far - mm(rc, 1.0) - lanes - row * h
+        if top is not None and y - h < top:
+            continue
         out[id(item)] = Label(x, y, text, rgb)
     return out
 

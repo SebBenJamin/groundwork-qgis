@@ -11,6 +11,8 @@ from qgis.PyQt.QtCore import QTimer
 PAD = 0.06                      # fraction of the data extent added on each side by zoom_full
 MAX_HEADROOM = 0.6              # of the plot height at most goes to the room above the data
 AUTO_MIN, AUTO_MAX = 0.5, 50.0  # the range "Auto" chooses the vertical exaggeration from
+AUTO_HEADROOM = 0.3             # Auto: label room at most this share (labels that do not fit
+                                # are left out by the label planner, not cut off)
 
 Extent = tuple[float, float, float, float]
 
@@ -88,7 +90,8 @@ class ViewFitter:
             w, h = area.width(), area.height()
             if w < 20 or h < 20:
                 w, h = max(canvas.width() - 80.0, 200.0), max(canvas.height() - 40.0, 100.0)
-            room = min(need, MAX_HEADROOM * h)  # pixels kept free above the padded data
+            # pixels kept free above the padded data
+            room = min(need, (AUTO_HEADROOM if auto else MAX_HEADROOM) * h)
             if auto:                            # the exaggeration that fills both ways
                 ve = min(max((ds / w) / (dz / (h - room)), AUTO_MIN), AUTO_MAX)
             # elevation per pixel; distance per pixel = ve * epp
@@ -99,8 +102,11 @@ class ViewFitter:
                                        zc - epp * h / 2, zc + epp * h / 2)
         canvas.setAxisScaleRatio(ve)
         canvas.setLockAxisScales(True)
-        self.ve_spin.setToolTip(f"Vertical exaggeration: Auto, now {ve:.1f} × (fills the "
-                                f"panel)" if auto else "Vertical exaggeration (Auto: fill "
+        from ..core.numbers import fmt_trim
+        if auto:                                # the box itself says what Auto chose
+            self.ve_spin.setSpecialValueText(f"Auto ({fmt_trim(ve, 1)}×)")
+        self.ve_spin.setToolTip(f"Vertical exaggeration: Auto, now {fmt_trim(ve, 1)}× (fills "
+                                "the panel)" if auto else "Vertical exaggeration (Auto: fill "
                                 "the panel)")
         self.fit_view = self._view()
         self._on_fitted()
