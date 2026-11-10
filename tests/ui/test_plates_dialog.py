@@ -99,3 +99,26 @@ def test_plate_details_set_project_variables(env):
     assert scope.variable("wb_job") == "2026-041"
     reopened = PlateDetailsDialog(prj)
     assert reopened.fields["client"].text() == "LfU Brandenburg"
+
+
+def test_frame_cells_read_like_a_user_types_them():
+    """Usability review 2: "1.000" (German) became scale 1:1; "1:250" was refused."""
+    from geophysics_workbench.ui.plates_dialog import parse_cell
+    assert parse_cell("scale", "1.000") == 1000
+    assert parse_cell("scale", "1:2500") == 2500 and parse_cell("scale", "1:1.000") == 1000
+    assert parse_cell("ve", "1,5") == 1.5 and parse_cell("s_from", "12,5") == 12.5
+    assert parse_cell("scale", "") is None
+    for attr, text in (("ve", "inf"), ("ve", "nan"), ("ve", "0"), ("scale", "1:0"),
+                       ("scale", "abc"), ("s_to", "x")):
+        with pytest.raises(ValueError):
+            parse_cell(attr, text)
+
+
+def test_valid_cell_clears_the_message(env):
+    st, p, prov, prj = env
+    dlg = _dialog(st, prov, prj, panel_profile=p.id)
+    dlg.add_plate()
+    dlg.frames.item(0, 4).setText("abc")
+    assert "not a usable number" in dlg.message.text()
+    dlg.frames.item(0, 4).setText("1:2500")
+    assert dlg.current_plate().frames[0].scale == 2500 and dlg.message.text() == ""

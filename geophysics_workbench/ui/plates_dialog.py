@@ -48,6 +48,29 @@ def panel_look(provider, profile_id: str) -> FrameLook:
                      bool(provider.show_field_notes), True)
 
 
+def parse_cell(attr: str, text: str):
+    """A frame cell as typed: empty = automatic (None). Scales take "2500", "1:2500" or
+    "1.000" (dots, commas and spaces in a scale are thousands separators); distances and VE
+    take "," or "." as decimal separator. Raises ValueError for anything unusable."""
+    import math
+    import re
+
+    from ..core.numbers import parse
+    t = (text or "").strip()
+    if not t:
+        return None
+    if attr == "scale":
+        t = re.sub(r"^1\s*:\s*", "", t)
+        digits = re.sub(r"[.,'\s ]", "", t)
+        if not digits.isdigit() or int(digits) < 1:
+            raise ValueError(text)
+        return int(digits)
+    value = parse(t)
+    if not math.isfinite(value) or (attr == "ve" and value <= 0):
+        raise ValueError(text)
+    return value
+
+
 def look_summary(look: FrameLook, names: dict) -> str:
     shown = [m for m in look.models if m.visible]
     parts = []
@@ -388,16 +411,17 @@ class PlatesDialog(QDialog):
         if self._filling or plate is None or not 0 <= row < len(plate.frames) or column < 2:
             return
         frame = plate.frames[row]
-        text = self.frames.item(row, column).text().strip().replace(",", ".")
+        text = self.frames.item(row, column).text()
         attr = {2: "s_from", 3: "s_to", 4: "scale", 5: "ve"}[column]
         try:
-            value = None if not text else (int(float(text)) if attr == "scale" else float(text))
-            if value is not None and attr in ("scale", "ve") and value <= 0:
-                raise ValueError
+            value = parse_cell(attr, text)
         except ValueError:
-            self.message.setText(f"{COLUMNS[column]}: not a usable number.")
+            self.message.setText(f"{COLUMNS[column].rstrip(':')}: “{text.strip()}” is not a "
+                                 "usable number. Type e.g. 2500 for 1:2500, or leave the cell "
+                                 "empty for automatic.")
             self._fill_frames()
             return
+        self.message.setText("")
         setattr(frame, attr, value)
         self._save()
 
