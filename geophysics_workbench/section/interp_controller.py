@@ -102,6 +102,9 @@ class InterpController(QObject):
         self.bar.addWidget(b)
         self.buttons["snap"] = b
         self.undo = InterpUndo(self, self._apply, self._apply_rows)
+        # after every undo/redo the Edit tool's selection is read again from the store (it
+        # must never hold an undone shape: the next edit would save it back)
+        self.undo.stack.indexChanged.connect(self._refresh_selection)
         for text, slot, signal in (("Undo", self.undo.stack.undo, self.undo.stack.canUndoChanged),
                                    ("Redo", self.undo.stack.redo, self.undo.stack.canRedoChanged)):
             b = _icon_button(ICONS[text.lower()], text)
@@ -324,6 +327,16 @@ class InterpController(QObject):
         self.tool = None
         self.buttons["pan"].setChecked(True)
         dock.set_tool_hint(None)
+
+    def _refresh_selection(self, *_args) -> None:
+        tool = self.tool
+        selected = getattr(tool, "selected", None)
+        if selected is None or self.dock is None or self.dock.provider is None:
+            return
+        store = self.dock.provider.store
+        fresh = next((p for p in store.pieces(selected.version_id, selected.profile_id)
+                      if p.id == selected.id), None)
+        tool.select(fresh)
 
     def _show_hint(self, kind: str) -> None:
         self.dock.set_tool_hint(TOOL_HINTS.get(kind))

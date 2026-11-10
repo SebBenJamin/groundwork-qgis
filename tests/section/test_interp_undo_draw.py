@@ -68,3 +68,22 @@ def test_switching_profile_clears_undo(ctl):
     assert c.undo.stack.canUndo()
     c._profile_changed()
     assert not c.undo.stack.canUndo()
+
+
+def test_undo_refreshes_the_edit_selection(ctl):
+    """Usability review 2, R3: after Undo the Edit tool kept the undone shape selected, and
+    the next edit saved it back."""
+    import copy
+    c, store, p = ctl
+    c.start("edit")
+    tool = c.tool
+    tool.select(p)
+    moved = copy.deepcopy(p)
+    moved.vertices = [(x + 3.0, z) for x, z in p.vertices]
+    tool.select(c.replace_piece(p, moved))
+    c.undo.stack.undo()
+    assert tool.selected.vertices[0][0] == pytest.approx(p.vertices[0][0])  # the stored shape
+    c.undo.stack.redo()
+    assert tool.selected.vertices[0][0] == pytest.approx(p.vertices[0][0] + 3.0)
+    c.delete_piece(tool.selected)
+    assert tool.selected is None                                      # gone: no selection
