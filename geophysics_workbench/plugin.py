@@ -1,6 +1,7 @@
 """Plugin object: owns the 'Geophysics Workbench' menu, the section panel, the map link
 and the registered profile source, and follows the QGIS project: the workbench project
 (GeoPackage) it refers to is attached on load and detached when the project is cleared."""
+from functools import partial
 from pathlib import Path
 
 from qgis.core import (Qgis, QgsApplication, QgsCoordinateReferenceSystem, QgsMessageLog,
@@ -16,9 +17,17 @@ from .section.data import SectionDataProvider
 from .section.dock import SectionDock
 from .section.map_link import MapLink
 from .section.profile_source import register_source, unregister_source
+from .section.style_watch import StyleWatch
 from .ui import project_actions
 from .ui.context_dialog import read_settings
 from .ui.interp_layers import interp_layers
+
+
+def _own_styled_layers(store, project) -> list:
+    """The workbench's own layers whose QGIS style the section draws with."""
+    from .ui.field_note_layers import field_note_layers
+    return [*interp_layers(store, project).values(),
+            *field_note_layers(store, project).values()]
 
 MENU_TITLE = "Geophysics Workbench"
 _ICON_DIR = Path(__file__).parent / "icons"
@@ -33,6 +42,7 @@ class WorkbenchPlugin:
         self.provider: SectionDataProvider | None = None
         self.source = None
         self.gatherer: ContextGatherer | None = None
+        self.style_watch: StyleWatch | None = None
         self._context_logged: set[tuple[str, str]] = set()
         self.dock: SectionDock | None = None
         self.map_link: MapLink | None = None
@@ -184,6 +194,8 @@ class WorkbenchPlugin:
                                             exclude=lambda: own_layer_ids(store, project))
             self.provider.context_source = self.gatherer.items_for
             self.provider.interp_layers = lambda: interp_layers(store, project)
+            self.style_watch = StyleWatch(project, partial(_own_styled_layers, store, project),
+                                          self.provider.notify_redraw)
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error
             self._context_logged.clear()
@@ -220,7 +232,11 @@ class WorkbenchPlugin:
             self.source = None
 
     def _close_gatherer(self):
-        """Stop the context gatherer watching layers; the provider no longer asks it."""
+        """Stop the context gatherer (and the style watch) watching layers; the provider no
+        longer asks it."""
+        if self.style_watch is not None:
+            self.style_watch.unload()
+            self.style_watch = None
         if self.provider is not None:
             self.provider.context_source = None
         if self.gatherer is not None:
