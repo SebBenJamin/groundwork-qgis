@@ -12,19 +12,18 @@ def test_parse_levels():
         parse_levels("10;abc")
 
 
-def test_parse_levels_german():
+def test_parse_levels_german(qgis_app):
     from qgis.PyQt.QtCore import QLocale
 
     from geophysics_workbench.core.numbers import parse_levels
-    old = QLocale()
     QLocale.setDefault(QLocale(QLocale.Language.German, QLocale.Country.Germany))
     try:
         assert parse_levels("1,5;20") == (1.5, 20.0)
     finally:
-        QLocale.setDefault(old)
+        QLocale.setDefault(QLocale.c())             # as conftest pins it
 
 
-def test_levels_text():
+def test_levels_text(qgis_app):
     from geophysics_workbench.core.numbers import levels_text
     assert levels_text((10.0, 30.0, 2.5)) == "10;30;2.5"
     assert levels_text(()) == ""
