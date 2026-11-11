@@ -6,3 +6,10 @@ dist/
 **/*.aux.xml
 *.qto3settings
 .cache/
+# local working notes, never shared
+docs/superpowers/
+.claude/
+spikes/
+# GeoPackage side files while QGIS has a file open
+*.gpkg-wal
+*.gpkg-shm

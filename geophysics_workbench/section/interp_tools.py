@@ -1,4 +1,4 @@
-"""Plot tools for drawing interpretation on the section canvas (see spikes/interp_tool).
+"""Plot tools for drawing interpretation on the section canvas.
 
 Coordinates are the canvas's plot coordinates: distance = forward chainage (the dock sets the
 profile curve forward), elevation in metres. The readout signal does not fire while a custom
