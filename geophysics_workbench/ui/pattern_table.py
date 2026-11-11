@@ -10,7 +10,7 @@ from __future__ import annotations
 from qgis.core import Qgis, QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsSVGFillSymbolLayer
 from qgis.gui import QgsColorButton
 from qgis.PyQt.QtCore import QSize, Qt
-from qgis.PyQt.QtGui import QColor, QIcon
+from qgis.PyQt.QtGui import QColor, QIcon, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (QComboBox, QCompleter, QDialog, QDialogButtonBox, QLabel,
                                  QTableWidget, QTableWidgetItem, QVBoxLayout)
 
@@ -19,6 +19,20 @@ from ..patterns import Pattern, catalogue, pattern_for
 PATTERN_MM = 8.0                      # width of one pattern tile on the column
 PREVIEW_PX = 28                       # pattern preview in the list
 NO_PATTERN = "(no pattern)"
+_MODEL = None                         # the pattern list with previews, built once per session
+
+
+def pattern_model() -> QStandardItemModel:
+    """``NO_PATTERN`` and every shipped pattern with its preview. Built once and shared by
+    every row's list: building a preview per pattern per row made Patterns… slow."""
+    global _MODEL
+    if _MODEL is None:
+        model = QStandardItemModel()
+        model.appendRow(QStandardItem(NO_PATTERN))
+        for p in catalogue():
+            model.appendRow(QStandardItem(QIcon(str(p.path)), p.label))
+        _MODEL = model
+    return _MODEL
 
 
 def _svg_indices(symbol) -> list[int]:
@@ -85,10 +99,9 @@ class PatternTable(QDialog):
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         combo.setIconSize(QSize(PREVIEW_PX, PREVIEW_PX))
-        combo.addItem(NO_PATTERN)
-        for p in self._patterns:
-            combo.addItem(QIcon(str(p.path)), p.label)
-        completer = QCompleter([NO_PATTERN] + [p.label for p in self._patterns], combo)
+        model = pattern_model()
+        combo.setModel(model)
+        completer = QCompleter(model, combo)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         combo.setCompleter(completer)
