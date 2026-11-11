@@ -93,7 +93,7 @@ def test_finished_polygon_saved_and_shown(qgis_app, dock):
 
     ctl = dock.interp
     ctl.form_factory = lambda feature, suggestions, letters, existing=(): InterpFeature(
-        feature.id, feature.version_id, type="anomaly", letter="A")
+        feature.id, feature.version_id, type="anomaly", name="A")
     ctl.start("polygon")
     for x, y in ((300, 230), (450, 230), (450, 300), (300, 300)):
         _click(qgis_app, dock.canvas, x, y)
@@ -102,7 +102,7 @@ def test_finished_polygon_saved_and_shown(qgis_app, dock):
     [piece] = store.pieces(store.current_version().id)
     assert piece.kind == "polygon" and piece.profile_id == dock.current_profile_id()
     [feat] = store.features(store.current_version().id)
-    assert feat.letter == "A" and feat.author != ""
+    assert feat.name == "A" and feat.author != ""
     snap = dock.provider.snapshot(dock.current_profile_id())
     assert len(snap.interpretation) == 1
     from qgis.core import QgsProject
@@ -187,7 +187,7 @@ def test_click_shows_borehole_and_interpretation_details(qgis_app, dock):
     store = dock.provider.store
     store.ensure_interpretation()
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, type="clay lens", letter="C", note="check")
+    f = InterpFeature(new_id(), v.id, type="clay lens", name="C", note="check")
     store.save_feature(f)
     store.save_piece(InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "polygon",
                                  [(10, 0), (15, 0), (15, -5), (10, -5)]))

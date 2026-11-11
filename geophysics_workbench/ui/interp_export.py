@@ -14,7 +14,7 @@ from ..store.interp_store import _geom3d
 GPKG_LAYERS = {"line": ("lines_3d", ogr.wkbLineString25D),
                "polygon": ("polygons_3d", ogr.wkbPolygon25D),
                "point": ("points_3d", ogr.wkbPoint25D)}
-FIELDS = ("feature_id", "letter", "type", "confidence", "note", "profile_id", "version")
+FIELDS = ("feature_id", "name", "type", "confidence", "note", "profile_id", "version")
 
 
 def _rows(store, version_id: str, feature_ids):
@@ -31,7 +31,7 @@ def _rows(store, version_id: str, feature_ids):
 
 def _values(p, feat, version_name: str) -> dict:
     return {"feature_id": p.feature_id,
-            "letter": feat.letter if feat else "", "type": feat.type if feat else "",
+            "name": feat.name if feat else "", "type": feat.type if feat else "",
             "confidence": feat.confidence if feat else "", "note": feat.note if feat else "",
             "profile_id": p.profile_id, "version": version_name}
 
@@ -45,7 +45,7 @@ def dxf_layer_name(feat) -> str:
     not contain <>/\\":;?*|=`."""
     if feat is None:
         return "unnamed"
-    text = " - ".join(x for x in (feat.letter, feat.type) if x) or "unnamed"
+    text = " - ".join(x for x in (feat.name, feat.type) if x) or "unnamed"
     text = "".join("_" if c in '<>/\\":;?*|=`' else c for c in text)
     for a, b in _TRANSLIT.items():
         text = text.replace(a, b)

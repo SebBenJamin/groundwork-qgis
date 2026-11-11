@@ -14,7 +14,7 @@ def interp_store(tmp_path):
     st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     st.ensure_interpretation()
     v = st.current_version()
-    f = InterpFeature(new_id(), v.id, type="anomaly", letter="A")
+    f = InterpFeature(new_id(), v.id, type="anomaly", name="A")
     st.save_feature(f)
     st.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
                               [(40, 0), (60, 0), (60, -5), (40, -5)]))
@@ -68,7 +68,7 @@ def test_style_groups_by_entity_with_confidence_line_style(qgis_app, interp_stor
         QgsSymbolLayer.Property.StrokeStyle)
     assert "confidence" in prop.expressionString()
     v = interp_store.current_version()
-    f = InterpFeature(new_id(), v.id, type="clay lens", letter="B")
+    f = InterpFeature(new_id(), v.id, type="clay lens", name="B")
     interp_store.save_feature(f)
     interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
                                         [(0, 0), (5, 0), (5, -2)]))
@@ -95,10 +95,10 @@ def test_feature_edit_rebuilds_derived(qgis_app, interp_store):
     feats = layers["interp_features"]
     feats.startEditing()
     f = next(feats.getFeatures())
-    feats.changeAttributeValue(f.id(), feats.fields().indexOf("letter"), "Q")
+    feats.changeAttributeValue(f.id(), feats.fields().indexOf("name"), "Q")
     assert feats.commitChanges()
     poly = layers["interp_polygons_3d"]
-    assert [g["letter"] for g in poly.getFeatures()] == ["Q"]
+    assert [g["name"] for g in poly.getFeatures()] == ["Q"]
     assert calls == [1]
     sync.detach()
     prj.clear()
@@ -153,7 +153,7 @@ def test_layers_panel_legend_lists_a_new_entity(qgis_app, interp_store):
 
     assert legend_labels() == ["A · anomaly"]
     v = interp_store.current_version()
-    f = InterpFeature(new_id(), v.id, type="geology", letter="B")
+    f = InterpFeature(new_id(), v.id, type="geology", name="B")
     interp_store.save_feature(f)
     interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
                                         [(0, 0), (5, 0), (5, -2)]))

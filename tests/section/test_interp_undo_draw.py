@@ -14,7 +14,7 @@ def test_new_piece_is_undoable(ctl):
     c, store, _p = ctl
     pid = c.dock.current_profile_id()
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
-        feature.id, feature.version_id, type="fault", letter="B")
+        feature.id, feature.version_id, type="fault", name="B")
     before = len(_pieces(store, pid))
     c._finished("line", [(1.0, -1.0), (4.0, -2.0)])
     added = [p for p in _pieces(store, pid) if p.kind == "line"]
@@ -47,7 +47,7 @@ def test_ctrl_z_and_ctrl_y_in_panel(ctl, qgis_app):
     c, store, _p = ctl
     pid = c.dock.current_profile_id()
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
-        feature.id, feature.version_id, type="fault", letter="C")
+        feature.id, feature.version_id, type="fault", name="C")
     before = len(_pieces(store, pid))
     c._finished("line", [(1.0, -1.0), (4.0, -2.0)])
     shortcuts = {s.key().toString() for s in c.dock.findChildren(QShortcut)}
@@ -63,7 +63,7 @@ def test_switching_profile_clears_undo(ctl):
     from geophysics_workbench.core.interpretation import InterpFeature
     c, store, _p = ctl
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
-        feature.id, feature.version_id, type="fault", letter="D")
+        feature.id, feature.version_id, type="fault", name="D")
     c._finished("line", [(1.0, -1.0), (4.0, -2.0)])
     assert c.undo.stack.canUndo()
     c._profile_changed()

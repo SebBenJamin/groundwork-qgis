@@ -27,7 +27,7 @@ def _feature_for(fields, feat, piece=None) -> QgsFeature:
             if fields.indexOf(name) >= 0:
                 f[name] = value
     if feat is not None:
-        for name in ("type", "letter", "confidence", "note", "author"):
+        for name in ("type", "name", "confidence", "note", "author"):
             if fields.indexOf(name) >= 0:
                 f[name] = getattr(feat, name)
         for k, v in feat.extra.items():
@@ -47,7 +47,7 @@ def piece_symbols(pieces, features, layers: dict, twins: dict | None = None) -> 
     """piece id -> (cloned QgsSymbol, QgsFeature with the layer's fields) from the derived
     layer's renderer (main thread only); the feature drives data-defined properties.
     ``twins`` maps a frozen version's feature id to the current version's feature with the
-    same letter and type: frozen copies have new ids, and the layer style is keyed by id."""
+    same name and type: frozen copies have new ids, and the layer style is keyed by id."""
     out = {}
     twins = twins or {}
     for p in pieces:
@@ -73,18 +73,18 @@ def piece_symbols(pieces, features, layers: dict, twins: dict | None = None) -> 
 
 
 def twin_features(frozen_features, current_features) -> dict:
-    """frozen feature id -> current feature id with the same (letter, type)."""
-    current = {(f.letter, f.type): f.id for f in current_features}
-    return {f.id: current[(f.letter, f.type)] for f in frozen_features
-            if (f.letter, f.type) in current}
+    """frozen feature id -> current feature id with the same (name, type)."""
+    current = {(f.name, f.type): f.id for f in current_features}
+    return {f.id: current[(f.name, f.type)] for f in frozen_features
+            if (f.name, f.type) in current}
 
 
 COMPARE_OPACITY = 0.35
 
 
 def draw_interpretation(painter, rc, wt, pieces, features, symbols, compare=None) -> None:
-    """``pieces`` with their symbols and letters; ``compare`` (a frozen version's pieces)
-    first, faint and without letters."""
+    """``pieces`` with their symbols and names; ``compare`` (a frozen version's pieces)
+    first, faint and without names."""
     if compare:
         painter.save()
         painter.setOpacity(COMPARE_OPACITY)
@@ -103,7 +103,7 @@ def _draw_pieces(painter, rc, wt, pieces, features, symbols) -> None:
         sym, feature = entry if isinstance(entry, tuple) else (entry, None)
         if feature is None or not feature.fields().count():
             fields = QgsFields()
-            fields.append(QgsField("letter", QMetaType.Type.QString))
+            fields.append(QgsField("name", QMetaType.Type.QString))
             feature = QgsFeature(fields)
         pts = QPolygonF([wt.map(QPointF(float(s), float(z))) for s, z in p.vertices])
         rc.expressionContext().setFeature(feature)
@@ -119,7 +119,7 @@ def _draw_pieces(painter, rc, wt, pieces, features, symbols) -> None:
         finally:
             sym.stopRender(rc)
         feat = features.get(p.feature_id)
-        if feat is not None and feat.letter:
+        if feat is not None and feat.name:
             s, z = label_point(p)
             at = wt.map(QPointF(s, z))
             font = QFont(painter.font())
@@ -129,9 +129,9 @@ def _draw_pieces(painter, rc, wt, pieces, features, symbols) -> None:
             painter.save()
             painter.setFont(font)
             colour = QColor(sym.color())
-            colour.setAlpha(255)                    # fills are translucent, letters never
+            colour.setAlpha(255)                    # fills are translucent, names never
             painter.setPen(QPen(colour, 1))
-            painter.drawText(at + QPointF(3, -3), feat.letter)
+            painter.drawText(at + QPointF(3, -3), feat.name)
             painter.restore()
 
 
@@ -152,7 +152,7 @@ def _mark_colour(symbols, piece_id: str) -> QColor | None:
 def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols,
                         views=None) -> None:
     """A crossing profile's interpretation at the tie, over its strip (``strip_start``, as
-    ``draw_ties``): polygons as bars, lines as ticks, points as diamonds, with letters."""
+    ``draw_ties``): polygons as bars, lines as ticks, points as diamonds, with names."""
     from qgis.PyQt.QtCore import QRectF, Qt
     from qgis.PyQt.QtGui import QBrush, QPainter
 
@@ -200,6 +200,6 @@ def draw_crossing_marks(painter, rc, wt, crossings, points, features, symbols,
                                                QPointF(cx, y0 + r), QPointF(cx - r, y0)]))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             feat = features.get(m.feature_id)
-            if feat is not None and feat.letter:
-                painter.drawText(QPointF(x1 + 2, min(y0, y1) + font.pixelSize()), feat.letter)
+            if feat is not None and feat.name:
+                painter.drawText(QPointF(x1 + 2, min(y0, y1) + font.pixelSize()), feat.name)
     painter.restore()

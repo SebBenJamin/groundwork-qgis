@@ -18,8 +18,8 @@ def two(tmp_path):
     st.save_station_set(s)
     st.ensure_interpretation()
     v = st.current_version().id
-    a = InterpFeature(new_id(), v, type="anomaly", letter="A")
-    b = InterpFeature(new_id(), v, type="clay", letter="B")
+    a = InterpFeature(new_id(), v, type="anomaly", name="A")
+    b = InterpFeature(new_id(), v, type="clay", name="B")
     st.save_feature(a)
     st.save_feature(b)
     st.save_piece(normalise(InterpPiece(new_id(), v, a.id, p.id, "polygon",
@@ -36,7 +36,7 @@ def test_export_gpkg_one_feature(two, tmp_path):
     ds = ogr.Open(str(out))
     assert [ds.GetLayer(i).GetName() for i in range(ds.GetLayerCount())] == ["polygons_3d"]
     feat = ds.GetLayer(0).GetNextFeature()
-    assert feat["letter"] == "A" and feat["type"] == "anomaly"
+    assert feat["name"] == "A" and feat["type"] == "anomaly"
     ring = feat.GetGeometryRef().GetGeometryRef(0)
     assert feat.GetGeometryRef().Is3D()
     assert (50.0, 0.0) in {tuple(round(c, 6) for c in pt[:2]) for pt in ring.GetPoints()}
@@ -69,7 +69,7 @@ def test_export_overwrites_and_rejects_bad_extension(two, tmp_path):
 
 def test_dxf_layer_names_are_safe():
     from geophysics_workbench.ui.interp_export import dxf_layer_name
-    assert dxf_layer_name(InterpFeature("f", "v", letter="C2", type="Ton/Schluff: nass")) ==         "C2 - Ton_Schluff_ nass"
+    assert dxf_layer_name(InterpFeature("f", "v", name="C2", type="Ton/Schluff: nass")) ==         "C2 - Ton_Schluff_ nass"
     assert dxf_layer_name(InterpFeature("f", "v", type="Lösslehm")) == "Loesslehm"
     assert dxf_layer_name(InterpFeature("f", "v", type="Kies (é)")) == "Kies (_)"
     assert dxf_layer_name(None) == "unnamed"

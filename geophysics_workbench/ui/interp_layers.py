@@ -38,7 +38,7 @@ STROKE_BY_CONFIDENCE = ("CASE WHEN \"confidence\" = 'certain' THEN 'solid' "
 
 
 def entity_label(feat) -> str:
-    return " · ".join(x for x in (feat.letter, feat.type) if x) or "(unnamed)"
+    return " · ".join(x for x in (feat.name, feat.type) if x) or "(unnamed)"
 
 
 def _entity_symbol(geom, rgb):

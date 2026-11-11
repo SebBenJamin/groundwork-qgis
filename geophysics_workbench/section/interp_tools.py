@@ -268,7 +268,7 @@ class EditTool(QgsPlotTool):
         here = {p.feature_id for p in store.pieces(piece.version_id, piece.profile_id)}
         feats = store.features(piece.version_id)
         others = sorted((f for f in feats if f.id != piece.feature_id and f.id in here),
-                        key=lambda f: (f.letter.lower(), f.type.lower()))
+                        key=lambda f: (f.name.lower(), f.type.lower()))
 
         def then_deselect(fn):
             return lambda: (fn(), self.select(None))

@@ -32,7 +32,7 @@ class InterpFeature:
     id: str
     version_id: str
     type: str = ""
-    letter: str = ""
+    name: str = ""
     confidence: str = "probable"
     note: str = ""
     author: str = ""

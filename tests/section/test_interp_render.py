@@ -31,7 +31,7 @@ def test_polygon_piece_drawn_on_section(qgis_app):
 
     p = normalise(InterpPiece("p1", "v", "f1", "prof", "polygon",
                               [(50, 0.5), (70, 0.5), (70, -2), (50, -2)]))
-    res = _snapshot_results([p], {"f1": InterpFeature("f1", "v", letter="")},
+    res = _snapshot_results([p], {"f1": InterpFeature("f1", "v", name="")},
                             {"p1": _poly_symbol((0, 200, 0))})
     img = _img(res)
     assert _close(img.pixel(_x(60), _y(-1)), (0, 200, 0), tol=25)
@@ -47,7 +47,7 @@ def test_letter_label_drawn(qgis_app):
     p = InterpPiece("p1", "v", "f1", "prof", "point", [(60, -1)])
     from qgis.core import QgsMarkerSymbol
     sym = QgsMarkerSymbol.createSimple({"name": "circle", "color": "0,0,255", "size": "0.1"})
-    res = _snapshot_results([p], {"f1": InterpFeature("f1", "v", letter="A")}, {"p1": sym})
+    res = _snapshot_results([p], {"f1": InterpFeature("f1", "v", name="A")}, {"p1": sym})
     img = _img(res)
     dark = 0
     for x in range(_x(60) - 25, _x(60) + 25):
@@ -66,7 +66,7 @@ def test_frozen_version_shown_when_selected(qgis_app, store_with_model):
     pid = store.profiles()[0].id
     store.ensure_interpretation()
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, letter="OLD")
+    f = InterpFeature(new_id(), v.id, name="OLD")
     store.save_feature(f)
     store.save_piece(InterpPiece(new_id(), v.id, f.id, pid, "line", [(1, 0), (5, -1)]))
     frozen = store.freeze_current("R1")
@@ -77,7 +77,7 @@ def test_frozen_version_shown_when_selected(qgis_app, store_with_model):
     prov.interp_version_id = frozen.id
     snap = prov.snapshot(pid)
     assert len(snap.interpretation) == 1
-    assert snap.interp_features[snap.interpretation[0].feature_id].letter == "OLD"
+    assert snap.interp_features[snap.interpretation[0].feature_id].name == "OLD"
 
 
 def test_letter_opaque_on_translucent_fill(qgis_app):
@@ -90,7 +90,7 @@ def test_letter_opaque_on_translucent_fill(qgis_app):
     p = normalise(InterpPiece("p1", "v", "f1", "prof", "polygon",
                               [(50, 0.5), (70, 0.5), (70, -2.5), (50, -2.5)]))
     sym = QgsFillSymbol.createSimple({"color": "0,0,255,20", "outline_style": "no"})
-    img = _img(_snapshot_results([p], {"f1": InterpFeature("f1", "v", letter="W")}, {"p1": sym}))
+    img = _img(_snapshot_results([p], {"f1": InterpFeature("f1", "v", name="W")}, {"p1": sym}))
     strong = sum(1 for x in range(_x(60) - 5, _x(60) + 30) for y in range(_y(-1) - 30, _y(-1) + 5)
                  if QColor(img.pixel(x, y)).blue() > 200 and QColor(img.pixel(x, y)).red() < 60)
     assert strong > 5
@@ -102,7 +102,7 @@ def test_crossing_marks_drawn_at_tie_strip(qgis_app):
     from geophysics_workbench.core.interp_cross import CrossMark
     from geophysics_workbench.core.interpretation import InterpFeature
 
-    res = _snapshot_results([], {"f1": InterpFeature("f1", "v", letter="A")},
+    res = _snapshot_results([], {"f1": InterpFeature("f1", "v", name="A")},
                             {"p9": _poly_symbol((0, 200, 0))})
     res.snapshot.interp_crossings = [(60.0, [CrossMark("f1", "polygon", 0.0, -3.0, "p9")])]
     img = _img(res)
@@ -127,7 +127,7 @@ def test_snapshot_has_crossing_marks_mirrored(qgis_app, store_with_model):
     store.save_station_set(s2)
     store.ensure_interpretation()
     v = store.current_version().id
-    f = InterpFeature(new_id(), v, letter="A")
+    f = InterpFeature(new_id(), v, name="A")
     store.save_feature(f)
     store.save_piece(InterpPiece(new_id(), v, f.id, p2.id, "polygon",
                                  [(15, 100), (25, 100), (25, 95), (15, 95), (15, 100)]))

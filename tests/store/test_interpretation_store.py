@@ -17,9 +17,9 @@ def store(tmp_path):
     return st
 
 
-def _add(st, kind="polygon", verts=((40, 0), (60, 0), (60, -5), (40, -5)), letter="A"):
+def _add(st, kind="polygon", verts=((40, 0), (60, 0), (60, -5), (40, -5)), name="A"):
     v = st.current_version()
-    f = InterpFeature(new_id(), v.id, type="anomaly", letter=letter)
+    f = InterpFeature(new_id(), v.id, type="anomaly", name=name)
     st.save_feature(f)
     p = InterpPiece(new_id(), v.id, f.id, "prof", kind, list(verts))
     st.save_piece(p)
@@ -45,7 +45,7 @@ def test_save_and_read_piece_roundtrip(store):
     assert got.feature_id == f.id and got.kind == "polygon"
     assert got.vertices[0] == got.vertices[-1] and len(got.vertices) == 5
     [gf] = store.features(vid)
-    assert (gf.type, gf.letter, gf.confidence) == ("anomaly", "A", "probable")
+    assert (gf.type, gf.name, gf.confidence) == ("anomaly", "A", "probable")
     assert store.pieces(vid, "other") == []
 
 
@@ -65,20 +65,20 @@ def test_frozen_version_rejects_writes(store):
 def test_freeze_is_a_deep_copy(store):
     f, p = _add(store)
     frozen = store.freeze_current("Report 1")
-    before = ([(x.letter, x.type) for x in store.features(frozen.id)],
+    before = ([(x.name, x.type) for x in store.features(frozen.id)],
               [x.vertices for x in store.pieces(frozen.id)])
-    f.letter = "Z"
+    f.name = "Z"
     store.save_feature(f)
     p.vertices = [(0, 0), (5, 0), (5, -1)]
     store.save_piece(p)
-    _add(store, letter="B")
+    _add(store, name="B")
     store.delete_piece(p.id)
-    after = ([(x.letter, x.type) for x in store.features(frozen.id)],
+    after = ([(x.name, x.type) for x in store.features(frozen.id)],
              [x.vertices for x in store.pieces(frozen.id)])
     assert after == before
     store.restore_from(frozen.id)
     cur = store.current_version().id
-    assert [x.letter for x in store.features(cur)] == ["A"]
+    assert [x.name for x in store.features(cur)] == ["A"]
     assert {x.id for x in store.pieces(cur)}.isdisjoint({x.id for x in store.pieces(frozen.id)})
 
 
@@ -108,13 +108,13 @@ def test_custom_field_survives_freeze_restore_rebuild(store):
     store.rebuild_derived(vid, {"prof": BENT})
     ds = ogr.Open(str(store.path))
     [row] = list(ds.GetLayerByName("interp_polygons_3d"))
-    assert row["drill_target"] == "yes" and row["letter"] == "A"
+    assert row["drill_target"] == "yes" and row["name"] == "A"
 
 
 def test_rebuild_derived_geometry(store):
     _add(store)
-    _add(store, kind="line", verts=((10, 1), (30, 2)), letter="L")
-    _add(store, kind="point", verts=((5, 0),), letter="P")
+    _add(store, kind="line", verts=((10, 1), (30, 2)), name="L")
+    _add(store, kind="point", verts=((5, 0),), name="P")
     vid = store.current_version().id
     store.rebuild_derived(vid, {"prof": BENT})
     store.rebuild_derived(vid, {"prof": BENT})                  # replaces, never appends

@@ -21,7 +21,7 @@ class InterpForm(QDialog):
         self.type_combo.addItems(suggestions)
         self.type_combo.setEditText(feature.type)
         self.type_combo.setToolTip("Any text; the list only suggests types already used")
-        self.letter = QLineEdit(feature.letter)
+        self.letter = QLineEdit(feature.name)
         self.letter.setPlaceholderText("e.g. A")
         self.letter_warning = QLabel("This letter is already used by another feature.")
         self.letter_warning.setStyleSheet("color: #b06000;")
@@ -41,17 +41,17 @@ class InterpForm(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
-        self._check_letter(feature.letter)
+        self._check_letter(feature.name)
 
     def _check_letter(self, text: str) -> None:
-        own = self._feature.letter.strip().lower()
+        own = self._feature.name.strip().lower()
         t = text.strip().lower()
         self.letter_warning.setVisible(bool(t) and t != own and t in self._letters)
 
     def feature(self) -> InterpFeature:
         f = copy.deepcopy(self._feature)
         f.type = self.type_combo.currentText().strip()
-        f.letter = self.letter.text().strip()
+        f.name = self.letter.text().strip()
         f.confidence = self.confidence.currentText()
         f.note = self.note.text().strip()
         return f

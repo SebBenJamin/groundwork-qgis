@@ -20,9 +20,9 @@ def two(qgis_app, store_with_model, make_dock):
     ds = ogr.Open(str(store.path), 1)               # a field the user added in QGIS
     ds.GetLayerByName("interp_features").CreateField(ogr.FieldDefn("drill", ogr.OFTString))
     ds = None
-    a = InterpFeature(new_id(), v, type="Clay lens", letter="A", confidence="certain",
+    a = InterpFeature(new_id(), v, type="Clay lens", name="A", confidence="certain",
                       note="n", extra={"drill": "yes"})
-    b = InterpFeature(new_id(), v, type="clay", letter="B")
+    b = InterpFeature(new_id(), v, type="clay", name="B")
     for f in (a, b):
         store.save_feature(f)
     pa1 = store.save_piece(InterpPiece(new_id(), v, a.id, prof.id, "line", [(1, 0), (5, -1)]))
@@ -67,7 +67,7 @@ def test_split_piece_into_new_feature_copies_attributes(two):
     new = [f for f in store.features(v) if f.id not in (a.id, b.id)]
     assert len(new) == 1
     n = new[0]
-    assert (n.type, n.confidence, n.note, n.letter) == (a.type, a.confidence, a.note, "")
+    assert (n.type, n.confidence, n.note, n.name) == (a.type, a.confidence, a.note, "")
     assert n.extra == a.extra and _owner(store, v, pa2) == n.id
     ctl.undo.stack.undo()
     assert _feature_ids(store, v) == {a.id, b.id} and _owner(store, v, pa2) == a.id
@@ -144,7 +144,7 @@ def test_export_button_writes_selected_feature_or_all(two, tmp_path):
     ctl.ask_path = lambda: str(out2)
     assert ctl.export() == 2
     ds = ogr.Open(str(out2))
-    assert {f["letter"] for f in ds.GetLayer(0)} == {"A"}
+    assert {f["name"] for f in ds.GetLayer(0)} == {"A"}
     ctl.ask_path = lambda: None
     assert ctl.export() == 0
     ctl.stop()
@@ -180,7 +180,7 @@ def test_menu_offers_only_features_on_this_profile(two):
     p2, s2 = profile_from_stations("P2", "EPSG:25832", np.array([[0, 10, 100], [50, 10, 100.0]]))
     store.save_profile(p2)
     store.save_station_set(s2)
-    c = InterpFeature(new_id(), v, type="elsewhere", letter="C")
+    c = InterpFeature(new_id(), v, type="elsewhere", name="C")
     store.save_feature(c)
     store.save_piece(InterpPiece(new_id(), v, c.id, p2.id, "point", [(3, 99)]))
     actions = dict(EditTool(ctl.dock.canvas, ctl).menu_actions(pa1))

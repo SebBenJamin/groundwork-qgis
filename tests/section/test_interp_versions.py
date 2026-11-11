@@ -13,7 +13,7 @@ def bar(qgis_app, store_with_model, make_dock):
     dock.open_profile(store.profiles()[0].id)
     store.ensure_interpretation()
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, letter="A")
+    f = InterpFeature(new_id(), v.id, name="A")
     store.save_feature(f)
     store.save_piece(InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "line",
                                  [(1.0, 0.0), (5.0, -1.0)]))
@@ -53,13 +53,13 @@ def test_start_from_version_with_freeze_first(bar):
     vb.freeze()                                           # "Old" holds letter A
     cur = store.current_version().id
     [f] = store.features(cur)
-    f.letter = "B"
+    f.name = "B"
     store.save_feature(f)
     vb.combo.setCurrentIndex(1)                           # view "Old"
     vb.ask_restore = lambda: "freeze"
     vb.start_from()
     assert sorted(v.name for v in store.versions() if v.frozen) == ["Before restore", "Old"]
-    assert [x.letter for x in store.features(cur)] == ["A"]
+    assert [x.name for x in store.features(cur)] == ["A"]
     assert vb.combo.currentIndex() == 0 and dock.provider.interp_version_id is None
 
 

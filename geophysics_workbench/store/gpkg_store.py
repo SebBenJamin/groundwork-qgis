@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -20,7 +21,10 @@ from ..core.model import Dataset, Profile, StationSet
 from .interp_store import InterpStoreMixin
 from .notes_store import FieldNotesMixin
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+#: tables whose 0.7 ``letter`` column became ``name`` (schema 1 -> 2)
+NAME_TABLES = ("interp_features", "interp_lines_3d", "interp_polygons_3d", "interp_points_3d",
+               "interp_footprints")
 
 _STR, _INT, _REAL = ogr.OFTString, ogr.OFTInteger, ogr.OFTReal
 _INT64 = ogr.OFTInteger64
@@ -85,6 +89,50 @@ def _make_layer(ds, name, fields, geom=ogr.wkbNone, srs=None):
     return lyr
 
 
+def _migrate_1_to_2(path: Path) -> None:
+    """0.7 -> 0.8: interpretation features got a name instead of a letter. ``letter`` is
+    renamed to ``name``; where a table already has a ``name`` field (one the user added),
+    the letter fills the empty names and ``letter`` stays as an ordinary user field.
+    One transaction: a failure leaves the file as it was."""
+    if not os.access(path, os.W_OK):
+        raise ValueError(f"This workbench file needs a one-time update for 0.8 but cannot be "
+                         f"written: {path}. Close other programs using it, or make it "
+                         f"writable, and open it again.")
+    try:
+        with _exceptions():
+            ds = ogr.Open(str(path), 1)
+            try:
+                ds.StartTransaction()
+                try:
+                    for table in NAME_TABLES:
+                        lyr = ds.GetLayerByName(table)
+                        if lyr is None:
+                            continue
+                        defn = lyr.GetLayerDefn()
+                        old = defn.GetFieldIndex("letter")
+                        if old < 0:
+                            continue
+                        if defn.GetFieldIndex("name") < 0:
+                            lyr.AlterFieldDefn(old, ogr.FieldDefn("name", ogr.OFTString),
+                                               ogr.ALTER_NAME_FLAG)
+                        else:
+                            ds.ExecuteSQL(f'UPDATE "{table}" SET "name" = "letter" '
+                                          f"WHERE \"name\" IS NULL OR \"name\" = ''")
+                    ds.ExecuteSQL("UPDATE wb_meta SET value = '2' "
+                                  "WHERE key = 'schema_version'")
+                except BaseException:
+                    ds.RollbackTransaction()
+                    raise
+                else:
+                    ds.CommitTransaction()
+            finally:
+                ds = None
+    except RuntimeError as exc:
+        raise ValueError(f"This workbench file needs a one-time update for 0.8 but cannot be "
+                         f"written: {path}. Close other programs using it, or make it "
+                         f"writable, and open it again. ({exc})") from None
+
+
 class ProjectStore(InterpStoreMixin, FieldNotesMixin):
     def __init__(self, path: Path, crs_authid: str):
         self.path = Path(path)
@@ -135,6 +183,9 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin):
         version = meta.get("schema_version")
         if version is None or "crs_authid" not in meta:
             raise bad
+        if version == "1":
+            _migrate_1_to_2(path)
+            version = "2"
         if version != str(SCHEMA_VERSION):
             raise ValueError(f"unsupported schema_version {version} in {path} "
                              f"(this plugin reads version {SCHEMA_VERSION})")

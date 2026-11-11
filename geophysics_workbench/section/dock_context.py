@@ -92,7 +92,7 @@ def click_details(dock, s: float, z: float) -> list[str]:
             if feat is not None:
                 if lines:
                     lines.append("")
-                title = " · ".join(x for x in (feat.letter, feat.type) if x) or "(unnamed)"
+                title = " · ".join(x for x in (feat.name, feat.type) if x) or "(unnamed)"
                 lines.append(f"Interpretation {title} ({hit.piece.kind})")
                 for label, value in (("Confidence", feat.confidence), ("Note", feat.note),
                                      ("Author", feat.author), ("Modified", feat.modified)):

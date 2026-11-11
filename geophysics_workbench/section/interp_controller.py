@@ -76,10 +76,10 @@ class InterpController(QObject):
         self.tool = None
         self._sync = None
         self._targets = None                    # (exclude, SnapTargets): no store reads per move
-        #: (feature, type suggestions, letters in use) -> edited feature or None (cancel).
+        #: (feature, type suggestions, names in use) -> edited feature or None (cancel).
         #: Every drawn piece starts its own feature: interpretation stays per profile;
         #: linking across profiles is a separate, deliberate step.
-        self.form_factory = lambda f, s, letters: ask_feature(self.dock, f, s, letters)
+        self.form_factory = lambda f, s, names: ask_feature(self.dock, f, s, names)
         #: (note, known categories) -> edited note or None (cancel)
         from ..ui.field_notes_dialog import ask_note
         self.note_form_factory = lambda note, cats: ask_note(self.dock, note, cats)
@@ -369,8 +369,8 @@ class InterpController(QObject):
         piece = normalise(InterpPiece(new_id(), version.id, "", profile_id, kind, points,
                                       based_on_dataset=dataset, based_on_version=dversion))
         feature = InterpFeature(new_id(), version.id, author=current_author())
-        letters = {f.letter for f in store.features(version.id) if f.letter}
-        edited = self.form_factory(feature, type_suggestions(store.used_types()), letters)
+        names = {f.name for f in store.features(version.id) if f.name}
+        edited = self.form_factory(feature, type_suggestions(store.used_types()), names)
         if edited is None:
             return
         edited.author = edited.author or feature.author
@@ -414,9 +414,9 @@ class InterpController(QObject):
         feature = next((f for f in store.features(version.id) if f.id == feature_id), None)
         if feature is None:
             return
-        letters = {f.letter for f in store.features(version.id)
-                   if f.letter and f.id != feature_id}
-        edited = self.form_factory(feature, type_suggestions(store.used_types()), letters)
+        names = {f.name for f in store.features(version.id)
+                 if f.name and f.id != feature_id}
+        edited = self.form_factory(feature, type_suggestions(store.used_types()), names)
         if edited is None:
             return
         edited.author = edited.author or feature.author
@@ -561,7 +561,7 @@ class InterpController(QObject):
 
     def move_piece_to(self, piece, feature_id: str | None) -> None:
         """Give ``piece`` to feature ``feature_id``; ``None`` splits it off as a new feature
-        with the old one's attributes (no letter). A feature left without pieces goes."""
+        with the old one's attributes (no name). A feature left without pieces goes."""
         import copy
         store = self.dock.provider.store
         store._writable(piece.version_id)

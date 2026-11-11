@@ -7,7 +7,7 @@ def _with_content(st, p):
     from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
     st.ensure_interpretation()
     v = st.current_version()
-    f = InterpFeature(new_id(), v.id, type="clay", letter="A")
+    f = InterpFeature(new_id(), v.id, type="clay", name="A")
     st.save_feature(f)
     st.save_piece(InterpPiece(new_id(), v.id, f.id, p.id, "line", [(1.0, -1.0), (5.0, -2.0)]))
     st.save_field_note(FieldNote("n1", p.id, 2.0, None, "fence"))

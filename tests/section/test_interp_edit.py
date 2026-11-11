@@ -44,7 +44,7 @@ def ctl(qgis_app, store_with_model, make_dock):
     dock.open_profile(store.profiles()[0].id)
     store.ensure_interpretation()
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, type="anomaly", letter="A")
+    f = InterpFeature(new_id(), v.id, type="anomaly", name="A")
     store.save_feature(f)
     p = InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "line",
                     [(2.0, 0.0), (6.0, -1.0), (10.0, 0.0)])
@@ -79,18 +79,18 @@ def test_delete_piece_then_undo_brings_it_back(ctl):
     [back] = store.pieces(vid)
     [feat] = store.features(vid)
     assert back.id == p.id and back.vertices == p.vertices
-    assert (feat.id, feat.letter, feat.type) == (p.feature_id, "A", "anomaly")
+    assert (feat.id, feat.name, feat.type) == (p.feature_id, "A", "anomaly")
 
 
 def test_edit_attributes_with_undo(ctl):
     c, store, p = ctl
     [f] = store.features(p.version_id)
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
-        feature.id, feature.version_id, type="fault", letter="F", author=feature.author)
+        feature.id, feature.version_id, type="fault", name="F", author=feature.author)
     c.edit_feature(f.id)
-    assert store.features(p.version_id)[0].letter == "F"
+    assert store.features(p.version_id)[0].name == "F"
     c.undo.stack.undo()
-    assert store.features(p.version_id)[0].letter == "A"
+    assert store.features(p.version_id)[0].name == "A"
 
 
 def test_edit_disabled_on_frozen_version(ctl):

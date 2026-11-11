@@ -18,7 +18,7 @@ from ..core.interpretation import (InterpFeature, InterpPiece, InterpVersion, fo
 
 _S, _I = ogr.OFTString, ogr.OFTInteger
 VERSION_FIELDS = [("id", _S), ("name", _S), ("frozen", _I), ("created", _S), ("note", _S)]
-FEATURE_FIELDS = [("id", _S), ("version_id", _S), ("type", _S), ("letter", _S),
+FEATURE_FIELDS = [("id", _S), ("version_id", _S), ("type", _S), ("name", _S),
                   ("confidence", _S), ("note", _S), ("author", _S), ("created", _S),
                   ("modified", _S)]
 PIECE_FIELDS = [("id", _S), ("version_id", _S), ("feature_id", _S), ("profile_id", _S),

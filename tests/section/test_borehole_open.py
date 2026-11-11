@@ -53,7 +53,7 @@ def test_click_on_column_and_piece_keeps_details_with_open_line(qgis_app, dock):
     store = dock.provider.store
     store.ensure_interpretation()
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, type="clay lens", letter="C")
+    f = InterpFeature(new_id(), v.id, type="clay lens", name="C")
     store.save_feature(f)
     store.save_piece(InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "polygon",
                                  [(3, 0), (8, 0), (8, -5), (3, -5)]))
@@ -153,7 +153,7 @@ def test_details_popup_goes_away(qgis_app, dock):
     store = dock.provider.store
     store.ensure_interpretation()
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, type="lens", letter="L")
+    f = InterpFeature(new_id(), v.id, type="lens", name="L")
     store.save_feature(f)
     store.save_piece(InterpPiece(new_id(), v.id, f.id, dock.current_profile_id(), "polygon",
                                  [(3, 0), (8, 0), (8, -5), (3, -5)]))

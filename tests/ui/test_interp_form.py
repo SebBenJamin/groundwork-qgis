@@ -13,4 +13,4 @@ def test_form_accepts_free_text_type_and_warns_duplicate_letter(qgis_app):
     form.letter.setText("B")
     assert not form.letter_warning.isVisibleTo(form)
     f = form.feature()
-    assert (f.type, f.letter, f.confidence) == ("client's suspected pipe", "B", "probable")
+    assert (f.type, f.name, f.confidence) == ("client's suspected pipe", "B", "probable")

@@ -9,7 +9,7 @@ def _poly_setup(c, store):
     from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
     from geophysics_workbench.ui.interp_layers import interp_layers
     v = store.current_version()
-    f = InterpFeature(new_id(), v.id, type="clay lens", letter="K")
+    f = InterpFeature(new_id(), v.id, type="clay lens", name="K")
     store.save_feature(f)
     pid = c.dock.current_profile_id()
     p = InterpPiece(new_id(), v.id, f.id, pid, "polygon",
