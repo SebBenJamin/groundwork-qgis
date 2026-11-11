@@ -12,25 +12,36 @@ CACHE = REPO / ".cache" / "guelpe"
 sys.path.insert(0, str(REPO / "scripts"))
 
 
-def _project():
+def _project(folder=GUELPE):
     from qgis.core import QgsProject
     prj = QgsProject()
-    assert prj.read(str(GUELPE / "guelpe_project.qgz"))
+    assert prj.read(str(folder / "guelpe_project.qgz"))
     return prj
 
 
-def test_guelpe_demo_opens_offline(qgis_app):
+def test_guelpe_demo_opens_offline(qgis_app, tmp_path):
+    """On a copy: opening a store may update it (0.8: schema 1 -> 2), and the committed
+    demo folder holds the user's drawings - the suite must never write to it."""
+    import hashlib
+    import shutil
+
     from geophysics_workbench.section.data import SectionDataProvider
     from geophysics_workbench.ui.project_actions import attach_store
 
-    prj = _project()
+    store_file = GUELPE / "guelpe_workbench.gpkg"
+    before = hashlib.sha1(store_file.read_bytes()).hexdigest()
+    copy = tmp_path / "demo_guelpe"
+    shutil.copytree(GUELPE, copy, ignore=shutil.ignore_patterns("*-wal", "*-shm"))
+    prj = _project(copy)
     st = attach_store(prj)
+    assert st.path.parent == copy
     prov = SectionDataProvider(st)
     assert sorted(p.name for p in st.profiles()) == [f"Transect {i}" for i in range(1, 5)]
     assert all(lyr.error is None for p in st.profiles() for lyr in prov.layers(p.id))
     offline = [lyr for lyr in prj.mapLayers().values() if lyr.providerType() in ("ogr", "gdal")]
     assert len(offline) >= 4 and all(lyr.isValid() for lyr in offline)
     prj.clear()
+    assert hashlib.sha1(store_file.read_bytes()).hexdigest() == before
 
 
 def test_guelpe_live_layers_point_at_brandenburg(qgis_app):
