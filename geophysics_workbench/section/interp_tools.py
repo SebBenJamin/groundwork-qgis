@@ -418,10 +418,11 @@ class NoteTool(QgsPlotTool):
     DRAG_PX = 4
 
     def __init__(self, canvas, on_finished: Callable[[float, float | None], None],
-                 on_cancel: Callable[[], None] | None = None):
+                 on_cancel: Callable[[], None] | None = None,
+                 on_hover: Callable[[object], None] | None = None):
         super().__init__(canvas, "field-note")
         sip.transferto(self, canvas)            # the canvas owns its tools (see DrawTool)
-        self.on_finished, self.on_cancel = on_finished, on_cancel
+        self.on_finished, self.on_cancel, self.on_hover = on_finished, on_cancel, on_hover
         self.panner = Panner(canvas)
         self._start = None                      # (canvas x, chainage) of the press
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -468,7 +469,13 @@ class NoteTool(QgsPlotTool):
             event.accept()
 
     def plotMoveEvent(self, event):
-        if self.panner.move(event) or self._start is None:
+        if self.panner.move(event):
+            return
+        if self.on_hover is not None:           # the map cursor follows, as with the others
+            pp = self.canvas().canvasPointToPlotPoint(QPointF(event.pos()))
+            if not pp.isEmpty():
+                self.on_hover(pp)
+        if self._start is None:
             return
         x0, s0 = self._start
         x1, s1 = float(event.pos().x()), self._s(event)

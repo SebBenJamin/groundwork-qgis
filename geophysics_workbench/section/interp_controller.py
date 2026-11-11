@@ -442,7 +442,8 @@ class InterpController(QObject):
         if self.dock.provider is None or self.dock.current_profile_id() is None:
             self.stop()
             return
-        self.tool = NoteTool(self.dock.canvas, self._note_finished, on_cancel=self.stop)
+        self.tool = NoteTool(self.dock.canvas, self._note_finished, on_cancel=self.stop,
+                             on_hover=self.hover)
         self.dock.canvas.setTool(self.tool)
         self.buttons["note"].setChecked(True)
         self.dock.canvas.setFocus()
