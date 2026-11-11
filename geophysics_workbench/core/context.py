@@ -79,6 +79,16 @@ class ProjectedPoint:
     total_depth: float | None = None
     curves: list[Curve] = field(default_factory=list)
     flagged: bool = False         # elevation field and DEM differ by more than the tolerance
+    bid: str = ""                 # boreholes: the id in its layer ("" = none: label is the name)
+    layer_id: str = ""            # boreholes: the borehole layer
+
+
+def borehole_key(point: "ProjectedPoint") -> tuple[str, str] | None:
+    """(layer id, borehole id) - how a borehole is hidden in a profile; ``None`` without an
+    id (its label is then the layer's name, shared by every such borehole)."""
+    if point.kind != "borehole" or not point.bid or not point.layer_id:
+        return None
+    return point.layer_id, point.bid
 
 
 def collar_height(field_z: float | None, dem_z: float | None,

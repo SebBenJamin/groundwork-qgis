@@ -47,6 +47,12 @@ def half_widths(ctx, per_px: float, per_mm: float):
 
 def borehole_hit(dock, s: float, z: float):
     """(entry, label) of the borehole column under (s, z) of the open profile, or ``None``."""
+    p = borehole_point(dock, s, z)
+    return None if p is None else (p.entry, p.label)
+
+
+def borehole_point(dock, s: float, z: float):
+    """The borehole (``ProjectedPoint``) whose column is under (s, z), or ``None``."""
     from .context_readout import borehole_at
     rng, area = dock.canvas.visibleDistanceRange(), dock.canvas.plotArea()
     if area.width() <= 0 or rng.upper() <= rng.lower():
@@ -56,9 +62,8 @@ def borehole_hit(dock, s: float, z: float):
     context_lines(dock, s, z)                   # fills the cached context
     if dock._ctx is None or dock._ctx[0] is None:
         return None
-    p = borehole_at(dock._ctx[0], s, z, half_widths(dock._ctx[0], per_px, per_mm), dock._topo,
-                    right_extents(dock._ctx[0], per_px))
-    return None if p is None else (p.entry, p.label)
+    return borehole_at(dock._ctx[0], s, z, half_widths(dock._ctx[0], per_px, per_mm),
+                       dock._topo, right_extents(dock._ctx[0], per_px))
 
 
 def click_details(dock, s: float, z: float) -> list[str]:

@@ -18,6 +18,7 @@ import numpy as np
 from osgeo import gdal, ogr, osr
 
 from ..core.model import Dataset, Profile, StationSet
+from .hidden_store import HiddenBoreholesMixin
 from .interp_store import InterpStoreMixin
 from .notes_store import FieldNotesMixin
 
@@ -133,7 +134,7 @@ def _migrate_1_to_2(path: Path) -> None:
                          f"writable, and open it again. ({exc})") from None
 
 
-class ProjectStore(InterpStoreMixin, FieldNotesMixin):
+class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
     def __init__(self, path: Path, crs_authid: str):
         self.path = Path(path)
         self.crs_authid = crs_authid
@@ -383,6 +384,7 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin):
             for table in ("stations", "station_sets", "datasets"):
                 self._delete_where(ds.GetLayerByName(table), where)
             self._delete_where(ds.GetLayerByName("profiles"), f"id = {_q(profile_id)}")
+            self._drop_hidden(ds, profile_id)
         return counts
 
     def delete_dataset(self, dataset_id: str) -> None:

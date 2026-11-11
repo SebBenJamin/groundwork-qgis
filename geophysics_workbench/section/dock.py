@@ -7,6 +7,8 @@ so canvas distance == forward profile chainage (what ``cursor_moved``, ``show_cu
 """
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsLineString, QgsPoint,
                        QgsProfilePoint, QgsProject, QgsSettings)
@@ -39,6 +41,9 @@ HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
 HINT_NO_PROFILE_LINK = ('Choose a profile above, or <a href="pick">pick one on the map</a>.')
 HINT_HOVER = "Move the mouse over the section to read values."
 MISSING_PROFILE = "Profile not found in the workbench project; it may have been deleted."
+HIDE_IN_SECTION = "Hide in Section"
+SHOW_IN_SECTION = "Show in Section"
+NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
 
 
 def _registered_source_for(provider):
@@ -394,6 +399,10 @@ class SectionDock(QDockWidget):
             if etype == QEvent.Type.MouseButtonPress and \
                     event.button() == Qt.MouseButton.LeftButton:
                 self._click_pos = event.position()
+            elif etype == QEvent.Type.MouseButtonPress and \
+                    event.button() == Qt.MouseButton.RightButton and \
+                    self.canvas.tool() is self._pan_tool and self._right_click(event):
+                return True
             elif etype == QEvent.Type.MouseButtonRelease and self._click_pos is not None:
                 moved = event.position() - self._click_pos
                 self._click_pos = None
@@ -424,6 +433,44 @@ class SectionDock(QDockWidget):
         if pp.isEmpty():
             return
         self.handle_click(float(pp.distance()), float(pp.elevation()), global_pos.toPoint())
+
+    def _right_click(self, event) -> bool:
+        if self._profile is None or self.provider is None:
+            return False
+        pp = self.canvas.canvasPointToPlotPoint(event.position())
+        if pp.isEmpty():
+            return False
+        return self.handle_right_click(float(pp.distance()), float(pp.elevation()),
+                                       event.globalPosition().toPoint())
+
+    def handle_right_click(self, s: float, z: float, global_point) -> bool:
+        """A Pan-mode right-click at (s, z): on a borehole column, a menu to hide it in this
+        profile's section (and its plates). True when the menu was shown."""
+        from qgis.PyQt.QtGui import QCursor
+
+        from ..core.context import borehole_key
+        from .dock_context import borehole_point
+        point = borehole_point(self, s, z)
+        if point is None:
+            return False
+        key = borehole_key(point)
+        menu = QMenu()                          # parentless (round-1 lifetime rule)
+        menu.setToolTipsVisible(True)
+        action = menu.addAction(HIDE_IN_SECTION)
+        if key is None:
+            action.setEnabled(False)
+            action.setToolTip(NO_ID_TIP)
+        else:
+            action.setToolTip("Leave this borehole out of this profile's section and plates; "
+                              "the borehole viewer still shows it")
+            action.triggered.connect(partial(self._hide_borehole, key))
+        menu.exec(global_point if global_point is not None else QCursor.pos())
+        return True
+
+    def _hide_borehole(self, key, *_args) -> None:
+        profile_id = self.current_profile_id()
+        if profile_id is not None and self.provider is not None:
+            self.provider.set_boreholes_hidden(profile_id, [key], True)
 
     def handle_click(self, s: float, z: float, global_point) -> None:
         """A Pan-mode click at (s, z): on a borehole column alone it opens the borehole

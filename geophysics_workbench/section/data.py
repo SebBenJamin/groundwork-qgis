@@ -17,7 +17,7 @@ import numpy as np
 from .. import readers
 from ..readers.errors import plain_error
 from ..core.colors import ColorScale
-from ..core.context import ContextItems
+from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
 from ..core.model import Dataset, Profile, StationSet, data_to_chainage
 from ..core.section_mesh import SectionMesh
@@ -540,15 +540,30 @@ class SectionDataProvider:
         profile = self._profile(profile_id)
         return profile is not None and self._items(profile).dem is not None
 
-    def context(self, profile_id: str) -> ContextItems | None:
+    def context(self, profile_id: str, include_hidden: bool = False) -> ContextItems | None:
         """Gathered context with the ties, in forward chainage; None for an unknown
-        profile. Shares the cached data: read-only."""
+        profile. Boreholes hidden in this profile are left out unless ``include_hidden``
+        (the borehole viewer shows them faded). Shares the cached data: read-only."""
         profile = self._profile(profile_id)
         if profile is None:
             return None
         notes = [n for n in self.store.field_notes(profile_id) if n.shown] \
             if self.show_field_notes else []
-        return replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
+        items = replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
+        hidden = set() if include_hidden else self.hidden_keys(profile_id)
+        if hidden:
+            items = replace(items, points=[p for p in items.points
+                                           if borehole_key(p) not in hidden])
+        return items
+
+    def hidden_keys(self, profile_id: str) -> set[tuple[str, str]]:
+        """(layer id, borehole id) of the boreholes hidden in ``profile_id``'s section."""
+        return self.store.hidden_boreholes(profile_id)
+
+    def set_boreholes_hidden(self, profile_id: str, keys, hidden: bool) -> None:
+        """Hide or show boreholes in one profile's section (and its plates), then redraw."""
+        self.store.set_boreholes_hidden(profile_id, keys, hidden)
+        self.notify_redraw()
 
     def snapshot(self, profile_id: str, reverse: bool = False, look=None) -> SectionSnapshot:
         """Detached plain-data copy for a generator thread. ``reverse`` mirrors chainage
