@@ -223,13 +223,13 @@ def test_tie_strip_uses_host_profiles_scale(qgis_app):
 
 
 def test_tie_strip_falls_back_to_its_own_scale(qgis_app):
-    """Without a visible layer of the strip's quantity on the viewed profile, the strip
-    keeps the other profile's own scale."""
+    """Without a model of the strip's quantity on the viewed profile, the strip keeps the
+    other profile's own scale (round 2: a hidden model of that quantity still lends its
+    scale, so switching layers never recolours the strip - test_tie_strip_scale)."""
     from geophysics_workbench.core.colors import ColorScale
 
     own = ColorScale("Spectral_r", 1.0, 1000.0, True)
-    for layers in ([], [_host_layer("chargeability", ColorScale("viridis", 0.0, 50.0, False)),
-                        _host_layer("resistivity", ColorScale("jet", 1.0, 9.0), visible=False)]):
+    for layers in ([], [_host_layer("chargeability", ColorScale("viridis", 0.0, 50.0, False))]):
         img = _img(_results(_tie_items(own), layers=layers))
         x = _x(60.0) + round(_mm(img, 1.5))
         assert _close(img.pixel(x, _y(-0.5)), tuple(own.rgba(10.0)[0][:3]))
