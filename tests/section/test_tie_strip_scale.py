@@ -27,3 +27,10 @@ def test_hidden_model_still_used():
 def test_no_model_uses_column_scale():
     from geophysics_workbench.section.context_render import strip_scale
     assert strip_scale(_col(), [_layer("ert_measured", "measured")]) == "column"
+
+
+def test_misfit_readings_never_lend_their_scale():
+    """Final review: readings with a response (misfit kind) are readings, not a model."""
+    from geophysics_workbench.section.context_render import strip_scale
+    layers = [_layer("ert_model", "model"), _layer("ert_misfit", "misfit")]
+    assert strip_scale(_col(), layers) == "model"

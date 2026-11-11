@@ -591,6 +591,11 @@ class SectionDataProvider:
             # the plate's own notes switch, not the panel's
             notes = [n for n in self.store.field_notes(profile_id) if n.shown]
             context = _context_for_look(replace(context, field_notes=notes), look)
+            if context.field_notes and not context.note_looks and self.note_looks:
+                try:                            # the panel's notes are off: no looks yet
+                    context = replace(context, note_looks=self.note_looks())
+                except Exception:
+                    pass
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for la in layers:

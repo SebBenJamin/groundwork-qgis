@@ -547,9 +547,13 @@ class BoreholeViewer(QWidget):
         return borehole_key(point) in self.hidden
 
     def set_hidden(self, keys, hidden: bool, *_args) -> None:
-        """Hide or show boreholes in this profile's section; the viewer follows (refresh)."""
+        """Hide or show boreholes in this profile's section, on the panel's undo stack (as
+        the section's right-click); the viewer follows (refresh)."""
         if self.profile_id is not None:
-            self.dock.provider.set_boreholes_hidden(self.profile_id, list(keys), hidden)
+            keys = list(keys)
+            message = (f"{len(keys)} borehole(s) hidden in this section" if hidden
+                       else f"{len(keys)} borehole(s) shown again")
+            self.dock._set_hidden(keys, hidden, message)
 
     # -- the look shared with the section (kept in the borehole entries) ------------------
     def _entries(self):

@@ -103,3 +103,13 @@ def test_option_hides_hidden_columns(viewer):
 def test_option_persisted(viewer):
     viewer.show_check["hidden"].setChecked(False)
     assert viewer.options()["show"]["hidden"] is False
+
+
+def test_viewer_hiding_is_undoable(viewer):
+    """Final review: hiding from the viewer goes through the panel's undo stack."""
+    from geophysics_workbench.section.dock import HIDE_IN_SECTION
+    _click(viewer, "RK15")
+    menu = viewer.canvas.column_menu(_rects(viewer)["RK15"].center())
+    [hide] = [a for a in menu.actions() if a.text() == HIDE_IN_SECTION]
+    hide.trigger()
+    assert viewer.dock.hidden_calls == [([("L1", "RK15")], True)]

@@ -379,8 +379,11 @@ def _write_text(label, text: str) -> bool:
     if label is None:
         return False
     last, current = label.customProperty(WRITTEN), label.text()
-    edited = current != (last if last is not None else text)
+    # an emptied label asks for the plugin's text again (what the Update message advises)
+    edited = bool(current.strip()) and current != (last if last is not None else text)
     if edited:
+        if last is None:                        # 0.7: keep it, but record what we would
+            label.setCustomProperty(WRITTEN, text)   # write, so later changes are reported
         return current != text
     label.setText(text)
     label.setCustomProperty(WRITTEN, text)
@@ -390,7 +393,8 @@ def _write_text(label, text: str) -> bool:
 def _went_stale(label, text: str) -> bool:
     """A kept edit whose plugin text has changed since the plugin last wrote it."""
     last = label.customProperty(WRITTEN)
-    return last is not None and last != text and label.text() != last
+    return last is not None and last != text and label.text() != last \
+        and bool(label.text().strip())
 
 
 def _highlight_style(layer, profile_ids: list[str]) -> str:
@@ -635,7 +639,9 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     notes = layout.itemById("wb_field_notes")
     if isinstance(notes, QgsLayoutItemLabel):
         text = field_notes_text(store, plate, names)
-        if _went_stale(notes, text):
+        legacy = notes.customProperty(WRITTEN) is None and notes.text().strip() \
+            and notes.text() != text            # a 0.7 list that no longer matches the notes
+        if legacy or _went_stale(notes, text):
             stale.append("field notes")
         _write_text(notes, text)
     layout.setCustomProperty(STALE_PROPERTY, stale)

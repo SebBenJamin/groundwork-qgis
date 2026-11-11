@@ -78,9 +78,15 @@ def fake_dock(qgis_app):
             super().__init__()
             self.provider = Provider()
             self.profile = _Profile("p1", "Transect 3")
+            self.hidden_calls = []
 
         def current_profile(self):
             return self.profile
+
+        def _set_hidden(self, keys, hidden, message=""):
+            """As the section dock: on the undo stack (recorded here)."""
+            self.hidden_calls.append((list(keys), hidden))
+            self.provider.set_boreholes_hidden(self.profile.id, list(keys), hidden)
 
     return Dock()
 
