@@ -20,7 +20,8 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialo
                                  QWidget)
 
 from ..core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
-from ..plates.build import DETAILS, TEMPLATES, create_or_update_plate, plate_details, \
+from ..plates.build import DETAILS, STALE_PROPERTY, TEMPLATES, create_or_update_plate, \
+    plate_details, \
     plate_name, set_plate_details
 from ..plates.sources import read_plates, write_plates
 
@@ -459,6 +460,10 @@ class PlatesDialog(QDialog):
         if tight:
             text += (" Does not fit even at the smallest scale (set a From/To range or a "
                      "scale): " + "; ".join(tight) + ".")
+        if any("field notes" in (layout.customProperty(STALE_PROPERTY) or [])
+               for layout in layouts):
+            text += (" Your edited field-notes text was kept, but the notes have changed. To "
+                     "get the new text, delete the label's text and press Update.")
         if failed:
             text += " Failed: " + "; ".join(failed)
         self.failed = failed

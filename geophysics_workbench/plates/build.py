@@ -35,6 +35,8 @@ TEMPLATES = {name: TEMPLATE_DIR / f"{name}.qpt"
 PLATE_PROPERTY = "wb_plate_id"
 COUNT_PROPERTY = "wb_frame_count"
 FIT_PROPERTY = "wb_not_fitting"         # frames the last update could not fit (for messages)
+#: kept user edits whose plugin text has changed since (for the message after Update)
+STALE_PROPERTY = "wb_stale_labels"
 #: what the plugin last wrote into an item; a different current value means the user edited
 #: it, and an update then leaves it alone
 WRITTEN = "wb_written"
@@ -92,6 +94,9 @@ def _new_layout(project, plate):
         layout.initializeDefaults()             # an unreadable template: an empty A4 page
     else:
         layout.loadFromTemplate(doc, QgsReadWriteContext())
+    for item in layout.items():                 # the template's texts are the plugin's own
+        if isinstance(item, QgsLayoutItemLabel) and item.id().startswith("wb_"):
+            item.setCustomProperty(WRITTEN, item.text())
     return layout
 
 
@@ -257,6 +262,7 @@ def _label(layout, item_id: str, size: float = 7.0):
         return item, False
     item = QgsLayoutItemLabel(layout)
     item.setId(item_id)
+    item.setCustomProperty(WRITTEN, item.text())   # new: the plugin's, not a user edit
     fmt = item.textFormat()
     fmt.setSize(size)
     item.setTextFormat(fmt)
@@ -352,13 +358,26 @@ def _legend_signature(root) -> str:
     return "\n".join(parts)
 
 
-def _write_text(label, text: str) -> None:
-    """Set a plugin-written label unless the user edited it since the plugin last did."""
-    last = label.customProperty(WRITTEN)
-    if last is not None and label.text() != last:
-        return
+def _write_text(label, text: str) -> bool:
+    """Set a plugin-written label unless it is the user's edit; True when an edit was kept
+    (and differs from ``text``). With a record of the last written text, an edit is a text
+    differing from it. Without one (a plate from 0.7), a text differing from ``text`` is
+    taken as the user's edit too - edits made then must survive the first Update."""
+    if label is None:
+        return False
+    last, current = label.customProperty(WRITTEN), label.text()
+    edited = current != (last if last is not None else text)
+    if edited:
+        return current != text
     label.setText(text)
     label.setCustomProperty(WRITTEN, text)
+    return False
+
+
+def _went_stale(label, text: str) -> bool:
+    """A kept edit whose plugin text has changed since the plugin last wrote it."""
+    last = label.customProperty(WRITTEN)
+    return last is not None and last != text and label.text() != last
 
 
 def _highlight_style(layer, profile_ids: list[str]) -> str:
@@ -450,15 +469,15 @@ def _repair_scalebar(layout, m) -> None:
 def _update_title(layout, plate, crs_authid: str) -> None:
     for key, caption in DETAILS:
         label = layout.itemById(f"wb_title_{key}")
-        if isinstance(label, QgsLayoutItemLabel) and f"@wb_{key}" not in label.text():
-            label.setText(f"{caption}: [% @wb_{key} %]")
+        if isinstance(label, QgsLayoutItemLabel):
+            _write_text(label, f"{caption}: [% @wb_{key} %]")
     label = layout.itemById("wb_title_plate")
     if isinstance(label, QgsLayoutItemLabel):
-        label.setText(plate_name(plate))
+        _write_text(label, plate_name(plate))
     label = layout.itemById("wb_crs")
     if isinstance(label, QgsLayoutItemLabel):
         crs = QgsCoordinateReferenceSystem(crs_authid)
-        label.setText(f"Coordinate system: {crs.authid()} {crs.description()}".strip())
+        _write_text(label, f"Coordinate system: {crs.authid()} {crs.description()}".strip())
 
 
 # -- the builder -------------------------------------------------------------------------------
@@ -594,9 +613,14 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     if bl is not None and hasattr(bl, "frame_ids"):
         bl.frame_ids = [f.frame_id for f in plate.frames if f.look.boreholes]
         bl.refresh()
+    stale = []
     notes = layout.itemById("wb_field_notes")
     if isinstance(notes, QgsLayoutItemLabel):
-        notes.setText(field_notes_text(store, plate, names))
+        text = field_notes_text(store, plate, names)
+        if _went_stale(notes, text):
+            stale.append("field notes")
+        _write_text(notes, text)
+    layout.setCustomProperty(STALE_PROPERTY, stale)
     _update_minimap(layout, store, project, on_plate)
     _update_title(layout, plate, store.crs_authid)
 
