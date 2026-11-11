@@ -17,7 +17,8 @@ from qgis.PyQt.QtCore import QPointF, QRectF
 from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 
 from ..core.gridding import (FADE_ALPHA, contour_levels, contour_lines, coverage_alpha,
-                             default_threshold, grid_model, grid_shape)
+                             default_threshold, fade_band, grid_model, grid_shape,
+                             soft_coverage_alpha)
 
 CONTOUR_PEN_MM = 0.25
 CONTOUR_MINOR_PEN_MM = 0.13          # typed minor levels: thinner, no label
@@ -120,18 +121,21 @@ def _gridded(layer, topo, threshold):
             _cache.move_to_end(key)
             return hit
     grid = grid_model(mesh, topo, shape, scale.log, fill_to_ground=True)
-    low = None
+    low = alpha = None
     if threshold is not None:
         cov = grid_model(mesh, topo, shape, False, values=mesh.coverage,
                          fill_to_ground=True)
-        low = coverage_alpha(cov.values, threshold, st.fade_mode) < 1.0
+        # soft: follows the smoothed coverage over a band, no blocky edge (round 2, F2)
+        alpha = soft_coverage_alpha(cov.values, threshold, st.fade_mode,
+                                    fade_band(mesh.coverage))
+        floor = 0.0 if st.fade_mode == "blank" else FADE_ALPHA
+        low = alpha < (floor + 1.0) / 2                 # where contours turn faint
     image = None
     if st.mode in ("smooth", "smooth+contours"):
         nz, nx = grid.values.shape
         rgba = scale.rgba(grid.values.ravel()).reshape(nz, nx, 4).copy()
-        if low is not None:
-            factor = 0.0 if st.fade_mode == "blank" else FADE_ALPHA
-            rgba[..., 3] = np.where(low, rgba[..., 3] * factor, rgba[..., 3]).astype(np.uint8)
+        if alpha is not None:
+            rgba[..., 3] = np.round(rgba[..., 3] * alpha).astype(np.uint8)
         rgba[..., 3] = np.where(_next_to_empty(grid, mesh), 0, rgba[..., 3])
         image = _field_image(grid, rgba)
     contours = []

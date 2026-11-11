@@ -17,6 +17,28 @@ def coverage_alpha(coverage, threshold: float, mode: str) -> np.ndarray:
     return np.where(low, 0.0 if mode == "blank" else FADE_ALPHA, 1.0)
 
 
+def soft_coverage_alpha(coverage, threshold: float, mode: str, band: float) -> np.ndarray:
+    """Like ``coverage_alpha`` but soft: a smoothstep from the low alpha (``FADE_ALPHA``, or
+    0 for "blank") at ``threshold - band/2`` to 1 at ``threshold + band/2``, so the faded
+    part of a smooth field has no hard, blocky edge. ``band`` 0: the hard step."""
+    if not band > 0:
+        return coverage_alpha(coverage, threshold, mode)
+    c = np.asarray(coverage, float)
+    low = 0.0 if mode == "blank" else FADE_ALPHA
+    t = np.clip((c - (threshold - band / 2)) / band, 0.0, 1.0)
+    t = t * t * (3.0 - 2.0 * t)
+    return np.where(np.isfinite(c), low + (1.0 - low) * t, 1.0)
+
+
+def fade_band(coverage) -> float:
+    """Width of the soft fade: a tenth of the coverage's 5-95 % spread (0 without data)."""
+    c = np.asarray(coverage, float)
+    c = c[np.isfinite(c)]
+    if c.size < 2:
+        return 0.0
+    return float(0.1 * (np.percentile(c, 95) - np.percentile(c, 5)))
+
+
 def default_threshold(coverage) -> float:
     """Default coverage threshold: the 10th percentile of the finite values (0.0 if none)."""
     c = np.asarray(coverage, float)
