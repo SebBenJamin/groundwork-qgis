@@ -294,14 +294,17 @@ def tie_strip_column(tie):
 
 
 def strip_scale(col, host_layers):
-    """The scale a tie strip is drawn with: that of the viewed profile's topmost visible
-    layer of the column's quantity, so equal values look equal across the tie (finding
-    F2); the column's own scale when the viewed profile has no such layer."""
-    for la in reversed(host_layers or ()):                 # drawing order: last is on top
-        if (la.style.visible and la.mesh is not None and la.style.scale is not None
-                and la.dataset.quantity == col.quantity):
-            return la.style.scale
-    return col.scale
+    """The scale a tie strip is drawn with: that of the viewed profile's topmost model of
+    the column's quantity (visible ones first), so equal values look equal across the tie
+    (finding F2) and the strip looks the same whichever layers are switched on (measured
+    data never lends its scale); the column's own scale when the profile has no model."""
+    models = [la for la in (host_layers or ())
+              if la.mesh is not None and la.style.scale is not None
+              and la.dataset.kind != "ert_measured" and la.dataset.quantity == col.quantity]
+    if not models:
+        return col.scale
+    # stable sort: visible after hidden, each in drawing order (last is on top)
+    return sorted(models, key=lambda la: bool(la.style.visible))[-1].style.scale
 
 
 def tie_label(tie) -> str:
