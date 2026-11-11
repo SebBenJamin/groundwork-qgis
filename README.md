@@ -3,9 +3,9 @@
 A QGIS 4.2+ plugin for loading, displaying and interpreting georeferenced geophysical
 profiles and sections (e.g. ERT).
 
-**Status:** 0.2.1, flexible crossing lines and a live context dialog. See the latest
-[release note](docs/releases/0.2.1.md) (earlier: [0.2.0](docs/releases/0.2.0.md), [0.1.1](docs/releases/0.1.1.md),
-[0.1.0](docs/releases/0.1.0.md)).
+**Status:** 0.8.0. See the latest [release note](docs/releases/0.8.0.md); earlier notes are
+in [docs/releases](docs/releases/). User guides: [boreholes](docs/user/boreholes.md),
+[field notes, Dataset info and plates](docs/user/plates.md).
 
 ## Install
 
@@ -13,21 +13,33 @@ Requires QGIS 4.2 or newer.
 
 1. **Plugins → Manage and Install Plugins… → Install from ZIP** (German QGIS:
    **Erweiterungen → Erweiterungen verwalten und installieren… → Aus ZIP installieren**).
-2. Choose `geophysics_workbench-0.2.1.zip` and click **Install Plugin**.
+2. Choose `geophysics_workbench-0.8.0.zip` and click **Install Plugin**.
 3. A **Geophysics Workbench** menu appears in the menu bar.
 
 ## Open the demo
 
-Unzip `geophysics_workbench-demo-0.2.2.zip` into any folder and open `demo_project.qgz`
-in it (**Project → Open…**). Then **Geophysics Workbench → Pick profile on map** and click
-the P1 line to show its section.
-
-**Real data:** `geophysics_workbench-demo-guelpe-0.2.2.zip` holds open ERT, core and state
+**Real data:** `geophysics_workbench-demo-guelpe-0.8.0.zip` holds open ERT, core and state
 survey data from Gülpe (Havel, Brandenburg). Open `guelpe_project.qgz`; the live state layers
 need internet. Sources and licences are in its `ATTRIBUTION.md`. To rebuild it, run
 `scripts/fetch_demo_guelpe.py` and then `scripts/build_demo_guelpe.py`.
 
-## What 0.1.0 (M1) does
+## What it does
+
+- **Profiles** from an electrode table, a line feature or start/end points; ERT models
+  (R2/ResIPy, ZondRes2D, VTK, pyGIMLi/BERT), measured data and misfit as section layers in a
+  panel under the map, linked to the map by a cursor both ways.
+- **Display**: cells, smooth field and contours (automatic or typed major/minor levels), QGIS
+  colour ramps, coverage fade, Auto vertical exaggeration.
+- **Context**: crossing lines, points, boreholes as styled lithology columns with log curves,
+  a geology band, a DEM line; profile ties with the other profile's model.
+- **Borehole viewer**: a profile's boreholes side by side; hide boreholes per section.
+- **Interpretation**: draw lines, polygons and points per profile (type, name, confidence,
+  note), undo/redo, frozen versions; QGIS layers in 2D and 3D, DXF/CSV export.
+- **Field notes** along profiles, styled through their QGIS layers.
+- **Plates**: A4/A3 report layouts with stacked sections, colour bars, legends, mini-map and
+  title block; your edits survive updates; vector PDF export.
+
+## History: what 0.1.0 (M1) did
 
 - Profiles from an electrode table, a selected line feature or start/end points.
 - ERT model sections (R2/ResIPy `f001_res.dat`, ZondRes2D XYZ, legacy VTK) drawn in a
@@ -37,7 +49,7 @@ need internet. Sources and licences are in its `ATTRIBUTION.md`. To rebuild it, 
   colour scale; vertical exaggeration.
 - Profiles, stations and the model list are stored in a GeoPackage next to the QGIS project.
 
-## What 0.2.0 (M2) adds
+## History: what 0.2.0 (M2) added
 
 - Third-party context drawn on the section, chosen in **Context layers…** and saved in the
   QGIS project: crossing lines (any line layer, in its map colour) with their labels, points and

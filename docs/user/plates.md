@@ -22,7 +22,9 @@ Field notes are what the crew experienced along the line: "electrodes 23–28 di
 
 On the section, a note at one place shows as an orange mark down to the ground; a stretch as a bar in its own lane just above the ground (overlapping stretches get separate lanes). Each has a label with the first line of its text. The full text is shown when you hover or click. A stretch that runs past the ends of the profile is cut to the profile, and the note says so.
 
-**On the map**, the layers "Field notes" and "Field notes (stretches)" in the Geophysics Workbench group show the notes. They are read-only and are updated when you change a note.
+**On the map**, the layers "Field notes" and "Field notes (stretches)" in the Geophysics Workbench group show the notes. They are read-only and are updated when you change a note. They are added to the project as soon as it has notes.
+
+**Styling notes**: the section takes each note's colour from these layers, a stretch's line width from "Field notes (stretches)". Restyle them in Layer Properties like any layer; a categorized style on `category` colours each note by its category. The section follows at once.
 
 Photos are not stored. Look at them, then write what matters into a note.
 
@@ -80,7 +82,10 @@ Running **Create / Update Plates** or **Export Plates…** again refreshes only 
 - the contents of the legends;
 - the field-notes list;
 - the title fields;
+- the section titles;
 - the provenance lines.
+
+Texts you edited in the layout designer stay as you wrote them: plate title, coordinate system line, title-block captions, field-notes list, section titles and provenance lines. If you edited the field-notes list and the notes change later, the message after Update says so; delete the label's text and update again to get the new list.
 
 Anything you moved, resized, restyled or added in the layout designer stays as it is. One exception: when a plate gets more or fewer frames, the frames and their colour bars are laid out in the section area again.
 
@@ -93,6 +98,7 @@ If a plate's profile was removed from the workbench, its frame says "Profile not
 ## 4. What is on a plate
 
 - **Section frames**: QGIS's own elevation-profile layout items, drawing the same section as the panel, with distance and elevation axes in metres.
+- **Section titles**: the profile's name at the top of each frame. Edit or move it in the layout designer; Update keeps your change. Texts inside the section (labels, contour values) are styled in the section panel and the plate follows.
 - **Colour bars**: one per model shown, using the frame's colour scale. Select a colour bar in the layout designer to tune it. In its panel you set:
   - ticks: `auto`, a step such as `step:25`, or a list such as `list:1,10,100,1000`;
   - title and unit;

@@ -5,12 +5,23 @@ DEMO = Path(__file__).resolve().parent.parent.parent / "demo"
 
 
 # -- brief test ----------------------------------------------------------------------------
-def test_demo_project_opens_and_resolves_sources(qgis_app):
+def _sha1(path):
+    import hashlib
+    return hashlib.sha1(Path(path).read_bytes()).hexdigest()
+
+
+def test_demo_project_opens_and_resolves_sources(qgis_app, tmp_path):
+    """On a copy: opening a store may update it (0.8: schema 1 -> 2); the suite must never
+    write to the committed demo."""
     from qgis.core import QgsProject
     from geophysics_workbench.ui.project_actions import attach_store
     from geophysics_workbench.section.data import SectionDataProvider
-    prj = QgsProject(); assert prj.read("demo/demo_project.qgz")
+    before = _sha1(DEMO / "demo_workbench.gpkg")
+    copy = tmp_path / "demo"
+    shutil.copytree(DEMO, copy)
+    prj = QgsProject(); assert prj.read(str(copy / "demo_project.qgz"))
     st = attach_store(prj)
+    assert _sha1(DEMO / "demo_workbench.gpkg") == before
     prov = SectionDataProvider(st)
     profs = st.profiles()
     assert len(profs) == 3
@@ -61,10 +72,12 @@ def test_demo_project_content(qgis_app):
     assert not extent.isNull() and extent.crs().authid() == "EPSG:25832"
 
 
-def test_demo_store_datasets_use_relative_paths(qgis_app):
+def test_demo_store_datasets_use_relative_paths(qgis_app, tmp_path):
     from geophysics_workbench.store.gpkg_store import ProjectStore
 
-    st = ProjectStore.open(DEMO / "demo_workbench.gpkg")
+    copy = tmp_path / "demo_workbench.gpkg"                    # never the committed file
+    shutil.copy(DEMO / "demo_workbench.gpkg", copy)
+    st = ProjectStore.open(copy)
     by_name = {p.name: p for p in st.profiles()}
     assert sorted(by_name) == ["P1", "P2", "P3"]
     got = {}
