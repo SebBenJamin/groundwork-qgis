@@ -369,7 +369,7 @@ class InterpController(QObject):
         piece = normalise(InterpPiece(new_id(), version.id, "", profile_id, kind, points,
                                       based_on_dataset=dataset, based_on_version=dversion))
         feature = InterpFeature(new_id(), version.id, author=current_author())
-        names = {f.name for f in store.features(version.id) if f.name}
+        names = self._names_on_profile(store, version.id, profile_id)
         edited = self.form_factory(feature, type_suggestions(store.used_types()), names)
         if edited is None:
             return
@@ -408,14 +408,22 @@ class InterpController(QObject):
         self.dock.provider.store._writable(piece.version_id)
         self.undo.push("Delete piece", (self._feature(piece), piece), (None, None))
 
+    @staticmethod
+    def _names_on_profile(store, version_id: str, profile_id, exclude=None) -> set[str]:
+        """Names of the features drawn on this profile: interpretation is per profile, so
+        "Clay A" on another profile is no clash."""
+        here = {p.feature_id for p in store.pieces(version_id, profile_id)}
+        return {f.name for f in store.features(version_id)
+                if f.name and f.id in here and f.id != exclude}
+
     def edit_feature(self, feature_id: str) -> None:
         store = self.dock.provider.store
         version = store.current_version()
         feature = next((f for f in store.features(version.id) if f.id == feature_id), None)
         if feature is None:
             return
-        names = {f.name for f in store.features(version.id)
-                 if f.name and f.id != feature_id}
+        names = self._names_on_profile(store, version.id, self.dock.current_profile_id(),
+                                       exclude=feature_id)
         edited = self.form_factory(feature, type_suggestions(store.used_types()), names)
         if edited is None:
             return

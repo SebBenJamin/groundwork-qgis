@@ -22,10 +22,10 @@ def test_fields_prefilled(qgis_app, store_with_model):
 
 def test_style_carries_levels(qgis_app, store_with_model):
     dlg = _dialog(store_with_model)
-    dlg.major_edit.setText("10; 100")
-    dlg.minor_edit.setText("50")
+    dlg.major_edit.setText("100; 300")              # inside the model's scale (81-314)
+    dlg.minor_edit.setText("200")
     st = dlg.style()
-    assert st.contour_major == (10.0, 100.0) and st.contour_minor == (50.0,)
+    assert st.contour_major == (100.0, 300.0) and st.contour_minor == (200.0,)
 
 
 def test_invalid_keeps_dialog_open(qgis_app, store_with_model):

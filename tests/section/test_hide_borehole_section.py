@@ -75,11 +75,11 @@ def test_right_click_hides(qgis_app, dock, monkeypatch):
         menu.actions()[0].trigger()
 
     monkeypatch.setattr(QMenu, "exec", run)
+    assert not dock.handle_right_click(15.0, -2.0, None)      # no column, nothing hidden
     assert dock.handle_right_click(5.0, -2.0, None)
     assert shown == [[HIDE_IN_SECTION]] and HIDE_IN_SECTION == "Hide in Section"
     pid = dock.current_profile_id()
     assert dock.provider.snapshot(pid).context.points == []
-    assert not dock.handle_right_click(15.0, -2.0, None)              # no column there
 
 
 def test_borehole_without_id_cannot_be_hidden(qgis_app, dock, monkeypatch):

@@ -18,8 +18,8 @@ MAX_HINT_WIDTH = 300            # preferred width: full layer names, up to this 
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
 REMOVE_TEXT = "Remove from profile…"
 #: style fields the Display dialog edits
-DISPLAY_FIELDS = ("scale", "mode", "contour_step", "grid_cell", "fade_coverage",
-                  "coverage_threshold", "fade_mode", "shown")
+DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
+                  "grid_cell", "fade_coverage", "coverage_threshold", "fade_mode", "shown")
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
 INFO_TEXT = "Dataset info…"

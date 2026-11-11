@@ -302,6 +302,20 @@ class DisplayDialog(ColorScaleDialog):
         for i, box in enumerate((display, contours, self.coverage_group)):
             layout.insertWidget(1 + i, box)
 
+    def _check_levels_in_scale(self, levels) -> None:
+        """A typed level outside the colour scale would be dropped without a word: say so."""
+        from ..core.numbers import fmt_trim
+        try:
+            scale = self.scale()
+        except ValueError:
+            return                              # the scale's own error is shown instead
+        lo, hi = min(scale.vmin, scale.vmax), max(scale.vmin, scale.vmax)
+        outside = [v for v in levels if not lo <= v <= hi]
+        if outside:
+            unit = f" {self._unit}" if self._unit else ""
+            raise ValueError(f"{fmt_trim(outside[0], 6)} is outside the colour scale "
+                             f"({fmt_trim(lo, 6)}–{fmt_trim(hi, 6)}{unit}).")
+
     def _levels_typed(self, *_args) -> None:
         """Typed levels replace the spacing: switch it off (saying why) while any are typed."""
         typed = bool(self.major_edit.text().strip() or self.minor_edit.text().strip())
@@ -319,6 +333,8 @@ class DisplayDialog(ColorScaleDialog):
         from ..core.numbers import parse_levels
         major = parse_levels(self.major_edit.text())
         minor = parse_levels(self.minor_edit.text())
+        if major or minor:
+            self._check_levels_in_scale(major + minor)
         shown = self.shown_combo.currentData() if self._readings is not None else \
             self._style.shown
         changed = self._readings is not None and shown != self._shown_before

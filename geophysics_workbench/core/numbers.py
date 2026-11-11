@@ -60,6 +60,8 @@ def parse_levels(text: str) -> tuple[float, ...]:
         if not part.strip():
             continue
         message = f"“{part.strip()}” is not a number. Separate values with “;”."
+        if len(part.split()) > 1:               # "10 30 100": not one number 1030100
+            raise ValueError(message)
         try:
             value = parse(part)
         except ValueError:

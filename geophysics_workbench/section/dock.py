@@ -46,6 +46,10 @@ SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
 
 
+def show_hidden_text(count: int) -> str:
+    return f"Show Hidden Boreholes ({count})"
+
+
 def _registered_source_for(provider):
     source = QgsApplication.profileSourceRegistry().findSourceById(SOURCE_ID)
     return source if getattr(source, "provider", None) is provider else None
@@ -452,7 +456,7 @@ class SectionDock(QDockWidget):
         from .dock_context import borehole_point
         point = borehole_point(self, s, z)
         if point is None:
-            return False
+            return self._show_hidden_menu(global_point)
         key = borehole_key(point)
         menu = QMenu()                          # parentless (round-1 lifetime rule)
         menu.setToolTipsVisible(True)
@@ -463,14 +467,47 @@ class SectionDock(QDockWidget):
         else:
             action.setToolTip("Leave this borehole out of this profile's section and plates; "
                               "the borehole viewer still shows it")
-            action.triggered.connect(partial(self._hide_borehole, key))
+            action.triggered.connect(partial(self._hide_borehole, key, point.label))
         menu.exec(global_point if global_point is not None else QCursor.pos())
         return True
 
-    def _hide_borehole(self, key, *_args) -> None:
+    def _show_hidden_menu(self, global_point) -> bool:
+        """Off the columns: when boreholes are hidden in this profile, offer them back
+        (the only way back when every borehole is hidden). True when the menu was shown."""
+        from qgis.PyQt.QtGui import QCursor
         profile_id = self.current_profile_id()
-        if profile_id is not None and self.provider is not None:
-            self.provider.set_boreholes_hidden(profile_id, [key], True)
+        hidden = self.provider.hidden_keys(profile_id) if profile_id else set()
+        if not hidden:
+            return False
+        menu = QMenu()
+        action = menu.addAction(show_hidden_text(len(hidden)))
+        action.triggered.connect(partial(self._set_hidden, sorted(hidden), False,
+                                         f"{len(hidden)} borehole(s) shown again"))
+        menu.exec(global_point if global_point is not None else QCursor.pos())
+        return True
+
+    def _hide_borehole(self, key, label: str, *_args) -> None:
+        self._set_hidden([key], True, f"{label} hidden in this section – right-click the "
+                                      "section to show it again")
+
+    def _set_hidden(self, keys, hidden: bool, message: str, *_args) -> None:
+        """Hide or show boreholes in this profile, on the panel's undo stack."""
+        profile_id = self.current_profile_id()
+        if profile_id is None or self.provider is None:
+            return
+        text = "Hide borehole" if hidden else "Show boreholes"
+        self.interp.undo.push_with(self._apply_hidden, text,
+                                   (profile_id, list(keys), not hidden),
+                                   (profile_id, list(keys), hidden))
+        self.readout.setText(message)
+
+    def _apply_hidden(self, state, _other) -> None:
+        profile_id, keys, hidden = state
+        if self.provider is not None:
+            self.provider.set_boreholes_hidden(profile_id, keys, hidden)
+
+    def tool_hint_text(self) -> str:
+        return self.readout.text()
 
     def handle_click(self, s: float, z: float, global_point) -> None:
         """A Pan-mode click at (s, z): on a borehole column alone it opens the borehole
