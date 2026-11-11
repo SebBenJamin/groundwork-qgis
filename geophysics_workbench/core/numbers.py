@@ -3,6 +3,8 @@ QGIS's own spin boxes), without thousands separators, never "-0". Qt is imported
 core stays importable without QGIS."""
 from __future__ import annotations
 
+import math
+
 MINUS = "−"
 
 
@@ -48,3 +50,26 @@ def parse(text: str) -> float:
     else:
         t = t.replace(",", ".")
     return float(t)
+
+
+def parse_levels(text: str) -> tuple[float, ...]:
+    """Contour levels typed as "10;30;100" (each read like ``parse``); blanks are skipped.
+    Raises ValueError naming the part that is not a number."""
+    out = []
+    for part in str(text).split(";"):
+        if not part.strip():
+            continue
+        message = f"“{part.strip()}” is not a number. Separate values with “;”."
+        try:
+            value = parse(part)
+        except ValueError:
+            raise ValueError(message) from None
+        if not math.isfinite(value):
+            raise ValueError(message)
+        out.append(value)
+    return tuple(out)
+
+
+def levels_text(levels) -> str:
+    """The levels as typed: "10;30;2,5" in QGIS's locale."""
+    return ";".join(fmt_trim(v, 6) for v in levels)

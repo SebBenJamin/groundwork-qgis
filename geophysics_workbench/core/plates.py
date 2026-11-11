@@ -33,6 +33,8 @@ class ModelLook:
     coverage_threshold: float | None = None
     fade_mode: str = "fade"
     shown: str | None = None                            # readings: misfit/measured/calculated
+    contour_major: list = field(default_factory=list)   # typed levels (model's unit)
+    contour_minor: list = field(default_factory=list)
 
 
 @dataclass
@@ -145,7 +147,12 @@ def _model(d) -> ModelLook | None:
                      scale, text("mode", "cells"), _num(d.get("contour_step")),
                      _num(d.get("grid_cell")), bool(d.get("fade_coverage", False)),
                      _num(d.get("coverage_threshold")), text("fade_mode", "fade"),
-                     text("shown", None))
+                     text("shown", None), _levels(d.get("contour_major")),
+                     _levels(d.get("contour_minor")))
+
+
+def _levels(v) -> list:
+    return [x for x in (_num(i) for i in v) if x is not None] if isinstance(v, list) else []
 
 
 def _look(d) -> FrameLook:

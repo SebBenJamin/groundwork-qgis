@@ -61,6 +61,10 @@ class LayerStyle:
     #: contour spacing: decades on a log scale (0.25 = 4 per decade), units otherwise;
     #: None = automatic (1-2-5 per decade / nice steps)
     contour_step: float | None = None
+    #: typed contour levels in the model's unit; both empty = automatic (``contour_step``).
+    #: Major levels are labelled, minor ones drawn thinner without a label
+    contour_major: tuple = ()
+    contour_minor: tuple = ()
     #: grid cell of the smooth field in metres; None = automatic
     grid_cell: float | None = None
     #: fade (or blank) the model where its coverage is below ``coverage_threshold``
@@ -133,7 +137,8 @@ def _layers_for_look(layers: list, look) -> list:
                 pass
         out.append(SectionLayer(la.dataset, la.mesh, replace(
             style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale,
-            contour_step=m.contour_step, grid_cell=m.grid_cell, fade_coverage=m.fade_coverage,
+            contour_step=m.contour_step, contour_major=tuple(m.contour_major),
+            contour_minor=tuple(m.contour_minor), grid_cell=m.grid_cell, fade_coverage=m.fade_coverage,
             coverage_threshold=m.coverage_threshold, fade_mode=m.fade_mode,
             shown=m.shown if m.shown is not None else style.shown), la.error))
     return out

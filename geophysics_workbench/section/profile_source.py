@@ -78,6 +78,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         self.snapshot = snapshot
         self._layers = layers          # [display_render.LayerDrawing] bottom first
         self._contour_px = 1.0
+        self._minor_px = 1.0
         self._z = z_range
         self._station_z = station_z    # tick elevations, aligned with snapshot.stations:
         #                                the measured height, else the surface (or mesh top)
@@ -141,8 +142,10 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             painter.save()
             try:
                 painter.setTransform(wt, True)      # draw in (chainage, elevation) space
-                from .display_render import CONTOUR_PEN_MM
-                self._contour_px = max(1.0, rc.convertToPainterUnits(CONTOUR_PEN_MM, _MM))
+                from .display_render import contour_pen_mm
+                self._contour_px = max(1.0, rc.convertToPainterUnits(contour_pen_mm(True), _MM))
+                # minor levels: thinner, but never a hairline that vanishes on screen
+                self._minor_px = max(0.6, rc.convertToPainterUnits(contour_pen_mm(False), _MM))
                 self._draw_cells(painter)
                 self._draw_beyond_stations(painter)
                 self._draw_topography(painter, rc)
@@ -205,8 +208,8 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             if drawing.contours:
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                for colour, path, _lines, _text in drawing.contours:
-                    pen = QPen(colour, self._contour_px)
+                for colour, path, _lines, _text, major in drawing.contours:
+                    pen = QPen(colour, self._contour_px if major else self._minor_px)
                     pen.setCosmetic(True)
                     painter.setPen(pen)
                     painter.drawPath(path)
@@ -250,7 +253,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         for drawing in drawings:
             painter.setOpacity(drawing.opacity)
-            for colour, _path, lines, text in drawing.contours:
+            for colour, _path, lines, text, _major in drawing.contours:
                 if not text:
                     continue
                 width = metrics.horizontalAdvance(text)

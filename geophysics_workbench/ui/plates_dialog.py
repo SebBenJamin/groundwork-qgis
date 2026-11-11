@@ -43,7 +43,8 @@ def panel_look(provider, profile_id: str) -> FrameLook:
                                 asdict(style.scale) if style.scale is not None else None,
                                 style.mode, style.contour_step, style.grid_cell,
                                 style.fade_coverage, style.coverage_threshold, style.fade_mode,
-                                style.shown))
+                                style.shown, list(style.contour_major),
+                                list(style.contour_minor)))
     return FrameLook(models, getattr(provider, "interp_version_id", None), True,
                      bool(provider.show_field_notes), True)
 

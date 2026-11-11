@@ -16,10 +16,11 @@ import numpy as np
 from qgis.PyQt.QtCore import QPointF, QRectF
 from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 
-from ..core.gridding import (FADE_ALPHA, contour_lines, coverage_alpha, default_levels,
+from ..core.gridding import (FADE_ALPHA, contour_levels, contour_lines, coverage_alpha,
                              default_threshold, grid_model, grid_shape)
 
 CONTOUR_PEN_MM = 0.25
+CONTOUR_MINOR_PEN_MM = 0.13          # typed minor levels: thinner, no label
 CONTOUR_DARKER = 167            # QColor.darker factor: about 40 % darker than the scale colour
 LABEL_MM = 2.6
 MARKER_MM = 1.2                 # reading markers (Points mode)
@@ -58,6 +59,7 @@ def _key(layer, topo, shape):
     return (layer.dataset.id, hash(mesh.vertices.tobytes()), hash(mesh.values.tobytes()),
             None if cov is None else hash(cov.tobytes()), topo_key, shape,
             (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp), st.mode, st.contour_step,
+            tuple(st.contour_major), tuple(st.contour_minor),
             st.fade_coverage, st.coverage_threshold, st.fade_mode)
 
 
@@ -83,19 +85,28 @@ def _field_image(grid, rgba) -> tuple[QImage, QRectF]:
     return img, QRectF(grid.s[0] - ds / 2, grid.z[0] - dz / 2, nx * ds, nz * dz)
 
 
-def _contours(grid, scale, step) -> list:
+def contour_pen_mm(major: bool) -> float:
+    return CONTOUR_PEN_MM if major else CONTOUR_MINOR_PEN_MM
+
+
+def _contours(grid, scale, st) -> list:
+    """(colour, path, lines, label text, major) per level with lines; minor: no label."""
     from ..core.numbers import fmt_trim
     out = []
-    for level, lines in contour_lines(grid, default_levels(scale, step), scale.log):
+    levels = contour_levels(scale, st.contour_step, st.contour_major, st.contour_minor)
+    is_major = dict(levels)
+    for level, lines in contour_lines(grid, [v for v, _ in levels], scale.log):
         if not lines:
             continue
+        major = is_major.get(level, True)
         r, g, b, _a = (int(c) for c in scale.rgba([level])[0])
         path = QPainterPath()
         for line in lines:
             path.moveTo(QPointF(*line[0]))
             for p in line[1:]:
                 path.lineTo(QPointF(*p))
-        out.append((QColor(r, g, b).darker(CONTOUR_DARKER), path, lines, fmt_trim(level, 3)))
+        out.append((QColor(r, g, b).darker(CONTOUR_DARKER), path, lines,
+                    fmt_trim(level, 3) if major else "", major))
     return out
 
 
@@ -126,16 +137,16 @@ def _gridded(layer, topo, threshold):
     contours = []
     if st.mode in ("contours", "smooth+contours"):
         if low is None:
-            contours = _contours(grid, scale, st.contour_step)
+            contours = _contours(grid, scale, st)
         else:                           # the low-coverage part blanked, or faded
             good = replace(grid, values=np.where(low, np.nan, grid.values))
-            contours = _contours(good, scale, st.contour_step)
+            contours = _contours(good, scale, st)
             if st.fade_mode != "blank":
                 faint = replace(grid, values=np.where(low, grid.values, np.nan))
-                for colour, path, lines, _text in _contours(faint, scale, st.contour_step):
+                for colour, path, lines, _text, major in _contours(faint, scale, st):
                     colour = QColor(colour)
                     colour.setAlphaF(FADE_ALPHA)
-                    contours.append((colour, path, lines, ""))     # no labels in the fade
+                    contours.append((colour, path, lines, "", major))  # no labels in the fade
     entry = (image, contours)
     with _lock:
         _cache[key] = entry

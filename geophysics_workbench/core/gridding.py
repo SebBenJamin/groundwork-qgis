@@ -214,6 +214,27 @@ def default_levels(scale, step: float | None) -> list[float]:
     return [float(round(k * step, 12)) for k in ks]
 
 
+def contour_levels(scale, step: float | None, major=(), minor=()) -> list[tuple[float, bool]]:
+    """(level, major) pairs to draw. Typed ``major`` / ``minor`` levels (the model's unit)
+    win over the automatic ones: inside the scale's range, sorted, repeats merged (a level
+    in both lists is major), at most MAX_LEVELS (majors kept first). Without typed levels,
+    ``default_levels`` - all major, as before."""
+    if not major and not minor:
+        return [(v, True) for v in default_levels(scale, step)]
+    lo, hi = min(scale.vmin, scale.vmax), max(scale.vmin, scale.vmax)
+    picked: list[tuple[float, bool]] = []
+    for values, is_major in ((major, True), (minor, False)):
+        for v in values:
+            v = float(v)
+            if not np.isfinite(v) or not lo <= v <= hi:
+                continue
+            if any(abs(v - w) <= 1e-9 * max(abs(v), abs(w), 1.0) for w, _ in picked):
+                continue
+            picked.append((v, is_major))
+    picked = sorted(picked, key=lambda p: not p[1])[:MAX_LEVELS]   # majors first when capping
+    return sorted(picked)
+
+
 def contour_lines(grid: Grid, levels, log: bool) -> list[tuple[float, list[np.ndarray]]]:
     """Each level's polylines, as (k, 2) arrays of (s, z)."""
     import contourpy
