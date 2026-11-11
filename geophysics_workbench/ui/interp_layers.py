@@ -7,8 +7,10 @@ can change, and the section draws with the same styles.
 """
 from __future__ import annotations
 
+import re
+
 from qgis.core import (QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsLineSymbol,
-                       QgsMarkerSymbol, QgsPalLayerSettings, QgsProject, QgsProperty,
+                       QgsMapLayerStyle, QgsMarkerSymbol, QgsPalLayerSettings, QgsProject, QgsProperty,
                        QgsRendererCategory, QgsSymbolLayer, QgsTextFormat, QgsVectorLayer,
                        QgsVectorLayerSimpleLabeling, QgsWkbTypes)
 from qgis.PyQt.QtGui import QColor
@@ -64,10 +66,10 @@ def _entity_rgb(index: int) -> tuple[int, int, int]:
 
 def default_style(layer: QgsVectorLayer) -> None:
     """One legend entry and colour per entity (``feature_id``); the line style follows
-    ``confidence``; ``letter`` labels. Categories are filled by ``sync_categories``."""
+    ``confidence``; ``name`` labels. Categories are filled by ``sync_categories``."""
     layer.setRenderer(QgsCategorizedSymbolRenderer("feature_id", []))
     settings = QgsPalLayerSettings()
-    settings.fieldName = "letter"
+    settings.fieldName = "name"
     fmt = QgsTextFormat()
     fmt.setSize(10.0)
     fmt.setColor(QColor(*DEFAULT_RGB))
@@ -102,6 +104,36 @@ def sync_categories(layer: QgsVectorLayer, features) -> None:
                                                                   _entity_rgb(len(r.categories()))),
                                               entity_label(feat)))
     layer.setRenderer(r)
+
+
+#: a reference to the 0.7 field ``letter`` in a saved style: quoted in an expression (plain
+#: or XML-escaped) or as an attribute value (``fieldName="letter"``, ``attr="letter"``)
+_LETTER_REF = re.compile(r'(&quot;|")letter(&quot;|")')
+
+
+def migrate_letter_styles(store: ProjectStore, project: QgsProject) -> int:
+    """0.8 renamed the interpretation field ``letter`` to ``name`` (store schema 2). Point
+    the workbench's interpretation layers at it: reload a layer still listing the old field,
+    and rewrite style references (labels, rules, data-defined properties), also in styles
+    the user changed. Idempotent; runs on every store attach, because a project saved after
+    an earlier update may still carry the old style. Returns the number of layers changed."""
+    changed = 0
+    for layer in interp_layers(store, project).values():
+        stale = layer.fields().indexOf("letter") >= 0 and layer.fields().indexOf("name") < 0
+        style = QgsMapLayerStyle()
+        style.readFromLayer(layer)
+        xml = style.xmlData()
+        new_xml = _LETTER_REF.sub(lambda m: f"{m.group(1)}name{m.group(2)}", xml)
+        if not stale and new_xml == xml:
+            continue
+        if stale:
+            layer.dataProvider().reloadData()
+            layer.reload()
+            layer.updateFields()
+        QgsMapLayerStyle(new_xml).writeToLayer(layer)
+        layer.triggerRepaint()
+        changed += 1
+    return changed
 
 
 def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:

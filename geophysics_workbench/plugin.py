@@ -20,7 +20,7 @@ from .section.profile_source import register_source, unregister_source
 from .section.style_watch import StyleWatch
 from .ui import project_actions
 from .ui.context_dialog import read_settings
-from .ui.interp_layers import interp_layers
+from .ui.interp_layers import interp_layers, migrate_letter_styles
 
 
 def _own_styled_layers(store, project) -> list:
@@ -189,6 +189,7 @@ class WorkbenchPlugin:
         if store is not None:
             self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
+            migrate_letter_styles(store, project)       # 0.7 styles named "letter"
             self.gatherer = ContextGatherer(project, store.crs_authid,
                                             on_change=self.provider.notify_changed,
                                             exclude=lambda: own_layer_ids(store, project))
