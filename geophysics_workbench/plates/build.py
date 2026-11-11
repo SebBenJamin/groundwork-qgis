@@ -45,6 +45,8 @@ WRITTEN_EXTENT = "wb_written_extent"
 PROFILES_PROPERTY = "wb_plate_profiles"
 MM = QgsUnitTypes.LayoutMillimeters
 GAP = 4.0               # mm between stacked frames
+SECTION_TITLE_MM = 6.0  # the section title's strip inside the top of each frame
+TITLE_POS_PROPERTY = "wb_written_pos"   # where the plugin last put a section title
 PROVENANCE_MM = 8.0     # height of a frame's provenance line
 BAR_COLUMN = 0.18       # landscape: colour-bar column, share of the area width
 BAR_ROW = 0.12          # portrait: colour-bar row, share of a frame slot's height
@@ -186,6 +188,17 @@ def _interior_mm(item) -> tuple[float, float]:
     plot.setSize(QSizeF(item.rect().width() * px, item.rect().height() * px))
     area = plot.interiorPlotArea(rc, QgsPlotRenderContext())
     return max(area.width() / px, 1.0), max(area.height() / px, 1.0)
+
+
+def _interior_rect_mm(item) -> tuple[float, float, float, float]:
+    """Left, top, width, height (mm, from the item's corner) of the frame's plot area."""
+    layout = item.layout()
+    rc = QgsLayoutUtils.createRenderContextForLayout(layout, None)
+    px = rc.scaleFactor()
+    plot = item.plot()
+    plot.setSize(QSizeF(item.rect().width() * px, item.rect().height() * px))
+    area = plot.interiorPlotArea(rc, QgsPlotRenderContext())
+    return area.left() / px, area.top() / px, area.width() / px, area.height() / px
 
 
 def _optimise_intervals(item) -> None:
@@ -540,7 +553,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
         area = (10.0, 10.0, size.width() - 20.0, size.height() * 0.6)
     slots = _slots(area, count, _portrait(layout), [len(m) for m in shown])
 
-    frame_items = []
+    frame_items, placed = [], []
     for n, (f, models, slot) in enumerate(zip(plate.frames, shown, slots), start=1):
         item = layout.itemById(f"wb_frame_{n}")
         fresh = not isinstance(item, QgsLayoutItemElevationProfile)
@@ -552,6 +565,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
             _place(item, *slot["frame"])
         item.setCustomProperty(FRAME_PROPERTY, f.frame_id)
         frame_items.append(item)
+        placed.append(fresh or relayout)
         _update_bars(layout, n, f, models, slot, relayout)
         profile = profiles.get(f.profile_id)
         placeholder = f"wb_placeholder_{n}"
@@ -563,21 +577,24 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
                           f"workbench. Remove this frame or choose another profile.")
         else:
             _remove(layout, placeholder)
+        if profile is None:
+            _remove(layout, f"wb_section_title_{n}")
         prov, new = _label(layout, f"wb_provenance_{n}", 6.5)
         if new or relayout:
             _place(prov, *slot["provenance"])
         if profile is None:
             _write_text(prov, f"Profile {f.profile_id} not found")
     for n in range(count + 1, _highest(layout, "wb_frame_") + 1):     # frames removed
-        for item_id in (f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}"):
+        for item_id in (f"wb_frame_{n}", f"wb_provenance_{n}", f"wb_placeholder_{n}",
+                        f"wb_section_title_{n}"):
             _remove(layout, item_id)
     _remove_stale_bars(layout, {(f.frame_id, d.id)
                                 for f, models in zip(plate.frames, shown) for d in models})
     layout.setCustomProperty(COUNT_PROPERTY, count)
 
     # fit to page: frames of one profile share scale, VE and range
-    room = {f.frame_id: label_room_mm(snaps[f.frame_id]) for f in plate.frames
-            if f.frame_id in snaps}
+    room = {f.frame_id: label_room_mm(snaps[f.frame_id]) + SECTION_TITLE_MM
+            for f in plate.frames if f.frame_id in snaps}
     sizes = [(w, max(h - room.get(f.frame_id, 0.0), 5.0)) for f, (w, h)
              in zip(plate.frames, (_interior_mm(item) for item in frame_items))]
     fits = stack_fit(plate.frames, extents, sizes)
@@ -594,6 +611,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
         z0, z1 = min(e[2] for e in group), max(e[3] for e in group)
         fit_frame(item, scale, ve, s0 if s0 != s1 else ext[0], s1 if s0 != s1 else ext[1],
                   z0, z1, room.get(f.frame_id, 0.0))
+        _update_section_title(layout, n, item, profile, placed[n - 1])   # after the fit
         ok = frame_fits(s1 - s0, z1 - z0, sizes[n - 1], scale, ve)
         if not ok:
             not_fitting.append(f"frame {n} ({profile.name})")
@@ -627,6 +645,36 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     layout.setCustomProperty(FIT_PROPERTY, "; ".join(not_fitting))
     layout.refresh()
     return layout
+
+
+def _update_section_title(layout, n: int, frame, profile, replace: bool) -> None:
+    """The frame's title, the profile's name, in a strip along the top of the frame's plot
+    area (the fit keeps the section below it), on the item's background so grid lines never
+    cross the text. Kept when the user edited its text (``_write_text``) or moved it; placed
+    again when new, on a new layout of the frames, or when it still sits where the plugin
+    last put it."""
+    item_id = f"wb_section_title_{n}"
+    title, new = _label(layout, item_id, 9.0)
+    if new:
+        fmt = title.textFormat()
+        font = fmt.font()
+        font.setBold(True)
+        fmt.setFont(font)
+        title.setTextFormat(fmt)
+        title.setBackgroundEnabled(True)
+        title.setMarginX(1.0)
+    _write_text(title, profile.name)
+    fx, fy, _fw, _fh = _rect(frame)
+    left, top, width, _height = _interior_rect_mm(frame)
+    rect = (fx + left + 0.3, fy + top + 0.3, max(width - 0.6, 10.0), SECTION_TITLE_MM - 0.6)
+    last = title.customProperty(TITLE_POS_PROPERTY)
+    if new or replace or last is None or last == _rect_key(_rect(title)):
+        _place(title, *rect)
+        title.setCustomProperty(TITLE_POS_PROPERTY, _rect_key(_rect(title)))
+
+
+def _rect_key(rect) -> str:
+    return ",".join(f"{v:.2f}" for v in rect)
 
 
 def _inset(rect, margin=6.0):
