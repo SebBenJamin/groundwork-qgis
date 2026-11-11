@@ -85,6 +85,18 @@ def store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVecto
     return find_store_layers(store, project, LAYER_NAMES)
 
 
+def repaint_store_layers(store: ProjectStore, project: QgsProject) -> None:
+    """Repaint every layer showing a table of ``store``'s file. After a write QGIS sometimes
+    lost the profile lines on the map until the next refresh (round 2, B3: not reproducible
+    offscreen); repainting redoes a lost draw."""
+    for layer in project.mapLayers().values():
+        if not isinstance(layer, QgsVectorLayer) or layer.providerType() != "ogr":
+            continue
+        parts = QgsProviderRegistry.instance().decodeUri("ogr", layer.source())
+        if _same_file(parts.get("path", ""), store.path):
+            layer.triggerRepaint()
+
+
 def find_store_layers(store: ProjectStore, project: QgsProject,
                       names) -> dict[str, QgsVectorLayer]:
     """The project's layers showing the tables ``names`` of ``store``."""

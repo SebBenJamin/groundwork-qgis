@@ -29,8 +29,16 @@ class FieldNotesMixin:
         with self._ds() as ds:
             return ds.GetLayerByName("field_notes") is not None
 
+    def _note_tables_exist(self) -> bool:
+        with self._ds() as ds:
+            return all(ds.GetLayerByName(n) is not None for n in ("field_notes", *MAP_TABLES))
+
     def ensure_field_notes(self) -> None:
+        """Create the note tables when missing. Opens the file for writing only then: every
+        extra write-open under QGIS's loaded layers is a chance to upset them (B3)."""
         from .gpkg_store import _make_layer, _srs
+        if self._note_tables_exist():
+            return
         with self._ds(write=True) as ds:
             if ds.GetLayerByName("field_notes") is None:
                 _make_layer(ds, "field_notes", NOTE_FIELDS)

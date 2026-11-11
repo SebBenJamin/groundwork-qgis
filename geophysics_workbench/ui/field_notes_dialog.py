@@ -26,11 +26,13 @@ def after_change(store, provider=None, project=None) -> None:
     from .field_note_layers import add_field_note_layers, reload_field_note_layers
     store.rebuild_field_note_geometry({p.id: p.chainage for p in store.profiles()})
     project = project or QgsProject.instance()
+    from .project_actions import repaint_store_layers
     try:
         add_field_note_layers(store, project)
         reload_field_note_layers(store, project)
     except ValueError:                          # store not loadable as layers: section only
         pass
+    repaint_store_layers(store, project)
     if provider is not None:
         provider.notify_redraw()
 
