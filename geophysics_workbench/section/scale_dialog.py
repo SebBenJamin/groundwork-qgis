@@ -6,7 +6,7 @@ from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                  QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                                 QPushButton, QRadioButton, QVBoxLayout)
+                                 QLineEdit, QPushButton, QRadioButton, QVBoxLayout)
 
 from ..core.colors import ColorScale
 
@@ -245,10 +245,25 @@ class DisplayDialog(ColorScaleDialog):
             self.step_spin.setValue(0.25 if sc is None or sc.log
                                     else _nice((sc.vmax - sc.vmin) / 8))
         self.auto_step.setChecked(style.contour_step is None)
-        self.auto_step.toggled.connect(lambda on: self.step_spin.setEnabled(not on))
+        self.auto_step.toggled.connect(lambda on: self.step_spin.setEnabled(
+            not on and self.auto_step.isEnabled()))
         self.step_spin.setEnabled(style.contour_step is not None)
         form.addRow(self.auto_step)
         form.addRow("Spacing", self.step_spin)
+        from ..core.numbers import levels_text
+        tip = ("In the model's unit (e.g. Ω·m), separated by “;”. Major levels get a label. "
+               "Leave both empty for automatic levels.")
+        self.major_edit = QLineEdit(levels_text(style.contour_major))
+        self.major_edit.setPlaceholderText("e.g. 10;30;100;300")
+        self.minor_edit = QLineEdit(levels_text(style.contour_minor))
+        self.minor_edit.setPlaceholderText("e.g. 20;50;200")
+        for edit in (self.major_edit, self.minor_edit):
+            edit.setToolTip(tip)
+            edit.textChanged.connect(self._levels_typed)
+        form.addRow("Major levels", self.major_edit)
+        form.addRow("Minor levels", self.minor_edit)
+        self._step_tip = self.step_spin.toolTip()
+        self._levels_typed()
         self.contours_group = contours
         # contour settings only matter when contours are drawn; the spacing's unit follows
         # the scale (decades on a logarithmic one)
@@ -287,9 +302,23 @@ class DisplayDialog(ColorScaleDialog):
         for i, box in enumerate((display, contours, self.coverage_group)):
             layout.insertWidget(1 + i, box)
 
+    def _levels_typed(self, *_args) -> None:
+        """Typed levels replace the spacing: switch it off (saying why) while any are typed."""
+        typed = bool(self.major_edit.text().strip() or self.minor_edit.text().strip())
+        self.auto_step.setEnabled(not typed)
+        self.step_spin.setEnabled(not typed and not self.auto_step.isChecked())
+        tip = "Not used while levels are typed." if typed else self._step_tip
+        self.step_spin.setToolTip(tip)
+        self.auto_step.setToolTip("Not used while levels are typed." if typed else "")
+
     def style(self):
-        """The edited LayerStyle; raises ``ValueError`` when the scale is not valid."""
+        """The edited LayerStyle; raises ``ValueError`` when the scale or a typed contour
+        level is not valid."""
         from dataclasses import replace
+
+        from ..core.numbers import parse_levels
+        major = parse_levels(self.major_edit.text())
+        minor = parse_levels(self.minor_edit.text())
         shown = self.shown_combo.currentData() if self._readings is not None else \
             self._style.shown
         changed = self._readings is not None and shown != self._shown_before
@@ -299,6 +328,7 @@ class DisplayDialog(ColorScaleDialog):
             mode=self.mode_combo.currentData(),
             grid_cell=None if self.auto_cell.isChecked() else self.cell_spin.value(),
             contour_step=None if self.auto_step.isChecked() else self.step_spin.value(),
+            contour_major=major, contour_minor=minor,
             fade_coverage=self.fade_check.isChecked() and self.coverage_group.isEnabled(),
             coverage_threshold=(self.threshold_spin.value() if self.coverage_group.isEnabled()
                                 else self._style.coverage_threshold),
