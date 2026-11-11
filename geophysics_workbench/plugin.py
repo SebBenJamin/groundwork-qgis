@@ -20,6 +20,8 @@ from .section.profile_source import register_source, unregister_source
 from .section.style_watch import StyleWatch
 from .ui import project_actions
 from .ui.context_dialog import read_settings
+from .section.field_notes_render import note_looks
+from .ui.field_note_layers import ensure_note_layers, migrate_note_styles
 from .ui.interp_layers import interp_layers, migrate_letter_styles
 
 
@@ -190,6 +192,9 @@ class WorkbenchPlugin:
             self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
+            ensure_note_layers(store, project)          # notes always have a layer to style
+            migrate_note_styles(store, project)
+            self.provider.note_looks = partial(note_looks, store, project)
             self.gatherer = ContextGatherer(project, store.crs_authid,
                                             on_change=self.provider.notify_changed,
                                             exclude=lambda: own_layer_ids(store, project))

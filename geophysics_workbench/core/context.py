@@ -134,6 +134,8 @@ class ContextItems:
     curve_styles: dict = field(default_factory=dict)
     #: the profile's field notes that are shown (``core.field_notes.FieldNote``)
     field_notes: list = field(default_factory=list)
+    #: note id -> its look from the field-note layers' QGIS styles (``NoteLook``)
+    note_looks: dict = field(default_factory=dict)
 
     def mirrored(self, length: float) -> "ContextItems":
         """The same items for the reversed profile: every s becomes ``length - s``. Offsets,
@@ -152,7 +154,8 @@ class ContextItems:
             dem=dem, dem_tolerance=self.dem_tolerance,
             borehole_views=dict(self.borehole_views), curve_styles=dict(self.curve_styles),
             field_notes=sorted((_mirrored_note(n, length) for n in self.field_notes),
-                               key=lambda n: n.s_from))
+                               key=lambda n: n.s_from),
+            note_looks=dict(self.note_looks))
 
 
 def _mirrored_note(note, length: float):

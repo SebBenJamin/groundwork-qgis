@@ -4,6 +4,8 @@ crossing and borehole labels, so none overlap). Hover and click show the full te
 The look's constants live here (interim styling rule)."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from qgis.PyQt.QtCore import QPointF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QPen, QPolygonF
 
@@ -14,6 +16,48 @@ NOTE_RGB = (176, 82, 0)
 NOTE_BAR_PX = 3
 LANE_MM = 1.0                   # one lane of stretch bars above the band
 LABEL_CHARS = 40
+STRETCH_MM = 0.5                # a stretch bar's width when its style gives none
+
+
+@dataclass(frozen=True)
+class NoteLook:
+    """A note's look from its QGIS layer style: colour, and a stretch's line width (mm)."""
+    rgb: tuple[int, int, int]
+    width_mm: float | None = None
+
+
+DEFAULT_LOOK = NoteLook(NOTE_RGB)
+
+
+def note_looks(store, project) -> dict:
+    """note id -> ``NoteLook`` from the "Field notes" (points) and "Field notes (stretches)"
+    layers' renderers, per feature, so categorized or rule-based styles work per note
+    (main thread only). Notes without a layer get ``DEFAULT_LOOK`` from the caller."""
+    from qgis.core import Qgis, QgsLineSymbol, QgsRenderContext
+
+    from ..ui.field_note_layers import field_note_layers
+    out = {}
+    layers = field_note_layers(store, project)
+    # points first: the points layer also holds a stretch's midpoint, and a stretch takes
+    # its look from the stretches layer
+    for layer in (layers.get("field_notes_points"), layers.get("field_notes_lines")):
+        if layer is None or layer.renderer() is None:
+            continue
+        renderer = layer.renderer().clone()
+        rc = QgsRenderContext()
+        renderer.startRender(rc, layer.fields())
+        try:
+            for feature in layer.getFeatures():
+                symbols = renderer.symbolsForFeature(feature, rc)
+                if not symbols:
+                    continue
+                sym, c = symbols[0], symbols[0].color()
+                width = sym.width() if isinstance(sym, QgsLineSymbol) and \
+                    sym.outputUnit() == Qgis.RenderUnit.Millimeters else None
+                out[feature["note_id"]] = NoteLook((c.red(), c.green(), c.blue()), width)
+        finally:
+            renderer.stopRender(rc)
+    return out
 
 
 def label_text(text: str) -> str:
@@ -48,7 +92,7 @@ def draw_field_notes(painter, rc, wt, items, surface, plan: dict) -> None:
     notes = [n for n in items.field_notes if n.shown]
     if not notes or surface is None or len(surface[0]) < 1:
         return
-    colour = QColor(*NOTE_RGB)
+    looks = getattr(items, "note_looks", {}) or {}
     _, far = band_offsets(rc)
     lanes = stretch_lanes(notes)
     painter.save()
@@ -59,6 +103,8 @@ def draw_field_notes(painter, rc, wt, items, surface, plan: dict) -> None:
                 continue
             lo, hi = note_range(n)
             y = label.y + 2
+            look = looks.get(n.id, DEFAULT_LOOK)
+            colour = QColor(*look.rgb)
             if n.s_to is None:
                 x = wt.map(QPointF(lo, float(np.interp(lo, *surface)))).x()
                 ground = surface_y(wt, surface, lo)
@@ -77,7 +123,7 @@ def draw_field_notes(painter, rc, wt, items, surface, plan: dict) -> None:
                 ys = _smooth(np.array([surface_y(wt, surface, s) for s in ss]))
                 pts = [QPointF(wt.map(QPointF(s, 0.0)).x(), y_s - off)
                        for s, y_s in zip(ss, ys)]
-                pen = QPen(colour, max(2.0, mm(rc, 0.5)))
+                pen = QPen(colour, max(2.0, mm(rc, look.width_mm or STRETCH_MM)))
                 pen.setCapStyle(Qt.PenCapStyle.FlatCap)
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)

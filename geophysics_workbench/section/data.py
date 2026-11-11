@@ -316,6 +316,8 @@ class SectionDataProvider:
         self.interp_compare_version_id: str | None = None
         #: returns the derived interpretation layers (name -> layer) whose styles are used
         self.interp_layers: Callable[[], dict] | None = None
+        #: note id -> NoteLook from the field-note layers (main thread); None: default look
+        self.note_looks: Callable[[], dict] | None = None
 
     @property
     def context_source(self) -> Callable[[Profile], ContextItems] | None:
@@ -550,6 +552,11 @@ class SectionDataProvider:
         notes = [n for n in self.store.field_notes(profile_id) if n.shown] \
             if self.show_field_notes else []
         items = replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
+        if self.note_looks is not None and notes:
+            try:
+                items = replace(items, note_looks=self.note_looks())
+            except Exception:                   # a broken layer: the default look
+                pass
         hidden = set() if include_hidden else self.hidden_keys(profile_id)
         if hidden:
             items = replace(items, points=[p for p in items.points

@@ -442,8 +442,12 @@ class InterpController(QObject):
         if self.dock.provider is None or self.dock.current_profile_id() is None:
             self.stop()
             return
+        from qgis.core import QgsProject
+
+        from ..ui.field_note_layers import stretch_rgb
+        rgb = stretch_rgb(self.dock.provider.store, QgsProject.instance())
         self.tool = NoteTool(self.dock.canvas, self._note_finished, on_cancel=self.stop,
-                             on_hover=self.hover)
+                             on_hover=self.hover, rgb=rgb)
         self.dock.canvas.setTool(self.tool)
         self.buttons["note"].setChecked(True)
         self.dock.canvas.setFocus()

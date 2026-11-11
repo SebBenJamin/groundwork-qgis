@@ -200,11 +200,13 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
                 if p.kind == "borehole" and p.log else p.label)
         specs.append((p, p.s, text, (0, 0, 0)))
     from ..core.field_notes import note_range
-    from .field_notes_render import NOTE_RGB, label_text
+    from .field_notes_render import DEFAULT_LOOK, label_text
+    looks = getattr(items, "note_looks", {}) or {}
     for n in items.field_notes:
         if n.shown:
             lo, hi = note_range(n)
-            specs.append((n, (lo + hi) / 2, label_text(n.text), NOTE_RGB))
+            rgb = looks.get(n.id, DEFAULT_LOOK).rgb          # the note's layer colour
+            specs.append((n, (lo + hi) / 2, label_text(n.text), rgb))
     from .field_notes_render import lanes_px
     lanes = lanes_px(mm(rc, 1.0), items.field_notes)        # stretch lanes under the labels
     specs = [sp for sp in specs if sp[2]]
