@@ -40,9 +40,27 @@ def fake_dock(qgis_app):
                     ProjectedPoint(50.0, 0.0, "pylon", "point")]),
                 "p2": ContextItems(points=[_bh(5.0, "X1", 30.0, [(0, 1, "a", None)])])}
             self.changed = 0
+            self.hidden = {}                    # profile -> {(layer id, borehole id)}
 
-        def context(self, pid):
-            return self.items.get(pid)
+        def context(self, pid, include_hidden=False):
+            from dataclasses import replace
+
+            from geophysics_workbench.core.context import borehole_key
+            items = self.items.get(pid)
+            hidden = self.hidden.get(pid, set())
+            if items is None or include_hidden or not hidden:
+                return items
+            return replace(items, points=[p for p in items.points
+                                          if borehole_key(p) not in hidden])
+
+        def hidden_keys(self, pid):
+            return set(self.hidden.get(pid, set()))
+
+        def set_boreholes_hidden(self, pid, keys, hidden):
+            have = self.hidden.setdefault(pid, set())
+            (have.update if hidden else have.difference_update)(set(keys))
+            for callback in list(self.on_change):
+                callback()
 
         def topography(self, pid):
             return None

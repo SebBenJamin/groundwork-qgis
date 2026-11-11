@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from functools import partial
 
 import numpy as np
 from qgis.core import QgsSettings, QgsTextFormat
 from qgis.gui import QgsFontButton
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
-from qgis.PyQt.QtGui import QColor, QFont, QImage, QPainter, QPen, QPolygonF
+from qgis.PyQt.QtGui import QColor, QFont, QImage, QPainter, QPalette, QPen, QPolygonF
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
                                  QHBoxLayout, QSpinBox,
                                  QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget)
@@ -22,7 +23,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayo
 from ..core.borehole_curves import data_range
 from ..core.borehole_layout import (ViewTransform, column_depth, extent_z, fit, layout_even,
                                     vertical_exaggeration)
-from ..core.context import collar_height
+from ..core.context import borehole_key, collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
 from .borehole_draw import ColumnOptions, SymbolPool, draw_borehole, draw_flag
 from ..core.numbers import fmt
@@ -39,7 +40,12 @@ LABEL_PX = 54                # room above the columns for the labels
 GROUND_RGB = (90, 140, 60)
 AXIS_RGB = (60, 60, 60)
 SHOW = (("lithology", "Lithology", True), ("text", "Layer text", False),
-        ("ticks", "Depth ticks", False), ("flags", "Height flags", True))
+        ("ticks", "Depth ticks", False), ("flags", "Height flags", True),
+        ("hidden", "Hidden boreholes", True))
+HIDDEN_OPACITY = 0.35        # a borehole hidden in the section, still shown here
+BACKGROUND_RGB = (255, 255, 255)
+HIDDEN_MARK = "hidden in section"
+CLICK_PX = 4                 # a press and release closer than this is a click, not a pan
 LABELS = (("name", "Name", True), ("elevation", "Elevation", True),
           ("distance", "Distance / offset", False))
 
@@ -54,6 +60,7 @@ class BoreholeCanvas(QWidget):
         self.transform: ViewTransform | None = None
         self.column_rects: list = []          # [(ProjectedPoint, QRectF)] of the last paint
         self._drag = None
+        self._press = None
         self.setMouseTracking(True)
         self.setMinimumSize(300, 240)
 
@@ -119,7 +126,7 @@ class BoreholeCanvas(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         try:
-            painter.fillRect(self.rect(), QColor(255, 255, 255))
+            painter.fillRect(self.rect(), QColor(*BACKGROUND_RGB))
             self._paint(painter)
         finally:
             painter.end()
@@ -156,7 +163,17 @@ class BoreholeCanvas(QWidget):
                                      track_px=TRACK_PX, highlight=highlight)
                 area = draw_borehole(painter, rc, px, y_of, drawn, opts, styles, ranges,
                                          pool)
+                if v.is_hidden(p):                # still shown here, faded: a wash of the
+                    wash = QColor(*BACKGROUND_RGB)    # background (symbols ignore opacity)
+                    wash.setAlphaF(1.0 - HIDDEN_OPACITY)
+                    painter.fillRect(area.adjusted(-1, -1, 1, 1), wash)
                 col = QRectF(px - COLUMN_PX / 2, area.top(), COLUMN_PX, area.height())
+                if borehole_key(p) in v.selected:
+                    painter.save()
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight), 2))
+                    painter.drawRect(col.adjusted(-3, -3, 3, 3))
+                    painter.restore()
                 self.column_rects.append((p, col))
                 if v.show_check["flags"].isChecked() and p.flagged:
                     draw_flag(painter, px, col.top(), 5.0)
@@ -187,6 +204,8 @@ class BoreholeCanvas(QWidget):
             lines.append(f"{fmt(z_top, 1)} m")
         if v.label_check["distance"].isChecked():
             lines.append(f"{fmt(p.s, 0)} m, {fmt(p.offset, 0, sign=True)} m")
+        if v.is_hidden(p):
+            lines.append(HIDDEN_MARK)
         return lines
 
     def _draw_labels(self, painter, pending) -> None:
@@ -278,10 +297,68 @@ class BoreholeCanvas(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag = event.position()
+            self._drag = self._press = event.position()
 
-    def mouseReleaseEvent(self, _event):
-        self._drag = None
+    def mouseReleaseEvent(self, event):
+        press, self._drag, self._press = self._press, None, None
+        if press is not None and event.button() == Qt.MouseButton.LeftButton:
+            moved = event.position() - press
+            if abs(moved.x()) + abs(moved.y()) <= CLICK_PX:
+                ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+                self.click_at(event.position(), ctrl)
+
+    def column_at(self, pos):
+        """The borehole whose column (with its label room) is under ``pos``, or ``None``."""
+        for p, rect in self.column_rects:
+            if rect.left() - 3 <= pos.x() <= rect.right() + 3 and \
+                    rect.top() - LABEL_PX <= pos.y() <= rect.bottom() + 3:
+                return p
+        return None
+
+    def click_at(self, pos, ctrl: bool) -> None:
+        """Select the column under ``pos`` (Ctrl: add or remove it); empty space clears."""
+        v = self.viewer
+        key = borehole_key(self.column_at(pos)) if self.column_at(pos) is not None else None
+        if key is None:
+            if not ctrl:
+                v.selected.clear()
+        elif ctrl:
+            v.selected ^= {key}
+        else:
+            v.selected = {key}
+        self.update()
+
+    def column_menu(self, pos):
+        """Hide in Section / Show in Section for the selection when the column under ``pos``
+        is part of it, else for that column alone; ``None`` off the columns."""
+        from .dock import HIDE_IN_SECTION, NO_ID_TIP, SHOW_IN_SECTION
+        v = self.viewer
+        point = self.column_at(pos)
+        if point is None:
+            return None
+        key = borehole_key(point)
+        menu = QMenu(self)
+        menu.setToolTipsVisible(True)
+        if key is None:
+            action = menu.addAction(HIDE_IN_SECTION)
+            action.setEnabled(False)
+            action.setToolTip(NO_ID_TIP)
+            return menu
+        keys = set(v.selected) if key in v.selected else {key}
+        hidden = v.dock.provider.hidden_keys(v.profile_id) if v.profile_id else set()
+        if keys - hidden:
+            menu.addAction(HIDE_IN_SECTION).triggered.connect(
+                partial(v.set_hidden, sorted(keys - hidden), True))
+        if keys & hidden:
+            menu.addAction(SHOW_IN_SECTION).triggered.connect(
+                partial(v.set_hidden, sorted(keys & hidden), False))
+        return menu
+
+    def contextMenuEvent(self, event):
+        menu = self.column_menu(QPointF(event.pos()))
+        if menu is not None:
+            menu.exec(event.globalPos())
+            menu.deleteLater()
 
     def mouseMoveEvent(self, event):
         pos = event.position()
@@ -305,6 +382,8 @@ class BoreholeViewer(QWidget):
         self.profile_id: str | None = None
         self.profile_name = ""
         self.highlight: tuple | None = None
+        self.selected: set = set()          # (layer id, borehole id) of selected columns
+        self.hidden: set = set()            # ... of the boreholes hidden in the section
         self.items = None
         self.boreholes: list = []
         self.topo = None
@@ -344,6 +423,10 @@ class BoreholeViewer(QWidget):
             box.toggled.connect(lambda _c: self._redraw(refit=False))
             show_layout.addWidget(box)
             self.show_check[key] = box
+        self.show_check["hidden"].setToolTip(
+            "Boreholes hidden in this profile's section, drawn faded here. Right-click a "
+            "column to hide or show it; Ctrl+click selects several")
+        self.show_check["hidden"].toggled.connect(lambda _c: self.refresh())
         side.addWidget(show_box)
         self.curves_box = QGroupBox("Curves")
         self.curves_layout = QVBoxLayout(self.curves_box)
@@ -451,11 +534,22 @@ class BoreholeViewer(QWidget):
 
     def _pull(self) -> None:
         provider = self.dock.provider
-        self.items = provider.context(self.profile_id) if self.profile_id else None
+        show_hidden = self.show_check["hidden"].isChecked()
+        self.items = provider.context(self.profile_id, include_hidden=show_hidden) \
+            if self.profile_id else None
+        self.hidden = provider.hidden_keys(self.profile_id) if self.profile_id else set()
         self.topo = provider.topography(self.profile_id) if self.profile_id else None
         self.boreholes = sorted((p for p in (self.items.points if self.items else [])
                                  if p.kind == "borehole"), key=lambda p: p.s)
         self._sync_look()
+
+    def is_hidden(self, point) -> bool:
+        return borehole_key(point) in self.hidden
+
+    def set_hidden(self, keys, hidden: bool, *_args) -> None:
+        """Hide or show boreholes in this profile's section; the viewer follows (refresh)."""
+        if self.profile_id is not None:
+            self.dock.provider.set_boreholes_hidden(self.profile_id, list(keys), hidden)
 
     # -- the look shared with the section (kept in the borehole entries) ------------------
     def _entries(self):
