@@ -6,6 +6,8 @@ from pathlib import Path
 from .base import Reader, ReaderResult
 
 _REGISTRY: dict[str, Reader] = {}
+#: the reader for a file no fixed format fits: a text table read with assigned columns
+FALLBACK = "text_columns"
 
 
 def register(reader: Reader) -> None:
@@ -52,11 +54,13 @@ def _register_builtins() -> None:
     from .bert_data import BertDataReader
     from .r2_err import R2ErrReader
     from .r2_res import R2ResReader
+    from .text_columns import TextColumnsReader
     from .vtk_legacy import VtkLegacyReader
     from .zondres import ZondResReader
     # most specific first
     for cls in (BertDataReader, R2ErrReader, R2ResReader, VtkLegacyReader, ZondResReader):
         register(cls())
+    register(TextColumnsReader())          # never detected; chosen by the user, so last
 
 
 _register_builtins()
