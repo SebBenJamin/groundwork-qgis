@@ -192,4 +192,6 @@ class BertDataReader(Reader):
             "n_readings": int(n_d), "n_electrodes": int(n_el),
             "response": str(response) if response else "",
             "rms_percent": readings.rms_percent(), "chi2": readings.chi2(),
+            # the electrode block's x in file order, None for a remote pole
+            "electrode_x": [None if np.isnan(v) else float(v) for v in x],
         })

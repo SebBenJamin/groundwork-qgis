@@ -124,6 +124,13 @@ def test_xyz_2d_with_elevation_in_y_uses_x_and_3d_fails(tmp_path):
         readers.read(_write(tmp_path, text3d, "b.data"))
 
 
+def test_bert_provenance_lists_the_electrodes(tmp_path):
+    r = readers.read(_write(tmp_path))
+    assert r.provenance["electrode_x"][:3] == [0.0, 1.0, 2.0]
+    remote = readers.read(_write(tmp_path, DATA.replace("5 10.5", "100000 10.5"), "r.data"))
+    assert remote.provenance["electrode_x"] == [0.0, 1.0, 2.0, 3.0, 4.0, None]
+
+
 def test_remote_electrode_counts_as_a_pole(tmp_path):
     text = DATA.replace("5 10.5", "100000 10.5")              # electrode 6 far away (remote)
     rd = readers.read(_write(tmp_path, text)).mesh.readings
