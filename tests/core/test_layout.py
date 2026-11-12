@@ -1,11 +1,16 @@
+from pathlib import Path
+
 import numpy as np
 from pytest import approx
 
+from geophysics_workbench import readers
 from geophysics_workbench.core.layout import (derived_electrodes, guess_electrodes,
                                               guessed_spacing, inline_distances)
 from geophysics_workbench.core.placement import rigid_map
 from geophysics_workbench.core.section_mesh import SectionMesh
 from geophysics_workbench.readers.base import mesh_from_points
+
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
 def test_stored_distances_win():
@@ -57,18 +62,25 @@ def _scattered_model():
     return x, z, np.full(x.size, 50.0)
 
 
-def test_guess_from_scattered_points_is_evenly_laid():
+def test_no_guess_from_a_triangulated_model():
     x, z, v = _scattered_model()
     mesh, _n, kind = mesh_from_points(x, z, v, "m", "elevation")
     assert kind == "delaunay"
-    g = guess_electrodes(mesh, "elevation")
-    assert g[0] == approx(0, abs=0.5) and np.diff(g) == approx(2.0, abs=0.2)
+    assert guess_electrodes(mesh, "elevation").size == 0
+    assert guessed_spacing(mesh, "elevation") is None
 
 
-def test_guess_is_empty_without_two_top_points():
-    peak = SectionMesh([[0.0, 0.0], [2.0, 0.0], [1.0, 3.0]], [[0, 1, 2, -1]], [10.0])
-    assert guess_electrodes(peak, "elevation").size == 0
-    assert guessed_spacing(peak, "elevation") is None
+def test_no_guess_from_a_vtk_triangle_mesh():
+    r = readers.read(FIXTURES / "ert" / "f001_res.vtk")
+    assert (r.mesh.cells[:, 3] < 0).any()
+    assert guess_electrodes(r.mesh, r.z_kind).size == 0
+    assert guessed_spacing(r.mesh, r.z_kind) is None
+
+
+def test_no_guess_from_a_skewed_quad():
+    skew = SectionMesh([[0.0, 0.0], [2.0, 0.0], [3.0, 1.0], [1.0, 1.0]], [[0, 1, 2, 3]], [10.0])
+    assert guess_electrodes(skew, "elevation").size == 0
+    assert guessed_spacing(skew, "elevation") is None
 
 
 def test_derived_order_and_kind():

@@ -4,8 +4,9 @@ number, and electrode positions derived when none were imported.
 A station's file distance comes from, in this order: the distance stored with it, the
 readings file's electrode block (station ``n`` is electrode ``n``), a typed spacing, a
 spacing guessed from the model. Derived electrodes come from the readings file, a typed
-spacing over the model's extent, or a guess from the model's top edge. Nothing guessed here
-is stored. Pure NumPy and stdlib."""
+spacing over the model's extent, or a guess from the model's top edge. Only a row or column
+model gives a guess: a triangulated mesh's surface nodes are denser than the electrodes and
+reach past the line ends. Nothing guessed here is stored. Pure NumPy and stdlib."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -107,58 +108,21 @@ def _quad_top(mesh: SectionMesh, z_kind: str) -> np.ndarray:
     return _distinct(np.r_[x_lo[won], x_hi[won]])
 
 
-def _topmost_points(mesh: SectionMesh, z_kind: str) -> np.ndarray:
-    """x of the points on the upper boundary of a triangulated model: boundary edges that
-    face up (less steep than 45°) and have no other such edge above them."""
-    tri = mesh.cells[mesh.cells[:, 3] < 0][:, :3]
-    if len(tri) == 0:
-        return np.empty(0)
-    pts = np.column_stack([mesh.vertices[:, 0], _height(mesh.vertices[:, 1], z_kind)])
-    e = np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]])
-    third = np.concatenate([tri[:, 2], tri[:, 0], tri[:, 1]])
-    key = np.sort(e, axis=1)
-    _u, inv, count = np.unique(key, axis=0, return_inverse=True, return_counts=True)
-    edge = count[inv.ravel()] == 1
-    e, third = e[edge], third[edge]
-    a, b, c = pts[e[:, 0]], pts[e[:, 1]], pts[third]
-    normal = np.column_stack([-(b - a)[:, 1], (b - a)[:, 0]])
-    normal *= np.where(((a - c) * normal).sum(1) < 0, -1.0, 1.0)[:, None]  # away from the cell
-    up = normal[:, 1] > np.abs(normal[:, 0])
-    a, b = a[up], b[up]
-    if len(a) == 0:
-        return np.empty(0)
-    lo, hi = np.minimum(a[:, 0], b[:, 0]), np.maximum(a[:, 0], b[:, 0])
-    mid = 0.5 * (a + b)
-    # height of every candidate edge at every other edge's mid x (NaN where it does not span)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        t = (mid[:, 0][:, None] - a[:, 0][None, :]) / (b[:, 0] - a[:, 0])[None, :]
-        z_at = a[:, 1][None, :] + t * (b[:, 1] - a[:, 1])[None, :]
-    spans = (lo[None, :] < mid[:, 0][:, None]) & (mid[:, 0][:, None] < hi[None, :])
-    tol = 1e-9 * max(1.0, float(np.abs(pts).max()))
-    covered = (spans & (z_at > mid[:, 1][:, None] + tol)).any(axis=1)
-    keep = ~covered
-    return _distinct(np.r_[a[keep, 0], b[keep, 0]])
-
-
 def guess_electrodes(mesh: SectionMesh, z_kind: str) -> np.ndarray:
     """Guessed electrode positions in file distance, ascending: the x of the top-edge vertices
-    of a row or column model, otherwise points laid at the median gap of the topmost points
-    over the model's x extent. Empty when the model has fewer than two top points. The top
-    is the highest z ("elevation", "local", "unknown") or the smallest |z| ("depth")."""
-    if _quad_grid(mesh):
-        top = _quad_top(mesh, z_kind)
-        return top if top.size >= 2 else np.empty(0)
-    top = _topmost_points(mesh, z_kind)
-    if top.size < 2:
+    of a row or column model (all cells axis-parallel quads). The top is the highest z
+    ("elevation", "local", "unknown") or the smallest |z| ("depth"). Empty for any other
+    mesh: a triangulated mesh's surface nodes include refinement nodes between the electrodes
+    and padding beyond the line ends, so they would give a misleading guess."""
+    if not _quad_grid(mesh):
         return np.empty(0)
-    gap = float(np.median(np.diff(top)))
-    x0, x1 = mesh.bounds()[:2]
-    n = int(np.floor((x1 - x0) / gap + 1e-9)) + 1
-    return x0 + gap * np.arange(n)
+    top = _quad_top(mesh, z_kind)
+    return top if top.size >= 2 else np.empty(0)
 
 
 def guessed_spacing(mesh: SectionMesh, z_kind: str) -> float | None:
-    """The median gap of ``guess_electrodes``, or None without a guess."""
+    """The median gap of ``guess_electrodes``, or None without a guess (always None for a
+    triangulated mesh, see ``guess_electrodes``)."""
     g = guess_electrodes(mesh, z_kind)
     return float(np.median(np.diff(g))) if g.size >= 2 else None
 
