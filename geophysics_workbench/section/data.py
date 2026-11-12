@@ -1,8 +1,11 @@
 """Per-profile section data: meshes in chainage/elevation, styles, topography, stations,
 context items and profile ties.
 
-QGIS-free. ``SectionDataProvider`` reads the project store and model files on the main
-thread; ``SectionSnapshot`` is the plain-data copy handed to profile-generator threads.
+QGIS-free except for the coordinate transform of map-coordinate files (imported when one is
+read). ``SectionDataProvider`` reads the project store and model files on the main thread
+and places each dataset on its profile every time a section is built
+(``placement_resolve``); ``SectionSnapshot`` is the plain-data copy handed to
+profile-generator threads.
 """
 from __future__ import annotations
 
@@ -19,15 +22,18 @@ from ..readers.errors import plain_error
 from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
-from ..core.model import Dataset, Profile, StationSet, data_to_chainage
+from ..core.layout import Electrodes, derived_electrodes, guess_electrodes
+from ..core.model import Dataset, Profile, StationSet
+from ..core.placement import DistanceMap, FitReport
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
+from .placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, Resolution, resolve
 from .topography import TOPOGRAPHY_SOURCES, dem_line, station_line, station_marks
 
 #: reader_options keys applied by the provider, not passed to the reader as such
-WORKBENCH_KEYS = ("z_kind", "chainage_offset")
+WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement")
 
 
 def read_options(reader_options: dict) -> dict:
@@ -37,6 +43,53 @@ def read_options(reader_options: dict) -> dict:
     if reader_options.get("z_kind"):
         options["z_kind"] = reader_options["z_kind"]
     return options
+
+
+def is_map_dataset(d: Dataset) -> bool:
+    """True for a free-text dataset positioned by map coordinates (easting, northing)."""
+    columns = d.reader_options.get("columns")
+    return isinstance(columns, dict) and columns.get("position") == "map"
+
+
+def _past_ends(xy: np.ndarray, line: np.ndarray, tol: float = 1e-6) -> np.ndarray:
+    """True for points lying past the line's first or last vertex along the end segment's
+    direction."""
+    out = np.zeros(len(xy), dtype=bool)
+    for end, inner in ((line[0], line[1]), (line[-1], line[-2])):
+        u = (end - inner) / np.hypot(*(end - inner))
+        out |= (xy - end) @ u > tol
+    return out
+
+
+def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callable:
+    """``xy_to_distance(easting, northing) -> (chainage, offset, beyond)`` for the free-text
+    reader: map coordinates in ``file_crs`` ("" = the store's) projected onto ``profile``'s
+    line in ``store_crs``. Never stored."""
+    chainage = profile.chainage
+    line = chainage.xy
+    transform = None
+    if file_crs and file_crs != store_crs:
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject
+        source = QgsCoordinateReferenceSystem(file_crs)
+        if not source.isValid():
+            raise ValueError(f"unknown coordinate reference system {file_crs!r}")
+        transform = QgsCoordinateTransform(source, QgsCoordinateReferenceSystem(store_crs),
+                                           QgsProject.instance())
+
+    def xy_to_distance(easting, northing):
+        xy = np.column_stack([np.asarray(easting, float), np.asarray(northing, float)])
+        if transform is not None:
+            from qgis.core import QgsPointXY
+            xy = np.array([[q.x(), q.y()] for q in
+                           (transform.transform(QgsPointXY(e, n)) for e, n in xy)],
+                          dtype=float).reshape(-1, 2)
+        s, offset = chainage.project(xy)
+        at_end = (s <= 1e-9) | (s >= chainage.length - 1e-9)
+        return s, offset, at_end & _past_ends(xy, line)
+
+    return xy_to_distance
+
+
 DEPTH_NEEDS_TOPO = "depth model needs station elevations or a DEM"
 #: one QPainterPath element as serialised by QDataStream: int32 type, double x, double y
 PATH_ELEMENT = np.dtype([("t", ">i4"), ("x", ">f8"), ("y", ">f8")])
@@ -108,6 +161,9 @@ class SectionSnapshot:
     interp_crossings: list = field(default_factory=list)
     #: pieces of a frozen version drawn faintly behind, for comparison (mirrored too)
     interp_compare: list = field(default_factory=list)
+    #: where ``stations`` come from: "imported" (a station set), "readings", "spacing",
+    #: "guessed" (derived, never stored) or "none"
+    electrode_kind: str = "imported"
 
 
 def starts_hidden(d, datasets) -> bool:
@@ -263,6 +319,28 @@ def cell_path_groups(mesh: SectionMesh, scale: ColorScale,
     return [(c, g.reshape(-1)) for c, g in zip(rgba_u, np.split(elems, splits))]
 
 
+@dataclass
+class _LayoutSources:
+    """A profile's layout and the datasets it came from: the readings dataset that gave
+    ``readings_x`` and the model that gave the guess, with that model's upper file x."""
+    layout: ProfileLayout
+    readings: Dataset | None = None
+    model: Dataset | None = None
+    model_x_max: float | None = None
+
+
+def _coverage(sets: list[StationSet], electrodes: Electrodes | None
+              ) -> tuple[float, float] | None:
+    """Station coverage; for derived electrodes their span, None when they are guessed."""
+    if sets:
+        return station_coverage(sets)
+    if electrodes is None or electrodes.kind == "guessed":
+        return None
+    s = np.asarray(electrodes.chainage, dtype=float)
+    s = s[np.isfinite(s)]
+    return (float(s.min()), float(s.max())) if s.size else None
+
+
 def matching_profiles(profiles: list[Profile], xy: np.ndarray,
                       tol: float = 1.0) -> list[tuple[float, Profile, bool]]:
     """``[(error, profile, reversed), ...]``, best first, of the profiles whose end points
@@ -300,6 +378,7 @@ class SectionDataProvider:
         self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
         self._readings_seen: set[str] = set()
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
+        self._guesses: dict[str, tuple] = {}   # dataset -> (read result, z_kind, guess)
         self._gathered = GatheredContext()
         self._ties: dict[str, tuple[float, list[Tie]]] = {}     # id -> (near_miss, ties)
         #: without a true crossing, profiles closer than this (metres) still tie
@@ -385,6 +464,7 @@ class SectionDataProvider:
         self.store.delete_dataset(dataset_id)
         self._styles.pop(dataset_id, None)
         self._cache.pop(dataset_id, None)
+        self._guesses.pop(dataset_id, None)
         self.notify_changed()
 
     # -- topography and stations -----------------------------------------------------------
@@ -422,8 +502,121 @@ class SectionDataProvider:
 
     def coverage(self, profile_id: str) -> tuple[float, float] | None:
         """(min, max) station chainage over the profile's station sets; beyond it a
-        model has no stations (and a depth model no measured surface)."""
-        return station_coverage(self.store.station_sets(profile_id))
+        model has no stations (and a depth model no measured surface). Without a station
+        set, the span of the derived electrodes; None when they are guessed."""
+        sets = self.store.station_sets(profile_id)
+        return _coverage(sets, None if sets else self.electrodes(profile_id))
+
+    # -- placement -------------------------------------------------------------------------
+    def _model_guess(self, d: Dataset, result: readers.ReaderResult, z_kind: str) -> np.ndarray:
+        """``guess_electrodes`` of a read, cached with it (the top edge walk is not free)."""
+        hit = self._guesses.get(d.id)
+        if hit is None or hit[0] is not result or hit[1] != z_kind:
+            hit = self._guesses[d.id] = (result, z_kind, guess_electrodes(result.mesh, z_kind))
+        return hit[2]
+
+    def _layout_sources(self, profile: Profile | None, datasets: list[Dataset]
+                        ) -> _LayoutSources:
+        """The readings x from the first readings dataset that reads and has an electrode
+        block, the guess from the first distance-based model that reads, the spacing from
+        the profile's metadata. Datasets that cannot be read are skipped."""
+        out = _LayoutSources(ProfileLayout())
+        spacing = (profile.metadata.get("electrode_spacing") if profile is not None else None)
+        try:
+            out.layout.spacing = None if spacing is None else float(spacing)
+        except (TypeError, ValueError):
+            pass
+        for d in datasets:
+            if out.readings is not None and out.model is not None:
+                break
+            if is_map_dataset(d):
+                continue
+            try:
+                result = self._read(d)
+            except Exception:                   # a broken file just gives no layout
+                continue
+            if result.mesh.readings is not None:
+                electrode_x = result.provenance.get("electrode_x")
+                if out.readings is None and electrode_x is not None:
+                    out.readings = d
+                    out.layout.readings_x = np.array(
+                        [np.nan if v is None else v for v in electrode_x], dtype=float)
+            elif out.model is None:
+                out.model = d
+                guess = self._model_guess(d, result,
+                                          d.reader_options.get("z_kind") or result.z_kind)
+                if guess.size >= 2:
+                    out.layout.guess = guess
+                    out.layout.guessed_spacing = float(np.median(np.diff(guess)))
+                out.model_x_max = float(result.mesh.bounds()[1])
+        return out
+
+    def _resolved(self, profile: Profile, sets: list[StationSet], datasets: list[Dataset],
+                  sources: _LayoutSources | None = None) -> dict[str, Resolution]:
+        """Resolution of every distance-based dataset by id."""
+        if sources is None:
+            sources = self._layout_sources(profile, datasets)
+        return {d.id: resolve(profile, sets, d, sources.layout)
+                for d in datasets if not is_map_dataset(d)}
+
+    def layout(self, profile_id: str) -> ProfileLayout:
+        """What the profile's in-line layout is resolved from (see ``ProfileLayout``)."""
+        return self._layout_sources(self._profile(profile_id),
+                                    self.store.datasets(profile_id)).layout
+
+    def electrodes(self, profile_id: str) -> Electrodes | None:
+        """The profile's first station set ("imported"); without one, electrodes derived
+        from the readings file, the typed spacing or the model's top (never stored); None
+        when there is nothing to go on."""
+        sets = self.store.station_sets(profile_id)
+        if sets:
+            first = sets[0]
+            return Electrodes(np.asarray(first.numbers), np.asarray(first.chainage, float),
+                              "imported")
+        profile = self._profile(profile_id)
+        if profile is None:
+            return None
+        datasets = self.store.datasets(profile_id)
+        src = self._layout_sources(profile, datasets)
+        lay = src.layout
+        if src.readings is not None:
+            dmap = resolve(profile, sets, src.readings, lay).map
+            found = derived_electrodes(dmap, (0.0, 0.0), readings_x=lay.readings_x)
+            if found is not None:
+                return found
+        if src.model is None:
+            return None
+        # a stated spacing starts at file distance 0, where inline_distances puts station 1
+        return derived_electrodes(resolve(profile, sets, src.model, lay).map,
+                                  (0.0, src.model_x_max), spacing=lay.spacing, guess=lay.guess)
+
+    def fit(self, profile_id: str, dataset_id: str) -> FitReport | None:
+        """How the pins of ``dataset_id`` fit (station numbers as labels); None when that
+        dataset is not pinned."""
+        profile = self._profile(profile_id)
+        if profile is None:
+            return None
+        datasets = self.store.datasets(profile_id)
+        d = next((d for d in datasets if d.id == dataset_id), None)
+        if d is None or is_map_dataset(d):
+            return None
+        return resolve(profile, self.store.station_sets(profile_id), d,
+                       self._layout_sources(profile, datasets).layout).fit
+
+    def placement_note(self, profile_id: str) -> str:
+        """Why the profile's known points are not used, or that it has no electrode
+        positions at all; "" normally."""
+        profile = self._profile(profile_id)
+        datasets = self.store.datasets(profile_id)
+        if profile is None or not datasets:
+            return ""
+        sets = self.store.station_sets(profile_id)
+        for r in self._resolved(profile, sets, datasets).values():
+            if r.note:
+                return r.note
+        if not sets and self.electrodes(profile_id) is None:
+            return NO_ELECTRODES_NOTE
+        return ""
 
     # -- layers ----------------------------------------------------------------------------
     def source_path(self, d: Dataset) -> str:
@@ -433,30 +626,42 @@ class SectionDataProvider:
             return d.source_path
         return os.path.normpath(os.path.join(str(self.store.path.parent), d.source_path))
 
-    def _read(self, d: Dataset) -> readers.ReaderResult:
-        """Reader result in data coordinates, cached per dataset until the file or the
-        options change. Raises FileNotFoundError / ValueError / OSError."""
+    def _read(self, d: Dataset, profile: Profile | None = None) -> readers.ReaderResult:
+        """Reader result in data coordinates (map-coordinate files: in ``profile``'s
+        chainage), cached per dataset until the file, the options or, for a map file, the
+        profile's line change. Raises FileNotFoundError / ValueError / OSError."""
         path = self.source_path(d)
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
+        on_map = is_map_dataset(d)
+        if on_map and profile is None:
+            raise ValueError("a file with map coordinates needs its profile line")
+        line = (np.asarray(profile.xy, float).tobytes(), self.store.crs_authid) if on_map \
+            else None
         key = (d.id, os.stat(path).st_mtime, json.dumps(d.reader_options, sort_keys=True),
-               path, d.reader, _companion_mtime(path, d.reader_options))
+               path, d.reader, _companion_mtime(path, d.reader_options), line)
         hit = self._cache.get(d.id)
         if hit is not None and hit[0] == key:
             return hit[1]
-        result = readers.read(path, reader=d.reader or None, **read_options(d.reader_options))
+        options = read_options(d.reader_options)
+        if on_map:
+            options["xy_to_distance"] = xy_to_distance_on(
+                profile, str(d.reader_options["columns"].get("crs") or ""),
+                self.store.crs_authid)
+        result = readers.read(path, reader=d.reader or None, **options)
         self._cache[d.id] = (key, result)
         return result
 
-    def _load_mesh(self, d: Dataset, station_set: StationSet | None,
-                   topo: tuple[np.ndarray, np.ndarray] | None) -> SectionMesh:
-        if station_set is None:
-            raise ValueError(f"station set {d.station_set_id} not found")
-        result = self._read(d)
+    def _load_mesh(self, d: Dataset, dmap: DistanceMap | None,
+                   topo: tuple[np.ndarray, np.ndarray] | None,
+                   profile: Profile | None = None) -> SectionMesh:
+        """``d``'s mesh in chainage: file x through ``dmap`` (None for a map-coordinate
+        file, whose x is already chainage), a depth model hung from ``topo``."""
+        result = self._read(d, profile)
         base = result.mesh
         if base.readings is not None:
             base = self._shown_mesh(d, base)
-        mesh = base.with_x(lambda x: data_to_chainage(x, station_set, d))
+        mesh = base if dmap is None else base.with_x(dmap)
         if d.reader_options.get("z_kind", result.z_kind) == "depth":
             if topo is None:
                 raise ValueError(DEPTH_NEEDS_TOPO)
@@ -485,10 +690,11 @@ class SectionDataProvider:
             hit = self._shown_meshes[key] = (base, readings_mesh(base.readings, shown))
         return hit[1]
 
-    def _layer(self, d: Dataset, sets: dict[str, StationSet], topo) -> SectionLayer:
+    def _layer(self, d: Dataset, dmap: DistanceMap | None, topo,
+               profile: Profile | None = None) -> SectionLayer:
         style = self.style(d.id)
         try:
-            mesh = self._load_mesh(d, sets.get(d.station_set_id), topo)
+            mesh = self._load_mesh(d, dmap, topo, profile)
             if mesh.readings is not None and d.id not in self._readings_seen:
                 self._readings_seen.add(d.id)
                 style.mode = "points"              # a pseudosection: one marker per reading
@@ -510,10 +716,13 @@ class SectionDataProvider:
         return SectionLayer(d, mesh, style, None)
 
     def _assemble(self, profile_id: str):
+        profile = self._profile(profile_id)
         sets = self.store.station_sets(profile_id)
-        topo, dem_topo = self._chosen_topography(self._profile(profile_id), sets)
-        by_id = {s.id: s for s in sets}
-        layers = [self._layer(d, by_id, topo) for d in self.store.datasets(profile_id)]
+        topo, dem_topo = self._chosen_topography(profile, sets)
+        datasets = self.store.datasets(profile_id)
+        placed = {} if profile is None else self._resolved(profile, sets, datasets)
+        layers = [self._layer(d, placed[d.id].map if d.id in placed else None, topo, profile)
+                  for d in datasets]
         return layers, sets, topo, dem_topo
 
     def layers(self, profile_id: str) -> list[SectionLayer]:
@@ -580,12 +789,14 @@ class SectionDataProvider:
         layers, sets, topo, dem_topo = self._assemble(profile_id)
         if look is not None:
             layers = _layers_for_look(layers, look)
-        stations, heights = station_marks(sets)     # heights: plain z, unchanged by mirroring
+        electrodes = self.electrodes(profile_id)
+        # heights: plain z, unchanged by mirroring; NaN for derived electrodes
+        stations, heights = station_marks(sets, electrodes)
         if topo is not None:
             topo = (topo[0].copy(), topo[1].copy())
         layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
                   for la in layers]
-        coverage = station_coverage(sets)
+        coverage = _coverage(sets, electrodes)
         context = copy.deepcopy(self.context(profile_id))
         if look is not None and context is not None:
             # the plate's own notes switch, not the panel's
@@ -609,7 +820,8 @@ class SectionDataProvider:
             if context is not None:
                 context = context.mirrored(length)
         snap = SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
-                               dem_topo)
+                               dem_topo,
+                               electrode_kind="none" if electrodes is None else electrodes.kind)
         version = None if look is None else (look.interp_version or self._latest_version())
         self._add_interpretation(snap, profile_id, reverse, version, compare=look is None)
         return snap
