@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import lines
 from .chainage import Chainage
+from .placement import Positions
 
 
 def _new_id() -> str:
@@ -148,6 +150,56 @@ def profile_from_stations(name: str, crs_authid: str, xyz: np.ndarray,
         xyz, numbers = xyz[order], numbers[order]
     profile = Profile(_new_id(), name, xyz[:, :2].copy(), crs_authid)
     return profile, attach_station_set(profile, name, method, xyz, numbers)
+
+
+def profile_from_polyline(name: str, crs_authid: str, xy: np.ndarray,
+                          reverse: bool = False) -> Profile:
+    """Profile along a drawn or chosen line, without stations. ``reverse`` runs it from the
+    line's last vertex."""
+    pts = lines.drop_repeated_vertices(xy)
+    if len(pts) < 2:
+        raise ValueError("A line needs at least two distinct vertices.")
+    return Profile(_new_id(), name, pts[::-1].copy() if reverse else pts, crs_authid)
+
+
+def _ordered(positions: Positions) -> tuple:
+    """(order, xyz, numbers, inline) of the positions in ``lines.order_of`` order; numbers
+    default to 1..n in that order. Raises ValueError for a repeated station number."""
+    xyz = _as_xyz(positions.xyz)
+    n = len(xyz)
+    if positions.numbers is not None:
+        numbers = np.asarray(positions.numbers, dtype=int)
+        if numbers.shape != (n,):
+            raise ValueError("numbers and xyz differ in length")
+        values, counts = np.unique(numbers, return_counts=True)
+        if (counts > 1).any():
+            k, c = values[counts > 1][0], counts[counts > 1][0]
+            times = "twice" if c == 2 else f"{c} times"
+            raise ValueError(f"Station number {k} appears {times}.")
+    inline = None if positions.inline is None else np.asarray(positions.inline, dtype=float)
+    if inline is not None and inline.shape != (n,):
+        raise ValueError(f"inline has {inline.size} values for {n} stations")
+    order = lines.order_of(positions)
+    numbers = np.arange(1, n + 1) if positions.numbers is None else numbers[order]
+    return order, xyz[order], numbers, None if inline is None else inline[order]
+
+
+def profile_from_positions(name: str, crs_authid: str, positions: Positions,
+                           method: str = "ert") -> tuple[Profile, StationSet]:
+    """Profile through the positions, ordered by number, else by in-line distance, else as
+    given, with a station set on them that keeps their in-line distances."""
+    order, xyz, numbers, inline = _ordered(positions)
+    line = lines.line_through(xyz[:, :2], rows=order + 1)
+    profile = Profile(_new_id(), name, line, crs_authid)
+    return profile, attach_station_set(profile, name, method, xyz, numbers, inline=inline)
+
+
+def attach_positions(profile: Profile, name: str, method: str, positions: Positions,
+                     tolerance: float = 5.0) -> StationSet:
+    """Station set from the positions, projected onto ``profile`` (whose line is kept), with
+    their in-line distances; warns about stations further than ``tolerance`` off the line."""
+    _, xyz, numbers, inline = _ordered(positions)
+    return attach_station_set(profile, name, method, xyz, numbers, tolerance, inline)
 
 
 def profile_from_line(name: str, crs_authid: str, xy: np.ndarray, spacing: float,
