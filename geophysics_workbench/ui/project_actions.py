@@ -167,6 +167,19 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
     return have
 
 
+def reload_stale_layers(store: ProjectStore, project: QgsProject) -> int:
+    """0.9 gave stations an ``inline`` field (store schema 3). A project's stations layer
+    loaded from the file before the store was updated still lists the old fields: reload it.
+    Idempotent; returns the number of layers reloaded."""
+    layer = store_layers(store, project).get("stations")
+    if layer is None or layer.fields().indexOf("inline") >= 0:
+        return 0
+    layer.dataProvider().reloadData()
+    layer.reload()
+    layer.updateFields()
+    return 1
+
+
 def refresh_layers(store: ProjectStore, project: QgsProject) -> None:
     """Make the store's layers show what was just written to the GeoPackage."""
     for layer in store_layers(store, project).values():

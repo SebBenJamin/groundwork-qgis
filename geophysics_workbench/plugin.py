@@ -191,6 +191,7 @@ class WorkbenchPlugin:
         if store is not None:
             self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
+            project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
             ensure_note_layers(store, project)          # notes always have a layer to style
             migrate_note_styles(store, project)

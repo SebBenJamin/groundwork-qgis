@@ -69,7 +69,7 @@ def _make_schema_1(path, names=("A", "B"), user_name=None):
 def test_new_store_is_schema_2(tmp_path):
     from geophysics_workbench.store.gpkg_store import SCHEMA_VERSION, ProjectStore
     ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
-    assert SCHEMA_VERSION == 2 and _meta(tmp_path / "wb.gpkg")["schema_version"] == "2"
+    assert SCHEMA_VERSION == 3 and _meta(tmp_path / "wb.gpkg")["schema_version"] == "3"
 
 
 def test_migrate_1_to_2(tmp_path):
@@ -79,7 +79,7 @@ def test_migrate_1_to_2(tmp_path):
     assert "letter" in _columns(path, "interp_features")
     st = ProjectStore.open(path)
     assert sorted(f.name for f in st.features(st.current_version().id)) == ["A", "B"]
-    assert _meta(path)["schema_version"] == "2"
+    assert _meta(path)["schema_version"] == "3"          # and on through 2 -> 3
     for table in TABLES:
         cols = _columns(path, table)
         assert "name" in cols and "letter" not in cols, table

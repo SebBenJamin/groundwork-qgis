@@ -44,6 +44,17 @@ class StationSet:
     offset: np.ndarray
     metre0: float
     warnings: list[str] = field(default_factory=list)
+    #: each station's distance in the model file's own in-line metres; NaN where unknown
+    inline: np.ndarray | None = None
+
+    def __post_init__(self):
+        n = len(self.numbers)
+        if self.inline is None:
+            self.inline = np.full(n, np.nan)
+        else:
+            self.inline = np.asarray(self.inline, dtype=float)
+            if self.inline.shape != (n,):
+                raise ValueError(f"inline has {self.inline.size} values for {n} stations")
 
     @property
     def direction(self) -> int:
@@ -107,8 +118,10 @@ def _as_xyz(xyz: np.ndarray) -> np.ndarray:
 
 
 def attach_station_set(profile: Profile, name: str, method: str, xyz: np.ndarray,
-                       numbers: np.ndarray | None = None, tolerance: float = 5.0) -> StationSet:
-    """Project stations onto ``profile``; warn about those further than ``tolerance`` off it."""
+                       numbers: np.ndarray | None = None, tolerance: float = 5.0,
+                       inline: np.ndarray | None = None) -> StationSet:
+    """Project stations onto ``profile``; warn about those further than ``tolerance`` off it.
+    ``inline``: each station's distance in the model file's own metres (NaN where unknown)."""
     xyz = _as_xyz(xyz)
     nums = np.arange(1, len(xyz) + 1) if numbers is None else np.asarray(numbers, dtype=int)
     if len(nums) != len(xyz):
@@ -117,7 +130,8 @@ def attach_station_set(profile: Profile, name: str, method: str, xyz: np.ndarray
     warnings = [f"station {n}: {o:.1f} m off line"
                 for n, o in zip(nums, off) if abs(o) > tolerance]
     metre0 = float(s[np.argmin(nums)]) if len(nums) else 0.0
-    return StationSet(_new_id(), profile.id, name, method, nums, xyz, s, off, metre0, warnings)
+    return StationSet(_new_id(), profile.id, name, method, nums, xyz, s, off, metre0, warnings,
+                      inline)
 
 
 def profile_from_stations(name: str, crs_authid: str, xyz: np.ndarray,

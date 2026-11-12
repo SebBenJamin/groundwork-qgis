@@ -22,7 +22,7 @@ from .hidden_store import HiddenBoreholesMixin
 from .interp_store import InterpStoreMixin
 from .notes_store import FieldNotesMixin
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 #: tables whose 0.7 ``letter`` column became ``name`` (schema 1 -> 2)
 NAME_TABLES = ("interp_features", "interp_lines_3d", "interp_polygons_3d", "interp_points_3d",
                "interp_footprints")
@@ -38,7 +38,8 @@ _DATASET_FIELDS = [("id", _STR), ("profile_id", _STR), ("station_set_id", _STR),
                    ("version", _INT), ("parent_id", _STR), ("quantity", _STR), ("unit", _STR),
                    ("name", _STR), ("seq", _INT64)]
 _STATION_FIELDS = [("set_id", _STR), ("profile_id", _STR), ("set_name", _STR), ("method", _STR),
-                   ("number", _INT64), ("chainage", _REAL), ("offset", _REAL), ("seq", _INT64)]
+                   ("number", _INT64), ("chainage", _REAL), ("offset", _REAL), ("seq", _INT64),
+                   ("inline", _REAL)]
 
 
 @contextmanager
@@ -134,6 +135,37 @@ def _migrate_1_to_2(path: Path) -> None:
                          f"writable, and open it again. ({exc})") from None
 
 
+def _migrate_2_to_3(path: Path) -> None:
+    """0.8 -> 0.9: stations get ``inline``, their distance in the model file's own in-line
+    metres (NULL where unknown). One transaction: a failure leaves the file as it was."""
+    if not os.access(path, os.W_OK):
+        raise ValueError(f"This workbench file needs a one-time update for 0.9 but cannot be "
+                         f"written: {path}. Close other programs using it, or make it "
+                         f"writable, and open it again.")
+    try:
+        with _exceptions():
+            ds = ogr.Open(str(path), 1)
+            try:
+                ds.StartTransaction()
+                try:
+                    lyr = ds.GetLayerByName("stations")
+                    if lyr.GetLayerDefn().GetFieldIndex("inline") < 0:
+                        lyr.CreateField(ogr.FieldDefn("inline", _REAL))
+                    ds.ExecuteSQL("UPDATE wb_meta SET value = '3' "
+                                  "WHERE key = 'schema_version'")
+                except BaseException:
+                    ds.RollbackTransaction()
+                    raise
+                else:
+                    ds.CommitTransaction()
+            finally:
+                lyr = ds = None
+    except RuntimeError as exc:
+        raise ValueError(f"This workbench file needs a one-time update for 0.9 but cannot be "
+                         f"written: {path}. Close other programs using it, or make it "
+                         f"writable, and open it again. ({exc})") from None
+
+
 class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
     def __init__(self, path: Path, crs_authid: str):
         self.path = Path(path)
@@ -187,6 +219,9 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
         if version == "1":
             _migrate_1_to_2(path)
             version = "2"
+        if version == "2":
+            _migrate_2_to_3(path)
+            version = "3"
         if version != str(SCHEMA_VERSION):
             raise ValueError(f"unsupported schema_version {version} in {path} "
                              f"(this plugin reads version {SCHEMA_VERSION})")
@@ -280,7 +315,8 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
                 f["set_id"], f["profile_id"], f["set_name"], f["method"] = (
                     s.id, s.profile_id, s.name, s.method)
                 f["number"], f["seq"] = int(s.numbers[i]), i
-                for key, arr in (("chainage", s.chainage), ("offset", s.offset)):
+                for key, arr in (("chainage", s.chainage), ("offset", s.offset),
+                                 ("inline", s.inline)):
                     v = float(arr[i])
                     if not math.isnan(v):  # SQLite stores NaN as NULL; read back as NaN
                         f[key] = v
@@ -308,7 +344,8 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
                     np.array([f.GetFieldAsInteger64("number") for f in feats], dtype=int), xyz,
                     np.array([_real(f, "chainage") for f in feats], dtype=float),
                     np.array([_real(f, "offset") for f in feats], dtype=float),
-                    _real(r, "metre0", 0.0), json.loads(_text(r, "warnings") or "[]")))
+                    _real(r, "metre0", 0.0), json.loads(_text(r, "warnings") or "[]"),
+                    np.array([_real(f, "inline") for f in feats], dtype=float)))
         return out
 
     # -- datasets ----------------------------------------------------------------------------
