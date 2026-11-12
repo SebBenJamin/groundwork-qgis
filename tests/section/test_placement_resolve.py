@@ -147,6 +147,25 @@ def test_invented_needs_three_uniform_unsurveyed_stations():
     assert not invented(off_line)
     uneven = replace(made, chainage=np.r_[made.chainage[:-1], made.chainage[-1] + 0.01])
     assert not invented(uneven)
+    with_distances = replace(made, inline=np.arange(len(made.numbers)) * 5.0)
+    assert not invented(with_distances)         # 0.8 stored no in-line distances
+
+
+def test_uniform_stations_with_stored_distances_are_pinned(tmp_path):
+    st = ProjectStore.create(tmp_path / "p.gpkg", CRS)
+    p = profile_from_polyline("I", CRS, np.array([[0.0, 0.0], [95.0, 0.0]]))
+    s_ = np.arange(20) * 5.0
+    s = attach_station_set(p, "I", "ert", np.column_stack([s_, np.zeros(20), np.full(20, np.nan)]),
+                           inline=100.0 + s_)
+    st.save_profile(p); st.save_station_set(s)
+    model = tmp_path / "model.txt"
+    xs = np.arange(101.25, 195.0, 2.5)                          # cells over file 100 .. 195
+    model.write_text("".join(f"{x:.3f} {z} 100\n" for z in (99.5, 98.5) for x in xs))
+    _add(st, p, model, "text_columns", TEXT_OPTIONS, "t", s.id)
+    provider = SectionDataProvider(st)
+    assert _source(provider, p.id, "t") == "distances"
+    lo, hi = _mesh(provider, p.id, "t").bounds()[:2]
+    assert lo == pytest.approx(0.0, abs=2.5) and hi == pytest.approx(95.0, abs=2.5)
 
 
 def _known_points(tmp_path, inline, spacing=None):

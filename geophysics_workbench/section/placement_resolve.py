@@ -52,9 +52,12 @@ class Resolution:
 
 def invented(station_set: StationSet) -> bool:
     """True for a station set 0.8 made from a line or points rather than a survey: at least
-    three stations, no finite elevation, every offset 0 (or NaN), chainage evenly spaced."""
+    three stations, no stored in-line distance, no finite elevation, every offset 0 (or
+    NaN), chainage evenly spaced."""
     s = np.asarray(station_set.chainage, dtype=float)
     if s.size < 3 or not np.isfinite(s).all():
+        return False
+    if np.isfinite(station_set.inline).any():    # 0.8 stored no in-line distances
         return False
     xyz = np.asarray(station_set.xyz, dtype=float)
     if xyz.ndim == 2 and xyz.shape[1] >= 3 and np.isfinite(xyz[:, 2]).any():
