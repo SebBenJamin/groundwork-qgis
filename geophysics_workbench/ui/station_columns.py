@@ -1,51 +1,11 @@
-"""Station-file columns for the new-profile dialog: guessing the column roles and turning
-the chosen columns into station coordinates and numbers. No widgets."""
+"""Station-file columns for the new-profile dialog: turning the chosen columns into station
+coordinates and numbers (the column-role guesses are in ``core.roles``). No widgets."""
 from __future__ import annotations
-
-import re
 
 import numpy as np
 
-NONE = -1                                   # "(none)" entry of the optional column combos
-_HEADER_NAMES = {
-    "number": {"nr", "no", "num", "number", "electrode", "elektrode", "station", "id"},
-    "x": {"x", "east", "easting", "rechts", "rechtswert", "e"},
-    "y": {"y", "north", "northing", "hoch", "hochwert", "n"},
-    "z": {"z", "elev", "elevation", "height", "höhe", "hoehe", "alt", "altitude", "h"},
-}
-
-
-def guess_columns(header: list[str] | None, ncols: int) -> dict[str, int]:
-    """Column index per role (number, x, y, z) from header names, else by position.
-    A positional guess never reuses a column that a header name claimed for another role."""
-    if ncols >= 4:
-        guess = {"number": 0, "x": 1, "y": 2, "z": 3}
-    else:
-        guess = {"number": NONE, "x": 0, "y": min(1, ncols - 1), "z": 2 if ncols == 3 else NONE}
-    if header:
-        matched = {}
-        for i, token in enumerate(header):
-            word = re.sub(r"[^\wäöüß]", "", token.lower())
-            for role, names in _HEADER_NAMES.items():
-                if word in names and role not in matched:
-                    matched[role] = i
-        claimed = set(matched.values())
-        for role in guess:
-            if role in matched:
-                guess[role] = matched[role]
-            elif guess[role] in claimed:
-                guess[role] = NONE
-    return guess
-
-
-def looks_like_degrees(xy: np.ndarray) -> bool:
-    """Longitude/latitude rather than projected metres: every |x| <= 180, every |y| <= 90
-    and the whole set spans less than 1 unit."""
-    xy = np.asarray(xy, dtype=float)[:, :2]
-    if not len(xy) or not np.all(np.isfinite(xy)):
-        return False
-    return bool(np.all(np.abs(xy[:, 0]) <= 180) and np.all(np.abs(xy[:, 1]) <= 90)
-                and np.ptp(xy, axis=0).max() < 1.0)
+# the column-role guesses live in core.roles; re-exported for the dialogs and tests
+from ..core.roles import NONE, guess_columns, looks_like_degrees  # noqa: F401
 
 
 def _chosen(col) -> bool:
