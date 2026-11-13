@@ -411,29 +411,37 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
                 None if f.IsFieldNull("parent_id") else f.GetFieldAsString("parent_id"),
                 _text(f, "quantity"), _text(f, "unit"), _text(f, "name")) for f in rows]
 
-    def rename_profile(self, profile_id: str, name: str) -> None:
-        """Give a profile a new name (its id, and everything linked to it, stay)."""
+    def checked_name(self, profile_id: str, name: str) -> str:
+        """``name`` trimmed; ValueError when empty or another profile has it."""
         name = (name or "").strip()
         if not name:
             raise ValueError("A profile name cannot be empty.")
         if any(p.id != profile_id and p.name.casefold() == name.casefold()
                for p in self.profiles()):
             raise ValueError(f"Another profile is already called “{name}”.")
+        return name
+
+    def rename_profile(self, profile_id: str, name: str) -> None:
+        """Give a profile a new name (its id, and everything linked to it, stay)."""
+        name = self.checked_name(profile_id, name)
         p = self.profile(profile_id)
         self.save_profile(Profile(p.id, name, p.xy, p.crs_authid, p.metadata))
 
     def move_profile_line(self, profile_id: str, xy: np.ndarray,
                           station_set: StationSet | None = None,
-                          metadata: dict | None = None) -> dict[str, int]:
+                          metadata: dict | None = None,
+                          name: str | None = None) -> dict[str, int]:
         """Replace the profile's line by ``xy`` and carry everything that sits on it along,
         in one transaction (a failure changes nothing): field notes, the current
         interpretation version's piece vertices and the reference height are remapped
         with ``chainage.remap``; every station set is projected onto the new line again.
-        ``station_set`` (made on the new line) is saved with them and ``metadata`` replaces
-        the profile's. Frozen versions are not touched. Returns the counts
-        ``stations`` (re-projected), ``pieces``, ``notes``."""
+        ``station_set`` (made on the new line) is saved with them, ``metadata`` replaces
+        the profile's and ``name`` renames it (checked before anything is written). A
+        dataset's ``placement.zero`` (a chainage) is remapped too. Frozen versions are not touched.
+        Returns the counts ``stations`` (re-projected), ``pieces``, ``notes``."""
         old = self.profile(profile_id)
-        new = Profile(old.id, old.name, np.asarray(xy, dtype=float), old.crs_authid,
+        name = old.name if name is None else self.checked_name(profile_id, name)
+        new = Profile(old.id, name, np.asarray(xy, dtype=float), old.crs_authid,
                       dict(old.metadata if metadata is None else metadata))
         old_ch, new_ch = old.chainage, new.chainage
         ref = new.metadata.get("reference_height")
@@ -470,6 +478,12 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
                                       for s, z in piece.vertices]
                     self._write_piece(lyr, piece)
                     counts["pieces"] += 1
+            for d in self.datasets(profile_id):
+                zero = (d.reader_options.get("placement") or {}).get("zero")
+                if zero is not None:
+                    d.reader_options["placement"]["zero"] = float(
+                        remap(old_ch, new_ch, zero))
+                    self._write_dataset(ds, d)
             if station_set is not None:
                 self._write_station_set(ds, station_set)
         return counts

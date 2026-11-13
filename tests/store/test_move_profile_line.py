@@ -46,3 +46,55 @@ def test_move_leaves_frozen_versions_alone(populated):
     st.move_profile_line(p.id, new_xy)
     assert [q.vertices for q in st.pieces(frozen.id, p.id)] == before
     assert st.pieces(st.current_version().id, p.id)[0].vertices != before[0]
+
+
+def test_move_keeps_a_model_placed_from_the_end_in_place(populated, tmp_path):
+    """A dataset without a station set stores where its file's zero lies as a chainage
+    (``placement.zero`` with direction -1): the move carries it, so the model stays put."""
+    import shutil
+
+    from geophysics_workbench.core.model import Dataset, file_fingerprint
+    from geophysics_workbench.section.data import SectionDataProvider
+    from tests.conftest import FIXTURES
+
+    st, p, _ = populated
+    src = tmp_path / "f001_res.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+    mt, sha = file_fingerprint(src)
+    opts = {"z_kind": "depth", "placement": {"zero": 100.0, "direction": -1}}
+    st.save_dataset(Dataset("d1", p.id, "", "ert_model", str(src), mt, sha, "r2_res_dat",
+                            opts, {}, name="model"))
+
+    def ends():
+        prof = st.profile(p.id)
+        x0, x1 = SectionDataProvider(st).layers(p.id)[0].mesh.bounds()[:2]
+        return prof.chainage.to_xy(np.array([x0, x1]))[:, 0]
+
+    before = ends()
+    st.move_profile_line(p.id, np.array([[-20.0, 0.0], [100.0, 0.0]]))   # starts 20 m earlier
+    [d] = st.datasets(p.id)
+    assert d.reader_options["placement"]["zero"] == pytest.approx(120.0, abs=0.1)
+    assert d.reader_options["placement"]["direction"] == -1
+    assert np.allclose(np.sort(ends()), np.sort(before), atol=1.0)
+
+
+def test_a_failed_move_changes_nothing(populated, monkeypatch):
+    st, p, new_xy = populated
+    before = (st.profile(p.id), st.field_notes(p.id), st.station_sets(p.id),
+              st.pieces(st.current_version().id, p.id))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(st, "_write_piece", boom)        # after the notes were written
+    with pytest.raises(RuntimeError):
+        st.move_profile_line(p.id, new_xy, metadata={"electrode_spacing": 5.0}, name="Other")
+    monkeypatch.undo()
+    after = st.profile(p.id)
+    assert after.name == before[0].name == "P" and np.allclose(after.xy, before[0].xy)
+    assert after.metadata == before[0].metadata
+    assert [(n.s_from, n.s_to) for n in st.field_notes(p.id)] == \
+        [(n.s_from, n.s_to) for n in before[1]]
+    [s0], [s1] = before[2], st.station_sets(p.id)
+    assert np.allclose(s0.chainage, s1.chainage) and np.allclose(s0.offset, s1.offset)
+    assert st.pieces(st.current_version().id, p.id)[0].vertices == before[3][0].vertices

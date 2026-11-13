@@ -205,3 +205,40 @@ def test_dialog_opens_at_its_content_and_does_not_shrink(qgis_app, make_dialog, 
     dlg.set_positions.setChecked(False)
     qgis_app.processEvents()
     assert dlg.size().height() == grown.height()
+
+
+def test_a_failed_move_keeps_the_old_name_too(qgis_app, make_dialog, drawn, monkeypatch,
+                                              warnings_shown):
+    from geophysics_workbench.ui import profile_actions
+    st, p = drawn
+    monkeypatch.setattr(profile_actions, "confirm_move", lambda parent, name, counts: True)
+    dlg = make_dialog(st, p.id)
+    dlg.set_positions.setChecked(True)
+    dlg.placement.set_positions_file(POSITIONS)
+    dlg.move_line.setChecked(True)
+    dlg.name_edit.setText("Renamed")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(st, "_write_station_set", boom)
+    dlg.accept()
+    assert dlg.result() == 0 and "disk full" in warnings_shown[-1]
+    assert st.profile(p.id).name == "Drawn" and np.allclose(st.profile(p.id).xy, p.xy)
+
+
+def test_a_failed_keep_line_save_keeps_the_old_name_too(qgis_app, make_dialog, drawn,
+                                                        monkeypatch, warnings_shown):
+    st, p = drawn
+    dlg = make_dialog(st, p.id)
+    dlg.set_positions.setChecked(True)
+    dlg.placement.set_positions_file(POSITIONS)
+    dlg.name_edit.setText("Renamed")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(st, "_write_station_set", boom)
+    dlg.accept()
+    assert dlg.result() == 0 and st.profile(p.id).name == "Drawn"
+    assert st.station_sets(p.id) == []

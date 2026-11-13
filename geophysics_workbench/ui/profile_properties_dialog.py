@@ -157,6 +157,9 @@ class ProfilePropertiesDialog(QDialog):
             self.dock.set_reference_height(s, z)        # one step on the panel's undo stack
         else:
             self.provider.set_reference_height(self.profile_id, s, z)
+            if self.store.has_interpretation():
+                from .interp_layers import reload_interp_layers
+                reload_interp_layers(self.store, self.project)    # pieces moved with it
         self._sync_reference()
 
     # -- reading the form --------------------------------------------------------------------
@@ -197,6 +200,7 @@ class ProfilePropertiesDialog(QDialog):
         name = self.name_edit.text().strip()
         if not name:
             raise ValueError("Enter a name for the profile")
+        name = self.store.checked_name(self.profile_id, name)   # a duplicate: before any write
         spacing = self._spacing()
         old = self.store.profile(self.profile_id)
         positions = self.placement.placement().positions if self.set_positions.isChecked() else None
@@ -213,19 +217,17 @@ class ProfilePropertiesDialog(QDialog):
                     return False
             elif made.warnings and not profile_actions.confirm_off_line(self, made.warnings):
                 return False
-        if name != old.name:
-            self.store.rename_profile(self.profile_id, name)    # checks empty and duplicates
         metadata = dict(old.metadata)
         if spacing is None:
             metadata.pop("electrode_spacing", None)
         else:
             metadata["electrode_spacing"] = float(spacing)
         if move:
-            self.store.move_profile_line(self.profile_id, line, made, metadata)
+            self.store.move_profile_line(self.profile_id, line, made, metadata, name)
             self._after_move()
-        elif made is not None or metadata != old.metadata:
+        elif made is not None or metadata != old.metadata or name != old.name:
             kept = self.store.profile(self.profile_id)
-            kept.metadata = metadata
+            kept.name, kept.metadata = name, metadata
             self.store.save_import(kept, made, None)
         if name != old.name or move or made is not None or metadata != old.metadata:
             self._refresh()
