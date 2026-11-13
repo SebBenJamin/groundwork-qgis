@@ -341,8 +341,13 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         font.setPixelSize(max(10, round(rc.convertToPainterUnits(3.0, _MM))))
         painter.setFont(font)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QPen(QColor(0, 0, 0), 1))
-        painter.setBrush(QBrush(QColor(0, 0, 0)))
+        if self.snapshot.electrode_kind in DERIVED_KINDS:
+            # worked out at draw time, not surveyed: the same pen, dashed, nothing filled
+            painter.setPen(QPen(QColor(0, 0, 0), 1, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+        else:
+            painter.setPen(QPen(QColor(0, 0, 0), 1))
+            painter.setBrush(QBrush(QColor(0, 0, 0)))
         fm = painter.fontMetrics()
         spans = [(wt.map(QPointF(si, 0.0)).x(), fm.horizontalAdvance(label))
                  for si, label in stations if label]
@@ -361,6 +366,9 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 box = QRectF(x - 4 * fs, y - 2 * half - fs * 1.6, 8 * fs, fs * 1.4)
                 painter.drawText(box, int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom),
                                  label)
+
+
+DERIVED_KINDS = ("readings", "spacing", "guessed")
 
 
 def station_labels_to_draw(spans, gap: float = 6.0) -> list[bool]:

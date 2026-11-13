@@ -516,7 +516,8 @@ class InterpController(QObject):
         def on_change():
             changed.append(True)
             after_change(store, self.dock.provider)
-        dlg = FieldNotesDialog(store, profile_id, on_change, self.dock)
+        dlg = FieldNotesDialog(store, profile_id, on_change, self.dock,
+                               provider=self.dock.provider)
         dlg.exec()
         dlg.deleteLater()
         if changed:     # the list's edits are not on the stack: its note commands are stale

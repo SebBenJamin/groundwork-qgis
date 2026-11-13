@@ -18,7 +18,7 @@ from .section.dock import SectionDock
 from .section.map_link import MapLink
 from .section.profile_source import register_source, unregister_source
 from .section.style_watch import StyleWatch
-from .ui import project_actions
+from .ui import derived_layers, project_actions
 from .ui.context_dialog import read_settings
 from .section.field_notes_render import note_looks
 from .ui.field_note_layers import ensure_note_layers, migrate_note_styles
@@ -61,6 +61,7 @@ class WorkbenchPlugin:
         self.plates_action = None
         self.rename_action = self.delete_action = None
         self._project_signals = []
+        self._syncing_derived = False
 
     @property
     def store(self):
@@ -114,6 +115,7 @@ class WorkbenchPlugin:
 
         project = QgsProject.instance()
         for signal, slot in ((project.readProject, self._project_read),
+                             (project.writeProject, self._project_write),
                              (project.cleared, self._project_cleared),
                              (project.fileNameChanged, self._project_renamed)):
             signal.connect(slot)
@@ -181,6 +183,9 @@ class WorkbenchPlugin:
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
         self._close_borehole_viewer()          # it follows the old store's data
+        old = derived_layers.derived_layer(QgsProject.instance())
+        if old is not None:                    # the old store's electrodes
+            QgsProject.instance().removeMapLayer(old.id())
         self._close_profile_dialog()
         self._close_data_dialog()             # it adds to the old store
         self._close_context_dialog()
@@ -209,6 +214,8 @@ class WorkbenchPlugin:
                                           self.provider.notify_redraw)
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error
+            self.provider.on_change.append(self._sync_derived)
+            self._sync_derived()
             self._context_logged.clear()
             self.source = register_source(self.provider)
             if self.dock is not None:
@@ -274,6 +281,19 @@ class WorkbenchPlugin:
             store = None
             self._warn(str(exc))
         self.set_store(store)
+
+    def _sync_derived(self) -> None:
+        """Show the derived electrodes as a temporary map layer (never stored)."""
+        if self.provider is None or self._syncing_derived:
+            return
+        self._syncing_derived = True            # adding the layer must not set off a rebuild
+        try:
+            derived_layers.sync(self.provider.store, self.provider, QgsProject.instance())
+        finally:
+            self._syncing_derived = False
+
+    def _project_write(self, *_):
+        derived_layers.save_style(QgsProject.instance())
 
     def _project_cleared(self):
         self._close_borehole_viewer()

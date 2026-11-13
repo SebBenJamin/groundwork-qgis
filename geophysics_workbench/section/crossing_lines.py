@@ -20,6 +20,10 @@ def own_layer_ids(store, project) -> set[str]:
     own = list(project_actions.store_layers(store, project).values())
     own += list(interp_layers(store, project).values())
     own += list(field_note_layers(store, project).values())
+    from ..ui.derived_layers import derived_layer
+    derived = derived_layer(project)
+    if derived is not None:
+        own.append(derived)
     return {layer.id() for layer in own}
 
 

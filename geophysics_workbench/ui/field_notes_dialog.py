@@ -19,6 +19,13 @@ from ..core.numbers import fmt
 COLUMNS = ("From (m)", "To (m)", "Electrodes", "Category", "Text", "Shown")
 
 
+NOTE_SUFFIX = {"guessed": " (guessed)", "spacing": " (from spacing)"}
+
+
+def _name(v) -> str:
+    return str(int(v)) if float(v).is_integer() else str(v)
+
+
 def after_change(store, provider=None, project=None) -> None:
     """Rebuild the notes' map geometry, show the map layers, redraw the section."""
     from qgis.core import QgsProject
@@ -97,9 +104,11 @@ class FieldNotesDialog(QDialog):
     """All field notes of one profile: add (by chainage or by electrodes), edit, switch
     on/off, delete."""
 
-    def __init__(self, store, profile_id: str, on_change: Callable[[], None], parent=None):
+    def __init__(self, store, profile_id: str, on_change: Callable[[], None], parent=None,
+                 provider=None):
         super().__init__(parent)
         self.store, self.profile_id, self.on_change = store, profile_id, on_change
+        self.provider = provider
         self.setWindowTitle(f"Field notes – {store.profile(profile_id).name}")
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -169,15 +178,26 @@ class FieldNotesDialog(QDialog):
         self.table.resizeColumnsToContents()
         self.table.blockSignals(False)
 
-    def station_names(self):
-        """(names, chainages) of the profile's stations (the set the section draws)."""
+    def _electrodes(self):
+        """(names, chainages, kind) of the electrodes a note can be placed by: the
+        provider's (imported or derived), else the stored station set."""
+        if self.provider is not None:
+            found = self.provider.electrodes(self.profile_id)
+            if found is None:
+                return [], [], "none"
+            return ([_name(v) for v in found.numbers],
+                    [float(c) for c in found.chainage], found.kind)
         from ..section.topography import topo_set
         sets = self.store.station_sets(self.profile_id)
         st = topo_set(sets) or (sets[0] if sets else None)
         if st is None:
-            return [], []
-        names = [str(int(v)) if float(v).is_integer() else str(v) for v in st.numbers]
-        return names, [float(c) for c in st.chainage]
+            return [], [], "none"
+        return [_name(v) for v in st.numbers], [float(c) for c in st.chainage], "imported"
+
+    def station_names(self):
+        """(names, chainages) of the profile's electrodes."""
+        names, chain, _kind = self._electrodes()
+        return names, chain
 
     # -- changes -------------------------------------------------------------------------------
     def _changed(self) -> None:
@@ -192,13 +212,14 @@ class FieldNotesDialog(QDialog):
 
     def add_by_stations(self, first: str, last: str | None, text: str, category: str,
                         ask: bool = False) -> bool:
-        names, chain = self.station_names()
+        names, chain, kind = self._electrodes()
         try:
             s0, s1 = stations_to_chainage(names, chain, first, last)
         except ValueError as exc:
             self.message.setText(str(exc))
             return False
         stations = first.strip() + (f"–{last.strip()}" if last and last.strip() else "")
+        stations += NOTE_SUFFIX.get(kind, "")
         note = FieldNote(new_id(), self.profile_id, s0, s1, text, category, stations=stations)
         if ask:
             note = ask_note(self, note, categories(self.store))

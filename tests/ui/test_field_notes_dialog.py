@@ -56,3 +56,44 @@ def test_note_form_returns_the_edited_note(qgis_app):
     form.shown_check.setChecked(False)
     n = form.note()
     assert (n.text, n.category, n.shown) == ("fence\nbroken", "obstacle", False)
+
+
+def _guessed(qgis_app, tmp_path):
+    import shutil
+
+    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+                                                 profile_from_polyline)
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog
+    from pathlib import Path
+    FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+    st = ProjectStore.create(tmp_path / "g.gpkg", "EPSG:25832")
+    p = profile_from_polyline("D", "EPSG:25832", np.array([[0.0, 0.0], [60.0, 0.0]]))
+    st.save_profile(p)
+    src = tmp_path / "m.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("d", p.id, "", "ert_model", str(src), mt, sha, "r2_res_dat",
+                            {"z_kind": "elevation"}, {}, name="d"))
+    st.ensure_field_notes()
+    return st, p, FieldNotesDialog(st, p.id, lambda: None, provider=SectionDataProvider(st))
+
+
+def test_note_by_guessed_electrode_is_labelled(qgis_app, tmp_path):
+    st, p, dlg = _guessed(qgis_app, tmp_path)
+    assert dlg.add_by_stations("3", "5", "dry", "") is True
+    n = st.field_notes(p.id)[0]
+    assert n.stations == "3–5 (guessed)"
+    assert (n.s_from, n.s_to) == pytest.approx((4.0, 8.0))      # electrodes 2 m apart
+
+
+def test_note_by_imported_electrode_is_unlabelled(qgis_app, store_with_model):
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog
+    st, p, _ = store_with_model
+    st.ensure_field_notes()
+    dlg = FieldNotesDialog(st, p.id, lambda: None, provider=SectionDataProvider(st))
+    first = dlg.station_names()[0][0]
+    assert dlg.add_by_stations(first, None, "x", "") is True
+    assert st.field_notes(p.id)[0].stations == first

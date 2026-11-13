@@ -404,3 +404,38 @@ def test_second_readout_line_never_resizes_the_canvas(qgis_app, store_with_model
     dock.readout.setText("s = 5.0 m\nBorehole EN-RK 4 (0 m): 1.9–3.0 m SU2")
     qgis_app.processEvents()
     assert dock.canvas.height() == before
+
+
+def _drawn_store(tmp_path, model="ert/f001_res.dat", reader="r2_res_dat"):
+    import shutil
+
+    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+                                                 profile_from_polyline)
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from pathlib import Path
+    FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+    st = ProjectStore.create(tmp_path / "d.gpkg", "EPSG:25832")
+    p = profile_from_polyline("D", "EPSG:25832", np.array([[0.0, 0.0], [60.0, 0.0]]))
+    st.save_profile(p)
+    src = tmp_path / ("m" + model[-4:])
+    shutil.copy(FIXTURES / model, src)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("d", p.id, "", "ert_model", str(src), mt, sha, reader,
+                            {"z_kind": "elevation"}, {}, name="d"))
+    return st, p
+
+
+def test_info_line_names_the_kind(qgis_app, tmp_path, make_dock):
+    st, p = _drawn_store(tmp_path)
+    dock = make_dock(st)
+    assert dock.info_text() == "" and dock.info.isHidden()
+    dock.open_profile(p.id)
+    assert "electrodes guessed from the model" in dock.info_text()
+    assert not dock.info.isHidden()
+
+
+def test_info_line_asks_for_positions_when_there_is_no_guess(qgis_app, tmp_path, make_dock):
+    st, p = _drawn_store(tmp_path, "ert/f001_res.vtk", "vtk_legacy")
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    assert "No electrode positions: import them or type the spacing" in dock.info_text()

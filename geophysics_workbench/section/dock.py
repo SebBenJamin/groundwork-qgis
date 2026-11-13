@@ -23,6 +23,8 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphi
                                  QVBoxLayout,
                                  QWidget)
 
+from ..core.layout import KIND_TEXT
+from ..core.numbers import fmt_trim
 from .data import identify_layers, layer_name
 from .dock_context import context_lines
 from .layer_list import LayerList
@@ -54,6 +56,9 @@ def show_hidden_text(count: int) -> str:
 def _registered_source_for(provider):
     source = QgsApplication.profileSourceRegistry().findSourceById(SOURCE_ID)
     return source if getattr(source, "provider", None) is provider else None
+
+
+LOCAL_INFO = "Local section: no heights yet, values are depth below the surface"
 
 
 class _Readout(QLabel):
@@ -148,6 +153,10 @@ class SectionDock(QDockWidget):
         self.layer_list = LayerList()
         self.readout = _Readout()
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.info = QLabel()                    # which electrodes are shown, local section
+        self.info.setWordWrap(True)
+        self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.info.hide()
         self.errors = QLabel()
         self.errors.setStyleSheet("color: #c00000;")
         self.errors.setWordWrap(True)
@@ -209,6 +218,7 @@ class SectionDock(QDockWidget):
             shortcut.activated.connect(slot)
         layout.addLayout(self.interp.bar)
         layout.addWidget(splitter, 1)
+        layout.addWidget(self.info)
         layout.addWidget(self.readout)
         layout.addWidget(self.errors)
         self.setWidget(body)
@@ -272,6 +282,7 @@ class SectionDock(QDockWidget):
             self._profile = profile
             self._set_curve(profile)
         self._sync_layers()
+        self._update_info()
         self.canvas.refresh()
         if settled:
             self.readout.setText(settled)
@@ -328,6 +339,7 @@ class SectionDock(QDockWidget):
         if self._source is not None and not self.canvas.sources():
             self.canvas.setSources([self._source])
         self._sync_layers()
+        self._update_info()
         self.canvas.refresh()
         self.zoom_full()
         self.show_cursor(None)
@@ -403,6 +415,7 @@ class SectionDock(QDockWidget):
         self.canvas.clear()
         self.layer_list.set_layers(self.provider, [])
         self._show_errors([])
+        self._update_info()
         self.topo.sync()
         self.show_cursor(None)
         self.profile_changed.emit(None)
@@ -421,6 +434,26 @@ class SectionDock(QDockWidget):
         self.layer_list.set_layers(self.provider, layers)
         self._show_errors([f"{layer_name(la.dataset)}: {la.error}"
                            for la in layers if la.error is not None])
+
+    def info_text(self) -> str:
+        return self.info.text()
+
+    def _update_info(self) -> None:
+        """Say which electrodes the section shows and that a local section is in depth."""
+        parts = []
+        if self.provider is not None and self._profile is not None:
+            pid = self._profile.id
+            found = self.provider.electrodes(pid)
+            if found is not None and found.kind in KIND_TEXT:
+                spacing = self._profile.metadata.get("electrode_spacing")
+                parts.append(KIND_TEXT[found.kind].format(
+                    spacing="" if spacing is None else fmt_trim(float(spacing))))
+            if note := self.provider.placement_note(pid):
+                parts.append(note)
+            if self.provider.is_local(pid):
+                parts.append(LOCAL_INFO)
+        self.info.setText(" · ".join(parts))
+        self.info.setVisible(bool(parts))
 
     def _show_errors(self, lines: list[str]) -> None:
         self.errors.setText("\n".join(lines))
