@@ -1,4 +1,4 @@
-"""Add ERT model warns when the model reaches far beyond the stations (0.1.1, F1)."""
+"""Add Data warns when the model reaches far beyond the stations (0.1.1, F1)."""
 import shutil
 from pathlib import Path
 
@@ -44,12 +44,12 @@ def p4(qgis_app, tmp_path):
 
 
 def _dialog(fake_iface, st, p, src, offset):
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
 
-    dlg = AddModelDialog(fake_iface, st, p.id)
+    dlg = AddDataDialog(fake_iface, st, p.id)
     dlg.set_file(src)
     dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("elevation"))
-    dlg.offset_spin.setValue(offset)
+    dlg.placement.offset_spin.setValue(offset)
     return dlg
 
 
@@ -66,8 +66,8 @@ def test_overhang_beyond_the_limit_warns_and_asks(qgis_app, fake_iface, p4, ques
     st, p, src = p4
     dlg = _dialog(fake_iface, st, p, src, 55.0)        # model 55 .. 65 m, stations 0 .. 50
     try:
-        text = dlg.warning.text()
-        assert dlg.warning.isVisibleTo(dlg)
+        text = dlg.warning_label.text()
+        assert dlg.warning_label.isVisibleTo(dlg)
         assert "P4" in text and "55–65 m" in text and "0–50 m" in text
         assert "15 m beyond the last station" in text
         dlg.accept()                                    # answered No: nothing saved
@@ -85,7 +85,7 @@ def test_overhang_at_the_start_names_the_first_station(qgis_app, fake_iface, p4,
     st, p, src = p4
     dlg = _dialog(fake_iface, st, p, src, -20.0)       # model -20 .. -10 m
     try:
-        assert "20 m before the first station" in dlg.warning.text()
+        assert "20 m before the first station" in dlg.warning_label.text()
     finally:
         _close(dlg, qgis_app)
 
@@ -94,7 +94,7 @@ def test_overhang_within_the_limit_stays_silent(qgis_app, fake_iface, p4, questi
     st, p, src = p4
     dlg = _dialog(fake_iface, st, p, src, 50.0)        # model 50 .. 60: 10 m = the limit
     try:
-        assert not dlg.warning.isVisibleTo(dlg) and dlg.warning.text() == ""
+        assert not dlg.warning_label.isVisibleTo(dlg) and dlg.warning_label.text() == ""
         dlg.accept()
         assert questions == [] and dlg.result() == 1 and len(st.datasets(p.id)) == 1
     finally:

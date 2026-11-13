@@ -61,14 +61,14 @@ def test_layer_error_on_the_panel_is_plain(qgis_app, store_with_model, tmp_path)
 def test_add_model_preview_of_a_station_file(qgis_app, fake_iface, store_with_model, tmp_path):
     """Usability review 2: a German electrode CSV chosen in Add ERT Model… showed a raw
     Python error ("unsupported operand type(s) for +: 'int' and 'NoneType')."""
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
     st, p, _ = store_with_model
     csv = tmp_path / "P9_Elektroden.csv"
     csv.write_text("Nr;Rechtswert;Hochwert;Höhe\n1;437681,98;5850793,00;59,06\n"
                    "2;437686,95;5850793,52;59,14\n3;437691,93;5850794,03;59,21\n",
                    encoding="utf-8")
-    dlg = AddModelDialog(fake_iface, st, p.id)
+    dlg = AddDataDialog(fake_iface, st, p.id)
     dlg.set_file(str(csv))
     qgis_app.processEvents()
-    shown = dlg.preview.text() + " " + dlg.warning.text()
+    shown = dlg.summary_label.text() + " " + dlg.warning_label.text()
     assert "NoneType" not in shown and "unsupported operand" not in shown, shown

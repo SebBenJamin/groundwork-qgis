@@ -20,6 +20,15 @@ def title_problem(text: str) -> str | None:
     return None
 
 
+def _qgis_own(button) -> bool:
+    """A tool button QGIS's own widgets make (a group box's collapse button, a line edit's
+    clear button, the CRS widget's button): not the plugin's to label."""
+    if button.metaObject().className() in ("QgsGroupBoxCollapseButton", "QLineEditIconButton"):
+        return True
+    parent = button.parentWidget()
+    return parent is not None and parent.metaObject().className().startswith("Qgs")
+
+
 def collect(widget):
     from qgis.PyQt.QtWidgets import (QAbstractButton, QCheckBox, QGroupBox, QLabel, QMenu,
                                      QPushButton, QRadioButton, QTabWidget, QToolButton)
@@ -32,7 +41,8 @@ def collect(widget):
         elif isinstance(w, (QPushButton, QToolButton)) and isinstance(w, QAbstractButton):
             if w.text():
                 out.append(("title", w.text(), w))
-            if isinstance(w, QToolButton) and not w.objectName().startswith("Scroll"):
+            if isinstance(w, QToolButton) and not w.objectName().startswith("Scroll") \
+                    and not _qgis_own(w):
                 out.append(("tool", w.toolTip(), w))       # (not Qt's own tab-scroll arrows)
         elif isinstance(w, QLabel) and w.text() and not w.text().lstrip().startswith("<"):
             out.append(("label", w.text(), w))
@@ -92,7 +102,7 @@ def _dialogs(iface, st, p, prov, prj):
 
     from geophysics_workbench.core.field_notes import FieldNote
     from geophysics_workbench.section.scale_dialog import ColorScaleDialog, DisplayDialog
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
     from geophysics_workbench.ui.context_dialog import ContextDialog
     from geophysics_workbench.ui.curve_style_dialog import CurveStyleDialog
     from geophysics_workbench.ui.dataset_info_dialog import DatasetInfoDialog
@@ -106,7 +116,7 @@ def _dialogs(iface, st, p, prov, prj):
     return {
         "Colour scale": ColorScaleDialog(None),
         "Display": DisplayDialog(None, layer),
-        "Add ERT model": AddModelDialog(iface, st, p.id, prov),
+        "Add data": AddDataDialog(iface, st, p.id, prov, prj),
         "Context layers": ContextDialog(iface, prj),
         "Curve style": CurveStyleDialog(prj, {}, lambda: None),
         "Dataset info": DatasetInfoDialog(st, ds.id),
@@ -164,8 +174,8 @@ def test_disabled_actions_say_why(qgis_app, fake_iface):
         assert disabled
         for a in disabled:
             assert a.toolTip() and a.toolTip() != a.text().replace("&", ""), a.text()
-        add = next(a for a in plugin.actions if a.text().startswith("Add ERT Model"))
-        assert "Open a profile" in add.toolTip()
+        add = next(a for a in plugin.actions if a.text().startswith("Add Data"))
+        assert "Open or create a workbench project" in add.toolTip()
         pick = next(a for a in plugin.actions if a.text().startswith("Pick Profile"))
         assert not pick.isEnabled()
     finally:

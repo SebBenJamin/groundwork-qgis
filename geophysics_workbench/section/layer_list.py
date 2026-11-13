@@ -273,7 +273,7 @@ class LayerList(QWidget):
         answer = QMessageBox.question(
             self, "Remove from profile",
             f"Remove “{layer_name(layer.dataset)}” from this profile?\n\n"
-            "The model file stays where it is; you can add it again with Add ERT model.",
+            "The model file stays where it is; you can add it again with Add Data.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:

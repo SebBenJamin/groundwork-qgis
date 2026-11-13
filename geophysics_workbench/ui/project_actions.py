@@ -17,9 +17,11 @@ from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsP
                        QgsVectorLayer, QgsVectorLayerSimpleLabeling)
 
 from .. import readers
-from ..core.model import Dataset, Profile, StationSet, file_fingerprint
+from ..core.model import (Dataset, Profile, StationSet, attach_positions, file_fingerprint,
+                          profile_from_polyline, profile_from_positions)
+from ..core.placement import Placement
 from ..readers.base import Z_CHOICES
-from ..section.data import read_options
+from ..section.data import read_options, xy_to_distance_on
 from ..store.gpkg_store import ProjectStore
 
 SCOPE = "geophysics_workbench"
@@ -227,22 +229,47 @@ def model_source_path(store: ProjectStore, path: Path) -> str:
         return str(path)
 
 
+def _on_map(options: dict) -> bool:
+    columns = options.get("columns")
+    return isinstance(columns, dict) and columns.get("position") == "map"
+
+
+def read_for(store: ProjectStore, profile: Profile, path: Path, reader: str,
+             options: dict) -> readers.ReaderResult:
+    """Read ``path`` as the section will: a file in map coordinates is projected onto
+    ``profile``'s line (which need not be saved yet)."""
+    opts = read_options(options)
+    if _on_map(options):
+        opts["xy_to_distance"] = xy_to_distance_on(
+            profile, str(options["columns"].get("crs") or ""), store.crs_authid)
+    return readers.read(Path(path), reader=reader or None, **opts)
+
+
+def checked_z_kind(options: dict, result: readers.ReaderResult, path: Path) -> str:
+    """The vertical meaning to store: the user's, else the reader's. ValueError while it is
+    still unknown."""
+    z_kind = options.get("z_kind") or result.z_kind
+    if z_kind not in Z_CHOICES:
+        raise ValueError(f"Choose whether Z is elevation or depth for {Path(path).name}")
+    return z_kind
+
+
 def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: Path,
-              reader: str, options: dict, name: str, provider=None) -> Dataset:
+              reader: str, options: dict, name: str, provider=None,
+              result: readers.ReaderResult | None = None) -> Dataset:
     """Validate ``path`` by reading it once, then save it as a model dataset.
 
     ``options`` may hold ``z_kind`` and ``chainage_offset`` (default 0) plus reader options;
     a missing ``z_kind`` comes from the reader. Raises the reader's ValueError for unusable
     files, and ValueError when it is still unknown what Z means. A depth or local-height
-    model hangs from the profile's surface, whatever heights the profile has."""
+    model hangs from the profile's surface, whatever heights the profile has. ``result``: the
+    file already read that way (it is then not read again)."""
     path = Path(path)
     opts = dict(options)
     opts["chainage_offset"] = float(opts.get("chainage_offset") or 0.0)
-    result = readers.read(path, reader=reader or None, **read_options(opts))
-    z_kind = opts.get("z_kind") or result.z_kind
-    if z_kind not in Z_CHOICES:
-        raise ValueError(f"Choose whether Z is elevation or depth for {path.name}")
-    opts["z_kind"] = z_kind
+    if result is None:
+        result = read_for(store, store.profile(profile_id), path, reader, opts)
+    opts["z_kind"] = checked_z_kind(opts, result, path)
     mtime, sha1 = file_fingerprint(str(path))
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
                       result.provenance.get("kind", "ert_model"),
@@ -254,3 +281,74 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     if provider is not None:
         provider.notify_changed()
     return dataset
+
+
+def draft_profile(store: ProjectStore, placement: Placement, name: str, method: str
+                  ) -> tuple[Profile, list[StationSet], StationSet | None]:
+    """What ``placement`` gives, nothing saved: (the profile, its station sets after the
+    import, the new station set or None). A new profile is made from the positions (with a
+    station set) or from the line (without one); positions for an existing profile become a
+    station set on its line, which is kept."""
+    if placement.profile_id is None:
+        if placement.positions is not None:
+            profile, new_set = profile_from_positions(name, store.crs_authid,
+                                                      placement.positions, method=method)
+            return profile, [new_set], new_set
+        if placement.line_xy is None:
+            raise ValueError("Choose where the line runs")
+        return profile_from_polyline(name, store.crs_authid, placement.line_xy), [], None
+    profile = store.profile(placement.profile_id)
+    sets = store.station_sets(profile.id)
+    if placement.positions is None:
+        return profile, sets, None
+    new_set = attach_positions(profile, name, method, placement.positions)
+    return profile, [new_set] + sets, new_set
+
+
+def dataset_options(placement: Placement, profile: Profile, sets: list[StationSet],
+                    options: dict) -> tuple[str, dict]:
+    """(station set id, reader options) a dataset placed by ``placement`` is saved with: the
+    offset as ``chainage_offset``; ``"placement"`` (where file distance 0 lies) unless the
+    file is in map coordinates or station 1 of the profile's stations places it."""
+    opts = dict(options)
+    station_set_id = sets[0].id if sets else ""
+    if _on_map(opts):                               # placed by its own coordinates
+        return station_set_id, opts
+    opts["chainage_offset"] = float(placement.offset or 0.0)
+    if placement.zero == "end":
+        opts["placement"] = {"zero": float(profile.chainage.length), "direction": -1}
+    elif placement.zero != "station1" or not sets:
+        opts["placement"] = {"zero": 0.0, "direction": 1}
+    return station_set_id, opts
+
+
+def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
+             options: dict, name: str, method: str, project: QgsProject,
+             provider=None) -> tuple[Profile, Dataset]:
+    """Add the data file ``path`` where ``placement`` says: on an existing profile (with the
+    positions given, as a new station set), or on a profile made here from the line or the
+    positions. A stated station spacing is stored with the profile (a guessed one never).
+    The file is read before anything is saved; a failure saves nothing."""
+    path = Path(path)
+    profile, sets, new_set = draft_profile(store, placement, name or path.stem, method)
+    station_set_id, opts = dataset_options(placement, profile, sets, options)
+    result = read_for(store, profile, path, reader, opts)
+    checked_z_kind(opts, result, path)
+    created = placement.profile_id is None
+    if placement.spacing is not None:
+        profile.metadata["electrode_spacing"] = float(placement.spacing)
+    if created or placement.spacing is not None:
+        store.save_profile(profile)
+    if new_set is not None:
+        store.save_station_set(new_set)
+    if created or new_set is not None:
+        refresh_layers(store, project)
+    try:
+        dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
+                            provider=provider, result=result)
+    except Exception:
+        if created:                                 # nothing half-made stays behind
+            store.delete_profile(profile.id)
+            refresh_layers(store, project)
+        raise
+    return profile, dataset

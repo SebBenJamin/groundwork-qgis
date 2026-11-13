@@ -134,11 +134,11 @@ def test_new_profile_from_selected_line(qgis_app, fake_iface, project_store, war
         _close(dlg, qgis_app)
 
 
-# -- AddModelDialog ------------------------------------------------------------------------
+# -- AddDataDialog -------------------------------------------------------------------------
 def test_add_model_dialog_preview_and_save(qgis_app, fake_iface, store_with_model, tmp_path,
                                            warnings_shown):
     from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
 
     st, p, _ = store_with_model
     src = tmp_path / "zz" / "zond_model.dat"
@@ -147,17 +147,17 @@ def test_add_model_dialog_preview_and_save(qgis_app, fake_iface, store_with_mode
     prov = SectionDataProvider(st)
     calls = []
     prov.on_change.append(lambda: calls.append(1))
-    dlg = AddModelDialog(fake_iface, st, p.id, provider=prov)
+    dlg = AddDataDialog(fake_iface, st, p.id, provider=prov)
     try:
         dlg.set_file(src)
-        assert dlg.reader_combo.currentData() == "zondres_xyz"
+        assert dlg.format_combo.currentData() == "zondres_xyz"
         assert dlg.name_edit.text() == "zond_model"
-        assert "ohm" in dlg.preview.text() and "x " in dlg.preview.text()
+        assert "ohm" in dlg.summary_label.text() and "x " in dlg.summary_label.text()
         assert dlg.z_combo.currentData() is None              # zond 'Z' header: unknown
         dlg.accept()
         assert "elevation or depth" in warnings_shown[-1] and len(st.datasets(p.id)) == 1
         dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("elevation"))
-        dlg.offset_spin.setValue(3.5)
+        dlg.placement.offset_spin.setValue(3.5)
         dlg.accept()
         assert dlg.result() == 1 and calls == [1]
         d = st.datasets(p.id)[-1]
@@ -170,16 +170,16 @@ def test_add_model_dialog_preview_and_save(qgis_app, fake_iface, store_with_mode
 
 def test_add_model_dialog_reports_unreadable_file(qgis_app, fake_iface, store_with_model,
                                                   tmp_path, warnings_shown):
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
 
     st, p, _ = store_with_model
     bad = tmp_path / "f009_res.dat"
     bad.write_text("not numbers\n")
-    dlg = AddModelDialog(fake_iface, st, p.id)
+    dlg = AddDataDialog(fake_iface, st, p.id)
     try:
         dlg.set_file(bad)
-        assert dlg.reader_combo.currentData() == "r2_res_dat"
-        assert "f009_res.dat" in dlg.preview.text()            # preview shows the error
+        assert dlg.format_combo.currentData() == "r2_res_dat"
+        assert "f009_res.dat" in dlg.summary_label.text()            # preview shows the error
         dlg.accept()
         assert "f009_res.dat" in warnings_shown[-1]
         assert dlg.result() == 0 and len(st.datasets(p.id)) == 1
@@ -212,19 +212,19 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path):
         assert [prj.receivers(sig) for sig in signals] != before
         texts = [a.text() for a in plugin.menu.actions()]
         for t in ("New Workbench Project…", "Open Workbench Project…", "New Profile…",
-                  "Add ERT Model…"):
+                  "Add Data…"):
             assert t in texts
         assert plugin.provider is None
         assert not plugin.new_profile_action.isEnabled()
-        assert not plugin.add_model_action.isEnabled()
+        assert not plugin.add_data_action.isEnabled()
 
         assert prj.read(str(tmp_path / "proj.qgz"))            # readProject -> attach store
         assert plugin.provider is not None
         assert plugin.provider.store.path.resolve() == (tmp_path / "w.gpkg").resolve()
         assert plugin.new_profile_action.isEnabled()
-        assert not plugin.add_model_action.isEnabled()
+        assert plugin.add_data_action.isEnabled()              # 0.9: a project is enough
         plugin.dock.open_profile(p.id)
-        assert plugin.add_model_action.isEnabled()
+        assert plugin.add_data_action.isEnabled()
 
         plugin.new_profile_action.trigger()                    # non-modal dialog
         dlg = plugin._profile_dialog
@@ -238,7 +238,7 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path):
 
         prj.clear()                                            # cleared -> tear down
         assert plugin.provider is None and plugin.source is None
-        assert not plugin.add_model_action.isEnabled()
+        assert not plugin.add_data_action.isEnabled()
         assert not plugin.new_profile_action.isEnabled()
     finally:
         plugin.unload()
@@ -304,11 +304,11 @@ def test_new_profile_store_write_error_is_shown(qgis_app, fake_iface, project_st
 
 def test_add_model_store_write_error_is_shown(qgis_app, fake_iface, store_with_model, tmp_path,
                                               warnings_shown, monkeypatch):
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
 
     st, p, src = store_with_model
     monkeypatch.setattr(st, "save_dataset", _gdal_write_error)
-    dlg = AddModelDialog(fake_iface, st, p.id)
+    dlg = AddDataDialog(fake_iface, st, p.id)
     try:
         dlg.set_file(src)
         dlg.accept()
@@ -319,18 +319,18 @@ def test_add_model_store_write_error_is_shown(qgis_app, fake_iface, store_with_m
 
 def test_add_model_preview_rereads_a_fixed_file(qgis_app, fake_iface, store_with_model,
                                                 tmp_path):
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
 
     st, p, _ = store_with_model
     f = tmp_path / "f004_res.dat"
     f.write_text("not numbers\n")
-    dlg = AddModelDialog(fake_iface, st, p.id)
+    dlg = AddDataDialog(fake_iface, st, p.id)
     try:
         dlg.set_file(f)
-        assert "f004_res.dat" in dlg.preview.text()
+        assert "f004_res.dat" in dlg.summary_label.text()
         shutil.copy(FIXTURES / "f001_res.dat", f)                 # user fixes the file
         dlg.set_file(f)
-        assert "ohm" in dlg.preview.text()
+        assert "ohm" in dlg.summary_label.text()
     finally:
         _close(dlg, qgis_app)
 

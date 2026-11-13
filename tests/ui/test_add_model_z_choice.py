@@ -1,4 +1,4 @@
-"""Add ERT model previews what will be drawn for the chosen "Z means" (0.1.1)."""
+"""Add Data previews what will be drawn for the chosen "Z means" (0.1.1)."""
 from pathlib import Path
 
 import pytest
@@ -17,7 +17,7 @@ def test_preview_rereads_with_the_chosen_z(qgis_app, fake_iface, store_with_mode
                                            monkeypatch):
     from qgis.PyQt.QtWidgets import QMessageBox
 
-    from geophysics_workbench.ui.add_model_dialog import AddModelDialog
+    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
 
     # the 355 m model overhangs this 50 m profile: answer the question with Yes
     monkeypatch.setattr(QMessageBox, "question",
@@ -28,14 +28,14 @@ def test_preview_rereads_with_the_chosen_z(qgis_app, fake_iface, store_with_mode
     lines[0] = "#X\tZ\tlog_Rho\tRho"
     src = tmp_path / "P2_z.dat"
     src.write_text("\n".join(lines) + "\n")
-    dlg = AddModelDialog(fake_iface, st, p.id)
+    dlg = AddDataDialog(fake_iface, st, p.id)
     try:
         dlg.set_file(src)
         assert dlg.z_combo.currentData() is None
         assert dlg._result.mesh.bounds()[2] == pytest.approx(-0.0125)
         dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("depth"))
         assert dlg._result.mesh.bounds()[2] == 0.0
-        assert "z 0.0 –" in dlg.preview.text() and "(depth)" in dlg.preview.text()
+        assert "z 0.0 –" in dlg.summary_label.text() and "(depth)" in dlg.summary_label.text()
         dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("elevation"))
         assert dlg._result.mesh.bounds()[2] == pytest.approx(-0.0125)
         dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("depth"))
@@ -48,7 +48,7 @@ def test_preview_rereads_with_the_chosen_z(qgis_app, fake_iface, store_with_mode
 
 def test_describe_counts_blank_cells(tmp_path):
     from geophysics_workbench import readers
-    from geophysics_workbench.ui.add_model_dialog import describe
+    from geophysics_workbench.ui.add_data_dialog import describe
 
     lines = (FIXTURES / "f001_res.dat").read_text().splitlines()
     lines[3] = lines[3].replace(lines[3].split()[2], "-9.99900e+03")

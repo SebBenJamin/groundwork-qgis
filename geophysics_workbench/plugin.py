@@ -50,11 +50,12 @@ class WorkbenchPlugin:
         self.map_link: MapLink | None = None
         self.pick_action = None
         self.new_profile_action = None
-        self.add_model_action = None
+        self.add_data_action = None
         self.context_action = None
         self.ties_action = None
         self.ties_panel = None
         self._profile_dialog = None
+        self._data_dialog = None
         self._context_dialog = None
         self._plates_dialog = None
         self.plates_action = None
@@ -89,7 +90,7 @@ class WorkbenchPlugin:
         self.add_action("Open Workbench Project…", self.open_workbench_project)
         self.menu.addSeparator()
         self.new_profile_action = self.add_action("New Profile…", self.new_profile)
-        self.add_model_action = self.add_action("Add ERT Model…", self.add_model)
+        self.add_data_action = self.add_action("Add Data…", self.add_data)
         self.rename_action = self.add_action("Rename Profile…", lambda: self.rename_profile())
         self.delete_action = self.add_action("Delete Profile…", lambda: self.delete_profile())
         self.context_action = self.add_action("Context Layers…", self.edit_context)
@@ -132,6 +133,7 @@ class WorkbenchPlugin:
                 pass
         self._project_signals.clear()
         self._close_profile_dialog()
+        self._close_data_dialog()
         self._close_context_dialog()
         self._close_plates_dialog()
         self._close_ties_panel()
@@ -153,7 +155,7 @@ class WorkbenchPlugin:
             self.menu.deleteLater()
             self.menu = None
         self.actions.clear()
-        self.pick_action = self.new_profile_action = self.add_model_action = None
+        self.pick_action = self.new_profile_action = self.add_data_action = None
         self.rename_action = self.delete_action = None
         self.context_action = self.ties_action = self.plates_action = None
         from .patterns import unregister_svg_path
@@ -179,6 +181,7 @@ class WorkbenchPlugin:
         unregistering destroys the source."""
         self._close_borehole_viewer()          # it follows the old store's data
         self._close_profile_dialog()
+        self._close_data_dialog()             # it adds to the old store
         self._close_context_dialog()
         self._close_plates_dialog()           # it edits the old store's plates
         self._close_ties_panel()
@@ -321,6 +324,7 @@ class WorkbenchPlugin:
         has_store = self.store is not None
         has_profile = self.dock is not None and self.dock.current_profile_id() is not None
         for action, ok, why in ((self.new_profile_action, has_store, no_project),
+                                (self.add_data_action, has_store, no_project),
                                 (self.context_action, has_store, no_project),
                                 (self.ties_action, has_store, no_project),
                                 (self.plates_action, has_store, no_project),
@@ -328,8 +332,6 @@ class WorkbenchPlugin:
                                 (self.rename_action, has_profile,
                                  "Open a profile in the section panel first"),
                                 (self.delete_action, has_profile,
-                                 "Open a profile in the section panel first"),
-                                (self.add_model_action, has_profile,
                                  "Open a profile in the section panel first")):
             if action is None:
                 continue
@@ -408,15 +410,39 @@ class WorkbenchPlugin:
             dialog.reject()
             dialog.deleteLater()
 
-    def add_model(self):
-        from .ui.add_model_dialog import AddModelDialog
-        pid = None if self.dock is None else self.dock.current_profile_id()
-        if self.store is None or pid is None:
+    def add_data(self):
+        """Add Data…: non-modal (its placement can pick on the map), one at a time; the
+        profile open in the section panel is preselected."""
+        from .ui.add_data_dialog import AddDataDialog
+        if self.store is None:
             return
-        dialog = AddModelDialog(self.iface, self.store, pid, provider=self.provider)
-        try:
-            dialog.exec()
-        finally:
+        if self._data_dialog is not None:
+            self._data_dialog.show()
+            self._data_dialog.raise_()
+            self._data_dialog.activateWindow()
+            return
+        pid = None if self.dock is None else self.dock.current_profile_id()
+        dialog = AddDataDialog(self.iface, self.store, pid, provider=self.provider,
+                               project=QgsProject.instance())
+        dialog.accepted.connect(lambda: self._data_added(dialog))
+        dialog.finished.connect(lambda _r, d=dialog: self._data_finished(d))
+        self._data_dialog = dialog
+        dialog.show()
+
+    def _data_added(self, dialog):
+        """A profile made by Add Data opens in the section panel."""
+        if dialog.created:
+            self._profile_created(dialog)
+
+    def _data_finished(self, dialog):
+        if self._data_dialog is dialog:
+            self._data_dialog = None
+            dialog.deleteLater()
+
+    def _close_data_dialog(self):
+        dialog, self._data_dialog = self._data_dialog, None
+        if dialog is not None:
+            dialog.reject()
             dialog.deleteLater()
 
     def edit_context(self):

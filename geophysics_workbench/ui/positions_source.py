@@ -59,6 +59,18 @@ def crs_of(text: str, store_crs: str) -> QgsCoordinateReferenceSystem:
     return QgsCoordinateReferenceSystem(text or store_crs)
 
 
+def xy_to_store(xy: np.ndarray, crs_text: str, store_crs: str, project) -> np.ndarray:
+    """Map coordinates (n, 2) in the CRS ``crs_text`` names ("" = the store's), reprojected
+    into the store's CRS. ValueError when the CRS is unknown, the coordinates look like
+    degrees in a projected CRS, or they cannot be reprojected."""
+    crs = crs_of(crs_text, store_crs)
+    if not crs.isValid():
+        raise ValueError("Choose the CRS of the coordinates.")
+    xy = np.asarray(xy, dtype=float).reshape(-1, 2)
+    _check_degrees(xy, crs)
+    return _transform_xy(xy, crs, store_crs, project)
+
+
 def positions_from_table(table: TextTable, cols: PositionColumns, store_crs: str,
                          project) -> tuple[Positions, int]:
     """(positions in the store CRS, rows skipped). A row is skipped when it has no number in
