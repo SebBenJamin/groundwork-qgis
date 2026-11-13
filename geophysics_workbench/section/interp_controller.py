@@ -556,8 +556,15 @@ class InterpController(QObject):
             return 0
         if not path.lower().endswith((".gpkg", ".dxf")):
             path += ".gpkg"
+        # pieces drawn while a profile had no heights, which has them now, are re-hung first
+        # (settling otherwise waits until that profile is opened in the panel)
+        settled = [p.id for p in prov.store.profiles() if p.metadata.get("local_pieces")
+                   and prov.settle_local_interpretation(p.id)]
+        if settled:
+            self.undo.clear()
+            self.dock._reload_interp_layers()
         # a profile without heights is held back: its pieces have no real elevations
-        held = {p.id for p in prov.store.profiles() if prov.is_local(p.id)}
+        held ={p.id for p in prov.store.profiles() if prov.is_local(p.id)}
         try:
             n = export_pieces(prov.store, version, ids, path, held_back=held)
         except (OSError, ValueError, RuntimeError) as exc:

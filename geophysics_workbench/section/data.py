@@ -611,7 +611,10 @@ class SectionDataProvider:
         new = self._surface(profile, sets, datasets, placed)
         dz = float(new.shift - old.shift)
         version = self._current_version()
-        if dz != 0.0 and version is not None:
+        if dz != 0.0 and version is not None and self.store.pieces(version, profile_id):
+            # shifted pieces hang from the local surface (whenever they were drawn): settle
+            # them once real heights arrive
+            profile.metadata["local_pieces"] = True
             if self.store.shift_pieces(version, profile_id, dz, profile=profile):
                 self.store.rebuild_derived(version, self._chainages())
         else:

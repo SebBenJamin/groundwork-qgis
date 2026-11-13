@@ -178,3 +178,38 @@ def test_reference_height_dialog(qgis_app):
     assert dlg.remove_button is not None and dlg.value() == (20.0, 57.5)
     assert dlg.by_electrode.isHidden() and dlg.by_distance.isChecked()
     dlg.deleteLater()
+
+
+def test_export_settles_profiles_that_gained_heights(qgis_app, tmp_path, make_dock):
+    from osgeo import ogr
+    st, p = _local_store(tmp_path)                          # L: piece 3 m below flat 0
+    profile = st.profile(p.id)
+    profile.metadata["local_pieces"] = True
+    st.save_profile(profile)
+    other = profile_from_polyline("M", CRS, np.array([[0.0, 50.0], [60.0, 50.0]]))
+    st.save_profile(other)
+    dock = make_dock(st)
+    dock.open_profile(other.id)                             # L is not open
+    _heights(st, p)                                         # L gains station heights
+    ctl = dock.interp
+    out = tmp_path / "out.gpkg"
+    ctl.ask_path = lambda: str(out)
+    said = []
+    ctl.info = said.append
+    assert ctl.export() == 1
+    assert "local_pieces" not in st.profile(p.id).metadata
+    with ogr.ExceptionMgr():
+        ds = ogr.Open(str(out))
+        zs = [pt[2] for f in ds.GetLayerByName("lines_3d")
+              for pt in f.GetGeometryRef().GetPoints()]
+        ds = None
+    surface = np.interp([10.0, 30.0], [0.0, 30.0, 60.0], [100.0, 101.0, 102.0])
+    assert zs == pytest.approx((surface - 3.0).tolist())
+    assert "no heights" not in said[0]
+
+
+def test_reference_shift_marks_pieces_for_settling(tmp_path):
+    st, p = _local_store(tmp_path)                          # a piece, no "local_pieces"
+    assert "local_pieces" not in st.profile(p.id).metadata
+    SectionDataProvider(st).set_reference_height(p.id, 20.0, 57.5)
+    assert st.profile(p.id).metadata["local_pieces"] is True
