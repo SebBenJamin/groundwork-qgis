@@ -31,7 +31,7 @@ from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, Resolution, resolve
 from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local_surface,
-                         station_line, station_marks)
+                         station_line, station_marks, topo_set)
 
 #: reader_options keys applied by the provider, not passed to the reader as such
 WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement")
@@ -434,6 +434,7 @@ class SectionDataProvider:
     def __init__(self, store: ProjectStore):
         self.store = store
         self.on_change: list[Callable[[], None]] = []
+        self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
         #: Set and read on the main thread only (snapshots stay plain data).
         self.active_profile_id: str | None = None
@@ -484,6 +485,8 @@ class SectionDataProvider:
         self._ties.clear()
         self._builds.clear()
         for callback in list(self.on_change):
+            callback()
+        for callback in list(self.on_data_change):
             callback()
 
     def set_borehole_views(self, views: dict) -> None:
@@ -795,7 +798,7 @@ class SectionDataProvider:
         when there is nothing to go on."""
         sets = self.store.station_sets(profile_id)
         if sets:
-            first = sets[0]
+            first = topo_set(sets) or sets[0]        # the set the section's ticks use
             return Electrodes(np.asarray(first.numbers), np.asarray(first.chainage, float),
                               "imported")
         profile = self._profile(profile_id)

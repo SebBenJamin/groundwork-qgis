@@ -66,13 +66,13 @@ class _Readout(QLabel):
     cores or crossings widened the panel, and the locked-scale canvas seemed to zoom in);
     what does not fit is cut off, and the tooltip shows it all."""
 
-    def __init__(self):
+    def __init__(self, lines: int = 2):
         super().__init__()
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.setMinimumWidth(1)
         # always two lines tall: a second line (e.g. over a borehole) must not shrink the
         # canvas, which would re-fit the section while the user reads it
-        self.setFixedHeight(2 * self.fontMetrics().lineSpacing() + 4)
+        self.setFixedHeight(lines * self.fontMetrics().lineSpacing() + 4)
 
     def setText(self, text):
         super().setText(text)
@@ -153,9 +153,7 @@ class SectionDock(QDockWidget):
         self.layer_list = LayerList()
         self.readout = _Readout()
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.info = QLabel()                    # which electrodes are shown, local section
-        self.info.setWordWrap(True)
-        self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.info = _Readout(lines=1)           # which electrodes are shown, local section
         self.info.hide()
         self.errors = QLabel()
         self.errors.setStyleSheet("color: #c00000;")

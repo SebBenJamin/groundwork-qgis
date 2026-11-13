@@ -115,3 +115,65 @@ def test_layer_counts_as_own(drawn):
     st, p, provider, prj = drawn
     lyr = sync(st, provider, prj)
     assert lyr.id() in own_layer_ids(st, prj)
+
+
+def test_a_removed_layer_stays_gone_until_the_store_is_opened_again(drawn):
+    from geophysics_workbench.ui.derived_layers import derived_layer, sync
+    st, p, provider, prj = drawn
+    lyr = sync(st, provider, prj)
+    prj.removeMapLayer(lyr.id())
+    assert sync(st, provider, prj, create=False) is None and derived_layer(prj) is None
+    assert sync(st, provider, prj) is not None          # a store opened again
+
+
+def test_one_profile_that_fails_does_not_stop_the_others(drawn, tmp_path):
+    from geophysics_workbench.ui.derived_layers import sync
+    st, p, provider, prj = drawn
+    bad = profile_from_polyline("Bad", CRS, np.array([[0.0, 50.0], [60.0, 50.0]]))
+    st.save_profile(bad)
+    real = provider.electrodes
+
+    def electrodes(pid):
+        if pid == bad.id:
+            raise RuntimeError("cannot resolve")
+        return real(pid)
+    provider.electrodes = electrodes
+    lyr = sync(st, provider, prj)
+    assert {f["profile_id"] for f in lyr.getFeatures()} == {p.id}
+
+
+def test_untouched_default_style_is_not_written_to_the_project(drawn):
+    from geophysics_workbench.ui.derived_layers import save_style, sync
+    st, p, provider, prj = drawn
+    sync(st, provider, prj)
+    save_style(prj)
+    assert prj.readEntry("geophysics_workbench", "derived_style", "")[0] == ""
+
+
+def test_notifications_sync_on_data_changes_only_and_once(qgis_app, fake_iface, drawn):
+    from geophysics_workbench import classFactory
+    from geophysics_workbench.ui import derived_layers
+    from qgis.core import QgsProject
+    st, p, _provider, _ = drawn
+    plugin = classFactory(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        calls = []
+        real = plugin.provider.electrodes
+        plugin.provider.electrodes = lambda pid: (calls.append(pid), real(pid))[1]
+        plugin.provider.notify_redraw()
+        qgis_app.processEvents()
+        assert calls == []                              # redraw only: no derivation
+        for _ in range(3):
+            plugin.provider.notify_changed()
+        qgis_app.processEvents()
+        assert calls.count(p.id) == 1                   # a burst syncs once
+        layer = derived_layers.derived_layer(QgsProject.instance())
+        QgsProject.instance().removeMapLayer(layer.id())
+        plugin.provider.notify_changed()
+        qgis_app.processEvents()
+        assert derived_layers.derived_layer(QgsProject.instance()) is None
+    finally:
+        plugin.unload()
+        QgsProject.instance().clear()

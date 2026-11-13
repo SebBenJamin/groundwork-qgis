@@ -343,3 +343,19 @@ def test_a_chained_read_error_leaves_no_reference_cycle(store_with_model, tmp_pa
         assert all(ref() is None for ref in placed)       # freed without the collector
     finally:
         gc.enable()
+
+
+def test_imported_electrodes_use_the_set_the_section_ticks_use(store_with_model):
+    import numpy as np
+    from geophysics_workbench.core.model import attach_station_set
+    from geophysics_workbench.section.data import SectionDataProvider
+    st, p, _ = store_with_model
+    flat = np.column_stack([np.arange(3) * 10.0, np.zeros(3), np.full(3, np.nan)])
+    first = attach_station_set(p, "flat", "ert", flat)
+    st.save_station_set(first)
+    first_set = st.station_sets(p.id)[0]
+    other = next(s for s in st.station_sets(p.id) if s.id != first.id)
+    got = SectionDataProvider(st).electrodes(p.id)
+    from geophysics_workbench.section.topography import topo_set
+    assert np.array_equal(got.chainage, topo_set(st.station_sets(p.id)).chainage)
+    assert not np.array_equal(got.chainage, first.chainage)

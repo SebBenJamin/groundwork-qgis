@@ -18,7 +18,7 @@ from .project_actions import GROUP_NAME, SCOPE, store_layers
 DERIVED_NAME = "electrodes (derived)"
 STYLE_KEY = "derived_style"
 _FLAG = "geophysics_workbench/derived"          # custom property marking the layer
-_DEFAULT = "geophysics_workbench/derived_default"   # the QML the layer was built with
+_defaults: dict[str, str] = {}      # layer id -> the QML the layer was built with
 _OPACITY = {"guessed": 0.5, "spacing": 0.75, "readings": 0.75}
 _FIELDS = "&field=profile_id:string&field=profile:string&field=number:string&field=kind:string"
 
@@ -41,7 +41,7 @@ def _rows(store, provider) -> list[tuple]:
     for profile in store.profiles():
         try:
             found = provider.electrodes(profile.id)
-        except (OSError, ValueError):               # an unreadable file: no electrodes here
+        except Exception:                           # not workable for this profile: skip it
             continue
         if found is None or found.kind == "imported" or not len(found.chainage):
             continue
@@ -86,7 +86,7 @@ def save_style(project: QgsProject) -> None:
     if layer is None:
         return
     qml = _qml(layer)
-    entry = "" if qml == layer.customProperty(_DEFAULT) else qml
+    entry = "" if qml == _defaults.get(layer.id()) else qml
     if project.readEntry(SCOPE, STYLE_KEY, "")[0] != entry:
         project.writeEntry(SCOPE, STYLE_KEY, entry)
 
@@ -97,9 +97,6 @@ def _create(store, project: QgsProject) -> QgsVectorLayer:
     layer.setReadOnly(True)
     layer.setCustomProperty("skipMemoryLayersCheck", 1)    # no "scratch layer" warning on close
     layer.setRenderer(_default_renderer(project, store))
-    layer.setCustomProperty(_DEFAULT, _qml(layer))
-    _restore_style(layer, project)
-    layer.rendererChanged.connect(lambda: save_style(project))
     project.addMapLayer(layer, False)
     root = project.layerTreeRoot()
     group = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)
@@ -107,6 +104,9 @@ def _create(store, project: QgsProject) -> QgsVectorLayer:
     node = None if stations is None else group.findLayer(stations.id())
     index = group.children().index(node) + 1 if node is not None else len(group.children())
     group.insertLayer(index, layer)
+    _defaults[layer.id()] = _qml(layer)   # as it is in the project: what save_style compares
+    _restore_style(layer, project)
+    layer.rendererChanged.connect(lambda: save_style(project))
     return layer
 
 
@@ -116,10 +116,14 @@ def _contents(layer: QgsVectorLayer) -> list[tuple]:
                   for f in layer.getFeatures())
 
 
-def sync(store, provider, project: QgsProject) -> QgsVectorLayer | None:
-    """Create or refill the derived layer; remove it when nothing is derived. Returns it."""
-    rows = _rows(store, provider)
+def sync(store, provider, project: QgsProject, create: bool = True) -> QgsVectorLayer | None:
+    """Create (only when ``create``) or refill the derived layer; remove it when nothing is
+    derived. A layer the user removed stays gone until the store is opened again. Returns
+    the layer."""
     layer = derived_layer(project)
+    if layer is None and not create:
+        return None
+    rows = _rows(store, provider)
     if not rows:
         if layer is not None:
             project.removeMapLayer(layer.id())

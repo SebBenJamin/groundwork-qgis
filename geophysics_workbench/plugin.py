@@ -7,7 +7,7 @@ from pathlib import Path
 from qgis.core import (Qgis, QgsApplication, QgsCoordinateReferenceSystem, QgsMessageLog,
                        QgsProject)
 from qgis.gui import QgsProjectionSelectionDialog
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
@@ -62,6 +62,7 @@ class WorkbenchPlugin:
         self.rename_action = self.delete_action = None
         self._project_signals = []
         self._syncing_derived = False
+        self._derived_timer = None
 
     @property
     def store(self):
@@ -214,8 +215,8 @@ class WorkbenchPlugin:
                                           self.provider.notify_redraw)
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error
-            self.provider.on_change.append(self._sync_derived)
-            self._sync_derived()
+            self.provider.on_data_change.append(self._schedule_derived)
+            self._sync_derived(create=True)
             self._context_logged.clear()
             self.source = register_source(self.provider)
             if self.dock is not None:
@@ -282,13 +283,26 @@ class WorkbenchPlugin:
             self._warn(str(exc))
         self.set_store(store)
 
-    def _sync_derived(self) -> None:
-        """Show the derived electrodes as a temporary map layer (never stored)."""
+    def _schedule_derived(self) -> None:
+        """Data changed: refill the derived layer once after the event loop turn."""
+        if self._derived_timer is None:
+            self._derived_timer = QTimer()
+            self._derived_timer.setSingleShot(True)
+            self._derived_timer.timeout.connect(self._sync_derived)
+        self._derived_timer.start(0)
+
+    def _sync_derived(self, create: bool = False) -> None:
+        """Show the derived electrodes as a temporary map layer (never stored). Only a store
+        being opened creates the layer; it never raises out of opening or a notification."""
         if self.provider is None or self._syncing_derived:
             return
         self._syncing_derived = True            # adding the layer must not set off a rebuild
         try:
-            derived_layers.sync(self.provider.store, self.provider, QgsProject.instance())
+            derived_layers.sync(self.provider.store, self.provider, QgsProject.instance(),
+                                create=create)
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"Derived electrodes layer: {exc}", MENU_TITLE,
+                                     Qgis.MessageLevel.Warning)
         finally:
             self._syncing_derived = False
 
