@@ -262,3 +262,21 @@ def test_log_ticks_minor_labels_only_on_short_axis(qgis_app):
     assert major and all(t in ("10", "100") for t in major)
     minor, major = _plot_labels([200, 300, 450, 600], qgis_app)    # under a decade
     assert any(t != "" for t in minor)
+
+
+def test_no_ties_while_local(make_panel, demo_like):
+    from geophysics_workbench.core.model import profile_from_polyline
+    st, p1, _p2, _p3 = demo_like
+    local = profile_from_polyline("L9", "EPSG:25832", np.array([[20.0, -10.0], [20.0, 30.0]]))
+    st.save_profile(local)                              # crosses P1 at 20 m, no heights
+    panel, prov, _dock = make_panel(st)
+    assert prov.is_local(local.id)
+    assert prov.ties(local.id) == []
+    assert all(t.other_id != local.id for t in prov.ties(p1.id))
+    assert all("L9" not in r[0] for r in _cells(panel))
+    sentence = "Profile L9 has no heights yet: set a reference height to compare and export it."
+    assert panel.held_back.text() == sentence and not panel.held_back.isHidden()
+    prov.set_reference_height(local.id, 20.0, 101.0)
+    panel.refresh()
+    assert [t.other_id for t in prov.ties(local.id)] == [p1.id]
+    assert any(r[0] == "L9 × P1" for r in _cells(panel)) and panel.held_back.isHidden()

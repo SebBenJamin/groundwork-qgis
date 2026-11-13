@@ -17,11 +17,13 @@ GPKG_LAYERS = {"line": ("lines_3d", ogr.wkbLineString25D),
 FIELDS = ("feature_id", "name", "type", "confidence", "note", "profile_id", "version")
 
 
-def _rows(store, version_id: str, feature_ids):
+def _rows(store, version_id: str, feature_ids, held_back=frozenset()):
     feats = {f.id: f for f in store.features(version_id)}
     chainages = {p.id: p.chainage for p in store.profiles()}
     for p in store.pieces(version_id):
         if feature_ids is not None and p.feature_id not in feature_ids:
+            continue
+        if p.profile_id in held_back:
             continue
         ch = chainages.get(p.profile_id)
         if ch is None:
@@ -61,9 +63,23 @@ def _ring_as_line(geom):
     return line
 
 
-def export_pieces(store, version_id: str, feature_ids: set[str] | None, path: str) -> int:
+def held_back_lines(store, version_id: str, feature_ids: set[str] | None,
+                    held_back) -> list[str]:
+    """``NO_HEIGHTS`` for each profile in ``held_back`` (profiles without heights) that has
+    pieces among those asked for, in profile order."""
+    from ..section.data import NO_HEIGHTS
+    with_pieces = {p.profile_id for p in store.pieces(version_id)
+                   if p.profile_id in held_back
+                   and (feature_ids is None or p.feature_id in feature_ids)}
+    return [NO_HEIGHTS.format(name=p.name or p.id) for p in store.profiles()
+            if p.id in with_pieces]
+
+
+def export_pieces(store, version_id: str, feature_ids: set[str] | None, path: str,
+                  held_back=frozenset()) -> int:
     """Write the pieces of ``feature_ids`` (all when None) of ``version_id`` to ``path``
-    (.gpkg or .dxf, overwritten); returns the number of pieces written."""
+    (.gpkg or .dxf, overwritten), leaving out those on the profiles in ``held_back`` (no
+    heights yet); returns the number of pieces written."""
     ext = os.path.splitext(path)[1].lower()
     if ext not in (".gpkg", ".dxf"):
         raise ValueError(f"export to .gpkg or .dxf, not {ext or 'no extension'}")
@@ -71,7 +87,7 @@ def export_pieces(store, version_id: str, feature_ids: set[str] | None, path: st
         raise ValueError("that is the project's workbench GeoPackage; choose another file")
     version = next((v for v in store.versions() if v.id == version_id), None)
     version_name = version.name if version is not None else ""
-    rows = list(_rows(store, version_id, feature_ids))
+    rows = list(_rows(store, version_id, feature_ids, held_back))
     driver = ogr.GetDriverByName("GPKG" if ext == ".gpkg" else "DXF")
     if os.path.exists(path):
         driver.DeleteDataSource(path)

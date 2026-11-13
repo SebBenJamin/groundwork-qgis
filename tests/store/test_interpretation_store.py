@@ -138,3 +138,33 @@ def test_restore_from_rejects_current_or_unknown(store):
         with pytest.raises(ValueError):
             store.restore_from(bad)
     assert len(store.pieces(cur)) == 1
+
+
+def test_shift_pieces(tmp_path):
+    st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
+    st.ensure_interpretation()
+    _f, p = _add(st, "line", ((10, -3), (20, -5)))
+    _g, other = _add(st, "line", ((10, -3), (20, -5)), name="B")
+    other.profile_id = "elsewhere"
+    st.save_piece(other)
+    vid = st.current_version().id
+    assert st.shift_pieces(vid, "prof", 57.5) == 1
+    [got] = st.pieces(vid, "prof")
+    assert got.vertices == [(10.0, 54.5), (20.0, 52.5)]
+    assert st.pieces(vid, "elsewhere")[0].vertices == [(10.0, -3.0), (20.0, -5.0)]
+    frozen = st.freeze_current("F")
+    with pytest.raises(PermissionError):
+        st.shift_pieces(frozen.id, "prof", 1.0)
+
+
+def test_rehang_keeps_depth_below_the_surface(tmp_path):
+    st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
+    st.ensure_interpretation()
+    _add(st, "line", ((0, -3), (25, -3), (50, -1)))
+    vid = st.current_version().id
+    old = (np.array([0.0, 50.0]), np.zeros(2))
+    new = (np.array([0.0, 50.0]), np.array([100.0, 102.0]))
+    assert st.rehang_pieces(vid, "prof", old, new) == 1
+    [got] = st.pieces(vid, "prof")
+    assert got.vertices == [(0.0, pytest.approx(97.0)), (25.0, pytest.approx(98.0)),
+                            (50.0, pytest.approx(101.0))]

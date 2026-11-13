@@ -41,6 +41,7 @@ HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
 HINT_NO_PROFILE_LINK = ('Choose a profile above, or <a href="pick">pick one on the map</a>.')
 HINT_HOVER = "Move the mouse over the section to read values."
 MISSING_PROFILE = "Profile not found in the workbench project; it may have been deleted."
+SETTLED = "Interpretation on {profile} moved onto the real surface: {n} piece(s)"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
@@ -162,6 +163,7 @@ class SectionDock(QDockWidget):
         top.addWidget(self.pick_button)
         top.addWidget(self.topo.label)
         top.addWidget(self.topo_combo)
+        top.addWidget(self.topo.reference_button)
         top.addStretch(1)
         top.addWidget(QLabel("Vertical exaggeration"))
         top.addWidget(self.ve_spin)
@@ -265,11 +267,14 @@ class SectionDock(QDockWidget):
             self._close_profile()
             self._set_hint()
             return
+        settled = self._settle(profile)
         if not np.array_equal(profile.xy, self._profile.xy):
             self._profile = profile
             self._set_curve(profile)
         self._sync_layers()
         self.canvas.refresh()
+        if settled:
+            self.readout.setText(settled)
 
     # -- profiles ----------------------------------------------------------------------------
     def _fill_combo(self) -> None:
@@ -314,6 +319,7 @@ class SectionDock(QDockWidget):
         self.empty_hint.hide()
         self.canvas.show()
         self.provider.active_profile_id = profile.id    # wins over profiles on the same line
+        settled = self._settle(profile)
         self._layers = self._ctx = None
         self._fill_combo()
         self.topo.sync()
@@ -327,7 +333,59 @@ class SectionDock(QDockWidget):
         self.show_cursor(None)
         self._set_hint()
         self.profile_changed.emit(profile_id)
+        if settled:
+            self.readout.setText(settled)
         return True
+
+    # -- reference height and the interpretation of a profile without heights ----------------
+    def _settle(self, profile) -> str | None:
+        """Re-hang the interpretation drawn on ``profile`` while it had no heights, once it
+        has real ones (``settle_local_interpretation``); the message to show, or None. Not
+        undoable: the undo stack's piece states predate the move, so it is cleared."""
+        if not profile.metadata.get("local_pieces"):     # the usual case: no store reads
+            return None
+        store = self.provider.store
+        version = store.current_version().id if store.has_interpretation() else None
+        n = len(store.pieces(version, profile.id)) if version is not None else 0
+        if not self.provider.settle_local_interpretation(profile.id):
+            return None
+        self.interp.undo.clear()
+        self._reload_interp_layers()
+        return SETTLED.format(profile=profile.name or profile.id, n=n) if n else None
+
+    def _reload_interp_layers(self) -> None:
+        """The map's interpretation layers read the rebuilt derived tables again."""
+        from ..ui.interp_layers import reload_interp_layers
+        store = self.provider.store
+        if store.has_interpretation():
+            reload_interp_layers(store, QgsProject.instance())
+
+    def set_reference_height(self, s: float | None, z: float | None) -> None:
+        """Set the open profile's reference height (chainage ``s``, height ``z``), or remove
+        it with None: one step on the panel's undo stack, the interpretation on the profile
+        moving with it. The same value again is no step."""
+        from .topography import reference_height
+        profile_id = self.current_profile_id()
+        if profile_id is None or self.provider is None:
+            return
+        stored = reference_height(self.provider.store.profile(profile_id).metadata)
+        current = None if stored is None else {"s": stored[0], "z": stored[1]}
+        wanted = None if s is None or z is None else {"s": float(s), "z": float(z)}
+        if wanted == current:
+            return
+        text = "Remove reference height" if wanted is None else "Set reference height"
+        self.interp.undo.push_with(self._apply_reference, text, (profile_id, current),
+                                   (profile_id, wanted))
+
+    def _apply_reference(self, state, _other) -> None:
+        profile_id, ref = state
+        if self.provider is None:
+            return
+        if ref is None:
+            self.provider.set_reference_height(profile_id, None, None)
+        else:
+            self.provider.set_reference_height(profile_id, ref["s"], ref["z"])
+        self._reload_interp_layers()
 
     def _set_curve(self, profile) -> None:
         self.canvas.setProfileCurve(QgsLineString([QgsPoint(float(x), float(y))

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import numpy as np
 from osgeo import ogr
 
 from ..core.interpretation import (InterpFeature, InterpPiece, InterpVersion, footprint, new_id,
@@ -163,6 +164,41 @@ class InterpStoreMixin:
             self._delete_where(pl, f"id = {_q(piece_id)}")
             if not self._select(pl, f"feature_id = {_q(fid)}"):
                 self._delete_where(ds.GetLayerByName("interp_features"), f"id = {_q(fid)}")
+
+    def shift_pieces(self, version_id: str, profile_id: str, dz: float, *,
+                     profile=None) -> int:
+        """Move every piece of ``version_id`` on ``profile_id`` up by ``dz`` metres (a
+        reference-height change); returns how many. ``profile`` (a ``Profile``), when given,
+        is saved in the same transaction. The caller rebuilds the derived layers."""
+        return self._rewrite_pieces(version_id, profile_id, lambda s, z: z + dz, profile)
+
+    def rehang_pieces(self, version_id: str, profile_id: str, old: tuple, new: tuple, *,
+                      profile=None) -> int:
+        """Hang the pieces of ``version_id`` on ``profile_id`` from surface ``new`` instead
+        of ``old`` (each ``(s, z)`` arrays, s ascending), keeping every vertex's depth below
+        the surface: ``z_new = new(s) - (old(s) - z)``; returns how many. ``profile`` as in
+        ``shift_pieces``. The caller rebuilds the derived layers."""
+        (os_, oz), (ns, nz) = ((np.asarray(a, float) for a in line) for line in (old, new))
+        return self._rewrite_pieces(
+            version_id, profile_id,
+            lambda s, z: float(np.interp(s, ns, nz)) - (float(np.interp(s, os_, oz)) - z),
+            profile)
+
+    def _rewrite_pieces(self, version_id: str, profile_id: str, new_z, profile) -> int:
+        """Every vertex (s, z) of the profile's pieces in ``version_id`` becomes
+        (s, ``new_z(s, z)``); one transaction, with ``profile`` saved in it when given."""
+        self._writable(version_id)
+        with self._tx() as ds:
+            pl = ds.GetLayerByName("interp_pieces")
+            pieces = [self._piece_from(f) for f in self._select(
+                pl, f"version_id = {_q(version_id)} AND profile_id = {_q(profile_id)}")]
+            for p in pieces:
+                p.vertices = [(float(s), float(new_z(float(s), float(z))))
+                              for s, z in p.vertices]
+                self._write_piece(pl, p)
+            if profile is not None:
+                self._write_profile(ds, profile)
+        return len(pieces)
 
     # -- copying versions --------------------------------------------------------------------
     def _copy_into(self, ds, src_id: str, dst_id: str) -> None:

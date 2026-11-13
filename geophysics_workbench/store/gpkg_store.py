@@ -271,15 +271,19 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
     # -- profiles ----------------------------------------------------------------------------
     def save_profile(self, p: Profile) -> None:
         with self._tx() as ds:
-            line = ogr.Geometry(ogr.wkbLineString)
-            for x, y in np.asarray(p.xy, dtype=float):
-                line.AddPoint_2D(float(x), float(y))
-            lyr = ds.GetLayerByName("profiles")
-            self._delete_where(lyr, f"id = {_q(p.id)}")
-            f = ogr.Feature(lyr.GetLayerDefn())
-            f["id"], f["name"], f["metadata"] = p.id, p.name, _dumps(p.metadata)
-            f.SetGeometry(line)
-            lyr.CreateFeature(f)
+            self._write_profile(ds, p)
+
+    def _write_profile(self, ds, p: Profile) -> None:
+        """``p``'s row, inside the caller's transaction."""
+        line = ogr.Geometry(ogr.wkbLineString)
+        for x, y in np.asarray(p.xy, dtype=float):
+            line.AddPoint_2D(float(x), float(y))
+        lyr = ds.GetLayerByName("profiles")
+        self._delete_where(lyr, f"id = {_q(p.id)}")
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f["id"], f["name"], f["metadata"] = p.id, p.name, _dumps(p.metadata)
+        f.SetGeometry(line)
+        lyr.CreateFeature(f)
 
     def _profile_from(self, f) -> Profile:
         g = f.GetGeometryRef()

@@ -12,7 +12,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QDockWidget, QHeaderView, QL
                                  QVBoxLayout, QWidget)
 
 from ..core.ties import TieColumn, TieMismatch, mismatch_text, shown_column, tie_mismatch
-from ..section.data import SectionDataProvider
+from ..section.data import NO_HEIGHTS, SectionDataProvider
 from .ties_plot import TiesPlot
 
 NOTE = ("2D profiles in different directions are not expected to match exactly; "
@@ -95,6 +95,21 @@ def build_rows(provider: SectionDataProvider) -> list[TieRow]:
     return rows
 
 
+def held_back(provider: SectionDataProvider) -> list[str]:
+    """``NO_HEIGHTS`` for each profile without heights that meets another profile (where it
+    would have had a row): it is not compared until it has a reference height."""
+    from ..core.context import profile_ties
+    profiles = sorted(provider.store.profiles(), key=lambda p: _natural(p.name))
+    out = []
+    for p in profiles:
+        if not any(profile_ties(p.xy, o.xy, provider.near_miss)
+                   for o in profiles if o.id != p.id):
+            continue
+        if provider.is_local(p.id):
+            out.append(NO_HEIGHTS.format(name=p.name or p.id))
+    return out
+
+
 class TiesPanel(QDockWidget):
     def __init__(self, provider: SectionDataProvider, dock, parent=None):
         super().__init__("Profile ties", parent)
@@ -115,6 +130,10 @@ class TiesPanel(QDockWidget):
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.note = QLabel(NOTE)
         self.note.setWordWrap(True)
+        #: profiles left out because they have no heights yet, one sentence each
+        self.held_back = QLabel()
+        self.held_back.setWordWrap(True)
+        self.held_back.hide()
         self.show_button = QPushButton("Show in section")
         self.show_button.setEnabled(False)
         self.show_button.clicked.connect(self.show_in_section)
@@ -123,7 +142,7 @@ class TiesPanel(QDockWidget):
         top = QWidget()
         lay = QVBoxLayout(top)
         lay.setContentsMargins(0, 0, 0, 0)
-        for w in (self.table, self.note, self.show_button):
+        for w in (self.table, self.held_back, self.note, self.show_button):
             lay.addWidget(w)
         split = QSplitter(Qt.Orientation.Vertical)
         split.addWidget(top)
@@ -155,6 +174,9 @@ class TiesPanel(QDockWidget):
         keep = self.selected_row()
         keep_key = None if keep is None else keep.key
         self.rows = build_rows(self.provider)
+        left_out = held_back(self.provider)
+        self.held_back.setText("\n".join(left_out))
+        self.held_back.setVisible(bool(left_out))
         t = self.table
         t.blockSignals(True)
         t.setSortingEnabled(False)

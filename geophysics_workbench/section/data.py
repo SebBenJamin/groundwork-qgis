@@ -93,6 +93,9 @@ def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callab
 
 #: why a local section leaves out context (shown when something was left out)
 LOCAL_REASON = "No heights on this profile yet: the DEM line and boreholes are not drawn"
+#: what the ties panel and the interpretation export say for a profile left out
+NO_HEIGHTS = ("Profile {name} has no heights yet: set a reference height to compare and "
+              "export it.")
 #: one QPainterPath element as serialised by QDataStream: int32 type, double x, double y
 PATH_ELEMENT = np.dtype([("t", ">i4"), ("x", ">f8"), ("y", ">f8")])
 _RING = [0, 1, 2, 3, 0]                     # closed cell outline; triangles repeat vertex 0
@@ -389,6 +392,24 @@ def matching_profiles(profiles: list[Profile], xy: np.ndarray,
     return out
 
 
+def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
+               ) -> tuple[np.ndarray, np.ndarray] | None:
+    """Top edge ``(s, z)`` of the first model of ``z_kind`` placed in ``placed``
+    (``SectionDataProvider._placed``); None when there is none. A dataset that could not be
+    read, a readings dataset and a mesh without a usable top are skipped."""
+    for d in datasets:
+        item = placed.get(d.id)
+        if not isinstance(item, tuple) or item[1] != z_kind or item[0].readings is not None:
+            continue
+        try:
+            s, z = item[0].top_edge()
+        except Exception:                       # an odd mesh just gives no surface
+            continue
+        if len(s) >= 2:
+            return s, z
+    return None
+
+
 class SectionDataProvider:
     """Assembles the section layers of each profile from a ``ProjectStore``."""
 
@@ -521,21 +542,21 @@ class SectionDataProvider:
         line, is_dem = self._chosen_topography(profile, sets)
         if line is not None:
             return Surface(line, "dem" if is_dem else "stations")
-        for z_kind in ("elevation", "local"):
-            for d in datasets:
-                item = placed.get(d.id)
-                if not isinstance(item, tuple) or item[1] != z_kind \
-                        or item[0].readings is not None:
-                    continue
-                try:
-                    s, z = item[0].top_edge()
-                except Exception:               # an odd mesh just gives no surface
-                    continue
-                if len(s) < 2:
-                    continue
-                if z_kind == "elevation":
-                    return Surface((s, z), "model")
-                return local_surface((s, z - z.max()), "local_model", profile.metadata)
+        top = _first_top(datasets, placed, "elevation")
+        if top is not None:
+            return Surface(top, "model")
+        return self._local_kind_surface(profile, datasets, placed)
+
+    @staticmethod
+    def _local_kind_surface(profile: Profile, datasets: list[Dataset],
+                            placed: dict) -> Surface:
+        """The surface ``profile`` has without real heights: the top edge of its first
+        local-height model, its highest point at 0, else a flat line at 0; shifted to the
+        reference height when it has one."""
+        top = _first_top(datasets, placed, "local")
+        if top is not None:
+            s, z = top
+            return local_surface((s, z - z.max()), "local_model", profile.metadata)
         return local_surface(flat_line(profile.chainage.length), "flat", profile.metadata)
 
     def surface(self, profile_id: str) -> Surface | None:
@@ -564,6 +585,64 @@ class SectionDataProvider:
         profile.metadata["topography"] = source
         self.store.save_profile(profile)
         self.notify_changed()
+
+    # -- reference height and the interpretation on a local section ------------------------
+    def _current_version(self) -> str | None:
+        return self.store.current_version().id if self.store.has_interpretation() else None
+
+    def _chainages(self) -> dict:
+        return {p.id: p.chainage for p in self.store.profiles()}
+
+    def set_reference_height(self, profile_id: str, s: float | None,
+                             z: float | None) -> float:
+        """Save the profile's reference height (chainage ``s``, height ``z``) or, with
+        ``None``, clear it; the current version's pieces on the profile move by the change
+        of the surface's shift (stored as elevations, they stay where they were drawn
+        relative to the surface). Returns that change; 0 when nothing moved."""
+        profile = self.store.profile(profile_id)
+        sets = self.store.station_sets(profile_id)
+        datasets = self.store.datasets(profile_id)
+        placed = self._placed(profile, sets, datasets)
+        old = self._surface(profile, sets, datasets, placed)
+        if s is None or z is None:
+            profile.metadata.pop("reference_height", None)
+        else:
+            profile.metadata["reference_height"] = {"s": float(s), "z": float(z)}
+        new = self._surface(profile, sets, datasets, placed)
+        dz = float(new.shift - old.shift)
+        version = self._current_version()
+        if dz != 0.0 and version is not None:
+            if self.store.shift_pieces(version, profile_id, dz, profile=profile):
+                self.store.rebuild_derived(version, self._chainages())
+        else:
+            self.store.save_profile(profile)
+        self.notify_changed()
+        return dz
+
+    def settle_local_interpretation(self, profile_id: str) -> bool:
+        """Pieces drawn while the profile had no real heights (``metadata["local_pieces"]``)
+        are re-hung once, keeping their depth, from the local surface the profile would have
+        without real heights (with its reference shift) onto the real one, now that it has
+        station, DEM or model heights. Clears the key; True when it settled. Not undoable."""
+        profile = self._profile(profile_id)
+        if profile is None or not profile.metadata.get("local_pieces"):
+            return False
+        sets = self.store.station_sets(profile_id)
+        datasets = self.store.datasets(profile_id)
+        placed = self._placed(profile, sets, datasets)
+        real = self._surface(profile, sets, datasets, placed)
+        if real.kind not in ("stations", "dem", "model"):
+            return False
+        old = self._local_kind_surface(profile, datasets, placed)
+        del profile.metadata["local_pieces"]
+        version = self._current_version()
+        if version is None:
+            self.store.save_profile(profile)
+        elif self.store.rehang_pieces(version, profile_id, old.line, real.line,
+                                      profile=profile):
+            self.store.rebuild_derived(version, self._chainages())
+        self.notify_redraw()
+        return True
 
     def coverage(self, profile_id: str) -> tuple[float, float] | None:
         """(min, max) station chainage over the profile's station sets; beyond it a
@@ -844,8 +923,11 @@ class SectionDataProvider:
         hit = self._ties.get(profile_id)
         if hit is not None and hit[0] == self.near_miss:
             return hit[1]
-        ties = build_ties(profile_id, self.store.profiles(), self.near_miss,
-                          lambda pid: self._assemble(pid)[0])
+        # a profile without heights is not compared: its z means nothing next to another's
+        ties = [] if self.is_local(profile_id) else [
+            t for t in build_ties(profile_id, self.store.profiles(), self.near_miss,
+                                  lambda pid: self._assemble(pid)[0])
+            if not self.is_local(t.other_id)]
         self._ties[profile_id] = (self.near_miss, ties)
         return ties
 

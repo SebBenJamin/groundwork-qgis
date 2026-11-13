@@ -443,7 +443,25 @@ class InterpController(QObject):
             store.save_feature(copy.deepcopy(feat))
         if piece is not None:
             store.save_piece(copy.deepcopy(piece))
+            self._mark_local(piece.profile_id)
         self.changed(version)
+
+    def _mark_local(self, profile_id: str) -> None:
+        """A piece saved on a profile without real heights (a local or referenced local
+        section) marks the profile, so the pieces are re-hung once real heights arrive
+        (``SectionDataProvider.settle_local_interpretation``). Written once, not per draw."""
+        from .topography import LOCAL_KINDS
+        prov = self.dock.provider
+        try:
+            profile = prov.store.profile(profile_id)
+        except KeyError:
+            return
+        if profile.metadata.get("local_pieces"):
+            return
+        surface = prov.surface(profile_id)
+        if surface is not None and surface.kind in LOCAL_KINDS:
+            profile.metadata["local_pieces"] = True
+            prov.store.save_profile(profile)
 
     def _start_note(self) -> None:
         from .interp_tools import NoteTool
@@ -526,7 +544,7 @@ class InterpController(QObject):
     def export(self) -> int:
         """Export the selected piece's feature (Edit tool) or every feature of the shown
         version; returns the number of pieces written."""
-        from ..ui.interp_export import export_pieces
+        from ..ui.interp_export import export_pieces, held_back_lines
         prov = self.dock.provider
         version = None if prov is None else prov.shown_interp_version()
         if version is None:
@@ -538,12 +556,15 @@ class InterpController(QObject):
             return 0
         if not path.lower().endswith((".gpkg", ".dxf")):
             path += ".gpkg"
+        # a profile without heights is held back: its pieces have no real elevations
+        held = {p.id for p in prov.store.profiles() if prov.is_local(p.id)}
         try:
-            n = export_pieces(prov.store, version, ids, path)
+            n = export_pieces(prov.store, version, ids, path, held_back=held)
         except (OSError, ValueError, RuntimeError) as exc:
             self.info(f"Export failed: {exc}")
             return 0
-        self.info(f"Exported {n} piece{'s' if n != 1 else ''} to {path}")
+        lines = [f"Exported {n} piece{'s' if n != 1 else ''} to {path}"]
+        self.info("\n".join(lines + held_back_lines(prov.store, version, ids, held)))
         return n
 
     # -- regrouping (one undo step each) -----------------------------------------------------

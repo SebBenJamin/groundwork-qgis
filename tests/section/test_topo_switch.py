@@ -22,7 +22,8 @@ def test_topo_switch_saves_metadata_and_refreshes(store_with_model, make_dock, q
     dock = make_dock(st)
     dock.provider.context_source = lambda profile: _items()
     dock.open_profile(p.id)
-    assert _topo_texts(dock) == [("Stations", "stations", True), ("DEM", "dem", True)]
+    assert _topo_texts(dock) == [("Stations", "stations", True), ("DEM", "dem", True),
+                                 ("Local", "local", False)]       # only for no heights
     assert dock.topo_combo.currentData() == "stations"
     changes = []
     dock.provider.on_change.append(lambda: changes.append(1))

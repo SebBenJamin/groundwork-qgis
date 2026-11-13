@@ -81,3 +81,25 @@ def test_export_refuses_the_workbench_geopackage(two):
     with pytest.raises(ValueError):
         export_pieces(st, v, None, str(st.path))
     assert st.pieces(v)                                     # store untouched
+
+
+def test_export_skips_local_profiles_and_says_so(two, tmp_path):
+    from geophysics_workbench.core.model import profile_from_polyline
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.ui.interp_export import export_pieces, held_back_lines
+    st, v, a, _b = two
+    local = profile_from_polyline("L7", "EPSG:25832", np.array([[0.0, 10.0], [60.0, 10.0]]))
+    st.save_profile(local)
+    st.save_piece(InterpPiece(new_id(), v, a.id, local.id, "line", [(5, -1), (20, -2)]))
+    provider = SectionDataProvider(st)
+    held = {p.id for p in st.profiles() if provider.is_local(p.id)}
+    assert held == {local.id}
+    out = tmp_path / "all.gpkg"
+    assert export_pieces(st, v, None, str(out), held_back=held) == 2
+    ds = ogr.Open(str(out))
+    profiles = {f["profile_id"] for i in range(ds.GetLayerCount()) for f in ds.GetLayer(i)}
+    ds = None
+    assert local.id not in profiles
+    assert held_back_lines(st, v, None, held) == [
+        "Profile L7 has no heights yet: set a reference height to compare and export it."]
+    assert held_back_lines(st, v, {_b.id}, held) == []      # nothing of it was asked for
