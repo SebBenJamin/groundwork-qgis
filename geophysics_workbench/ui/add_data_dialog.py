@@ -23,12 +23,12 @@ from ..core.coverage import overhang_message
 from ..core.layout import guess_electrodes
 from ..core.lines import line_from_cloud
 from ..core.model import Dataset
-from ..core.numbers import fmt, fmt_trim
+from ..core.numbers import fmt, fmt_sig, fmt_trim
 from ..core.placement import fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
 from ..readers.errors import plain_error
 from ..readers.text_columns import map_points
-from ..readers.texttable import TableOptions, guess_options, read_table
+from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
 from ..section.placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .new_profile_dialog import METHODS
@@ -77,17 +77,18 @@ def guess_response(path) -> str:
     return str(found.pop()) if len(found) == 1 else ""
 
 
-def describe(result: readers.ReaderResult, z_kind: str | None) -> str:
-    """One-line summary of a reader result for the preview label."""
+def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) -> str:
+    """One-line summary of a reader result for the preview label, numbers in the QGIS
+    locale; ``sample``: the result holds only the file's first ``sample`` rows."""
     mesh = result.mesh
     r = getattr(mesh, "readings", None)
     if r is not None:
         x0, x1 = float(np.nanmin(r.a)), float(np.nanmax(np.r_[r.b, r.m, r.n]))
-        text = f"{len(r)} readings, electrodes x {x0:.1f} – {x1:.1f} m"
+        text = f"{len(r)} readings, electrodes x {fmt(x0)} – {fmt(x1)} m"
         if r.has_calculated:
             rms, chi2 = r.rms_percent(), r.chi2()
-            text += f" · misfit RMS {rms:.1f} %" if rms is not None else ""
-            text += f", χ² {chi2:.2f}" if chi2 is not None else ""
+            text += f" · misfit RMS {fmt(rms)} %" if rms is not None else ""
+            text += f", χ² {fmt(chi2, 2)}" if chi2 is not None else ""
         else:
             text += " · measured data only (add a response file for the misfit)"
         return text
@@ -95,9 +96,10 @@ def describe(result: readers.ReaderResult, z_kind: str | None) -> str:
     values = mesh.values[np.isfinite(mesh.values)]
     z_word = {"elevation": "elevation", "depth": "depth",
               "local": "local height"}.get(z_kind, "Z meaning not set")
-    text = (f"x {xmin:.1f} – {xmax:.1f} m, z {zmin:.1f} – {zmax:.1f} m ({z_word}) · "
-            f"{len(mesh.values)} cells · values {values.min():.3g} – {values.max():.3g} "
-            f"{mesh.unit}" if len(values) else "no values")
+    text = (f"{len(mesh.values)} cells · x {fmt(xmin)} – {fmt(xmax)} m, z {fmt(zmin)} – "
+            f"{fmt(zmax)} m ({z_word}) · " +
+            (f"values {fmt_sig(values.min())} – {fmt_sig(values.max())} {mesh.unit}"
+             if len(values) else "no values"))
     n_masked = int(result.provenance.get("n_masked") or 0)
     if n_masked and result.provenance.get("reconstruction") == "delaunay":
         text += f" · {n_masked} fill/NaN values skipped"
@@ -107,7 +109,7 @@ def describe(result: readers.ReaderResult, z_kind: str | None) -> str:
     if n_skipped:
         text += (f" · {n_skipped} {'row' if n_skipped == 1 else 'rows'} skipped "
                  f"(line {result.provenance.get('first_skipped_line')})")
-    return text
+    return text + (f" (first {sample} rows)" if sample else "")
 
 
 def _remembered() -> dict | None:
@@ -151,6 +153,8 @@ class AddDataDialog(QDialog):
         self._auto_name = ""
         self._file = ""                             # the file set_file last showed
         self._table = self._table_key = None        # the first rows of a text table
+        self._more = False                          # the file has more rows than the sample
+        self._sets_for, self._sets = None, []       # station sets of the chosen profile
         self._pending_columns = None                # remembered assignment for the next table
         self._result = self._read_key = None        # the whole file as read
         self._z_preset = None                       # (path, reader) whose z hint is shown
@@ -189,11 +193,15 @@ class AddDataDialog(QDialog):
         self.method_combo = QComboBox()
         for text, value in METHODS:
             self.method_combo.addItem(text, value)
-        self.method_combo.setToolTip("Method of the new profile")
+        self.method_combo.setToolTip("Method of the station set made from the positions")
+        self.station_set_combo = QComboBox()
+        self.station_set_combo.setObjectName("station_set_combo")
+        self.station_set_combo.setToolTip("The profile's station set this file belongs to")
         form = QFormLayout()
         for text, field in (("File", file_row), ("Name", self.name_edit),
                             ("Format", self.format_combo), ("Response file", self.response_row),
-                            ("Z means", self.z_combo), ("Method", self.method_combo)):
+                            ("Z means", self.z_combo), ("Method", self.method_combo),
+                            ("Station set", self.station_set_combo)):
             form.addRow(text, field)
         self._form = form
 
@@ -243,6 +251,7 @@ class AddDataDialog(QDialog):
         self.format_combo.currentIndexChanged.connect(self._format_changed)
         self.response_edit.editingFinished.connect(self._refresh)
         self.z_combo.currentIndexChanged.connect(self._refresh)
+        self.station_set_combo.currentIndexChanged.connect(self._refresh)
         self.table_options.changed.connect(self._refresh)
         self.columns_group.changed.connect(self._refresh)
         self.placement.changed.connect(self._refresh)
@@ -282,12 +291,12 @@ class AddDataDialog(QDialog):
 
     # -- file --------------------------------------------------------------------------------
     def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Data file", "", FILE_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, "Data File", "", FILE_FILTER)
         if path:
             self.set_file(path)
 
     def _browse_response(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Model response file", "",
+        path, _ = QFileDialog.getOpenFileName(self, "Model Response File", "",
                                               "Response (*.vector *.response *.txt);;"
                                               "All files (*)")
         if path:
@@ -303,7 +312,7 @@ class AddDataDialog(QDialog):
         path = self._file = str(path)
         self.file_edit.setText(path)
         self._table = self._table_key = self._result = self._read_key = None
-        self._z_preset = self._line_key = None
+        self._z_preset = self._line_key = self._pending_columns = None
         if path:
             found = readers.detect(path)
             self.format_combo.blockSignals(True)
@@ -352,7 +361,11 @@ class AddDataDialog(QDialog):
         key = (self._path(), self.table_options.options())
         if key != self._table_key:
             old, self._table, self._table_key = self._table, None, None
-            table = read_table(key[0], key[1], max_rows=SAMPLE_ROWS)
+            table = read_table(key[0], key[1], max_rows=SAMPLE_ROWS + 1)
+            self._more = table.n_rows > SAMPLE_ROWS
+            if self._more:
+                table = TextTable(table.names, table.cells[:SAMPLE_ROWS],
+                                  table.line_numbers[:SAMPLE_ROWS], table.decimal_comma)
             self._table, self._table_key = table, key
             pending, self._pending_columns = self._pending_columns, None
             if pending is not None:
@@ -378,9 +391,10 @@ class AddDataDialog(QDialog):
             self.z_combo.blockSignals(False)
             self._z_preset = (path, reader)
             self._read_key = self._key(profile)
-        if self._key(profile) != self._read_key:
+        if self._key(profile) != self._read_key:          # a text table: its sample only
             self._result, self._read_key = None, None
-            self._result = read_for(self.store, profile, path, reader, self._reader_options())
+            self._result = read_for(self.store, profile, path, reader, self._reader_options(),
+                                    SAMPLE_ROWS if self._is_table() else None)
             self._read_key = self._key(profile)
         return self._result
 
@@ -440,10 +454,19 @@ class AddDataDialog(QDialog):
                 self.summary_label.setText(f"The cells are placed by their map coordinates "
                                            f"once the line is chosen: {exc}")
                 return
-        result = self._read()
+        try:
+            result = self._read()
+        except ValueError as exc:
+            if not (table and self._more):
+                raise
+            # e.g. the sample ends inside the first row of cells: the file may still be fine
+            self.summary_label.setText(f"The first {SAMPLE_ROWS} rows alone give no section "
+                                       f"({exc}); the whole file is read on Add.")
+            return
         z_kind = self.columns_group.columns().vertical_kind if table else \
             self.z_combo.currentData()
-        self.summary_label.setText(describe(result, z_kind))
+        self.summary_label.setText(describe(result, z_kind,
+                                            SAMPLE_ROWS if table and self._more else 0))
         self._show_placement(result, z_kind)
 
     def _fit_width(self) -> None:
@@ -477,7 +500,18 @@ class AddDataDialog(QDialog):
                 combo.blockSignals(True)
                 combo.setCurrentIndex(i)
                 combo.blockSignals(False)
-        self._form.setRowVisible(self.method_combo, self.placement.source() != "existing")
+        source = self.placement.source()
+        self._form.setRowVisible(self.method_combo, source in ("positions", "layer"))
+        pid = self.placement.profile_combo.currentData() if source == "existing" else None
+        if pid != self._sets_for:                   # the chosen profile's station sets
+            self._sets_for = pid
+            self._sets = self.store.station_sets(pid) if pid else []
+            self.station_set_combo.blockSignals(True)
+            self.station_set_combo.clear()
+            for s in self._sets:
+                self.station_set_combo.addItem(s.name or s.id, s.id)
+            self.station_set_combo.blockSignals(False)
+        self._form.setRowVisible(self.station_set_combo, len(self._sets) > 1)
 
     def _file_line(self) -> None:
         """Hand the line through the file's map positions (in the store's CRS) to the
@@ -488,7 +522,7 @@ class AddDataDialog(QDialog):
         if key != self._line_key:
             self._line, self._line_error = None, ""
             try:
-                xy = map_points(key[0], key[1].to_dict(), cols.to_dict())
+                xy = map_points(key[0], key[1].to_dict(), cols.to_dict(), SAMPLE_ROWS)
                 self._line = line_from_cloud(xy_to_store(xy, cols.crs, self.store.crs_authid,
                                                          self.project))
             except ValueError as exc:
@@ -515,7 +549,8 @@ class AddDataDialog(QDialog):
             warnings.append("Positions off the line: " + ", ".join(new_set.warnings))
             self._confirm.append(warnings[-1] + ". Add them anyway?")
         station_set_id, options = dataset_options(placement, profile, sets,
-                                                  self._reader_options())
+                                                  self._reader_options(),
+                                                  self._station_set_id(new_set))
         station_set = next((s for s in sets if s.id == station_set_id), None)
         if on_map:
             span, guessed = mesh.bounds()[:2], False
@@ -541,6 +576,11 @@ class AddDataDialog(QDialog):
                 warnings.append(overhang)
                 self._confirm.append(overhang)
         self._set_warnings(warnings)
+
+    def _station_set_id(self, new_set) -> str | None:
+        """The station set chosen for the dataset: a new one made from positions, else the
+        one picked in "Station set" (None: the profile's first)."""
+        return new_set.id if new_set is not None else self.station_set_combo.currentData()
 
     def _map_fit(self, provenance: dict) -> list[str]:
         offset = float(provenance.get("max_offset") or 0.0)
@@ -606,26 +646,27 @@ class AddDataDialog(QDialog):
     def accept(self) -> None:
         path = self._path()
         try:
-            placement = self._ready()
-        except ValueError as exc:                   # said in the user's words already
-            self._error(str(exc))
-            return
-        except OSError as exc:
-            self._error(plain_error(exc, path, CHOOSE_OTHER))
-            return
-        try:
-            self._refresh()                         # the questions need the current read
+            try:
+                placement = self._ready()
+            except ValueError as exc:               # said in the user's words already
+                self._error(str(exc))
+                return
+            self._refresh()                         # the questions need the current preview
             for question in self._confirm:
                 if QMessageBox.question(
                         self, self.windowTitle(), question,
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                     return
+            if self._on_map() and self._more and self.placement.source() == "file":
+                self._whole_file_line()
+                placement = self.placement.placement()
             self.profile, self.dataset = add_data(
                 self.store, placement, Path(path), self._reader(), self._reader_options(),
-                self._name(), self.method_combo.currentData(), self.project, self.provider)
+                self._name(), self.method_combo.currentData(), self.project, self.provider,
+                self.station_set_combo.currentData() if self._sets else None)
             self.created = placement.profile_id is None
-        except Exception as exc:                    # noqa: BLE001 - e.g. a GDAL write error
+        except Exception as exc:                    # noqa: BLE001 - a slot never raises
             self._error(plain_error(exc, path or None, CHOOSE_OTHER))
             return
         if self._is_table():
@@ -633,6 +674,14 @@ class AddDataDialog(QDialog):
                 {"names": self._table.names, "table": self.table_options.options().to_dict(),
                  "columns": self.columns_group.columns().to_dict()}))
         super().accept()
+
+    def _whole_file_line(self) -> None:
+        """The preview drew the line through the sample's positions: the profile gets the
+        line through all of them."""
+        cols = self.columns_group.columns()
+        xy = map_points(self._path(), self.table_options.options().to_dict(), cols.to_dict())
+        self.placement.set_file_line(*line_from_cloud(
+            xy_to_store(xy, cols.crs, self.store.crs_authid, self.project)))
 
     def _ready(self):
         """The placement, once a file is chosen and its columns are assigned; ValueError

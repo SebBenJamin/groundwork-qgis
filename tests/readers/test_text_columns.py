@@ -153,3 +153,12 @@ def test_map_points_are_the_usable_rows():
     xy = map_points(WILD / "east_north_depth_rho.csv", {}, MAP_COLS)
     assert xy.shape == (60, 2)
     assert xy[0].tolist() == [437702.17, 5850701.25]
+
+
+def test_max_rows_reads_only_the_first_rows():
+    # the Add Data preview reads a sample; the whole file is read when it is added
+    cols = ModelColumns(distance=0, vertical=1, vertical_kind="elevation", value=2)
+    r = readers.read(WILD / "dist_y_rho_junk.txt", reader="text_columns", table={},
+                     columns=cols.to_dict(), max_rows=25)
+    assert r.provenance["n_rows"] + r.provenance["n_skipped"] == 25
+    assert len(map_points(WILD / "east_north_depth_rho.csv", {}, MAP_COLS, max_rows=6)) == 6

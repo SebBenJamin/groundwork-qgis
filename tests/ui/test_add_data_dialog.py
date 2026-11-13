@@ -88,7 +88,7 @@ def test_distance_file_on_a_selected_line_creates_profile_and_dataset(
     dlg.set_file(WILD / "dist_y_rho_junk.txt")
     assert dlg.placement.source() == "line"
     assert "guessed" in dlg.electrode_label.text()
-    assert dlg.method_combo.isVisible()
+    assert not dlg.method_combo.isVisible()          # a line makes no station set
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
     [p] = st.profiles()
@@ -171,6 +171,7 @@ def test_sparse_positions_pin_and_report_the_fit(qgis_app, make_dialog, project_
     dlg.placement.set_positions_file(WILD / "positions_sparse.csv")
     dlg.placement.spacing_edit.setText("5")
     qgis_app.processEvents()
+    assert dlg.method_combo.isVisible()              # the positions become a station set
     assert dlg.fit_label.text().startswith("5 known points, largest shift")
     assert not dlg.fit_label.text().endswith("(pinned with a guessed spacing)")
     dlg.accept()
@@ -229,7 +230,11 @@ def test_other_quantity_needs_a_name(qgis_app, make_dialog, project_store, selec
 
 
 def test_preview_reads_only_the_first_rows(qgis_app, make_dialog, project_store, monkeypatch,
-                                           tmp_path):
+                                           tmp_path, selected_line, warnings_shown):
+    # a 200 000-row file: until Add, every read (the preview's, the reader's and its own
+    # table read) stops after the sample; Add reads the whole file
+    from geophysics_workbench import readers
+    from geophysics_workbench.readers import text_columns
     from geophysics_workbench.ui import add_data_dialog
 
     st, prj = project_store
@@ -239,20 +244,33 @@ def test_preview_reads_only_the_first_rows(qgis_app, make_dialog, project_store,
     lines = [f"{a:.2f} {b:.3f} {100 + (i % 37)}" for i, (a, b) in enumerate(zip(x, z))]
     big.write_text("distance depth rho\n" + "\n".join(lines) + "\n")
     calls = []
-    real = add_data_dialog.read_table
 
-    def spy(path, options, max_rows=None):
-        calls.append(max_rows)
-        return real(path, options, max_rows=max_rows)
+    def spy(module, name):
+        real = getattr(module, name)
 
-    monkeypatch.setattr(add_data_dialog, "read_table", spy)
+        def wrapped(*args, **kwargs):
+            calls.append((name, kwargs.get("max_rows")))
+            return real(*args, **kwargs)
+        monkeypatch.setattr(module, name, wrapped)
+
+    spy(add_data_dialog, "read_table")
+    spy(text_columns, "read_table")
+    spy(readers, "read")
     dlg = make_dialog(st, project=prj)
     dlg.set_file(big)
-    assert calls and all(m is not None and m <= 1000 for m in calls)
+    assert ("read", 1000) in calls and ("read_table", 1000) in calls
+    assert all(m is not None and m <= 1001 for _n, m in calls), calls
     assert dlg.preview_table.rowCount() == 20
+    assert "(first 1000 rows)" in dlg.summary_label.text()
     calls.clear()
     dlg.name_edit.setText("typed name")                 # typing reads nothing
     assert calls == []
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    assert ("read", None) in calls                       # Add reads the whole file
+    [p] = st.profiles()
+    [d] = st.datasets(p.id)
+    assert d.provenance["n_rows"] == 200_000
 
 
 def test_last_assignment_is_offered_again(qgis_app, make_dialog, project_store, selected_line,
@@ -361,9 +379,7 @@ def test_hig_rules_with_a_text_table(qgis_app, make_dialog, project_store):
     dlg = make_dialog(st, project=prj)
     dlg.set_file(WILD / "dist_y_rho_junk.txt")
     _index(dlg.columns_group.quantity_combo, "")
-    # (the summary line starts with the file's "x" range)
-    entries = [e for e in collect(dlg) if e[2] is not dlg.summary_label]
-    bad = problems(entries, "Add Data")
+    bad = problems(collect(dlg), "Add Data")
     assert not bad, "\n".join(bad)
 
 
@@ -402,3 +418,129 @@ def test_menu_entry_is_add_data_and_needs_only_a_project(qgis_app, fake_iface, t
         prj.clear()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
         qgis_app.processEvents()
+
+
+def test_unexpected_errors_on_add_keep_the_dialog_open(qgis_app, make_dialog, project_store,
+                                                       selected_line, warnings_shown,
+                                                       monkeypatch):
+    # under PyQt6 an exception leaving the Add slot aborts QGIS
+    from geophysics_workbench import readers
+    from geophysics_workbench.ui import add_data_dialog
+
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(WILD / "dist_y_rho_junk.txt")
+
+    def broken(*_a, **_k):
+        raise RuntimeError("disk on fire")
+
+    real = add_data_dialog.read_table
+    monkeypatch.setattr(add_data_dialog, "read_table", broken)
+    _index(dlg.table_options.delimiter_combo, "semicolon")     # the preview reads again
+    dlg.accept()
+    assert "disk on fire" in warnings_shown[-1]
+    assert dlg.result() == 0 and dlg.isVisible() and st.profiles() == []
+    monkeypatch.setattr(add_data_dialog, "read_table", real)
+    _index(dlg.table_options.delimiter_combo, "detect")
+    monkeypatch.setattr(readers, "read", broken)               # the read on Add
+    dlg.accept()
+    assert "disk on fire" in warnings_shown[-1]
+    assert dlg.result() == 0 and dlg.isVisible() and st.profiles() == []
+
+
+def test_station_set_can_be_chosen(qgis_app, make_dialog, store_with_model, warnings_shown):
+    from geophysics_workbench.core.model import attach_station_set
+
+    st, p, src = store_with_model
+    second = attach_station_set(p, "Second survey", "ert",
+                                np.array([[0, 0, 100], [25, 0, 101], [50, 0, 102.0]]))
+    st.save_station_set(second)
+    first = st.station_sets(p.id)[0]
+    dlg = make_dialog(st, p.id)
+    dlg.set_file(src)
+    combo = dlg.station_set_combo
+    assert combo.isVisible() and combo.currentData() == first.id
+    assert combo.findText("Second survey") >= 0
+    _index(combo, second.id)
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    assert st.datasets(p.id)[-1].station_set_id == second.id
+
+
+def test_one_station_set_is_used_without_asking(qgis_app, make_dialog, store_with_model):
+    st, p, src = store_with_model
+    dlg = make_dialog(st, p.id)
+    dlg.set_file(src)
+    assert not dlg.station_set_combo.isVisible()
+    dlg.accept()
+    assert st.datasets(p.id)[-1].station_set_id == st.station_sets(p.id)[0].id
+
+
+def test_failed_station_set_write_saves_nothing(qgis_app, project_store, tmp_path,
+                                                monkeypatch):
+    from geophysics_workbench.core.placement import Placement, Positions
+    from geophysics_workbench.ui.project_actions import add_data
+
+    st, prj = project_store
+    src = tmp_path / "f001_res.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+
+    def broken(*_a, **_k):
+        raise RuntimeError("attempt to write a readonly database")
+
+    monkeypatch.setattr(st, "_write_station_set", broken)
+    xyz = np.array([[0.0, 0.0, 50.0], [10.0, 0.0, 51.0]])
+    placement = Placement(positions=Positions(xyz, np.array([1, 2])), spacing=10.0)
+    with pytest.raises(RuntimeError):
+        add_data(st, placement, src, "r2_res_dat", {"z_kind": "elevation"}, "m", "ert", prj)
+    assert st.profiles() == []
+
+
+def test_summary_numbers_follow_the_locale(qgis_app):
+    from qgis.PyQt.QtCore import QLocale
+
+    from geophysics_workbench import readers
+    from geophysics_workbench.ui.add_data_dialog import describe
+
+    result = readers.read(WILD / "dist_y_rho_junk.txt", reader="text_columns", table={},
+                          columns={"distance": 0, "vertical": 1, "vertical_kind": "depth",
+                                   "value": 2})
+    QLocale.setDefault(QLocale(QLocale.Language.German, QLocale.Country.Germany))
+    try:
+        text = describe(result, "depth")
+    finally:
+        QLocale.setDefault(QLocale.c())
+    assert "– 98,8 m, z 0,0 – 1,3 m" in text
+
+
+def test_file_dialog_caption(qgis_app, make_dialog, project_store, monkeypatch):
+    from qgis.PyQt.QtWidgets import QFileDialog
+
+    st, prj = project_store
+    seen = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+                        staticmethod(lambda parent, caption, *a, **k: seen.append(caption)
+                                     or ("", "")))
+    dlg = make_dialog(st, project=prj)
+    dlg._browse()
+    assert seen == ["Data File"]
+
+
+def test_a_sample_without_a_section_waits_for_add(qgis_app, make_dialog, project_store,
+                                                  tmp_path, selected_line, warnings_shown):
+    # the first 1000 rows all lie in the first row of cells: no section from them alone
+    st, prj = project_store
+    f = tmp_path / "long_rows.txt"
+    rows = [f"{0.5 * i:.1f} {d} {100 + i % 7}" for d in (0.5, 1.5) for i in range(1200)]
+    f.write_text("distance depth rho\n" + "\n".join(rows) + "\n")
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(f)
+    box = dlg.columns_group                      # constant in the sample: not guessed
+    _index(box.vertical_combo, 1)
+    _index(box.vertical_kind_combo, "depth")
+    assert "the whole file is read on Add" in dlg.summary_label.text()
+    assert dlg.summary_label.styleSheet() == ""
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [p] = st.profiles()
+    assert st.datasets(p.id)[0].provenance["n_rows"] == 2400

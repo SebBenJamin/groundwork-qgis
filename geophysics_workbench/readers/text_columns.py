@@ -32,12 +32,13 @@ def _options(path: Path, table: dict, columns: dict) -> tuple[TableOptions, Mode
     return opts, cols
 
 
-def _rows(path: Path, table: dict, columns: dict) -> tuple[ModelColumns, np.ndarray, int,
-                                                           int | None]:
-    """``(columns, usable rows of the used columns, skipped count, first skipped line)``.
-    ValueError when an assigned column is missing, unusable, or no row is usable."""
+def _rows(path: Path, table: dict, columns: dict, max_rows: int | None = None
+          ) -> tuple[ModelColumns, np.ndarray, int, int | None]:
+    """``(columns, usable rows of the used columns, skipped count, first skipped line)`` of
+    the first ``max_rows`` data rows (all when None). ValueError when an assigned column is
+    missing, unusable, or no row is usable."""
     opts, cols = _options(path, table, columns)
-    tab = read_table(path, opts)
+    tab = read_table(path, opts, max_rows=max_rows)
     for i in cols.used():
         if not 0 <= i < tab.n_columns:
             raise ValueError(f"{path.name}: column {i + 1} is not in the file any more")
@@ -51,9 +52,10 @@ def _rows(path: Path, table: dict, columns: dict) -> tuple[ModelColumns, np.ndar
     return cols, arr, skipped, first
 
 
-def map_points(path, table: dict, columns: dict) -> np.ndarray:
-    """Easting and northing (n, 2) of the usable rows, in the file's CRS."""
-    cols, arr, _skipped, _first = _rows(Path(path), table, columns)
+def map_points(path, table: dict, columns: dict, max_rows: int | None = None) -> np.ndarray:
+    """Easting and northing (n, 2) of the usable rows (of the first ``max_rows``), in the
+    file's CRS."""
+    cols, arr, _skipped, _first = _rows(Path(path), table, columns, max_rows)
     if cols.position != "map":
         raise ValueError(f"{Path(path).name}: the file has no map coordinates")
     return arr[:, :2]
@@ -76,9 +78,10 @@ class TextColumnsReader(Reader):
         return False
 
     def read(self, path: Path, table: dict, columns: dict, z_kind: str | None = None,
-             xy_to_distance=None) -> ReaderResult:
+             xy_to_distance=None, max_rows: int | None = None) -> ReaderResult:
+        """``max_rows``: read only the first data rows (a preview); never stored."""
         path = Path(path)
-        cols, arr, skipped, first = _rows(path, table, columns)
+        cols, arr, skipped, first = _rows(path, table, columns, max_rows)
         z, v = arr[:, -2], arr[:, -1]
         provenance = {"reader": self.name, "source_name": path.name, "n_rows": int(len(arr)),
                       "n_skipped": skipped, "first_skipped_line": first,

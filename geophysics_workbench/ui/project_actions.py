@@ -234,11 +234,14 @@ def _on_map(options: dict) -> bool:
     return isinstance(columns, dict) and columns.get("position") == "map"
 
 
-def read_for(store: ProjectStore, profile: Profile, path: Path, reader: str,
-             options: dict) -> readers.ReaderResult:
+def read_for(store: ProjectStore, profile: Profile | None, path: Path, reader: str,
+             options: dict, max_rows: int | None = None) -> readers.ReaderResult:
     """Read ``path`` as the section will: a file in map coordinates is projected onto
-    ``profile``'s line (which need not be saved yet)."""
+    ``profile``'s line (which need not be saved yet). ``max_rows``: only the first rows of a
+    text table, for a preview."""
     opts = read_options(options)
+    if max_rows is not None:
+        opts["max_rows"] = max_rows
     if _on_map(options):
         opts["xy_to_distance"] = xy_to_distance_on(
             profile, str(options["columns"].get("crs") or ""), store.crs_authid)
@@ -256,14 +259,16 @@ def checked_z_kind(options: dict, result: readers.ReaderResult, path: Path) -> s
 
 def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: Path,
               reader: str, options: dict, name: str, provider=None,
-              result: readers.ReaderResult | None = None) -> Dataset:
+              result: readers.ReaderResult | None = None, profile: Profile | None = None,
+              station_set: StationSet | None = None) -> Dataset:
     """Validate ``path`` by reading it once, then save it as a model dataset.
 
     ``options`` may hold ``z_kind`` and ``chainage_offset`` (default 0) plus reader options;
     a missing ``z_kind`` comes from the reader. Raises the reader's ValueError for unusable
     files, and ValueError when it is still unknown what Z means. A depth or local-height
     model hangs from the profile's surface, whatever heights the profile has. ``result``: the
-    file already read that way (it is then not read again)."""
+    file already read that way (it is then not read again). ``profile`` and ``station_set``
+    are saved with the dataset in one transaction (nothing is saved when one write fails)."""
     path = Path(path)
     opts = dict(options)
     opts["chainage_offset"] = float(opts.get("chainage_offset") or 0.0)
@@ -277,7 +282,10 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
                       dict(result.provenance), name=name or path.stem,
                       quantity=result.mesh.quantity, unit=result.mesh.unit)
-    store.save_dataset(dataset)
+    if profile is None and station_set is None:
+        store.save_dataset(dataset)
+    else:
+        store.save_import(profile, station_set, dataset)
     if provider is not None:
         provider.notify_changed()
     return dataset
@@ -306,12 +314,14 @@ def draft_profile(store: ProjectStore, placement: Placement, name: str, method: 
 
 
 def dataset_options(placement: Placement, profile: Profile, sets: list[StationSet],
-                    options: dict) -> tuple[str, dict]:
+                    options: dict, station_set_id: str | None = None) -> tuple[str, dict]:
     """(station set id, reader options) a dataset placed by ``placement`` is saved with: the
-    offset as ``chainage_offset``; ``"placement"`` (where file distance 0 lies) unless the
-    file is in map coordinates or station 1 of the profile's stations places it."""
+    chosen station set (``station_set_id`` when it is one of ``sets``, else the first, else
+    ""); the offset as ``chainage_offset``; ``"placement"`` (where file distance 0 lies)
+    unless the file is in map coordinates or station 1 of the profile's stations places it."""
     opts = dict(options)
-    station_set_id = sets[0].id if sets else ""
+    ids = [s.id for s in sets]
+    station_set_id = station_set_id if station_set_id in ids else (ids[0] if ids else "")
     if _on_map(opts):                               # placed by its own coordinates
         return station_set_id, opts
     opts["chainage_offset"] = float(placement.offset or 0.0)
@@ -324,31 +334,26 @@ def dataset_options(placement: Placement, profile: Profile, sets: list[StationSe
 
 def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
              options: dict, name: str, method: str, project: QgsProject,
-             provider=None) -> tuple[Profile, Dataset]:
+             provider=None, station_set_id: str | None = None) -> tuple[Profile, Dataset]:
     """Add the data file ``path`` where ``placement`` says: on an existing profile (with the
     positions given, as a new station set), or on a profile made here from the line or the
     positions. A stated station spacing is stored with the profile (a guessed one never).
-    The file is read before anything is saved; a failure saves nothing."""
+    ``station_set_id`` chooses among an existing profile's station sets (default the first).
+    The whole file is read before anything is saved; the profile, station set and dataset
+    are then saved in one transaction, so a failure saves nothing."""
     path = Path(path)
     profile, sets, new_set = draft_profile(store, placement, name or path.stem, method)
-    station_set_id, opts = dataset_options(placement, profile, sets, options)
+    if new_set is not None:
+        station_set_id = new_set.id
+    station_set_id, opts = dataset_options(placement, profile, sets, options, station_set_id)
     result = read_for(store, profile, path, reader, opts)
-    checked_z_kind(opts, result, path)
     created = placement.profile_id is None
     if placement.spacing is not None:
         profile.metadata["electrode_spacing"] = float(placement.spacing)
-    if created or placement.spacing is not None:
-        store.save_profile(profile)
-    if new_set is not None:
-        store.save_station_set(new_set)
+    changed = profile if created or placement.spacing is not None else None
+    dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
+                        provider=provider, result=result, profile=changed,
+                        station_set=new_set)
     if created or new_set is not None:
         refresh_layers(store, project)
-    try:
-        dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
-                            provider=provider, result=result)
-    except Exception:
-        if created:                                 # nothing half-made stays behind
-            store.delete_profile(profile.id)
-            refresh_layers(store, project)
-        raise
     return profile, dataset

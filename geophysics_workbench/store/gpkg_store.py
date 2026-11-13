@@ -305,29 +305,33 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
 
     # -- station sets ------------------------------------------------------------------------
     def save_station_set(self, s: StationSet) -> None:
-        xyz = np.asarray(s.xyz, dtype=float)
         with self._tx() as ds:
-            sets, pts = ds.GetLayerByName("station_sets"), ds.GetLayerByName("stations")
-            self._delete_where(sets, f"id = {_q(s.id)}")
-            self._delete_where(pts, f"set_id = {_q(s.id)}")
-            f = ogr.Feature(sets.GetLayerDefn())
-            f["id"], f["profile_id"], f["name"], f["method"] = s.id, s.profile_id, s.name, s.method
-            f["metre0"], f["warnings"] = float(s.metre0), _dumps(list(s.warnings))
-            sets.CreateFeature(f)
-            for i in range(len(xyz)):
-                f = ogr.Feature(pts.GetLayerDefn())
-                f["set_id"], f["profile_id"], f["set_name"], f["method"] = (
-                    s.id, s.profile_id, s.name, s.method)
-                f["number"], f["seq"] = int(s.numbers[i]), i
-                for key, arr in (("chainage", s.chainage), ("offset", s.offset),
-                                 ("inline", s.inline)):
-                    v = float(arr[i])
-                    if not math.isnan(v):  # SQLite stores NaN as NULL; read back as NaN
-                        f[key] = v
-                g = ogr.Geometry(ogr.wkbPoint25D)
-                g.AddPoint(float(xyz[i, 0]), float(xyz[i, 1]), float(xyz[i, 2]))
-                f.SetGeometry(g)
-                pts.CreateFeature(f)
+            self._write_station_set(ds, s)
+
+    def _write_station_set(self, ds, s: StationSet) -> None:
+        """``s`` and its stations, inside the caller's transaction."""
+        xyz = np.asarray(s.xyz, dtype=float)
+        sets, pts = ds.GetLayerByName("station_sets"), ds.GetLayerByName("stations")
+        self._delete_where(sets, f"id = {_q(s.id)}")
+        self._delete_where(pts, f"set_id = {_q(s.id)}")
+        f = ogr.Feature(sets.GetLayerDefn())
+        f["id"], f["profile_id"], f["name"], f["method"] = s.id, s.profile_id, s.name, s.method
+        f["metre0"], f["warnings"] = float(s.metre0), _dumps(list(s.warnings))
+        sets.CreateFeature(f)
+        for i in range(len(xyz)):
+            f = ogr.Feature(pts.GetLayerDefn())
+            f["set_id"], f["profile_id"], f["set_name"], f["method"] = (
+                s.id, s.profile_id, s.name, s.method)
+            f["number"], f["seq"] = int(s.numbers[i]), i
+            for key, arr in (("chainage", s.chainage), ("offset", s.offset),
+                             ("inline", s.inline)):
+                v = float(arr[i])
+                if not math.isnan(v):  # SQLite stores NaN as NULL; read back as NaN
+                    f[key] = v
+            g = ogr.Geometry(ogr.wkbPoint25D)
+            g.AddPoint(float(xyz[i, 0]), float(xyz[i, 1]), float(xyz[i, 2]))
+            f.SetGeometry(g)
+            pts.CreateFeature(f)
 
     def station_sets(self, profile_id: str) -> list[StationSet]:
         out = []
@@ -355,25 +359,41 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
     # -- datasets ----------------------------------------------------------------------------
     def save_dataset(self, d: Dataset) -> None:
         with self._tx() as ds:
-            lyr = ds.GetLayerByName("datasets")
-            old = self._select(lyr, f"id = {_q(d.id)}")
-            if old:
-                seq = old[0].GetFieldAsInteger64("seq")
-            else:
-                seq = 1 + max((f.GetFieldAsInteger64("seq") for f in self._select(lyr)),
-                              default=0)
-            self._delete_where(lyr, f"id = {_q(d.id)}")
-            f = ogr.Feature(lyr.GetLayerDefn())
-            for key in ("id", "profile_id", "station_set_id", "kind", "source_path", "source_sha1",
-                        "reader", "quantity", "unit", "name"):
-                f[key] = getattr(d, key)
-            f["source_mtime"] = float(d.source_mtime)
-            f["version"] = int(d.version)
-            f["reader_options"], f["provenance"] = _dumps(d.reader_options), _dumps(d.provenance)
-            if d.parent_id is not None:
-                f["parent_id"] = d.parent_id
-            f["seq"] = seq
-            lyr.CreateFeature(f)
+            self._write_dataset(ds, d)
+
+    def save_import(self, profile: Profile | None, station_set: StationSet | None,
+                    dataset: Dataset) -> None:
+        """Save what one import made in one transaction: the profile (new, or with new
+        metadata) and the station set when given, and the dataset. On failure nothing is
+        written."""
+        with self._tx() as ds:
+            if profile is not None:
+                self._write_profile(ds, profile)
+            if station_set is not None:
+                self._write_station_set(ds, station_set)
+            self._write_dataset(ds, dataset)
+
+    def _write_dataset(self, ds, d: Dataset) -> None:
+        """``d``'s row, inside the caller's transaction."""
+        lyr = ds.GetLayerByName("datasets")
+        old = self._select(lyr, f"id = {_q(d.id)}")
+        if old:
+            seq = old[0].GetFieldAsInteger64("seq")
+        else:
+            seq = 1 + max((f.GetFieldAsInteger64("seq") for f in self._select(lyr)),
+                          default=0)
+        self._delete_where(lyr, f"id = {_q(d.id)}")
+        f = ogr.Feature(lyr.GetLayerDefn())
+        for key in ("id", "profile_id", "station_set_id", "kind", "source_path", "source_sha1",
+                    "reader", "quantity", "unit", "name"):
+            f[key] = getattr(d, key)
+        f["source_mtime"] = float(d.source_mtime)
+        f["version"] = int(d.version)
+        f["reader_options"], f["provenance"] = _dumps(d.reader_options), _dumps(d.provenance)
+        if d.parent_id is not None:
+            f["parent_id"] = d.parent_id
+        f["seq"] = seq
+        lyr.CreateFeature(f)
 
     def datasets(self, profile_id: str) -> list[Dataset]:
         with self._ds() as ds:
