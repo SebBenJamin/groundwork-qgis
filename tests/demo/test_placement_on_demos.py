@@ -50,7 +50,8 @@ def test_sparse_known_points_land_like_the_full_survey(qgis_app, tmp_path, demo,
     from geophysics_workbench.section.data import SectionDataProvider
 
     st = _open(tmp_path, demo)
-    profile = next(p for p in st.profiles() if p.name == profile_name)
+    profile = next((p for p in st.profiles() if p.name == profile_name), None)
+    assert profile is not None, f"{demo} has no profile {profile_name}"
     model = _model(st, profile)
     assert model is not None
     for d in st.datasets(profile.id):          # the readings file would outrank the spacing
@@ -91,15 +92,19 @@ def test_map_coordinate_copy_lands_on_the_same_cells(qgis_app, tmp_path):
     from geophysics_workbench.section.data import SectionDataProvider
 
     st = _open(tmp_path, "Gülpe")
-    profile = next(p for p in st.profiles() if p.name == "Transect 3")
-    model = _model(st, profile)
+    profile = next((p for p in st.profiles() if p.name == "Transect 3"), None)
+    assert profile is not None, "Gülpe has no profile Transect 3"
     provider = SectionDataProvider(st)
     [layer] = provider.layers(profile.id)
     mesh = layer.mesh
     centres = _centres(mesh)       # triangles carry -1 padding
+    # map coordinates cannot say how far a cell lies beyond the line's ends (they project
+    # onto the end point): the file holds only the cells above the line
+    above = (centres[:, 0] >= 0) & (centres[:, 0] <= profile.chainage.length)
+    centres, values = centres[above], mesh.values[above]
     xy = profile.chainage.to_xy(centres[:, 0])
     table = tmp_path / "t3_map.csv"
-    rows = np.column_stack([xy[:, 0], xy[:, 1], centres[:, 1], mesh.values])
+    rows = np.column_stack([xy[:, 0], xy[:, 1], centres[:, 1], values])
     np.savetxt(table, rows, delimiter=",", header="easting,northing,elevation,rho",
                comments="", fmt="%.6f")
     mtime, sha = file_fingerprint(table)
@@ -113,12 +118,24 @@ def test_map_coordinate_copy_lands_on_the_same_cells(qgis_app, tmp_path):
     layers = {la.dataset.id: la for la in SectionDataProvider(st).layers(profile.id)}
     imported = layers["d_map"]
     assert imported.error is None, imported.error
-    # every imported cell centre sits where the original cell's centre was
-    got = np.sort(np.unique(np.round(_centres(imported.mesh)[:, 0], 6)))
-    want = np.sort(np.unique(np.round(centres[:, 0], 6)))
-    near = np.abs(got[:, None] - want[None, :]).min(1)
-    assert near.max() <= TOLERANCE, f"largest chainage difference {near.max():.3f} m"
-    assert model.id in layers
+    # T3's model is triangulated, so its cell centres are not a grid: the import triangulates
+    # them again (reconstruction "delaunay") and its mesh vertices are the original centres.
+    # Match every imported vertex to its original centre, one to one.
+    from scipy.spatial import cKDTree
+    got = imported.mesh.vertices
+    assert len(got) == len(centres), (len(got), len(centres))
+    gap, match = cKDTree(centres).query(got)
+    assert len(np.unique(match)) == len(centres), "two imported points share one centre"
+    # The map coordinates are written with 6 decimals and projected back onto the line:
+    # the data gives about 1e-5 m, so 1 cm is a real check, far below the 0.5 m that a
+    # misplaced import (a shifted or stretched line) would show.
+    assert np.abs(got[:, 0] - centres[match, 0]).max() <= 0.01, "chainage differs"
+    assert np.abs(got[:, 1] - centres[match, 1]).max() <= 0.01, "elevation differs"
+    assert gap.max() <= 0.01
+    # each triangle takes the log-mean of its three points' values: the original ones
+    cells = imported.mesh.cells[:, :3]
+    expected = np.exp(np.log(values[match][cells]).mean(axis=1))
+    np.testing.assert_allclose(imported.mesh.values, expected, rtol=1e-5)
 
 
 def _centres(mesh) -> np.ndarray:
@@ -133,8 +150,8 @@ def _real_spacing(csv: Path) -> tuple[int, float]:
 
 
 def test_guess_against_the_real_electrodes(tmp_path, capsys):
-    """The demo's row models against their surveyed electrodes: the guessed spacing is
-    within a factor of 2 of the real one. The figures go into the 0.9.0 release notes."""
+    """The demo's row models against their surveyed electrodes: the guess finds the cell
+    edges, half the real spacing. The figures go into the 0.9.0 release notes."""
     from geophysics_workbench import readers
     from geophysics_workbench.core.layout import guess_electrodes
 
@@ -150,7 +167,10 @@ def test_guess_against_the_real_electrodes(tmp_path, capsys):
         lines.append(f"[guess] {name}: guessed {guess.size} electrodes, median spacing "
                      f"{spacing_guess:.3f} m; real {n_real} electrodes, median spacing "
                      f"{spacing_real:.3f} m")
-        assert spacing_real / 2 <= spacing_guess <= spacing_real * 2
+        # the cells of these models are half an electrode spacing wide, so the top edge has a
+        # vertex every half spacing: half the real spacing, about twice the electrodes
+        assert spacing_guess == pytest.approx(spacing_real / 2, rel=0.05), name
+        assert abs(guess.size - (2 * n_real - 1)) <= 2, name
     with capsys.disabled():
         print("\n" + "\n".join(lines))
 
@@ -176,6 +196,7 @@ def test_0_8_demo_projects_open_and_are_pinned(qgis_app, tmp_path, capsys, demo)
     largest shift against 0.8's rule goes into the release notes."""
     from geophysics_workbench.core.model import data_to_chainage
     from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.section.placement_resolve import resolve
     from geophysics_workbench.store.gpkg_store import ProjectStore
 
     folder, gpkg = DEMOS[demo]
@@ -192,14 +213,19 @@ def test_0_8_demo_projects_open_and_are_pinned(qgis_app, tmp_path, capsys, demo)
         assert all(la.error is None for la in layers), (p.name, [la.error for la in layers])
         if any(d.kind == "ert_measured" for d in datasets):
             assert provider.layout(p.id).readings_x is not None, p.name
-            assert provider.fit(p.id, _model(st, p).id) is not None, p.name
+            model = _model(st, p)
+            assert model is not None, f"{demo} {p.name} has no model"
+            assert provider.fit(p.id, model.id) is not None, p.name
+            placed = resolve(p, sets, model, provider.layout(p.id))
+            assert placed.source == "readings", (p.name, placed.source)
         shifts = []
         for d in datasets:
             if d.kind != "ert_model" or not sets:
                 continue
             station_set = next((s for s in sets if s.id == d.station_set_id), sets[0])
             file_x = provider._read(d).mesh.vertices[:, 0]
-            layer = next(la for la in layers if la.dataset.id == d.id)
+            layer = next((la for la in layers if la.dataset.id == d.id), None)
+            assert layer is not None, f"{demo} {p.name}: no layer for {d.id}"
             shifts.append(np.abs(layer.mesh.vertices[:, 0]
                                  - data_to_chainage(file_x, station_set, d)).max())
         if shifts:

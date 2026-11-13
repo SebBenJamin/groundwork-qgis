@@ -20,8 +20,8 @@ Choose the file; the dialog fills in what it can guess and shows a preview. You 
 
 - **Position**: a **distance along the line**, or **map coordinates** (easting and northing, with their coordinate system; a file that looks like degrees preselects EPSG:4326).
 - **Vertical**, which has three meanings:
-  - **Elevation**: heights in your project's height system;
-  - **Depth below surface**: positive or negative, the size is used;
+  - **Elevation**: heights above sea level;
+  - **Depth below surface**: the depths must be all positive or all negative (the size is used); a column with both signs is refused with a message;
   - **Local height**: heights against an arbitrary zero. The section is drawn as a *local section*, see part 5.
 - **Value**: **Resistivity** (Ω·m) or **Other** (type a name and a unit). Tick **Values are log10** when the column holds log10 of the values.
 
@@ -68,7 +68,7 @@ With no surveyed positions the model sits rigidly on the line: file distance 0 a
 3. Under **Where the Line Runs** choose **the file's own coordinates**, or an existing profile.
 4. **Add**.
 
-Each point is projected onto the line. A profile made from the file's own coordinates runs through the points; the line is used as drawn, GPS tracks are not smoothed. The preview map shows the line before you save.
+Each point is projected onto the line. A profile made from the file's own coordinates follows the cells' map positions: the positions are ordered along the line and simplified to its bends. A model that covers an area instead of following a line is refused. Lines you draw or import are used as drawn; GPS tracks are not smoothed. The preview map shows the line before you save.
 
 ### (c) Adding surveyed positions later
 
@@ -85,12 +85,12 @@ When the line moves, field notes and the current interpretation follow by map po
 
 ## 3. Known points and the fit report
 
-A **known point** is a surveyed position whose distance in the model file is known. The distance comes from, strongest first:
+A **known point** is a surveyed position whose distance in the model file is known. A station gets its distance from the first of these that has one:
 
 1. a distance column (stored with the station);
 2. the electrode list of a readings file (e.g. a BERT `.data` file): station *n* is electrode *n*;
 3. a **station spacing** you typed in Profile Properties: station number × spacing;
-4. a spacing guessed from the model (part 4).
+4. a spacing guessed from the model (part 4), used only when it fits.
 
 With two or more known points the model sits at the real positions and is stretched evenly in between; outside them it continues one metre per metre.
 
