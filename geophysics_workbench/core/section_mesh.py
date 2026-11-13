@@ -33,6 +33,27 @@ def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     return scale
 
 
+def _steps(s: np.ndarray) -> bool:
+    """True when the line ``s`` (ascending) has a vertical step: two points at one s."""
+    return len(s) > 1 and bool((np.diff(s) == 0).any())
+
+
+def _surface_at(x: np.ndarray, s: np.ndarray, z: np.ndarray,
+                sides: np.ndarray | None) -> np.ndarray:
+    """The line (s, z) at ``x``; at a step's s the left value where ``sides`` is -1 and the
+    right value where it is 1 (np.interp alone would pick either)."""
+    out = np.interp(x, s, z)
+    if sides is None:
+        return out
+    lo = np.searchsorted(s, x, "left")
+    hi = np.searchsorted(s, x, "right") - 1
+    at = lo <= hi                                       # x is one of the line's s
+    take_lo, take_hi = at & (sides < 0), at & (sides > 0)
+    out[take_lo] = z[lo[take_lo]]
+    out[take_hi] = z[hi[take_hi]]
+    return out
+
+
 SLIVER_ANGLE = 170.0    # degrees: a boundary triangle this obtuse is convex-hull filling
 
 
@@ -178,10 +199,92 @@ class SectionMesh:
 
     def depth_to_elevation(self, surface_s, surface_z) -> "SectionMesh":
         """z_elev = interp(x, surface_s, surface_z) - |z|. Beyond the ends of the
-        surface profile np.interp clamps to the end elevations."""
+        surface profile np.interp clamps to the end elevations. Where the surface steps
+        (two points at one s, as ``top_edge`` gives), a vertex takes the side its cell is on."""
+        s, z = np.asarray(surface_s, dtype=float), np.asarray(surface_z, dtype=float)
         verts = self.vertices.copy()
-        verts[:, 1] = np.interp(verts[:, 0], surface_s, surface_z) - np.abs(verts[:, 1])
+        sides = self._vertex_sides() if _steps(s) else None
+        verts[:, 1] = _surface_at(verts[:, 0], s, z, sides) - np.abs(verts[:, 1])
         return replace(self, vertices=verts)
+
+    def top_edge(self) -> tuple[np.ndarray, np.ndarray]:
+        """The upper envelope of the mesh, ``(x ascending, z)``: for every x the highest
+        point of any cell. A vertical step (a column higher than its neighbour) gives two
+        points at the same x, the left side's first. Built from the upper edges of the cells
+        that no other cell covers, sampled at their ends (the envelope is straight between)."""
+        lo, hi = self._upper_edges()
+        if not len(lo):
+            return np.empty(0), np.empty(0)
+        xs = np.unique(np.r_[lo[:, 0], hi[:, 0]])
+        left, right = np.full(xs.size, -np.inf), np.full(xs.size, -np.inf)
+        slope = (hi[:, 1] - lo[:, 1]) / (hi[:, 0] - lo[:, 0])
+        for start in range(0, xs.size, 256):        # bounded memory: edges x 256 samples
+            x = xs[start:start + 256, None]
+            z = lo[:, 1] + (x - lo[:, 0]) * slope
+            left[start:start + 256] = np.where((lo[:, 0] < x) & (x <= hi[:, 0]), z,
+                                               -np.inf).max(1)
+            right[start:start + 256] = np.where((lo[:, 0] <= x) & (x < hi[:, 0]), z,
+                                                -np.inf).max(1)
+        tol = 1e-9 * max(1.0, float(np.abs(self.vertices[:, 1]).max()))
+        s_out, z_out = [], []
+        for x, a, b in zip(xs.tolist(), left.tolist(), right.tolist()):
+            for value in ([a] if np.isfinite(a) else []) + \
+                    ([b] if np.isfinite(b) and not (np.isfinite(a) and abs(a - b) <= tol)
+                     else []):
+                s_out.append(x)
+                z_out.append(value)
+        return np.array(s_out, dtype=float), np.array(z_out, dtype=float)
+
+    def below_top(self) -> "SectionMesh":
+        """The mesh with z replaced by the depth below its own top (``top_edge``) at the
+        same x, >= 0: a local-height model ready to hang from a surface like a depth model."""
+        s, z = self.top_edge()
+        verts = self.vertices.copy()
+        if len(s):
+            top = _surface_at(verts[:, 0], s, z, self._vertex_sides() if _steps(s) else None)
+            verts[:, 1] = np.maximum(top - verts[:, 1], 0.0)
+        return replace(self, vertices=verts)
+
+    def _rings(self) -> tuple[np.ndarray, np.ndarray]:
+        """Each cell's closed ring of vertex indices (a triangle repeats vertex 0) and its
+        orientation: 1 counter-clockwise, -1 clockwise, 0 without area."""
+        c = self.cells
+        ring = np.where(c >= 0, c, c[:, :1])
+        p, q = self.vertices[ring], self.vertices[np.roll(ring, -1, axis=1)]
+        area = (p[..., 0] * q[..., 1] - q[..., 0] * p[..., 1]).sum(1)
+        return ring, np.sign(area).astype(int)
+
+    def _upper_edges(self) -> tuple[np.ndarray, np.ndarray]:
+        """(left ends, right ends) of the cell edges that face up and are not some other
+        cell's downward edge: the candidates for the top edge."""
+        ring, orient = self._rings()
+        p = self.vertices[ring].reshape(-1, 2)
+        q = self.vertices[np.roll(ring, -1, axis=1)].reshape(-1, 2)
+        o = np.repeat(orient, ring.shape[1])
+        dx = q[:, 0] - p[:, 0]
+        # counter-clockwise, the upper side of a cell runs right to left (clockwise: reversed)
+        up, down = dx * o < 0, dx * o > 0
+        left, right = np.where((dx < 0)[:, None], q, p), np.where((dx < 0)[:, None], p, q)
+        edges = np.column_stack([left, right])
+        n_up = int(up.sum())
+        if not n_up:
+            return np.empty((0, 2)), np.empty((0, 2))
+        both = np.vstack([edges[up], edges[down]])
+        _keys, inverse = np.unique(both, axis=0, return_inverse=True)
+        inverse = inverse.ravel()
+        covered = np.zeros(len(_keys), dtype=bool)
+        covered[inverse[n_up:]] = True
+        keep = ~covered[inverse[:n_up]]
+        return edges[up][keep, :2], edges[up][keep, 2:]
+
+    def _vertex_sides(self) -> np.ndarray:
+        """Per vertex: -1 when its cell lies to its left (take a step's left value), 1 when
+        to its right, 0 when unused. A vertex of several cells takes the last one's."""
+        ring, _orient = self._rings()
+        cx = self.vertices[ring, 0].mean(1)
+        sides = np.zeros(len(self.vertices), dtype=int)
+        sides[ring.ravel()] = np.sign(cx[:, None] - self.vertices[ring, 0]).astype(int).ravel()
+        return sides
 
     # -- queries --------------------------------------------------------
     def bounds(self) -> tuple[float, float, float, float]:

@@ -110,3 +110,28 @@ def test_zoom_full_includes_borehole_bottoms_and_tie_columns(qgis_app, store_wit
         assert data_extent(dock)[2] == pytest.approx(-49.0)
     finally:
         dock.provider.ties = real_ties
+
+
+def test_zoom_full_of_a_local_section_leaves_out_the_boreholes(qgis_app, tmp_path, make_dock):
+    import shutil
+    from pathlib import Path
+
+    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_polyline
+    from geophysics_workbench.section.view_extent import data_extent
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p = profile_from_polyline("L", "EPSG:25832", np.array([[0.0, 0.0], [50.0, 0.0]]))
+    st.save_profile(p)
+    src = tmp_path / "zond_model_depth.dat"
+    shutil.copy(Path(__file__).resolve().parent.parent / "fixtures" / "ert" /
+                "zond_model_depth.dat", src)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("z", p.id, "", "ert_model", str(src), mt, sha, "zondres_xyz",
+                            {"z_kind": "depth"}, {}, name="z"))
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    bh = ProjectedPoint(25.0, 1.0, "BK1", "borehole", 250.0, [LogInterval(0.0, 10.0, "Kies")])
+    dock.provider.context_source = lambda profile: ContextItems(points=[bh])
+    assert dock.provider.is_local(p.id)
+    assert data_extent(dock)[2:] == pytest.approx((-6.0, 0.0))     # the model alone

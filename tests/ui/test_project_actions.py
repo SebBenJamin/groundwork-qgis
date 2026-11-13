@@ -197,8 +197,9 @@ def test_store_layers_are_read_only(qgis_app, tmp_path):
 
 
 # -- add_model checks ----------------------------------------------------------------------
-def test_add_model_refuses_depth_model_without_station_elevations(qgis_app, tmp_path):
+def test_add_model_accepts_depth_model_without_station_elevations(qgis_app, tmp_path):
     from geophysics_workbench.core.model import profile_from_stations
+    from geophysics_workbench.section.data import SectionDataProvider
     from geophysics_workbench.store.gpkg_store import ProjectStore
     from geophysics_workbench.ui.project_actions import add_model
 
@@ -207,11 +208,12 @@ def test_add_model_refuses_depth_model_without_station_elevations(qgis_app, tmp_
     st.save_profile(p); st.save_station_set(s)
     src = tmp_path / "zond_model_depth.dat"
     shutil.copy(FIXTURES / "zond_model_depth.dat", src)
-    with pytest.raises(ValueError, match="elevation"):
-        add_model(st, p.id, s.id, src, "zondres_xyz", {}, "depth model")
-    assert st.datasets(p.id) == []
+    d = add_model(st, p.id, s.id, src, "zondres_xyz", {}, "depth model")
+    assert d.reader_options["z_kind"] == "depth"
+    [layer] = SectionDataProvider(st).layers(p.id)       # hung from the flat surface at 0
+    assert layer.error is None and layer.mesh.bounds()[3] == 0.0
     add_model(st, p.id, s.id, src, "zondres_xyz", {"z_kind": "elevation"}, "as elevation")
-    assert len(st.datasets(p.id)) == 1
+    assert len(st.datasets(p.id)) == 2
 
 
 def test_add_model_keeps_the_readers_quantity_and_unit(qgis_app, tmp_path, store_with_model):

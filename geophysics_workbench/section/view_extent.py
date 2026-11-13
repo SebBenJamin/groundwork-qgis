@@ -13,6 +13,17 @@ from .topography import station_line
 Extent = tuple[float, float, float, float]
 
 
+def _drawn_context(dock):
+    """The open profile's context as the section draws it: a local section leaves out the
+    DEM line and the boreholes (``data.without_heights``)."""
+    from .data import without_heights
+    pid = dock._profile.id
+    ctx = dock.provider.context(pid)
+    if ctx is not None and dock.provider.is_local(pid):
+        ctx = without_heights(ctx)[0]
+    return ctx
+
+
 def data_extent(dock) -> Extent:
     """(s0, s1, z0, z1) of the dock's open profile, in forward chainage and elevation."""
     profile = dock._profile
@@ -30,7 +41,7 @@ def data_extent(dock) -> Extent:
     stations = station_line(dock.provider.store.station_sets(profile.id))
     if stations is not None and len(stations[1]):        # the ticks sit at measured heights
         z += [float(stations[1].min()), float(stations[1].max())]
-    z += context_z_values(dock.provider.context(profile.id), topo)
+    z += context_z_values(_drawn_context(dock), topo)
     z = [v for v in z if np.isfinite(v)] or [-10.0, 0.0]
     zmin, zmax = min(z), max(z)
     if zmax - zmin < 1.0:
@@ -41,7 +52,7 @@ def data_extent(dock) -> Extent:
 def headroom_px(dock) -> float:
     """Pixels above the data top for the geology band and the label rows; 0 without
     context to draw there."""
-    ctx = dock.provider.context(dock._profile.id)
+    ctx = _drawn_context(dock)
     if ctx is None:
         return 0.0
     from .field_notes_render import lanes_px

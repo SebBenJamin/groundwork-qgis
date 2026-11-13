@@ -245,3 +245,30 @@ def test_frame_leaves_room_for_labels_above_the_data(env):
     scale, ve = frame_scale_and_ve(item)
     top = snapshot_extent(snap, p.chainage.length)[3]
     assert item.plot().yMaximum() - top >= room * scale / (1000.0 * ve) * 0.98
+
+
+def test_local_frame_labels_its_vertical_axis_with_depths(env):
+    from dataclasses import replace
+
+    import numpy as np
+    from qgis.core import QgsNumericFormatContext
+
+    from geophysics_workbench.plates.build import create_or_update_plate
+    st, p, prov, prj = env
+    [s] = st.station_sets(p.id)
+    [d] = st.datasets(p.id)
+    st.save_station_set(replace(s, xyz=np.column_stack([s.xyz[:, :2], np.full(len(s.xyz),
+                                                                              np.nan)])))
+    st.save_dataset(replace(d, reader_options={"z_kind": "local"}))   # no heights at all
+    assert prov.is_local(p.id)
+    plate = _plate(st, p)
+    layout = create_or_update_plate(prj, st, prov, plate)
+    axis = layout.itemById("wb_frame_1").plot().yAxis()
+    ctx = QgsNumericFormatContext()
+    assert axis.numericFormat().formatDouble(-12.5, ctx) == "12.5"
+    assert axis.labelSuffix() == " m"
+    st.save_station_set(s)                                  # heights again: elevations
+    layout = create_or_update_plate(prj, st, prov, plate)
+    axis = layout.itemById("wb_frame_1").plot().yAxis()
+    assert axis.numericFormat().id() == "basic"
+    assert axis.numericFormat().formatDouble(-12.5, ctx) == "-12.5"

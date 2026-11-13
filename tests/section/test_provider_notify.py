@@ -60,7 +60,9 @@ def test_no_station_heights_falls_back_to_dem(tmp_path):
     assert len(s) >= 2 and np.allclose(z, 99.0)
 
 
-def test_no_heights_no_dem_gives_no_topography(tmp_path):
+def test_no_heights_no_dem_gives_a_flat_topography(tmp_path):
     st, p = _store_without_heights(tmp_path)
     prov = _provider(st, [], items=ContextItems)
-    assert prov.topography(p.id) is None
+    s, z = prov.topography(p.id)
+    assert s.tolist() == [0.0, 50.0] and z.tolist() == [0.0, 0.0]
+    assert prov.surface(p.id).kind == "flat" and prov.is_local(p.id)

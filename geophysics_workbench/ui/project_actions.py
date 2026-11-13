@@ -12,13 +12,13 @@ import os
 import uuid
 from pathlib import Path
 
-import numpy as np
 from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsProject,
                        QgsProviderRegistry, QgsSingleSymbolRenderer, QgsTextFormat,
                        QgsVectorLayer, QgsVectorLayerSimpleLabeling)
 
 from .. import readers
 from ..core.model import Dataset, Profile, StationSet, file_fingerprint
+from ..readers.base import Z_CHOICES
 from ..section.data import read_options
 from ..store.gpkg_store import ProjectStore
 
@@ -26,7 +26,6 @@ SCOPE = "geophysics_workbench"
 STORE_KEY = "store_path"
 GROUP_NAME = "Geophysics Workbench"
 LAYER_NAMES = ("profiles", "stations")
-Z_CHOICES = ("elevation", "depth")
 
 
 # -- store path entry ----------------------------------------------------------------------
@@ -228,19 +227,14 @@ def model_source_path(store: ProjectStore, path: Path) -> str:
         return str(path)
 
 
-def _has_elevations(store: ProjectStore, profile_id: str) -> bool:
-    return any(len(s.xyz) and np.isfinite(s.xyz[:, 2]).any()
-               for s in store.station_sets(profile_id))
-
-
 def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: Path,
               reader: str, options: dict, name: str, provider=None) -> Dataset:
     """Validate ``path`` by reading it once, then save it as a model dataset.
 
     ``options`` may hold ``z_kind`` and ``chainage_offset`` (default 0) plus reader options;
     a missing ``z_kind`` comes from the reader. Raises the reader's ValueError for unusable
-    files, and ValueError when it is still unknown whether Z is elevation or depth or when
-    a depth model meets a profile whose stations have no elevations."""
+    files, and ValueError when it is still unknown what Z means. A depth or local-height
+    model hangs from the profile's surface, whatever heights the profile has."""
     path = Path(path)
     opts = dict(options)
     opts["chainage_offset"] = float(opts.get("chainage_offset") or 0.0)
@@ -248,10 +242,6 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     z_kind = opts.get("z_kind") or result.z_kind
     if z_kind not in Z_CHOICES:
         raise ValueError(f"Choose whether Z is elevation or depth for {path.name}")
-    if z_kind == "depth" and not _has_elevations(store, profile_id):
-        raise ValueError(f"{path.name}: a depth model is hung from the station elevations, "
-                         "but this profile's stations have none. Create the profile from "
-                         "a station file with a Z column, or choose Z means Elevation.")
     opts["z_kind"] = z_kind
     mtime, sha1 = file_fingerprint(str(path))
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,

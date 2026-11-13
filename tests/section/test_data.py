@@ -93,7 +93,7 @@ def test_chainage_offset_and_depth_conversion_use_chainage(store_with_model, tmp
     assert v[:, 1].min() == pytest.approx(np.interp(10.0, [0, 50], [100, 102]) - 6.0)
 
 
-def test_depth_model_without_topography_is_an_error(tmp_path):
+def test_depth_model_without_topography_hangs_from_a_flat_line(tmp_path):
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     p, s = profile_from_stations("P2", "EPSG:25832", np.array([[0, 0], [50, 0.0]]))   # z = nan
     st.save_profile(p); st.save_station_set(s)
@@ -101,10 +101,10 @@ def test_depth_model_without_topography_is_an_error(tmp_path):
     shutil.copy(os.path.join(FIXTURES, "zond_model_depth.dat"), src)
     _add_dataset(st, p, src, "zondres_xyz", {"z_kind": "depth"})
     prov = SectionDataProvider(st)
-    assert prov.topography(p.id) is None
+    s_topo, z_topo = prov.topography(p.id)
+    assert s_topo.tolist() == [0.0, 50.0] and z_topo.tolist() == [0.0, 0.0]
     [layer] = prov.layers(p.id)
-    assert layer.mesh is None
-    assert "depth model needs station elevations or a DEM" in layer.error
+    assert layer.error is None and layer.mesh.bounds()[2:] == pytest.approx((-6.0, 0.0))
 
 
 def test_reader_value_error_becomes_layer_error(store_with_model, tmp_path):

@@ -144,3 +144,37 @@ def test_default_drops_hull_slivers_of_bent_rows():
     assert (cent[:, 1] <= top + tol).all(), "cells above the shallowest row"
     # nothing inside the rows is lost: a regular grid splits into 2 triangles per cell
     assert len(m.cells) == 2 * (len(s) - 1) * (len(depth) - 1)
+
+
+def _stepped():
+    """Two quads with their own vertices: top z 10 over x 0..5, 12 over x 5..10."""
+    from geophysics_workbench.core.cell_centres import quads
+    verts, cells = quads(np.array([[0.0, 5.0, 0.0, 10.0], [5.0, 10.0, 0.0, 12.0]]))
+    return SectionMesh(verts, cells, np.array([10.0, 20.0]))
+
+
+def test_top_edge_and_below_top():
+    m = _stepped()
+    s, z = m.top_edge()
+    assert s.tolist() == [0.0, 5.0, 5.0, 10.0] and z.tolist() == [10.0, 10.0, 12.0, 12.0]
+    below = m.below_top()
+    v = below.vertices
+    on_top = np.isin(np.arange(len(v)), m.cells[:, 2:].ravel())     # each quad's two top corners
+    assert (v[on_top, 1] == 0.0).all()
+    assert sorted(v[~on_top, 1].tolist()) == [10.0, 10.0, 12.0, 12.0]
+    assert (v[:, 1] >= 0.0).all() and (v[:, 0] == m.vertices[:, 0]).all()
+
+
+def test_hung_from_its_own_top_keeps_the_shape():
+    m = _stepped()
+    s, z = m.top_edge()
+    back = m.below_top().depth_to_elevation(s, z - 12.0)
+    np.testing.assert_allclose(back.vertices, m.vertices - [0.0, 12.0])
+    # a triangulated mesh under a hill: the top row is its top edge
+    x, zz, srow, topo, depth = _bent_model_points()
+    tri = SectionMesh.from_points(x, zz, np.full(x.size, 30.0))
+    ts, tz = tri.top_edge()
+    np.testing.assert_allclose(ts, srow)
+    np.testing.assert_allclose(tz, topo - depth[0])
+    back = tri.below_top().depth_to_elevation(ts, tz)
+    np.testing.assert_allclose(back.vertices, tri.vertices, atol=1e-9)

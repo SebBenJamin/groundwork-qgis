@@ -5,8 +5,10 @@ The order, strongest first:
 
 1. pinned at the known points: two or more stations of the dataset's station set (else the
    profile's first set) with a distance in the file (``core.layout.inline_distances``). A
-   guessed spacing whose fit report warns is not used ("guess_rejected"); a set of known
-   points that cannot pin (a station out of order) is not used either, with a note;
+   guessed spacing whose fit report warns is not used: the stations with a stronger source
+   pin when there are two or more, else the next rule applies ("guess_rejected", with a
+   note); a set of known points that cannot pin (a station out of order) is not used either,
+   with a note;
 2. the dataset's own ``reader_options["placement"]`` (``{"zero": chainage, "direction": ±1}``);
 3. 0.8's station-set rule, ``metre0 + direction * x``;
 4. file distance 0 at chainage 0.
@@ -16,7 +18,7 @@ spaced) are never known points. The dataset's ``chainage_offset`` is added to fi
 the map in every case; the maps returned here already include it."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -142,8 +144,14 @@ def resolve(profile: Profile, sets: list[StationSet], dataset: Dataset,
         d, s, labels, pin_source = pins
         fit = fit_report(d, s, labels)
         if pin_source == "guessed" and fit.warn:
-            source, note = "guess_rejected", GUESS_REJECTED_NOTE
-        else:
+            # the guess does not fit: the stations with a stronger source still pin
+            pins = _pins(station_set, replace(layout, guess=None, guessed_spacing=None))
+            if pins is None:
+                source, note = "guess_rejected", GUESS_REJECTED_NOTE
+            else:
+                d, s, labels, pin_source = pins
+                fit = fit_report(d, s, labels)
+        if pins is not None:
             try:
                 return Resolution(_with_offset(pinned_map(d, s, labels), offset), pin_source,
                                   fit)

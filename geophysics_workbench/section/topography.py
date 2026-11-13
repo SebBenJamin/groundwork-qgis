@@ -1,13 +1,73 @@
-"""The surface a section's depth models hang from: station elevations or a DEM. QGIS-free.
+"""The surface a section's depth models hang from. QGIS-free.
 
-``Profile.metadata["topography"]`` holds the choice, "stations" (the default) or "dem"."""
+Every profile has exactly one (``Surface``), the first of: the station elevations or the DEM
+(``Profile.metadata["topography"]`` holds the choice, "stations", the default, or "dem"); the
+top edge of an elevation model; the top edge of a local-height model, its highest point at 0;
+a flat line at 0. The last two are "local" (no real heights) until the profile has a
+reference height, ``metadata["reference_height"] = {"s": chainage, "z": height}``, which
+shifts them so the surface passes through it."""
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
 
 from ..core.model import StationSet
 
 TOPOGRAPHY_SOURCES = ("stations", "dem")
+SURFACE_KINDS = ("stations", "dem", "model", "local_model", "flat")
+#: surface kinds without real heights: shifted by the reference height, local without one
+LOCAL_KINDS = ("local_model", "flat")
+
+
+@dataclass
+class Surface:
+    """A profile's surface: ``line`` (s ascending, z), what it comes from (``kind``, one of
+    ``SURFACE_KINDS``) and, for a local kind, the ``shift`` already added to the line to
+    meet the reference height (``referenced``)."""
+    line: tuple[np.ndarray, np.ndarray]
+    kind: str
+    shift: float = 0.0
+    referenced: bool = False
+
+    def __post_init__(self):
+        if self.kind not in SURFACE_KINDS:
+            raise ValueError(f"surface kind must be one of {SURFACE_KINDS}, got {self.kind!r}")
+
+    @property
+    def has_reference(self) -> bool:
+        return self.referenced
+
+    @property
+    def local(self) -> bool:
+        """No real heights: a local model's top or the flat line, without a reference."""
+        return self.kind in LOCAL_KINDS and not self.referenced
+
+
+def reference_height(metadata: dict) -> tuple[float, float] | None:
+    """(chainage, height) of the profile's reference height; None when unset or unusable."""
+    ref = metadata.get("reference_height")
+    try:
+        s, z = float(ref["s"]), float(ref["z"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (s, z) if np.isfinite(s) and np.isfinite(z) else None
+
+
+def local_surface(line: tuple[np.ndarray, np.ndarray], kind: str,
+                  metadata: dict) -> Surface:
+    """A ``LOCAL_KINDS`` surface, shifted to the profile's reference height when it has
+    one (shift = reference z - line at reference s)."""
+    ref = reference_height(metadata)
+    if ref is None:
+        return Surface(line, kind)
+    shift = float(ref[1] - np.interp(ref[0], *line))
+    return Surface((line[0], line[1] + shift), kind, shift, True)
+
+
+def flat_line(length: float) -> tuple[np.ndarray, np.ndarray]:
+    """0 from chainage 0 to ``length``."""
+    return np.array([0.0, max(float(length), 0.0)]), np.zeros(2)
 
 
 def topo_set(sets: list[StationSet]) -> StationSet | None:

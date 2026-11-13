@@ -392,3 +392,51 @@ def test_map_file_in_another_crs_is_transformed(qgis_app, tmp_path):
     got = SectionDataProvider(st).layers(p.id)[0].mesh.bounds()
     want = SectionDataProvider(st_ref).layers(p_ref.id)[0].mesh.bounds()
     assert got == pytest.approx(want, abs=0.01)
+
+
+# -- robustness ----------------------------------------------------------------------------
+
+def test_one_bad_dataset_does_not_break_the_profile(tmp_path, monkeypatch):
+    st, p = _drawn(tmp_path)
+    _add(st, p, _bert(tmp_path / "line.data", np.arange(6) * 2.0), "bert_data", {}, "r", "",
+         "ert_measured")
+    _add(st, p, _f001(tmp_path), "r2_res_dat", {"z_kind": "elevation"}, "d")
+    provider = SectionDataProvider(st)
+    real = provider._read
+
+    def odd(d, profile=None):
+        result = real(d, profile)
+        if d.id == "r":                         # an electrode block that is not numbers
+            result = replace(result, provenance=dict(result.provenance,
+                                                     electrode_x=["a", None, "b"]))
+        return result
+
+    monkeypatch.setattr(provider, "_read", odd)
+    layers = provider.layers(p.id)
+    snap = provider.snapshot(p.id)
+    assert _mesh(provider, p.id, "d") is not None
+    assert next(la for la in layers if la.dataset.id == "d").error is None
+    assert snap.profile_id == p.id
+    assert provider.electrodes(p.id).kind == "guessed"     # the readings give no layout
+
+
+def test_real_pins_survive_a_rejected_guess(tmp_path):
+    st = ProjectStore.create(tmp_path / "p.gpkg", CRS)
+    p = profile_from_polyline("R", CRS, np.array([[0.0, 0.0], [60.0, 0.0]]))
+    # stations 1-3 surveyed with their file distances (5 m along the line per 4 m in the
+    # file: they fit), stations 4-11 every 5 m without one; the model's 2 m top cells give a
+    # guessed spacing of 2 m that squeezes them
+    s_ = np.r_[0.0, 5.0, 10.0, 15.0 + 5.0 * np.arange(8)]
+    inline = np.r_[0.0, 4.0, 8.0, np.full(8, np.nan)]
+    s = attach_station_set(p, "R", "ert", np.column_stack([s_, np.zeros(11), np.full(11, 100.0)]),
+                           inline=inline)
+    st.save_profile(p); st.save_station_set(s)
+    _add(st, p, _f001(tmp_path), "r2_res_dat", {"z_kind": "elevation"}, "d", s.id)
+    provider = SectionDataProvider(st)
+    assert provider.layout(p.id).guessed_spacing == pytest.approx(2.0)
+    assert _source(provider, p.id, "d") == "distances"
+    fit = provider.fit(p.id, "d")
+    assert fit.n == 3 and not fit.warn
+    # pinned by the three: file 0, 4, 8 at chainage 0, 5, 10, one metre per metre beyond
+    assert _mesh(provider, p.id, "d").bounds()[:2] == pytest.approx((0.0, 12.0))
+    assert provider.placement_note(p.id) == ""

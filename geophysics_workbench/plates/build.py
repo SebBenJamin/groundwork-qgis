@@ -13,7 +13,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
+from qgis.core import (Qgis, QgsBasicNumericFormat, QgsCoordinateReferenceSystem,
+                       QgsCoordinateTransform, QgsExpressionBasedNumericFormat,
                        QgsExpressionContextUtils, QgsLayerTreeUtils,
                        QgsLayoutItemElevationProfile, QgsLayoutItemLabel, QgsLayoutItemLegend,
                        QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsLayoutUtils,
@@ -267,6 +268,27 @@ def _new_frame(layout, item_id: str):
         axis.setLabelSuffixPlacement(Qgis.PlotAxisSuffixPlacement.LastLabel)
     layout.addLayoutItem(item)
     return item
+
+
+#: a local section's vertical labels: depths, the magnitude of z, in the QGIS locale
+DEPTH_LABELS = "format_number(abs(@value), 6, trim_trailing_zeroes:=true)"
+
+
+def vertical_labels(item, local: bool) -> None:
+    """A local section's frame labels its vertical axis with depths (0 at the surface, the
+    snapshot's ``local``); otherwise with elevations again. A format the user chose for the
+    axis is kept: only the default (basic) one and the plugin's depth format are replaced.
+    The QGIS plot axis has no title to set."""
+    axis = item.plot().yAxis()
+    current = axis.numericFormat()
+    ours = current is not None and current.id() == "expression" and \
+        current.expression() == DEPTH_LABELS
+    if local and not ours and (current is None or current.id() == "basic"):
+        depth = QgsExpressionBasedNumericFormat()
+        depth.setExpression(DEPTH_LABELS)
+        axis.setNumericFormat(depth)
+    elif not local and ours:
+        axis.setNumericFormat(QgsBasicNumericFormat())
 
 
 def _label(layout, item_id: str, size: float = 7.0):
@@ -568,6 +590,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
         if fresh or relayout:
             _place(item, *slot["frame"])
         item.setCustomProperty(FRAME_PROPERTY, f.frame_id)
+        vertical_labels(item, f.frame_id in snaps and snaps[f.frame_id].local)
         frame_items.append(item)
         placed.append(fresh or relayout)
         _update_bars(layout, n, f, models, slot, relayout)

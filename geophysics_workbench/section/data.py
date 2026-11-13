@@ -30,7 +30,8 @@ from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, Resolution, resolve
-from .topography import TOPOGRAPHY_SOURCES, dem_line, station_line, station_marks
+from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local_surface,
+                         station_line, station_marks)
 
 #: reader_options keys applied by the provider, not passed to the reader as such
 WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement")
@@ -90,7 +91,8 @@ def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callab
     return xy_to_distance
 
 
-DEPTH_NEEDS_TOPO = "depth model needs station elevations or a DEM"
+#: why a local section leaves out context (shown when something was left out)
+LOCAL_REASON = "No heights on this profile yet: the DEM line and boreholes are not drawn"
 #: one QPainterPath element as serialised by QDataStream: int32 type, double x, double y
 PATH_ELEMENT = np.dtype([("t", ">i4"), ("x", ">f8"), ("y", ">f8")])
 _RING = [0, 1, 2, 3, 0]                     # closed cell outline; triangles repeat vertex 0
@@ -164,6 +166,12 @@ class SectionSnapshot:
     #: where ``stations`` come from: "imported" (a station set), "readings", "spacing",
     #: "guessed" (derived, never stored) or "none"
     electrode_kind: str = "imported"
+    #: no real heights (``topography.Surface.local``): drawn in depth below ``topo``, without
+    #: the DEM line and the boreholes; ``local_reason`` says so when either was left out
+    local: bool = False
+    #: what ``topo`` comes from, one of ``topography.SURFACE_KINDS``
+    surface_kind: str = "stations"
+    local_reason: str = ""
 
 
 def starts_hidden(d, datasets) -> bool:
@@ -207,6 +215,16 @@ def _context_for_look(context, look):
         context = replace(context, crossings=[], band=[], ties=[])
     return replace(context, points=points,
                    field_notes=context.field_notes if look.field_notes else [])
+
+
+def without_heights(context: ContextItems) -> tuple[ContextItems, bool]:
+    """``context`` without what needs real elevations (the DEM line, the boreholes) for a
+    local section, and whether anything drawable was left out."""
+    boreholes = any(p.kind == "borehole" for p in context.points)
+    dem = context.dem is not None and bool(np.isfinite(np.asarray(context.dem[1], float)).any())
+    return (replace(context, dem=None,
+                    points=[p for p in context.points if p.kind != "borehole"]),
+            boreholes or dem)
 
 
 def _polyline_length(xy: np.ndarray) -> float:
@@ -485,11 +503,52 @@ class SectionDataProvider:
                 return line, True
         return stations, False
 
+    def _surface(self, profile: Profile | None, sets: list[StationSet],
+                 datasets: list[Dataset], placed: dict) -> Surface | None:
+        """The profile's one surface, from the datasets already placed in chainage
+        (``_placed``): station elevations or the DEM as chosen; else the top edge of the
+        first elevation model; else that of the first local-height model, its highest point
+        at 0; else a flat line at 0 over the profile. A dataset that could not be read is
+        skipped. None for an unknown profile."""
+        if profile is None:
+            return None
+        line, is_dem = self._chosen_topography(profile, sets)
+        if line is not None:
+            return Surface(line, "dem" if is_dem else "stations")
+        for z_kind in ("elevation", "local"):
+            for d in datasets:
+                item = placed.get(d.id)
+                if not isinstance(item, tuple) or item[1] != z_kind \
+                        or item[0].readings is not None:
+                    continue
+                try:
+                    s, z = item[0].top_edge()
+                except Exception:               # an odd mesh just gives no surface
+                    continue
+                if len(s) < 2:
+                    continue
+                if z_kind == "elevation":
+                    return Surface((s, z), "model")
+                return local_surface((s, z - z.max()), "local_model", profile.metadata)
+        return local_surface(flat_line(profile.chainage.length), "flat", profile.metadata)
+
+    def surface(self, profile_id: str) -> Surface | None:
+        """The surface the profile's depth and local-height models hang from (see
+        ``_surface``); None only for an unknown profile."""
+        profile = self._profile(profile_id)
+        sets = self.store.station_sets(profile_id)
+        datasets = self.store.datasets(profile_id)
+        return self._surface(profile, sets, datasets, self._placed(profile, sets, datasets))
+
+    def is_local(self, profile_id: str) -> bool:
+        """True when the profile has no real heights: its section is drawn in depth."""
+        surface = self.surface(profile_id)
+        return surface is not None and surface.local
+
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
-        """The surface depth models hang from: the DEM line when the profile's choice is
-        "dem" and the DEM has data along it, otherwise the station elevations."""
-        return self._chosen_topography(self._profile(profile_id),
-                                       self.store.station_sets(profile_id))[0]
+        """The line of ``surface(profile_id)``; None only for an unknown profile."""
+        surface = self.surface(profile_id)
+        return None if surface is None else surface.line
 
     def set_topography_source(self, profile_id: str, source: str) -> None:
         if source not in TOPOGRAPHY_SOURCES:
@@ -519,7 +578,8 @@ class SectionDataProvider:
                         ) -> _LayoutSources:
         """The readings x from the first readings dataset that reads and has an electrode
         block, the guess from the first distance-based model that reads, the spacing from
-        the profile's metadata. Datasets that cannot be read are skipped."""
+        the profile's metadata. Datasets that cannot be read, or whose electrode block or
+        mesh gives nothing usable, are skipped."""
         out = _LayoutSources(ProfileLayout())
         spacing = (profile.metadata.get("electrode_spacing") if profile is not None else None)
         try:
@@ -531,33 +591,41 @@ class SectionDataProvider:
                 break
             if is_map_dataset(d):
                 continue
-            try:
+            try:                                # one odd dataset just gives no layout
                 result = self._read(d)
-            except Exception:                   # a broken file just gives no layout
+                if result.mesh.readings is not None:
+                    electrode_x = result.provenance.get("electrode_x")
+                    if out.readings is None and electrode_x is not None:
+                        readings_x = np.array(
+                            [np.nan if v is None else v for v in electrode_x], dtype=float)
+                        out.readings, out.layout.readings_x = d, readings_x
+                elif out.model is None:
+                    guess = self._model_guess(d, result,
+                                              d.reader_options.get("z_kind") or result.z_kind)
+                    x_max = float(result.mesh.bounds()[1])
+                    out.model, out.model_x_max = d, x_max
+                    if guess.size >= 2:
+                        out.layout.guess = guess
+                        out.layout.guessed_spacing = float(np.median(np.diff(guess)))
+            except Exception:
                 continue
-            if result.mesh.readings is not None:
-                electrode_x = result.provenance.get("electrode_x")
-                if out.readings is None and electrode_x is not None:
-                    out.readings = d
-                    out.layout.readings_x = np.array(
-                        [np.nan if v is None else v for v in electrode_x], dtype=float)
-            elif out.model is None:
-                out.model = d
-                guess = self._model_guess(d, result,
-                                          d.reader_options.get("z_kind") or result.z_kind)
-                if guess.size >= 2:
-                    out.layout.guess = guess
-                    out.layout.guessed_spacing = float(np.median(np.diff(guess)))
-                out.model_x_max = float(result.mesh.bounds()[1])
         return out
 
     def _resolved(self, profile: Profile, sets: list[StationSet], datasets: list[Dataset],
                   sources: _LayoutSources | None = None) -> dict[str, Resolution]:
-        """Resolution of every distance-based dataset by id."""
+        """Resolution of every distance-based dataset by id (one that cannot be resolved is
+        left out; its layer shows the error)."""
         if sources is None:
             sources = self._layout_sources(profile, datasets)
-        return {d.id: resolve(profile, sets, d, sources.layout)
-                for d in datasets if not is_map_dataset(d)}
+        out = {}
+        for d in datasets:
+            if is_map_dataset(d):
+                continue
+            try:
+                out[d.id] = resolve(profile, sets, d, sources.layout)
+            except Exception:
+                continue
+        return out
 
     def layout(self, profile_id: str) -> ProfileLayout:
         """What the profile's in-line layout is resolved from (see ``ProfileLayout``)."""
@@ -652,21 +720,45 @@ class SectionDataProvider:
         self._cache[d.id] = (key, result)
         return result
 
-    def _load_mesh(self, d: Dataset, dmap: DistanceMap | None,
-                   topo: tuple[np.ndarray, np.ndarray] | None,
-                   profile: Profile | None = None) -> SectionMesh:
-        """``d``'s mesh in chainage: file x through ``dmap`` (None for a map-coordinate
-        file, whose x is already chainage), a depth model hung from ``topo``."""
+    def _place(self, d: Dataset, dmap: DistanceMap | None,
+               profile: Profile | None = None) -> tuple[SectionMesh, str]:
+        """(``d``'s mesh in chainage, its z kind): file x through ``dmap`` (None for a
+        map-coordinate file, whose x is already chainage), z as read."""
         result = self._read(d, profile)
         base = result.mesh
         if base.readings is not None:
             base = self._shown_mesh(d, base)
         mesh = base if dmap is None else base.with_x(dmap)
-        if d.reader_options.get("z_kind", result.z_kind) == "depth":
-            if topo is None:
-                raise ValueError(DEPTH_NEEDS_TOPO)
-            mesh = mesh.depth_to_elevation(*topo)
-        return mesh
+        return mesh, d.reader_options.get("z_kind") or result.z_kind
+
+    def _placed(self, profile: Profile | None, sets: list[StationSet],
+                datasets: list[Dataset]) -> dict:
+        """Every dataset placed in chainage by id: ``_place``'s (mesh, z kind), or the
+        exception reading or placing it raised (that layer's error). Resolved once."""
+        layout = None if profile is None else self._layout_sources(profile, datasets).layout
+        out = {}
+        for d in datasets:
+            try:
+                dmap = None
+                if profile is not None and not is_map_dataset(d):
+                    dmap = resolve(profile, sets, d, layout).map
+                out[d.id] = self._place(d, dmap, profile)
+            except Exception as exc:            # shown as the layer's error
+                # without its traceback: it would hold this frame and so ``out`` (a cycle
+                # that keeps the meshes alive until the garbage collector runs)
+                out[d.id] = exc.with_traceback(None)
+        return out
+
+    def _load_mesh(self, d: Dataset, placed: tuple[SectionMesh, str],
+                   surface: Surface | None) -> SectionMesh:
+        """``d``'s placed mesh hung from ``surface``: a depth model directly, a local-height
+        model as its depth below its own top; an elevation model is drawn as it is."""
+        mesh, z_kind = placed
+        if surface is None or z_kind not in ("depth", "local"):
+            return mesh
+        if z_kind == "local":
+            mesh = mesh.below_top()
+        return mesh.depth_to_elevation(*surface.line)
 
     def shown_value(self, d: Dataset, readings) -> str:
         """What a readings layer shows: the style's choice when the file has it, else misfit
@@ -690,11 +782,13 @@ class SectionDataProvider:
             hit = self._shown_meshes[key] = (base, readings_mesh(base.readings, shown))
         return hit[1]
 
-    def _layer(self, d: Dataset, dmap: DistanceMap | None, topo,
-               profile: Profile | None = None) -> SectionLayer:
+    def _layer(self, d: Dataset, placed, surface: Surface | None) -> SectionLayer:
+        """``d``'s layer from its ``_placed`` entry (a placed mesh, or the exception)."""
         style = self.style(d.id)
+        if isinstance(placed, BaseException):
+            return SectionLayer(d, None, style, self._error_text(d, placed))
         try:
-            mesh = self._load_mesh(d, dmap, topo, profile)
+            mesh = self._load_mesh(d, placed, surface)
             if mesh.readings is not None and d.id not in self._readings_seen:
                 self._readings_seen.add(d.id)
                 style.mode = "points"              # a pseudosection: one marker per reading
@@ -702,28 +796,29 @@ class SectionDataProvider:
                     style.visible = False          # don't cover the model; tick to show
             if style.scale is None:
                 style.scale = _auto_scale(mesh, d)
-        except FileNotFoundError:
-            src = self.source_path(d)
-            return SectionLayer(d, None, style, plain_error(
-                FileNotFoundError(2, "No such file", src), src))
-        except ValueError as exc:
-            return SectionLayer(d, None, style, plain_error(exc, self.source_path(d)))
-        except OSError as exc:
-            return SectionLayer(d, None, style, plain_error(
-                OSError(f"cannot read the file ({exc.strerror or exc})"), self.source_path(d)))
         except Exception as exc:                # never raise from layers()
-            return SectionLayer(d, None, style, plain_error(exc, self.source_path(d)))
+            return SectionLayer(d, None, style, self._error_text(d, exc))
         return SectionLayer(d, mesh, style, None)
 
+    def _error_text(self, d: Dataset, exc: BaseException) -> str:
+        """The plain message a layer shows for what reading, placing or hanging raised."""
+        src = self.source_path(d)
+        if isinstance(exc, FileNotFoundError):
+            return plain_error(FileNotFoundError(2, "No such file", src), src)
+        if isinstance(exc, OSError) and not isinstance(exc, ValueError):
+            return plain_error(OSError(f"cannot read the file ({exc.strerror or exc})"), src)
+        return plain_error(exc, src)
+
     def _assemble(self, profile_id: str):
+        """(layers, station sets, surface): every dataset placed in chainage first, then the
+        surface worked out from the placed meshes, then depth and local models hung from it."""
         profile = self._profile(profile_id)
         sets = self.store.station_sets(profile_id)
-        topo, dem_topo = self._chosen_topography(profile, sets)
         datasets = self.store.datasets(profile_id)
-        placed = {} if profile is None else self._resolved(profile, sets, datasets)
-        layers = [self._layer(d, placed[d.id].map if d.id in placed else None, topo, profile)
-                  for d in datasets]
-        return layers, sets, topo, dem_topo
+        placed = self._placed(profile, sets, datasets)
+        surface = self._surface(profile, sets, datasets, placed)
+        layers = [self._layer(d, placed[d.id], surface) for d in datasets]
+        return layers, sets, surface
 
     def layers(self, profile_id: str) -> list[SectionLayer]:
         return self._assemble(profile_id)[0]
@@ -786,7 +881,9 @@ class SectionDataProvider:
         (s -> length - s) for a profile curve drawn end-to-start. ``look`` (a plate frame's
         ``core.plates.FrameLook``) replaces the panel's look: only its models, with its scale,
         mode and opacity; its interpretation version; boreholes, notes, context as it says."""
-        layers, sets, topo, dem_topo = self._assemble(profile_id)
+        layers, sets, surface = self._assemble(profile_id)
+        topo = None if surface is None else surface.line
+        local = surface is not None and surface.local
         if look is not None:
             layers = _layers_for_look(layers, look)
         electrodes = self.electrodes(profile_id)
@@ -807,6 +904,10 @@ class SectionDataProvider:
                     context = replace(context, note_looks=self.note_looks())
                 except Exception:
                     pass
+        local_reason = ""
+        if local and context is not None:
+            context, left_out = without_heights(context)
+            local_reason = LOCAL_REASON if left_out else ""
         if reverse:
             length = self.store.profile(profile_id).chainage.length
             for la in layers:
@@ -820,8 +921,11 @@ class SectionDataProvider:
             if context is not None:
                 context = context.mirrored(length)
         snap = SectionSnapshot(profile_id, layers, topo, stations, coverage, context, heights,
-                               dem_topo,
-                               electrode_kind="none" if electrodes is None else electrodes.kind)
+                               surface is not None and surface.kind == "dem",
+                               electrode_kind="none" if electrodes is None else electrodes.kind,
+                               local=local,
+                               surface_kind="stations" if surface is None else surface.kind,
+                               local_reason=local_reason)
         version = None if look is None else (look.interp_version or self._latest_version())
         self._add_interpretation(snap, profile_id, reverse, version, compare=look is None)
         return snap
