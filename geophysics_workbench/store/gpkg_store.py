@@ -362,16 +362,17 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
             self._write_dataset(ds, d)
 
     def save_import(self, profile: Profile | None, station_set: StationSet | None,
-                    dataset: Dataset) -> None:
+                    dataset: Dataset | None) -> None:
         """Save what one import made in one transaction: the profile (new, or with new
-        metadata) and the station set when given, and the dataset. On failure nothing is
+        metadata), the station set and the dataset, each when given. On failure nothing is
         written."""
         with self._tx() as ds:
             if profile is not None:
                 self._write_profile(ds, profile)
             if station_set is not None:
                 self._write_station_set(ds, station_set)
-            self._write_dataset(ds, dataset)
+            if dataset is not None:
+                self._write_dataset(ds, dataset)
 
     def _write_dataset(self, ds, d: Dataset) -> None:
         """``d``'s row, inside the caller's transaction."""

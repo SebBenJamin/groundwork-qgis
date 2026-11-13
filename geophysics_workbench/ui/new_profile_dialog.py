@@ -1,312 +1,126 @@
-"""'New profile' dialog: from a station file, a selected line feature or two points.
+"""'New Profile' dialog: a name, the method and where the line runs ("Where the Line Runs",
+the placement widget Add Data shares).
 
-Coordinates typed or picked here are in the workbench project's CRS. The dialog is meant
-to be shown non-modally (``show()``), so "Pick on Map" can use the map canvas; it hides
-itself while picking and comes back after the second click.
+A selected line feature or two points give a profile without stations: no spacing is asked
+and no stations are invented. A positions file or a point layer gives a profile through the
+positions with a station set; only then is the method asked. The dialog is shown non-modally
+(``show()``), so "Pick on Map" can use the map canvas: it hides while picking and comes back
+after the second click or when another map tool takes over.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
-import numpy as np
-from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry,
-                       QgsProject, QgsVectorLayer, QgsWkbTypes)
-from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-                                 QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                                 QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget)
+from qgis.core import Qgis, QgsProject
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+                                 QLineEdit, QMessageBox, QScrollArea, QVBoxLayout, QWidget)
 
-from ..core.model import profile_from_line, profile_from_stations
-from ..readers.textcols import read_columns
 from ..section.data import matching_profiles
 from ..section.profile_source import CURVE_TOLERANCE
-from .project_actions import add_profile
-from .station_columns import NONE, guess_columns, stations_from_columns  # noqa: F401
+from .placement_widget import PlacementWidget
+from .project_actions import create_profile
 
-TAB_FILE, TAB_LINE, TAB_POINTS = 0, 1, 2
 METHODS = [("ERT", "ert")]
-FROM_END = "Number stations from the end"
-
-
-def _spin(lo: float, hi: float, value: float, decimals: int = 2, suffix: str = "") -> QDoubleSpinBox:
-    box = QDoubleSpinBox()
-    box.setRange(lo, hi)
-    box.setDecimals(decimals)
-    box.setValue(value)
-    if suffix:
-        box.setSuffix(suffix)
-    return box
+REVERSE = "Reverse the line"
+#: sources whose line can be run either way (positions follow their numbers)
+LINE_SOURCES = ("line", "points")
+#: sources that make a station set, and so ask for its method
+POSITION_SOURCES = ("positions", "layer")
 
 
 class NewProfileDialog(QDialog):
     def __init__(self, iface, store, project: QgsProject | None = None, provider=None,
                  parent=None):
         super().__init__(parent if parent is not None else iface.mainWindow())
-        self.setWindowTitle("New profile")
+        self.setWindowTitle("New Profile")
         self.iface, self.store, self.provider = iface, store, provider
         self.project = project if project is not None else QgsProject.instance()
         self.profile = None
         self.last_error = None
         self.last_warning = None
-        self._columns = None                # (header, array) of the station file
-        self.pick_tool = None
-        self._picked = []
-        self._prev_tool = None
-        self._closing = False
+        self._file = ""                     # the positions file the name was taken from
 
         self.name_edit = QLineEdit()
+        self.name_edit.setToolTip("Name of the profile")
         self.method_combo = QComboBox()
         for label, value in METHODS:
             self.method_combo.addItem(label, value)
-        form = QFormLayout()
-        form.addRow("Name", self.name_edit)
-        form.addRow("Method", self.method_combo)
+        self.method_combo.setToolTip("Method of the station set made from the positions")
+        self._form = QFormLayout()
+        self._form.addRow("Name", self.name_edit)
+        self._form.addRow("Method", self.method_combo)
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self._file_tab(), "From Station File")
-        self.tabs.addTab(self._line_tab(), "From Selected Line Feature")
-        self.tabs.addTab(self._points_tab(), "From Start/End Points")
-        self.tabs.currentChanged.connect(lambda _i: self._update_line_info())
+        self.placement = PlacementWidget(iface, store, self.project, allow_existing=False)
+        self.placement.setObjectName("placement")
+        self.reverse_check = QCheckBox(REVERSE)
+        self.reverse_check.setObjectName("reverse_check")
+        self.reverse_check.setToolTip("The profile runs from the line's last vertex, or from "
+                                      "the end point to the start point")
 
+        self._page = page = QWidget()
+        column = QVBoxLayout(page)
+        column.addLayout(self._form)
+        column.addWidget(self.placement)
+        column.addWidget(self.reverse_check)
+        column.addStretch(1)
+        self._scroll = scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(self.tabs)
+        layout.addWidget(scroll)
         layout.addWidget(buttons)
-        self._update_line_info()
 
-    # -- tabs --------------------------------------------------------------------------------
-    def _file_tab(self) -> QWidget:
-        page = QWidget()
-        self.file_edit = QLineEdit()
-        self.file_edit.editingFinished.connect(lambda: self.set_station_file(self.file_edit.text()))
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse)
-        row = QHBoxLayout()
-        row.addWidget(self.file_edit)
-        row.addWidget(browse)
-        self.file_info = QLabel("CSV or text table with one row per electrode.")
-        self.file_info.setWordWrap(True)
-        self.col_number, self.col_x, self.col_y, self.col_z = (QComboBox() for _ in range(4))
-        form = QFormLayout(page)
-        form.addRow(QLabel(f"Coordinates must be in {self.store.crs_authid}"))
-        form.addRow("File", row)
-        form.addRow(self.file_info)
-        form.addRow("Electrode number", self.col_number)
-        form.addRow("X (easting)", self.col_x)
-        form.addRow("Y (northing)", self.col_y)
-        form.addRow("Z (elevation)", self.col_z)
-        return page
+        self.placement.changed.connect(self._sync)
+        self._sync()
+        screen = self.screen().availableGeometry()
+        # high enough for a positions file's columns; a longer page scrolls
+        self.resize(min(640, screen.width() - 40), min(480, screen.height() - 80))
 
-    def _line_tab(self) -> QWidget:
-        page = QWidget()
-        self.line_info = QLabel()
-        self.line_info.setWordWrap(True)
-        self.line_spacing = _spin(0.0, 1e4, 5.0, suffix=" m")
-        self.line_from_end = QCheckBox(FROM_END)
-        form = QFormLayout(page)
-        form.addRow(self.line_info)
-        form.addRow("Station spacing", self.line_spacing)
-        form.addRow("", self.line_from_end)
-        return page
+    # -- state -------------------------------------------------------------------------------
+    def _sync(self) -> None:
+        source = self.placement.source()
+        self._form.setRowVisible(self.method_combo, source in POSITION_SOURCES)
+        self.reverse_check.setVisible(source in LINE_SOURCES)
+        path = self.placement.file_widget.filePath().strip()
+        if source == "positions" and path and path != self._file:
+            self._file = path               # a new file names an unnamed profile
+            if not self.name_edit.text().strip():
+                self.name_edit.setText(Path(path).stem)
+        bar = self._scroll.verticalScrollBar().sizeHint().width()
+        self._scroll.setMinimumWidth(self._page.minimumSizeHint().width() + bar
+                                     + 2 * self._scroll.frameWidth())
 
-    def _points_tab(self) -> QWidget:
-        page = QWidget()
-        self.x1, self.y1, self.x2, self.y2 = (_spin(-1e9, 1e9, 0.0) for _ in range(4))
-        self.points_spacing = _spin(0.0, 1e4, 5.0, suffix=" m")
-        pick = QPushButton("Pick on Map")
-        pick.setToolTip("Click the start point, then the end point on the map")
-        pick.clicked.connect(self.start_pick)
-        form = QFormLayout(page)
-        form.addRow(QLabel(f"Coordinates in {self.store.crs_authid}"))
-        for label, a, b in (("Start X / Y", self.x1, self.y1), ("End X / Y", self.x2, self.y2)):
-            row = QHBoxLayout()
-            row.addWidget(a)
-            row.addWidget(b)
-            form.addRow(label, row)
-        form.addRow("", pick)
-        form.addRow("Station spacing", self.points_spacing)
-        self.points_from_end = QCheckBox(FROM_END)
-        form.addRow("", self.points_from_end)
-        return page
-
-    # -- station file ------------------------------------------------------------------------
-    def _browse(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Station file", "",
-                                              "Text tables (*.csv *.txt *.dat);;All files (*)")
-        if path:
-            self.set_station_file(path)
-
-    def set_station_file(self, path) -> None:
-        path = str(path)
-        self.file_edit.setText(path)
-        combos = (self.col_number, self.col_x, self.col_y, self.col_z)
-        for combo in combos:
-            combo.clear()
-        self._columns = None
-        if not path:
-            return
-        try:
-            header, arr = read_columns(Path(path))
-        except FileNotFoundError:
-            self.file_info.setText(f"File not found: {path}")
-            return
-        except (ValueError, OSError) as exc:
-            self.file_info.setText(str(exc))
-            return
-        self._columns = (header, arr)
-        names = header if header and len(header) == arr.shape[1] else \
-            [f"column {i + 1}" for i in range(arr.shape[1])]
-        guess = guess_columns(header, arr.shape[1])
-        for combo, role, optional in ((self.col_number, "number", True), (self.col_x, "x", False),
-                                      (self.col_y, "y", False), (self.col_z, "z", True)):
-            if optional:
-                combo.addItem("(none)", NONE)
-            for i, name in enumerate(names):
-                combo.addItem(name, i)
-            combo.setCurrentIndex(max(0, combo.findData(guess[role])))
-        self.file_info.setText(f"{arr.shape[0]} rows, {arr.shape[1]} columns")
-        if not self.name_edit.text():
-            self.name_edit.setText(Path(path).stem)
-
-    def _from_file(self, name: str, method: str):
-        if self._columns is None:
-            raise ValueError("Choose a readable station file")
-        xyz, numbers = stations_from_columns(
-            self._columns[1], self.col_x.currentData(), self.col_y.currentData(),
-            self.col_number.currentData(), self.col_z.currentData(), self.store.crs_authid)
-        return profile_from_stations(name, self.store.crs_authid, xyz, numbers, method=method)
-
-    # -- selected line -----------------------------------------------------------------------
-    def _line_layer(self):
-        layer = self.iface.activeLayer() if hasattr(self.iface, "activeLayer") else None
-        if isinstance(layer, QgsVectorLayer) and \
-                layer.geometryType() == QgsWkbTypes.GeometryType.LineGeometry:
-            return layer
-        return None
-
-    def _update_line_info(self) -> None:
-        layer = self._line_layer()
-        if layer is None:
-            self.line_info.setText("Make a line layer active and select one line feature.")
-        else:
-            self.line_info.setText(f"Layer “{layer.name()}”: {layer.selectedFeatureCount()} "
-                                   "feature(s) selected. Stations start at the first vertex, or at "
-                                   "the last one when numbered from the end.")
-
-    def _to_store(self, crs: QgsCoordinateReferenceSystem):
-        dst = QgsCoordinateReferenceSystem(self.store.crs_authid)
-        if not crs.isValid() or crs == dst:
-            return None
-        return QgsCoordinateTransform(crs, dst, self.project)
-
-    def _from_line(self, name: str, method: str):
-        layer = self._line_layer()
-        if layer is None or layer.selectedFeatureCount() != 1:
-            raise ValueError("Select exactly one line feature in the active line layer")
-        geom = QgsGeometry(layer.selectedFeatures()[0].geometry())
-        tr = self._to_store(layer.crs())
-        if tr is not None:
-            geom.transform(tr)
-        if geom.isMultipart():
-            parts = geom.asMultiPolyline()
-            if len(parts) != 1:
-                raise ValueError("The selected feature has several parts; select a single line")
-            line = parts[0]
-        else:
-            line = geom.asPolyline()
-        xy = np.array([(p.x(), p.y()) for p in line], dtype=float)
-        if len(xy) < 2:
-            raise ValueError("The selected line needs at least 2 vertices")
-        return profile_from_line(name, self.store.crs_authid, xy,
-                                 self._spacing(self.line_spacing), method=method,
-                                 from_end=self.line_from_end.isChecked())
-
-    # -- start / end points ------------------------------------------------------------------
-    def _from_points(self, name: str, method: str):
-        xy = np.array([[self.x1.value(), self.y1.value()], [self.x2.value(), self.y2.value()]])
-        if np.hypot(*(xy[1] - xy[0])) == 0.0:
-            raise ValueError("Start and end point must be different")
-        return profile_from_line(name, self.store.crs_authid, xy,
-                                 self._spacing(self.points_spacing), method=method,
-                                 from_end=self.points_from_end.isChecked())
-
-    def start_pick(self) -> None:
-        canvas = self.iface.mapCanvas()
-        self._picked = []
-        self._prev_tool = canvas.mapTool()
-        self.pick_tool = QgsMapToolEmitPoint(canvas)
-        self.pick_tool.canvasClicked.connect(self._pick_clicked)
-        self.pick_tool.deactivated.connect(self._pick_done)
-        canvas.setMapTool(self.pick_tool)
-        self.hide()
-
-    def _pick_clicked(self, point, _button=None) -> None:
-        canvas = self.iface.mapCanvas()
-        tr = self._to_store(canvas.mapSettings().destinationCrs())
-        if tr is not None:
-            point = tr.transform(point)
-        self._picked.append(point)
-        a, b = (self.x1, self.y1) if len(self._picked) == 1 else (self.x2, self.y2)
-        a.setValue(point.x())
-        b.setValue(point.y())
-        if len(self._picked) >= 2:
-            self._finish_pick()
-
-    def _finish_pick(self) -> None:
-        canvas, tool = self.iface.mapCanvas(), self.pick_tool
-        if tool is not None and canvas.mapTool() is tool:
-            if self._prev_tool is not None:
-                canvas.setMapTool(self._prev_tool)
-            else:
-                canvas.unsetMapTool(tool)
-        self._pick_done()
-
-    def _pick_done(self) -> None:
-        """The pick tool finished or lost the canvas: bring the dialog back."""
-        if self.pick_tool is None:
-            return
-        tool, self.pick_tool = self.pick_tool, None
-        tool.deactivated.disconnect(self._pick_done)
-        tool.deleteLater()
-        self._prev_tool = None
-        if not self._closing:
-            self.tabs.setCurrentIndex(TAB_POINTS)
-            self.show()
-            self.raise_()
+    def _placement(self):
+        """The placement chosen, the line reversed when asked. ValueError when incomplete."""
+        placement = self.placement.placement()
+        if self.placement.source() in LINE_SOURCES and self.reverse_check.isChecked():
+            placement = replace(placement, line_xy=placement.line_xy[::-1].copy())
+        return placement
 
     # -- saving ------------------------------------------------------------------------------
-    @staticmethod
-    def _spacing(box: QDoubleSpinBox) -> float:
-        if box.value() <= 0:
-            raise ValueError("Station spacing must be greater than 0 m")
-        return box.value()
-
-    def build(self):
-        """(profile, station set) from the current tab. Raises ValueError."""
-        name = self.name_edit.text().strip()
-        if not name:
-            raise ValueError("Enter a name for the profile")
-        method = self.method_combo.currentData()
-        build = {TAB_FILE: self._from_file, TAB_LINE: self._from_line,
-                 TAB_POINTS: self._from_points}[self.tabs.currentIndex()]
-        return build(name, method)
-
     def accept(self) -> None:
         try:
-            profile, station_set = self.build()
-            twins = matching_profiles(self.store.profiles(), profile.xy, CURVE_TOLERANCE)
-            add_profile(self.store, profile, station_set, self.project, self.provider)
+            name = self.name_edit.text().strip()
+            if not name:
+                raise ValueError("Enter a name for the profile")
+            profile = create_profile(self.store, self._placement(), name,
+                                     self.method_combo.currentData(), self.project,
+                                     self.provider)
         except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
             self._error(str(exc))
             return
         self.profile = profile
         self.last_warning = None
+        twins = [p for _err, p, _rev in matching_profiles(self.store.profiles(), profile.xy,
+                                                          CURVE_TOLERANCE)
+                 if p.id != profile.id]
         if twins:
-            self._warn_duplicate(profile, [p for _err, p, _rev in twins])
+            self._warn_duplicate(profile, twins)
         super().accept()
 
     def _warn_duplicate(self, profile, twins) -> None:
@@ -319,15 +133,13 @@ class NewProfileDialog(QDialog):
                              "Profile list.")
         bar = self.iface.messageBar() if hasattr(self.iface, "messageBar") else None
         if bar is not None:
-            bar.pushMessage("New profile", self.last_warning, Qgis.MessageLevel.Warning, 15)
+            bar.pushMessage(self.windowTitle(), self.last_warning, Qgis.MessageLevel.Warning, 15)
 
     def _error(self, message: str) -> None:
         self.last_error = message
         QMessageBox.warning(self, self.windowTitle(), message)
 
     def done(self, result: int) -> None:
-        self._closing = True
-        if self.pick_tool is not None:
-            self._finish_pick()
+        self.placement.cancel_pick()
+        self.placement.clear_overlay()
         super().done(result)
-        self._closing = False

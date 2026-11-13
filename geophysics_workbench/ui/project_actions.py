@@ -313,6 +313,37 @@ def draft_profile(store: ProjectStore, placement: Placement, name: str, method: 
     return profile, [new_set] + sets, new_set
 
 
+def _state_spacing(profile: Profile, placement: Placement) -> None:
+    """A stated station spacing goes with the profile (a guessed one never reaches here)."""
+    if placement.spacing is not None:
+        profile.metadata["electrode_spacing"] = float(placement.spacing)
+
+
+def build_profile(store: ProjectStore, placement: Placement, name: str, method: str
+                  ) -> tuple[Profile, StationSet | None]:
+    """The new profile ``placement`` makes, nothing saved: (the profile, its station set or
+    None). A line or two points give a profile without stations; positions give one through
+    them with a station set. A stated spacing is kept in the profile's metadata."""
+    if placement.profile_id is not None:
+        raise ValueError("The placement chooses an existing profile; no profile is made")
+    profile, _sets, new_set = draft_profile(store, placement, name, method)
+    _state_spacing(profile, placement)
+    return profile, new_set
+
+
+def create_profile(store: ProjectStore, placement: Placement, name: str, method: str,
+                   project: QgsProject, provider=None) -> Profile:
+    """Make and save the profile ``placement`` says, with its station set when positions
+    give one, in one transaction (a failure saves nothing). The layers are refreshed and
+    ``provider`` is told only after the save."""
+    profile, new_set = build_profile(store, placement, name, method)
+    store.save_import(profile, new_set, None)
+    refresh_layers(store, project)
+    if provider is not None:
+        provider.notify_changed()
+    return profile
+
+
 def dataset_options(placement: Placement, profile: Profile, sets: list[StationSet],
                     options: dict, station_set_id: str | None = None) -> tuple[str, dict]:
     """(station set id, reader options) a dataset placed by ``placement`` is saved with: the
@@ -342,14 +373,17 @@ def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
     The whole file is read before anything is saved; the profile, station set and dataset
     are then saved in one transaction, so a failure saves nothing."""
     path = Path(path)
-    profile, sets, new_set = draft_profile(store, placement, name or path.stem, method)
+    created = placement.profile_id is None
+    if created:                             # made exactly as New Profile makes it
+        profile, new_set = build_profile(store, placement, name or path.stem, method)
+        sets = [new_set] if new_set is not None else []
+    else:
+        profile, sets, new_set = draft_profile(store, placement, name or path.stem, method)
+        _state_spacing(profile, placement)
     if new_set is not None:
         station_set_id = new_set.id
     station_set_id, opts = dataset_options(placement, profile, sets, options, station_set_id)
     result = read_for(store, profile, path, reader, opts)
-    created = placement.profile_id is None
-    if placement.spacing is not None:
-        profile.metadata["electrode_spacing"] = float(placement.spacing)
     changed = profile if created or placement.spacing is not None else None
     dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
                         provider=provider, result=result, profile=changed,

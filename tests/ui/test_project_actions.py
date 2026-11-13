@@ -123,6 +123,62 @@ def test_add_profile_saves_and_refreshes_layers(qgis_app, tmp_path):
     assert profiles.extent().xMaximum() == pytest.approx(100.0)
 
 
+class _Provider:
+    def __init__(self):
+        self.calls = 0
+
+    def notify_changed(self):
+        self.calls += 1
+
+
+def test_create_profile_from_a_line_has_no_stations(qgis_app, project_store):
+    from geophysics_workbench.core.placement import Placement
+    from geophysics_workbench.ui.project_actions import create_profile
+
+    st, prj = project_store
+    prov = _Provider()
+    p = create_profile(st, Placement(line_xy=np.array([[0.0, 0.0], [30.0, 40.0]])), "L1",
+                       "ert", prj, prov)
+    assert [q.id for q in st.profiles()] == [p.id] and st.profile(p.id).name == "L1"
+    assert st.station_sets(p.id) == [] and st.datasets(p.id) == []
+    assert "electrode_spacing" not in st.profile(p.id).metadata
+    assert prj.mapLayersByName("profiles")[0].featureCount() == 1
+    assert prov.calls == 1
+
+
+def test_create_profile_from_positions_keeps_them_and_the_spacing(qgis_app, project_store):
+    from geophysics_workbench.core.placement import Placement, Positions
+    from geophysics_workbench.ui.project_actions import create_profile
+
+    st, prj = project_store
+    xyz = np.array([[0.0, 0.0, 50.0], [50.0, 0.0, 51.0], [100.0, 0.0, 52.0]])
+    placement = Placement(positions=Positions(xyz, np.array([1, 11, 21])), spacing=5.0)
+    p = create_profile(st, placement, "P", "ert", prj)
+    [s] = st.station_sets(p.id)
+    assert s.numbers.tolist() == [1, 11, 21] and s.method == "ert"
+    assert st.profile(p.id).metadata["electrode_spacing"] == 5.0
+    assert prj.mapLayersByName("stations")[0].featureCount() == 3
+
+
+def test_create_profile_failure_saves_nothing_and_does_not_notify(qgis_app, project_store,
+                                                                  monkeypatch):
+    from geophysics_workbench.core.placement import Placement, Positions
+    from geophysics_workbench.ui.project_actions import create_profile
+
+    st, prj = project_store
+
+    def broken(*_a, **_k):
+        raise RuntimeError("attempt to write a readonly database")
+
+    monkeypatch.setattr(st, "_write_station_set", broken)
+    prov = _Provider()
+    xyz = np.array([[0.0, 0.0, 50.0], [10.0, 0.0, 51.0]])
+    with pytest.raises(RuntimeError):
+        create_profile(st, Placement(positions=Positions(xyz, np.array([1, 2]))), "P", "ert",
+                       prj, prov)
+    assert st.profiles() == [] and prov.calls == 0
+
+
 def test_add_model_fills_defaults_and_notifies(qgis_app, tmp_path, store_with_model):
     from geophysics_workbench.section.data import SectionDataProvider
     from geophysics_workbench.ui.project_actions import add_model

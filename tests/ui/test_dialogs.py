@@ -15,9 +15,9 @@ def _close(dialog, qgis_app):
 
 
 # -- NewProfileDialog ----------------------------------------------------------------------
-def test_new_profile_from_station_file(qgis_app, fake_iface, project_store, tmp_path,
-                                       warnings_shown):
-    from geophysics_workbench.ui.new_profile_dialog import TAB_FILE, NewProfileDialog
+def test_new_profile_from_positions_file(qgis_app, fake_iface, project_store, tmp_path,
+                                         warnings_shown):
+    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
 
     st, prj = project_store
     csv = tmp_path / "el.txt"
@@ -25,10 +25,10 @@ def test_new_profile_from_station_file(qgis_app, fake_iface, project_store, tmp_
                    encoding="utf-8")
     dlg = NewProfileDialog(fake_iface, st, project=prj)
     try:
-        dlg.tabs.setCurrentIndex(TAB_FILE)
-        dlg.set_station_file(csv)
-        assert dlg.col_number.currentData() == 0 and dlg.col_x.currentData() == 1
-        assert dlg.col_y.currentData() == 2 and dlg.col_z.currentData() == 3
+        dlg.placement.set_positions_file(csv)
+        roles = {r: c.currentData() for r, c in dlg.placement.role_combos.items()}
+        assert roles == {"number": 0, "easting": 1, "northing": 2, "elevation": 3,
+                         "inline": None}
         dlg.name_edit.setText("")
         dlg.accept()                                     # validation: name missing
         assert warnings_shown and "name" in warnings_shown[-1].lower()
@@ -43,94 +43,6 @@ def test_new_profile_from_station_file(qgis_app, fake_iface, project_store, tmp_
         assert s.xyz[:, 2].tolist() == [50.0, 50.5, 51.0]
         assert prj.mapLayersByName("profiles")[0].featureCount() == 1
     finally:
-        _close(dlg, qgis_app)
-
-
-def test_new_profile_from_points_validates_spacing(qgis_app, fake_iface, project_store,
-                                                   warnings_shown):
-    from geophysics_workbench.ui.new_profile_dialog import TAB_POINTS, NewProfileDialog
-
-    st, prj = project_store
-    dlg = NewProfileDialog(fake_iface, st, project=prj)
-    try:
-        dlg.tabs.setCurrentIndex(TAB_POINTS)
-        dlg.name_edit.setText("L2")
-        for w, v in ((dlg.x1, 1000.0), (dlg.y1, 2000.0), (dlg.x2, 1000.0), (dlg.y2, 2100.0)):
-            w.setValue(v)
-        dlg.points_spacing.setValue(0.0)
-        dlg.accept()
-        assert "spacing" in warnings_shown[-1].lower() and st.profiles() == []
-        dlg.points_spacing.setValue(5.0)
-        dlg.accept()
-        [p] = st.profiles()
-        assert np.allclose(p.xy, [[1000, 2000], [1000, 2100]])
-        assert len(st.station_sets(p.id)[0].numbers) == 21
-    finally:
-        _close(dlg, qgis_app)
-
-
-def test_new_profile_from_points_rejects_identical_points(qgis_app, fake_iface, project_store,
-                                                          warnings_shown):
-    from geophysics_workbench.ui.new_profile_dialog import TAB_POINTS, NewProfileDialog
-
-    st, prj = project_store
-    dlg = NewProfileDialog(fake_iface, st, project=prj)
-    try:
-        dlg.tabs.setCurrentIndex(TAB_POINTS)
-        dlg.name_edit.setText("L3")
-        dlg.accept()                                    # all coordinates 0: same point
-        assert "different" in warnings_shown[-1].lower() and st.profiles() == []
-    finally:
-        _close(dlg, qgis_app)
-
-
-def test_new_profile_from_points_pick_on_map(qgis_app, fake_iface, project_store):
-    from qgis.core import QgsCoordinateReferenceSystem, QgsPointXY
-    from qgis.PyQt.QtCore import Qt
-
-    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
-
-    st, prj = project_store
-    fake_iface.mapCanvas().setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:25832"))
-    dlg = NewProfileDialog(fake_iface, st, project=prj)
-    try:
-        dlg.start_pick()
-        tool = dlg.pick_tool
-        assert fake_iface.mapCanvas().mapTool() is tool and not dlg.isVisible()
-        dlg.pick_tool.canvasClicked.emit(QgsPointXY(10.0, 20.0), Qt.MouseButton.LeftButton)
-        dlg.pick_tool.canvasClicked.emit(QgsPointXY(30.0, 40.0), Qt.MouseButton.LeftButton)
-        assert (dlg.x1.value(), dlg.y1.value(), dlg.x2.value(), dlg.y2.value()) == (10, 20, 30, 40)
-        assert fake_iface.mapCanvas().mapTool() is not tool and dlg.pick_tool is None
-        assert dlg.isVisible()                          # back after the second click
-    finally:
-        _close(dlg, qgis_app)
-
-
-def test_new_profile_from_selected_line(qgis_app, fake_iface, project_store, warnings_shown):
-    from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer
-
-    from geophysics_workbench.ui.new_profile_dialog import TAB_LINE, NewProfileDialog
-
-    st, prj = project_store
-    layer = QgsVectorLayer("LineString?crs=EPSG:25832", "lines", "memory")
-    f = QgsFeature()
-    f.setGeometry(QgsGeometry.fromWkt("LineString (0 0, 30 40, 60 40)"))
-    layer.dataProvider().addFeatures([f])
-    fake_iface.setActiveLayer(layer)
-    dlg = NewProfileDialog(fake_iface, st, project=prj)
-    try:
-        dlg.tabs.setCurrentIndex(TAB_LINE)
-        dlg.name_edit.setText("Crooked")
-        dlg.accept()                                    # nothing selected yet
-        assert "select" in warnings_shown[-1].lower() and st.profiles() == []
-        layer.selectAll()
-        dlg.line_spacing.setValue(10.0)
-        dlg.accept()
-        [p] = st.profiles()
-        assert np.allclose(p.xy, [[0, 0], [30, 40], [60, 40]])
-        assert len(st.station_sets(p.id)[0].numbers) == 9            # 0..80 m every 10 m
-    finally:
-        fake_iface.setActiveLayer(None)
         _close(dlg, qgis_app)
 
 
@@ -228,9 +140,8 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path):
 
         plugin.new_profile_action.trigger()                    # non-modal dialog
         dlg = plugin._profile_dialog
-        dlg.tabs.setCurrentIndex(2)
         dlg.name_edit.setText("L2")
-        dlg.x2.setValue(30.0)
+        dlg.placement.set_points(0.0, 0.0, 30.0, 0.0)
         dlg.accept()
         new_id = dlg.profile.id
         assert plugin.dock.current_profile_id() == new_id
@@ -255,49 +166,32 @@ def _gdal_write_error(*_a, **_k):
 
 
 def test_guess_columns_never_reuses_a_header_column():
-    from geophysics_workbench.ui.new_profile_dialog import NONE, guess_columns
+    from geophysics_workbench.ui.station_columns import NONE, guess_columns
 
     assert guess_columns(["station", "x", "y"], 3) == {"number": 0, "x": 1, "y": 2, "z": NONE}
     assert guess_columns(["Nr", "X", "Y"], 3) == {"number": 0, "x": 1, "y": 2, "z": NONE}
     assert guess_columns(None, 3) == {"number": NONE, "x": 0, "y": 1, "z": 2}
 
 
-def test_new_profile_station_file_without_z_and_rejects_z_equal_y(
+def test_new_profile_positions_without_z_and_rejects_z_equal_y(
         qgis_app, fake_iface, project_store, tmp_path, warnings_shown):
-    from geophysics_workbench.ui.new_profile_dialog import NONE, TAB_FILE, NewProfileDialog
+    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
 
     st, prj = project_store
     csv = tmp_path / "st.csv"
     csv.write_text("station,x,y\n1,100.0,5800000.0\n2,105.0,5800000.0\n", encoding="utf-8")
     dlg = NewProfileDialog(fake_iface, st, project=prj)
     try:
-        dlg.tabs.setCurrentIndex(TAB_FILE)
-        dlg.set_station_file(csv)
-        assert dlg.col_z.currentData() == NONE
-        dlg.col_z.setCurrentIndex(dlg.col_z.findData(2))          # Z = the Y column
+        dlg.placement.set_positions_file(csv)
+        z = dlg.placement.role_combos["elevation"]
+        assert z.currentData() is None
+        z.setCurrentIndex(z.findData(2))                          # Z = the Y column
         dlg.accept()
-        assert "z column" in warnings_shown[-1].lower() and st.profiles() == []
-        dlg.col_z.setCurrentIndex(dlg.col_z.findData(NONE))
+        assert "elevation column" in warnings_shown[-1].lower() and st.profiles() == []
+        z.setCurrentIndex(z.findData(None))
         dlg.accept()
         [p] = st.profiles()
         assert np.isnan(st.station_sets(p.id)[0].xyz[:, 2]).all()
-    finally:
-        _close(dlg, qgis_app)
-
-
-def test_new_profile_store_write_error_is_shown(qgis_app, fake_iface, project_store,
-                                                warnings_shown, monkeypatch):
-    from geophysics_workbench.ui.new_profile_dialog import TAB_POINTS, NewProfileDialog
-
-    st, prj = project_store
-    monkeypatch.setattr(st, "save_profile", _gdal_write_error)
-    dlg = NewProfileDialog(fake_iface, st, project=prj)
-    try:
-        dlg.tabs.setCurrentIndex(TAB_POINTS)
-        dlg.name_edit.setText("L")
-        dlg.x2.setValue(20.0)
-        dlg.accept()
-        assert "readonly" in warnings_shown[-1] and dlg.result() == 0
     finally:
         _close(dlg, qgis_app)
 

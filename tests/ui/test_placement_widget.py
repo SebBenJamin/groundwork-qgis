@@ -63,6 +63,18 @@ def test_existing_profile_is_preselected_and_collapsed(qgis_app, fake_iface, pro
     assert _radio(w, "file") is None                      # the file's own coordinates: not allowed
 
 
+def test_existing_profile_source_without_profiles(qgis_app, fake_iface, project_store,
+                                                 make_widget):
+    """No profile yet: the source is offered but greyed out, saying why; a dialog that
+    makes profiles (allow_existing=False) does not offer it at all."""
+    w = make_widget()
+    radio = _radio(w, "existing")
+    assert radio is not None and not radio.isEnabled()
+    assert radio.toolTip() == "There is no profile yet"
+    assert w.source() == "line"
+    assert _radio(make_widget(allow_existing=False), "existing") is None
+
+
 def test_selected_line_feature_gives_the_line(qgis_app, fake_iface, project_store, make_widget):
     # a memory line layer in EPSG:4326 with one selected feature: placement().line_xy is in
     # the store CRS

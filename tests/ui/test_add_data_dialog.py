@@ -467,12 +467,16 @@ def test_station_set_can_be_chosen(qgis_app, make_dialog, store_with_model, warn
     assert st.datasets(p.id)[-1].station_set_id == second.id
 
 
-def test_one_station_set_is_used_without_asking(qgis_app, make_dialog, store_with_model):
+def test_one_station_set_is_used_without_asking(qgis_app, make_dialog, store_with_model,
+                                                warnings_shown):
     st, p, src = store_with_model
+    before = len(st.datasets(p.id))
     dlg = make_dialog(st, p.id)
     dlg.set_file(src)
     assert not dlg.station_set_combo.isVisible()
     dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    assert len(st.datasets(p.id)) == before + 1
     assert st.datasets(p.id)[-1].station_set_id == st.station_sets(p.id)[0].id
 
 

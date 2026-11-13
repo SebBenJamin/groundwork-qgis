@@ -114,8 +114,8 @@ class PlacementWidget(QGroupBox):
         self._grid.setColumnStretch(1, 1)
         if allow_existing:
             self.profile_combo = QComboBox()
-            self._fill_profiles()
             self._row("existing", self.profile_combo)
+            self._fill_profiles()           # after the radio: greyed out without profiles
         self.line_info = _label("")
         self._row("line", self.line_info)
         pick = QPushButton("Pick on Map")
