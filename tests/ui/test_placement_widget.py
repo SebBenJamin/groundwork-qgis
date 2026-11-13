@@ -1,4 +1,4 @@
-"""The placement widget ("Where the line runs"): six sources, the positions file's roles,
+"""The placement widget ("Where the Line Runs"): six sources, the positions file's roles,
 the guessed spacing and the map overlay. Driven programmatically (offscreen)."""
 from pathlib import Path
 
@@ -51,7 +51,7 @@ def test_existing_profile_is_preselected_and_collapsed(qgis_app, fake_iface, pro
     w = make_widget()
     w.set_current_profile(p.id)
     qgis_app.processEvents()
-    assert w.title() == "Where the line runs"
+    assert w.title() == "Where the Line Runs"
     assert _radio(w, "existing").isChecked()
     assert w.placement().profile_id == p.id
     assert not _radio(w, "line").isVisible()              # collapsed to one line
@@ -312,14 +312,14 @@ def test_rows_without_coordinates_are_skipped(qgis_app, fake_iface, project_stor
                                          "skipped")
 
 
-def test_hig_rules_inside_the_group(qgis_app, fake_iface, project_store, make_widget):
-    # the group's own title is the brief's "Where the line runs"; everything inside follows
-    # the HIG rules (sentence-case labels, title-case buttons, no colons, "…")
+def test_hig_rules_in_the_group(qgis_app, fake_iface, project_store, make_widget):
+    # the group and everything in it follow the HIG rules (title-case titles and buttons,
+    # sentence-case labels, no colons, "…")
     from tests.ui.test_hig_strings import collect, problems
 
     w = make_widget(allow_file_coordinates=True)
     w.set_positions_file(WILD / "positions_sparse.csv")
     w.set_needs_distance(True)
     # (tool buttons inside QGIS's own widgets — file, CRS, clear buttons — are QGIS's)
-    entries = [e for e in collect(w) if e[2] is not w and e[0] != "tool"]
+    entries = [e for e in collect(w) if e[0] != "tool"]
     assert not problems(entries, "Placement")

@@ -1,4 +1,4 @@
-"""'Where the line runs': the group the Add Data, New Profile and Profile Properties dialogs
+"""'Where the Line Runs': the group the Add Data, New Profile and Profile Properties dialogs
 share to say where a profile's line lies. Six sources, one radio row each: an existing
 profile, the selected line feature, start and end points (typed or picked on the map), a
 positions file, a point layer and, when allowed, the file's own map coordinates.
@@ -74,7 +74,7 @@ class PlacementWidget(QGroupBox):
 
     def __init__(self, iface, store, project, allow_existing: bool = True,
                  allow_file_coordinates: bool = False, parent=None):
-        super().__init__("Where the line runs", parent)
+        super().__init__("Where the Line Runs", parent)
         self.iface, self.store, self.project = iface, store, project
         self._table = None                  # the positions file as read
         self._table_error = ""

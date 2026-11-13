@@ -17,7 +17,7 @@ from geophysics_workbench.store.gpkg_store import ProjectStore
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 CRS = "EPSG:25832"
-GUESS_NOTE = "Known points not used: type the electrode spacing in Profile Properties"
+GUESS_NOTE = "Known points not used: type the station spacing in Profile Properties"
 NO_ELECTRODES = "No electrode positions: import them or type the spacing"
 
 
