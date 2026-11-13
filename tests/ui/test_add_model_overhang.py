@@ -90,12 +90,14 @@ def test_overhang_at_the_start_names_the_first_station(qgis_app, fake_iface, p4,
         _close(dlg, qgis_app)
 
 
-def test_overhang_within_the_limit_stays_silent(qgis_app, fake_iface, p4, questions):
+def test_overhang_within_the_limit_stays_silent(qgis_app, fake_iface, p4, questions,
+                                                 warnings_shown):
     st, p, src = p4
     dlg = _dialog(fake_iface, st, p, src, 50.0)        # model 50 .. 60: 10 m = the limit
     try:
         assert not dlg.warning_label.isVisibleTo(dlg) and dlg.warning_label.text() == ""
         dlg.accept()
-        assert questions == [] and dlg.result() == 1 and len(st.datasets(p.id)) == 1
+        assert questions == [] and dlg.result() == 1, warnings_shown
+        assert len(st.datasets(p.id)) == 1
     finally:
         _close(dlg, qgis_app)

@@ -102,12 +102,13 @@ def test_distance_file_on_a_selected_line_creates_profile_and_dataset(
 
 
 def test_end_of_the_line_is_stored_with_the_length(qgis_app, make_dialog, project_store,
-                                                   selected_line):
+                                                   selected_line, warnings_shown):
     st, prj = project_store
     dlg = make_dialog(st, project=prj)
     dlg.set_file(WILD / "dist_y_rho_junk.txt")
     _index(dlg.placement.zero_combo, "end")
     dlg.accept()
+    assert dlg.result() == 1, warnings_shown
     [p] = st.profiles()
     [d] = st.datasets(p.id)
     assert d.reader_options["placement"] == {"zero": pytest.approx(100.0), "direction": -1}
@@ -118,16 +119,19 @@ def test_map_file_creates_its_own_profile(qgis_app, make_dialog, project_store,
     st, prj = project_store
     dlg = make_dialog(st, project=prj)
     dlg.set_file(WILD / "east_north_depth_rho.csv")
+    from geophysics_workbench.core.numbers import fmt
+
     cols = dlg.columns_group.columns()
     assert cols.position == "map"
     assert dlg.placement.source() == "file"
-    assert "bend" in dlg.placement.file_info.text() or " m" in dlg.placement.file_info.text()
+    rows = np.loadtxt(WILD / "east_north_depth_rho.csv", delimiter=",", skiprows=1)
+    file_length = float(np.hypot(*(rows[-1, :2] - rows[0, :2])))          # 95.0 m
+    assert dlg.placement.file_info.text() == (
+        f"Line through the file's coordinates, {fmt(file_length, 1)} m")
     assert "No electrode positions" in dlg.electrode_label.text()
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
     [p] = st.profiles()
-    rows = np.loadtxt(WILD / "east_north_depth_rho.csv", delimiter=",", skiprows=1)
-    file_length = float(np.hypot(*(rows[-1, :2] - rows[0, :2])))
     assert abs(p.chainage.length - file_length) < 2.0
     [d] = st.datasets(p.id)
     assert "placement" not in d.reader_options and d.station_set_id == ""
@@ -383,7 +387,8 @@ def test_hig_rules_with_a_text_table(qgis_app, make_dialog, project_store):
     assert not bad, "\n".join(bad)
 
 
-def test_menu_entry_is_add_data_and_needs_only_a_project(qgis_app, fake_iface, tmp_path):
+def test_menu_entry_is_add_data_and_needs_only_a_project(qgis_app, fake_iface, tmp_path,
+                                                         warnings_shown):
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
@@ -411,6 +416,7 @@ def test_menu_entry_is_add_data_and_needs_only_a_project(qgis_app, fake_iface, t
         dlg.set_file(WILD / "dist_y_rho_junk.txt")
         dlg.placement.set_points(0.0, 0.0, 100.0, 0.0)
         dlg.accept()
+        assert dlg.result() == 1, warnings_shown
         [p] = st.profiles()
         assert plugin.dock.current_profile_id() == p.id      # the new profile is opened
     finally:

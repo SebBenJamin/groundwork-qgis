@@ -17,7 +17,8 @@ def _files(tmp_path, response=True):
 
 
 def test_dialog_pairs_the_response_and_saves_a_misfit_dataset(qgis_app, fake_iface,
-                                                               store_with_model, tmp_path):
+                                                               store_with_model, tmp_path,
+                                                               warnings_shown):
     from geophysics_workbench.ui.add_data_dialog import AddDataDialog
     st, p, _ = store_with_model
     data = _files(tmp_path)
@@ -29,12 +30,14 @@ def test_dialog_pairs_the_response_and_saves_a_misfit_dataset(qgis_app, fake_ifa
     text = dlg.summary_label.text()
     assert "5 readings" in text and "RMS" in text
     dlg.accept()
+    assert dlg.result() == 1, warnings_shown
     ds = dlg.dataset
     assert ds is not None and ds.kind == "ert_misfit" and ds.quantity == "misfit"
     assert ds.reader_options["response"] == "response.vector"      # next to the data file
 
 
-def test_measured_only_dataset(qgis_app, fake_iface, store_with_model, tmp_path):
+def test_measured_only_dataset(qgis_app, fake_iface, store_with_model, tmp_path,
+                               warnings_shown):
     from geophysics_workbench.ui.add_data_dialog import AddDataDialog
     st, p, _ = store_with_model
     dlg = AddDataDialog(fake_iface, st, p.id)
@@ -42,6 +45,7 @@ def test_measured_only_dataset(qgis_app, fake_iface, store_with_model, tmp_path)
     assert dlg.response_edit.text() == ""
     assert "measured" in dlg.summary_label.text()
     dlg.accept()
+    assert dlg.result() == 1, warnings_shown
     assert dlg.dataset.kind == "ert_measured" and dlg.dataset.quantity == "resistivity"
 
 

@@ -43,7 +43,8 @@ def test_context_menu_on_profile_combo(plugin):
     assert RENAME_TEXT == "Profile Properties…" and DELETE_TEXT == "Delete Profile…"
 
 
-def test_profile_properties_open_from_the_plugin(plugin, fake_iface, monkeypatch):
+def test_profile_properties_open_from_the_plugin(plugin, fake_iface, monkeypatch,
+                                                 warnings_shown):
     """The menu entry and the panel's right-click entry open the dialog; OK renames."""
     from geophysics_workbench.ui.profile_properties_dialog import ProfilePropertiesDialog
     plug, st, p = plugin
@@ -52,6 +53,7 @@ def test_profile_properties_open_from_the_plugin(plugin, fake_iface, monkeypatch
         assert dialog.profile_id == p.id and dialog.dock is plug.dock
         dialog.name_edit.setText("Line A")
         dialog.accept()
+        assert dialog.result() == 1, warnings_shown
         return 1
 
     monkeypatch.setattr(ProfilePropertiesDialog, "exec", fake_exec)

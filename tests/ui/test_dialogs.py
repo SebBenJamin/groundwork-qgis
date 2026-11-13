@@ -100,7 +100,8 @@ def test_add_model_dialog_reports_unreadable_file(qgis_app, fake_iface, store_wi
 
 
 # -- plugin wiring -------------------------------------------------------------------------
-def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path):
+def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path,
+                                                warnings_shown):
     from qgis.core import QgsProject
 
     from geophysics_workbench.core.model import profile_from_line
@@ -143,6 +144,7 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path):
         dlg.name_edit.setText("L2")
         dlg.placement.set_points(0.0, 0.0, 30.0, 0.0)
         dlg.accept()
+        assert dlg.result() == 1, warnings_shown
         new_id = dlg.profile.id
         assert plugin.dock.current_profile_id() == new_id
         assert sorted(pp.name for pp in st.profiles()) == ["L1", "L2"]

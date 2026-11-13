@@ -34,6 +34,37 @@ def store_with_model(tmp_path):
     return st, p, src
 
 
+_BOXES = ("warning", "question", "information", "critical")
+
+
+@pytest.fixture(autouse=True)
+def no_modal_boxes(monkeypatch):
+    """Fail the test at once when it would open a real modal box (a static
+    QMessageBox.warning/question/information/critical, QMessageBox.exec or QDialog.exec)
+    that the test did not stub: offscreen, such a box blocks the whole suite. Autouse
+    fixtures run first, so a test's own stubs (``warnings_shown``, monkeypatches of a
+    dialog's ``exec``) replace these. Unstubbed calls are also failed at teardown, in case
+    a slot swallowed the first failure."""
+    from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+
+    opened = []
+
+    def refuse(what):
+        def call(*args, **kwargs):
+            opened.append(what)
+            pytest.fail(f"a real modal {what} would open: stub it in the test "
+                        f"(warnings_shown, or monkeypatch)", pytrace=False)
+        return call
+
+    for name in _BOXES:
+        monkeypatch.setattr(QMessageBox, name, staticmethod(refuse(f"QMessageBox.{name}")))
+    monkeypatch.setattr(QMessageBox, "exec", refuse("QMessageBox.exec"))
+    monkeypatch.setattr(QDialog, "exec", refuse("QDialog.exec"))
+    yield opened
+    if opened:
+        pytest.fail(f"real modal boxes were opened: {opened}", pytrace=False)
+
+
 @pytest.fixture(scope="session")
 def qgis_app():
     from qgis.core import QgsApplication
