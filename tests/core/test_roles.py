@@ -90,3 +90,22 @@ def test_columns_round_trip_through_a_dict():
 def test_role_lists():
     assert [v for _, v in VERTICAL_KINDS] == ["elevation", "depth", "local"]
     assert QUANTITIES[0] == ("Resistivity (ohm.m)", "resistivity", "ohm.m")
+
+
+def test_unit_suffix_is_ignored_in_names():
+    # by position alone the first column would be the distance and the last the value
+    rows = [[12.0, 0.0, 0.5], [55.0, 2.5, 1.5], [130.0, 5.0, 3.0], [410.0, 7.5, 0.5]]
+    c = guess_model_columns(_table(["Rho [ohm.m]", "Distance [m]", "Depth (m)"], rows))
+    assert (c.position, c.distance, c.vertical, c.vertical_kind, c.value) == (
+        "distance", 1, 2, "depth", 0)
+
+
+def test_positions_with_units_keep_elevation():
+    rows = [[1, 437700.0, 5850700.0, 57.2], [2, 437717.3, 5850710.0, 57.8],
+            [3, 437739.0, 5850722.5, 58.3]]
+    p = guess_position_columns(_table(["Nr", "Easting [m]", "Northing [m]", "Elevation [m]"],
+                                      rows))
+    assert (p.number, p.easting, p.northing, p.elevation) == (0, 1, 2, 3)
+    q = guess_position_columns(_table(["Nr", "Easting [m]", "Northing (m)", "Elevation [m NN]"],
+                                      rows))
+    assert (q.number, q.easting, q.northing, q.elevation) == (0, 1, 2, 3)

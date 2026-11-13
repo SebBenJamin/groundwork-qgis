@@ -1,0 +1,142 @@
+"""Station positions for the placement widget, read from a text table or a point layer and
+reprojected into the workbench store's CRS. Nothing is written into the user's files or
+layers. Raises ValueError with a message for the user."""
+from __future__ import annotations
+
+import numpy as np
+from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry,
+                       QgsPointXY, QgsWkbTypes)
+
+from ..core.placement import Positions
+from ..core.roles import PositionColumns, looks_like_degrees
+from ..readers.texttable import TextTable, select_rows
+
+
+def to_store(crs: QgsCoordinateReferenceSystem, store_crs: str, project):
+    """The transform from ``crs`` into the store's CRS, or None when none is needed."""
+    dst = QgsCoordinateReferenceSystem(store_crs)
+    if not crs.isValid() or crs == dst:
+        return None
+    return QgsCoordinateTransform(crs, dst, project)
+
+
+def _transform_xy(xy: np.ndarray, crs: QgsCoordinateReferenceSystem, store_crs: str,
+                  project) -> np.ndarray:
+    tr = to_store(crs, store_crs, project)
+    if tr is None:
+        return xy
+    out = [tr.transform(QgsPointXY(float(x), float(y))) for x, y in xy]
+    return np.array([(p.x(), p.y()) for p in out], dtype=float).reshape(-1, 2)
+
+
+def _check_degrees(xy: np.ndarray, crs: QgsCoordinateReferenceSystem) -> None:
+    if not crs.isGeographic() and looks_like_degrees(xy):
+        raise ValueError("The coordinates look like longitude/latitude in degrees: choose "
+                         "their CRS (for example EPSG:4326).")
+
+
+def _whole(values: np.ndarray) -> np.ndarray:
+    if not np.all(np.isfinite(values)) or np.any(values != np.round(values)):
+        raise ValueError("Station numbers must be whole numbers.")
+    return values.astype(int)
+
+
+def crs_of(text: str, store_crs: str) -> QgsCoordinateReferenceSystem:
+    """The CRS a ``PositionColumns.crs`` names; "" is the store's CRS."""
+    return QgsCoordinateReferenceSystem(text or store_crs)
+
+
+def positions_from_table(table: TextTable, cols: PositionColumns, store_crs: str,
+                         project) -> tuple[Positions, int]:
+    """(positions in the store CRS, rows skipped). A row is skipped when it has no number in
+    the easting, northing or (when chosen) number column; a missing elevation or in-line
+    distance is NaN."""
+    problems = cols.problems(table)
+    if problems:
+        raise ValueError("; ".join(problems))
+    required = [cols.easting, cols.northing] + ([cols.number] if cols.number is not None else [])
+    _, skipped, _ = select_rows(table, required)
+    ok = np.isfinite(np.column_stack([table.numeric(c) for c in required])).all(axis=1)
+
+    def column(c):
+        return table.numeric(c)[ok] if c is not None else np.full(int(ok.sum()), np.nan)
+
+    xy = np.column_stack([column(cols.easting), column(cols.northing)])
+    crs = crs_of(cols.crs, store_crs)
+    if not crs.isValid():
+        raise ValueError("Choose the CRS of the coordinates.")
+    _check_degrees(xy, crs)
+    xy = _transform_xy(xy, crs, store_crs, project)
+    numbers = _whole(column(cols.number)) if cols.number is not None else None
+    inline = column(cols.inline) if cols.inline is not None else None
+    return Positions(np.column_stack([xy, column(cols.elevation)]), numbers, inline), skipped
+
+
+def _value(feature, field: str | None) -> float:
+    if not field:
+        return float("nan")
+    v = feature[field]
+    try:
+        return float(v)
+    except (TypeError, ValueError):     # NULL or text
+        return float("nan")
+
+
+def positions_from_layer(layer, number_field: str | None, inline_field: str | None,
+                         elevation_field: str | None, selected_only: bool, store_crs: str,
+                         project) -> Positions:
+    """Positions from a point layer's (selected) features, in the store CRS. Without an
+    elevation field the points' own Z is used when they have one."""
+    if layer is None:
+        raise ValueError("Choose a point layer.")
+    feats = list(layer.selectedFeatures() if selected_only else layer.getFeatures())
+    if selected_only and not feats:
+        raise ValueError(f"Select the points in layer “{layer.name()}”, or use all of its "
+                         "features.")
+    xy, z, numbers, inline = [], [], [], []
+    for f in feats:
+        geom = QgsGeometry(f.geometry())
+        if geom.isNull() or geom.type() != QgsWkbTypes.GeometryType.PointGeometry:
+            continue
+        point = geom.constGet()
+        if geom.isMultipart():
+            if geom.constGet().numGeometries() != 1:
+                raise ValueError(f"Feature {f.id()} of layer “{layer.name()}” has several "
+                                 "points; use single points.")
+            point = point.geometryN(0)
+        xy.append((point.x(), point.y()))
+        height = _value(f, elevation_field)
+        if not elevation_field and point.is3D():
+            height = point.z()
+        z.append(height)
+        numbers.append(_value(f, number_field))
+        inline.append(_value(f, inline_field))
+    if len(xy) < 2:
+        raise ValueError(f"Layer “{layer.name()}” needs at least two points.")
+    xy = np.array(xy, dtype=float)
+    _check_degrees(xy, layer.crs())
+    xy = _transform_xy(xy, layer.crs(), store_crs, project)
+    return Positions(np.column_stack([xy, np.array(z, dtype=float)]),
+                     _whole(np.array(numbers)) if number_field else None,
+                     np.array(inline, dtype=float) if inline_field else None)
+
+
+def selected_line(layer, store_crs: str, project) -> np.ndarray:
+    """The vertices of the one selected feature of a line layer, in the store CRS."""
+    if layer is None or layer.selectedFeatureCount() != 1:
+        raise ValueError("Select exactly one line feature in the active line layer")
+    geom = QgsGeometry(layer.selectedFeatures()[0].geometry())
+    tr = to_store(layer.crs(), store_crs, project)
+    if tr is not None:
+        geom.transform(tr)
+    if geom.isMultipart():
+        parts = geom.asMultiPolyline()
+        if len(parts) != 1:
+            raise ValueError("The selected feature has several parts; select a single line")
+        line = parts[0]
+    else:
+        line = geom.asPolyline()
+    xy = np.array([(p.x(), p.y()) for p in line], dtype=float)
+    if len(xy) < 2:
+        raise ValueError("The selected line needs at least 2 vertices")
+    return xy

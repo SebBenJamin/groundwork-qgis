@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass
+@dataclass(eq=False)
 class Positions:
     """Station positions read with a dataset: map coordinates and height, and optionally the
     station numbers and each station's distance in the file's in-line metres."""
@@ -21,7 +21,7 @@ class Positions:
     inline: np.ndarray | None = None
 
 
-@dataclass
+@dataclass(eq=False)
 class Placement:
     """How a dataset is put on a profile: an existing profile, a new line, or positions read
     with it; where the file's zero lies (``zero`` is "start", "end" or "station1") with an

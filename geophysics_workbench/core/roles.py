@@ -7,7 +7,8 @@ guess a dialog shows; ``problems`` says what the user still has to choose.
 
 A table is anything with ``names``, ``n_columns``, ``numeric(col)`` and ``is_numeric(col)``,
 as ``readers.texttable.TextTable`` has. Header names are matched case-insensitively on the
-whole word after removing everything but letters, digits and ``_``.
+whole word after removing a trailing unit in brackets ("Easting [m]", "Northing (m)") and
+everything but letters, digits and ``_``.
 """
 from __future__ import annotations
 
@@ -43,8 +44,13 @@ _COORDINATE = 10_000.0                      # above this, a pair of columns look
 _LOG_TOL = 0.02                             # as readers.base.is_log10_pair
 
 
+_UNIT = re.compile(r"\s*(\[[^\]]*\]|\([^)]*\))\s*$")     # "Easting [m]", "Northing (m)"
+
+
 def _word(token: str) -> str:
-    return re.sub(r"[^\wäöüß]", "", token.lower())
+    """The header name as matched: a trailing bracketed unit removed, lower case, letters,
+    digits and ``_`` only."""
+    return re.sub(r"[^\wäöüß]", "", _UNIT.sub("", token).lower())
 
 
 def _is_depth_name(word: str) -> bool:

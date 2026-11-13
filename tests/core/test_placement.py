@@ -75,3 +75,11 @@ def test_placement_defaults():
 def test_fit_report_with_fewer_than_two_pins():
     r = fit_report([10.0], [12.0], ["1"])
     assert (r.n, r.max_shift, r.at, r.warn) == (1, 0.0, "", False)
+
+
+def test_positions_and_placement_compare_by_identity():
+    a = Positions(np.zeros((3, 3)), numbers=np.arange(3))
+    b = Positions(np.zeros((3, 3)), numbers=np.arange(3))
+    assert a == a and a != b                      # no "truth value of an array" error
+    p = Placement(line_xy=np.zeros((2, 2)), positions=a)
+    assert p == p and p != Placement(line_xy=np.zeros((2, 2)), positions=a)
