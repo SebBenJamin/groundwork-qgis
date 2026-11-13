@@ -3,9 +3,9 @@ context items and profile ties.
 
 QGIS-free except for the coordinate transform of map-coordinate files (imported when one is
 read). ``SectionDataProvider`` reads the project store and model files on the main thread
-and places each dataset on its profile every time a section is built
-(``placement_resolve``); ``SectionSnapshot`` is the plain-data copy handed to
-profile-generator threads.
+and places each dataset on its profile (``placement_resolve``) once, until the profile's
+line, station sets, datasets, files or metadata change; ``SectionSnapshot`` is the
+plain-data copy handed to profile-generator threads.
 """
 from __future__ import annotations
 
@@ -347,6 +347,24 @@ class _Failed:
 
 
 @dataclass
+class _Built:
+    """A profile's placement and surface, kept while ``key`` (``_inputs_key``) still
+    matches the store; each is worked out when first needed. ``profile``, ``sets`` and
+    ``datasets`` are the copies last read from the store (same content as ``key``)."""
+    key: tuple
+    profile: Profile | None = None
+    sets: list = field(default_factory=list)
+    datasets: list = field(default_factory=list)
+    placed: dict | None = None
+    surface: Surface | None = None
+    has_surface: bool = False
+
+
+def _array_key(a) -> bytes | None:
+    return None if a is None else np.ascontiguousarray(a).tobytes()
+
+
+@dataclass
 class _LayoutSources:
     """A profile's layout and the datasets it came from: the readings dataset that gave
     ``readings_x`` and the model that gave the guess, with that model's upper file x."""
@@ -426,6 +444,7 @@ class SectionDataProvider:
         self._guesses: dict[str, tuple] = {}   # dataset -> (read result, z_kind, guess)
         self._gathered = GatheredContext()
         self._ties: dict[str, tuple[float, list[Tie]]] = {}     # id -> (near_miss, ties)
+        self._builds: dict[str, _Built] = {}    # profile id -> its placement and surface
         #: without a true crossing, profiles closer than this (metres) still tie
         self.near_miss: float = 10.0
         #: profile id -> last ``context_source`` error ("Type: message"); cleared on success
@@ -455,12 +474,15 @@ class SectionDataProvider:
         self._gathered.clear()
         self._gathered.errors.clear()
         self._ties.clear()
+        self._builds.clear()                    # a surface may come from the DEM
 
     def notify_changed(self) -> None:
-        """Store, styles or context layers changed: drop the cached context and ties (they
-        depend on all three, and on the topography choice), then tell the listeners."""
+        """Store, styles or context layers changed: drop the cached context, ties, placements
+        and surfaces (they depend on all three, and on the topography choice), then tell
+        the listeners."""
         self._gathered.clear()
         self._ties.clear()
+        self._builds.clear()
         for callback in list(self.on_change):
             callback()
 
@@ -531,17 +553,18 @@ class SectionDataProvider:
         return stations, False
 
     def _surface(self, profile: Profile | None, sets: list[StationSet],
-                 datasets: list[Dataset], placed: dict) -> Surface | None:
-        """The profile's one surface, from the datasets already placed in chainage
-        (``_placed``): station elevations or the DEM as chosen; else the top edge of the
-        first elevation model; else that of the first local-height model, its highest point
-        at 0; else a flat line at 0 over the profile. A dataset that could not be read is
-        skipped. None for an unknown profile."""
+                 datasets: list[Dataset], place: Callable[[], dict]) -> Surface | None:
+        """The profile's one surface: station elevations or the DEM as chosen; else, from
+        the datasets placed in chainage (``place()`` gives ``_placed``'s result, asked for
+        only here), the top edge of the first elevation model; else that of the first
+        local-height model, its highest point at 0; else a flat line at 0 over the profile.
+        A dataset that could not be read is skipped. None for an unknown profile."""
         if profile is None:
             return None
         line, is_dem = self._chosen_topography(profile, sets)
         if line is not None:
             return Surface(line, "dem" if is_dem else "stations")
+        placed = place()
         top = _first_top(datasets, placed, "elevation")
         if top is not None:
             return Surface(top, "model")
@@ -559,13 +582,60 @@ class SectionDataProvider:
             return local_surface((s, z - z.max()), "local_model", profile.metadata)
         return local_surface(flat_line(profile.chainage.length), "flat", profile.metadata)
 
-    def surface(self, profile_id: str) -> Surface | None:
-        """The surface the profile's depth and local-height models hang from (see
-        ``_surface``); None only for an unknown profile."""
+    # -- the placement and surface of a profile, worked out once ------------------------------
+    def _file_times(self, d: Dataset) -> tuple:
+        path = self.source_path(d)
+        try:
+            return os.stat(path).st_mtime, _companion_mtime(path, d.reader_options)
+        except OSError:
+            return None, None
+
+    def _inputs_key(self, profile: Profile | None, sets: list[StationSet],
+                    datasets: list[Dataset]) -> tuple:
+        """What a profile's placement and surface depend on in the store and on disk: its
+        line and metadata, its station sets, its datasets with their files' times and the
+        value a readings layer shows. (The DEM is the gathered context's: dropped with it.)"""
+        if profile is None:
+            return (None,)
+        return (_array_key(np.asarray(profile.xy, float)),
+                json.dumps(profile.metadata, sort_keys=True, default=str),
+                tuple((s.id, _array_key(s.numbers), _array_key(s.xyz), _array_key(s.chainage),
+                       _array_key(s.offset), _array_key(s.inline)) for s in sets),
+                tuple((d.id, d.station_set_id, d.kind, d.source_path, d.reader,
+                       json.dumps(d.reader_options, sort_keys=True, default=str),
+                       self._file_times(d), getattr(self._styles.get(d.id), "shown", None))
+                      for d in datasets))
+
+    def _build(self, profile_id: str) -> _Built:
+        """The profile's ``_Built``, its inputs read from the store; the placement and
+        surface worked out before are kept only while those inputs are unchanged."""
         profile = self._profile(profile_id)
         sets = self.store.station_sets(profile_id)
         datasets = self.store.datasets(profile_id)
-        return self._surface(profile, sets, datasets, self._placed(profile, sets, datasets))
+        key = self._inputs_key(profile, sets, datasets)
+        built = self._builds.get(profile_id)
+        if built is None or built.key != key:
+            built = self._builds[profile_id] = _Built(key)
+        built.profile, built.sets, built.datasets = profile, sets, datasets
+        return built
+
+    def _placed_of(self, built: _Built) -> dict:
+        if built.placed is None:
+            built.placed = self._placed(built.profile, built.sets, built.datasets)
+        return built.placed
+
+    def _surface_of(self, built: _Built) -> Surface | None:
+        if not built.has_surface:
+            built.surface = self._surface(built.profile, built.sets, built.datasets,
+                                          lambda: self._placed_of(built))
+            built.has_surface = True
+        return built.surface
+
+    def surface(self, profile_id: str) -> Surface | None:
+        """The surface the profile's depth and local-height models hang from (see
+        ``_surface``); None only for an unknown profile. Worked out once while the
+        profile's line, station sets, datasets and metadata stay as they are."""
+        return self._surface_of(self._build(profile_id))
 
     def is_local(self, profile_id: str) -> bool:
         """True when the profile has no real heights: its section is drawn in depth."""
@@ -599,16 +669,17 @@ class SectionDataProvider:
         ``None``, clear it; the current version's pieces on the profile move by the change
         of the surface's shift (stored as elevations, they stay where they were drawn
         relative to the surface). Returns that change; 0 when nothing moved."""
-        profile = self.store.profile(profile_id)
-        sets = self.store.station_sets(profile_id)
-        datasets = self.store.datasets(profile_id)
-        placed = self._placed(profile, sets, datasets)
-        old = self._surface(profile, sets, datasets, placed)
+        built = self._build(profile_id)
+        profile = built.profile
+        if profile is None:
+            raise KeyError(profile_id)
+        old = self._surface_of(built)
         if s is None or z is None:
             profile.metadata.pop("reference_height", None)
         else:
             profile.metadata["reference_height"] = {"s": float(s), "z": float(z)}
-        new = self._surface(profile, sets, datasets, placed)
+        new = self._surface(profile, built.sets, built.datasets,
+                            lambda: self._placed_of(built))
         dz = float(new.shift - old.shift)
         version = self._current_version()
         if dz != 0.0 and version is not None and self.store.pieces(version, profile_id):
@@ -627,16 +698,14 @@ class SectionDataProvider:
         are re-hung once, keeping their depth, from the local surface the profile would have
         without real heights (with its reference shift) onto the real one, now that it has
         station, DEM or model heights. Clears the key; True when it settled. Not undoable."""
-        profile = self._profile(profile_id)
+        built = self._build(profile_id)
+        profile = built.profile
         if profile is None or not profile.metadata.get("local_pieces"):
             return False
-        sets = self.store.station_sets(profile_id)
-        datasets = self.store.datasets(profile_id)
-        placed = self._placed(profile, sets, datasets)
-        real = self._surface(profile, sets, datasets, placed)
+        real = self._surface_of(built)
         if real.kind not in ("stations", "dem", "model"):
             return False
-        old = self._local_kind_surface(profile, datasets, placed)
+        old = self._local_kind_surface(profile, built.datasets, self._placed_of(built))
         del profile.metadata["local_pieces"]
         version = self._current_version()
         if version is None:
@@ -901,14 +970,13 @@ class SectionDataProvider:
 
     def _assemble(self, profile_id: str):
         """(layers, station sets, surface): every dataset placed in chainage first, then the
-        surface worked out from the placed meshes, then depth and local models hung from it."""
-        profile = self._profile(profile_id)
-        sets = self.store.station_sets(profile_id)
-        datasets = self.store.datasets(profile_id)
-        placed = self._placed(profile, sets, datasets)
-        surface = self._surface(profile, sets, datasets, placed)
-        layers = [self._layer(d, placed[d.id], surface) for d in datasets]
-        return layers, sets, surface
+        surface worked out from the placed meshes, then depth and local models hung from it.
+        The placement and the surface are the profile's cached ones (``_build``)."""
+        built = self._build(profile_id)
+        placed = self._placed_of(built)
+        surface = self._surface_of(built)
+        layers = [self._layer(d, placed[d.id], surface) for d in built.datasets]
+        return layers, built.sets, surface
 
     def layers(self, profile_id: str) -> list[SectionLayer]:
         return self._assemble(profile_id)[0]
@@ -958,6 +1026,16 @@ class SectionDataProvider:
         if hidden:
             items = replace(items, points=[p for p in items.points
                                            if borehole_key(p) not in hidden])
+        return items
+
+    def drawn_context(self, profile_id: str, include_hidden: bool = False
+                      ) -> ContextItems | None:
+        """``context`` as the section draws it: a local section (``is_local``) leaves out
+        the DEM line and the boreholes (``without_heights``); otherwise unchanged. Used
+        wherever the context is hovered, snapped to, picked or listed."""
+        items = self.context(profile_id, include_hidden)
+        if items is not None and self.is_local(profile_id):
+            items = without_heights(items)[0]
         return items
 
     def hidden_keys(self, profile_id: str) -> set[tuple[str, str]]:

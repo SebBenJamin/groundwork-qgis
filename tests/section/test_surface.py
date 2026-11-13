@@ -2,6 +2,7 @@
 else the top of a local-height model, else a flat line at 0. Without heights the section is
 "local": drawn in depth, without what needs real elevations."""
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -196,3 +197,66 @@ def test_add_model_accepts_depth_without_elevations(qgis_app, tmp_path):
     assert local.reader_options["z_kind"] == "local"
     layers = SectionDataProvider(st).layers(p.id)
     assert [la.error for la in layers] == [None, None]
+
+
+def _count_placements(provider, monkeypatch) -> list:
+    """Calls of the provider's placement step (``_placed``), one entry per pass."""
+    calls = []
+    real = provider._placed
+
+    def counting(*args):
+        calls.append(1)
+        return real(*args)
+    monkeypatch.setattr(provider, "_placed", counting)
+    return calls
+
+
+def test_surface_is_computed_once_per_build(tmp_path, monkeypatch):
+    st, p = _drawn(tmp_path)
+    _depth_model(st, p, tmp_path)
+    provider, pid = SectionDataProvider(st), p.id
+    calls = _count_placements(provider, monkeypatch)
+    provider.layers(pid)
+    provider.topography(pid)
+    provider.is_local(pid)
+    snap = provider.snapshot(pid)
+    assert len(calls) == 1
+    assert snap.local and snap.surface_kind == "flat"
+
+
+def test_surface_cache_follows_changes(store_with_model, tmp_path):
+    st, p, _ = store_with_model
+    [stations] = st.station_sets(p.id)
+    [d] = st.datasets(p.id)
+    st.save_station_set(replace(stations, xyz=np.column_stack(
+        [stations.xyz[:, :2], np.full(len(stations.xyz), np.nan)])))
+    st.save_dataset(replace(d, reader_options={"z_kind": "local"}))
+    provider, pid = SectionDataProvider(st), p.id
+    assert provider.surface(pid).kind == "local_model" and provider.is_local(pid)
+    provider.set_reference_height(pid, 10.0, 50.0)          # a reference height set
+    s = provider.surface(pid)
+    assert s.referenced and not provider.is_local(pid)
+    assert np.interp(10.0, *s.line) == pytest.approx(50.0)
+    provider.remove_dataset(d.id)                            # a dataset removed
+    s = provider.surface(pid)
+    assert s.kind == "flat" and set(s.line[1].tolist()) == {50.0}
+    st.save_station_set(stations)                            # station elevations attached
+    s = provider.surface(pid)
+    assert s.kind == "stations" and not s.local
+    np.testing.assert_allclose(s.line[1], [100.0, 102.0])
+
+
+def test_station_heights_surface_places_nothing(store_with_model, monkeypatch):
+    st, p, _ = store_with_model
+    provider, pid = SectionDataProvider(st), p.id
+    calls = _count_placements(provider, monkeypatch)
+    assert provider.surface(pid).kind == "stations"
+    assert not provider.is_local(pid) and provider.topography(pid) is not None
+    assert calls == []
+    profile = st.profile(pid)                                # the DEM chosen: no placement
+    profile.metadata["topography"] = "dem"
+    st.save_profile(profile)
+    dem_s = np.linspace(0.0, 50.0, 6)
+    provider.context_source = lambda pr: ContextItems(dem=(dem_s, np.full(6, 99.0)))
+    assert provider.surface(pid).kind == "dem"
+    assert calls == []

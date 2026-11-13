@@ -274,16 +274,27 @@ def _new_frame(layout, item_id: str):
 DEPTH_LABELS = "format_number(abs(@value), 6, trim_trailing_zeroes:=true)"
 
 
+def _untouched(fmt) -> bool:
+    """True for no format or a basic one with every setting as a fresh
+    ``QgsBasicNumericFormat()`` has: the axis' default, not one the user tuned."""
+    if fmt is None:
+        return True
+    if fmt.id() != "basic":
+        return False
+    context = QgsReadWriteContext()
+    return fmt.configuration(context) == QgsBasicNumericFormat().configuration(context)
+
+
 def vertical_labels(item, local: bool) -> None:
     """A local section's frame labels its vertical axis with depths (0 at the surface, the
-    snapshot's ``local``); otherwise with elevations again. A format the user chose for the
-    axis is kept: only the default (basic) one and the plugin's depth format are replaced.
-    The QGIS plot axis has no title to set."""
+    snapshot's ``local``); otherwise with elevations again. A format the user chose or
+    tuned for the axis is kept: only an untouched default (basic) one is replaced, and only
+    the plugin's depth format is undone. The QGIS plot axis has no title to set."""
     axis = item.plot().yAxis()
     current = axis.numericFormat()
     ours = current is not None and current.id() == "expression" and \
         current.expression() == DEPTH_LABELS
-    if local and not ours and (current is None or current.id() == "basic"):
+    if local and not ours and _untouched(current):
         depth = QgsExpressionBasedNumericFormat()
         depth.setExpression(DEPTH_LABELS)
         axis.setNumericFormat(depth)

@@ -272,3 +272,62 @@ def test_local_frame_labels_its_vertical_axis_with_depths(env):
     axis = layout.itemById("wb_frame_1").plot().yAxis()
     assert axis.numericFormat().id() == "basic"
     assert axis.numericFormat().formatDouble(-12.5, ctx) == "-12.5"
+
+
+def _make_local(st, p):
+    """No heights at all (the stations lose theirs, the model reads local heights); returns
+    the station set as it was."""
+    from dataclasses import replace
+
+    import numpy as np
+    [s] = st.station_sets(p.id)
+    [d] = st.datasets(p.id)
+    st.save_station_set(replace(s, xyz=np.column_stack([s.xyz[:, :2], np.full(len(s.xyz),
+                                                                              np.nan)])))
+    st.save_dataset(replace(d, reader_options={"z_kind": "local"}))
+    return s
+
+
+def test_user_tuned_basic_format_is_kept_on_a_local_frame(env):
+    from qgis.core import QgsBasicNumericFormat, QgsNumericFormatContext
+
+    from geophysics_workbench.plates.build import create_or_update_plate
+    st, p, prov, prj = env
+    plate = _plate(st, p)
+    layout = create_or_update_plate(prj, st, prov, plate)
+    tuned = QgsBasicNumericFormat()
+    tuned.setNumberDecimalPlaces(2)
+    tuned.setShowTrailingZeros(True)
+    layout.itemById("wb_frame_1").plot().yAxis().setNumericFormat(tuned)
+    stations = _make_local(st, p)
+    assert prov.is_local(p.id)
+    ctx = QgsNumericFormatContext()
+    layout = create_or_update_plate(prj, st, prov, plate)
+    axis = layout.itemById("wb_frame_1").plot().yAxis()
+    assert axis.numericFormat().id() == "basic"
+    assert axis.numericFormat().formatDouble(-12.5, ctx) == "-12.50"     # the user's
+    st.save_station_set(stations)                           # heights again: still the user's
+    layout = create_or_update_plate(prj, st, prov, plate)
+    axis = layout.itemById("wb_frame_1").plot().yAxis()
+    assert axis.numericFormat().formatDouble(-12.5, ctx) == "-12.50"
+
+
+def test_plate_legend_skips_boreholes_of_a_local_frame(env):
+    import numpy as np
+
+    from geophysics_workbench.core.context import (BoreholeView, ContextItems, Curve,
+                                                   LogInterval, ProjectedPoint)
+    from geophysics_workbench.plates.build import create_or_update_plate
+    st, p, prov, prj = env
+    bh = ProjectedPoint(25.0, 0.0, "BH1", "borehole", None, [LogInterval(0.0, 3.0, "sand")],
+                        entry=0, curves=[Curve("k:gr", "GR", "API", np.array([0.0, 3.0]),
+                                               np.array([10.0, 20.0]))])
+    prov.context_source = lambda profile: ContextItems(
+        points=[bh], borehole_views={0: BoreholeView(curve_keys=("k:gr",))})
+    layout = create_or_update_plate(prj, st, prov, _plate(st, p))
+    legend = layout.itemById("wb_legend_boreholes")
+    assert [label for label, _ in legend.rows()] == ["GR (API)"]
+    _make_local(st, p)
+    prov.notify_changed()
+    assert prov.is_local(p.id)
+    assert legend.rows() == []

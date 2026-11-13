@@ -69,13 +69,13 @@ def test_click_on_column_and_piece_keeps_details_with_open_line(qgis_app, dock):
 
 
 def test_map_click_near_current_profile_borehole_opens_viewer(qgis_app, flushed, store_with_model,
-                                                             make_dock_and_link, monkeypatch):
+                                                             make_dock_and_link):
     from geophysics_workbench.core.context import ContextItems
     st, p, _ = store_with_model
     dock, link = make_dock_and_link(st)
     dock.open_profile(p.id)
-    monkeypatch.setattr(dock.provider, "context",
-                        lambda pid: ContextItems(points=[_bh(25.0, 0.0, "B7", 1)]))
+    dock.provider.context_source = lambda profile: ContextItems(
+        points=[_bh(25.0, 0.0, "B7", 1)])
     got = []
     dock.borehole_clicked.connect(lambda e, label: got.append((e, label)))
     release = _release()

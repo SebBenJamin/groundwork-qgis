@@ -330,7 +330,7 @@ class BoreholeLegendItem(QgsLayoutItem):
         for f in frames:
             if not provider.store_has_profile(f.profile_id):
                 continue
-            ctx = provider.context(f.profile_id)
+            ctx = provider.drawn_context(f.profile_id)
             for p in ctx.points if ctx is not None else []:
                 if p.kind == "borehole" and 0 <= p.entry < len(entries):
                     by_entry.setdefault(p.entry, []).extend(p.log)

@@ -538,7 +538,9 @@ class BoreholeViewer(QWidget):
         self.items = provider.context(self.profile_id, include_hidden=show_hidden) \
             if self.profile_id else None
         self.hidden = provider.hidden_keys(self.profile_id) if self.profile_id else set()
-        self.topo = provider.topography(self.profile_id) if self.profile_id else None
+        # a local section's surface is no height: boreholes without a collar stay unhung
+        self.topo = provider.topography(self.profile_id) \
+            if self.profile_id and not provider.is_local(self.profile_id) else None
         self.boreholes = sorted((p for p in (self.items.points if self.items else [])
                                  if p.kind == "borehole"), key=lambda p: p.s)
         self._sync_look()

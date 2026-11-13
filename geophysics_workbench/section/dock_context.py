@@ -15,7 +15,7 @@ def context_lines(dock, s: float, z: float) -> list[str]:
     dock._current_layers()                  # fills the cached drawn topography
     if dock._ctx is None:                   # cached like _layers: no store reads per mouse move
         pid = dock._profile.id
-        dock._ctx = (dock.provider.context(pid),
+        dock._ctx = (dock.provider.drawn_context(pid),
                      station_line(dock.provider.store.station_sets(pid)))
     ctx, stations = dock._ctx
     if ctx is None:

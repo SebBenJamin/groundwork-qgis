@@ -80,7 +80,7 @@ class ProfilePickTool(QgsMapTool):
             return None
         try:
             s, offset = profile.chainage.project(xy)
-            items = self.dock.provider.context(profile.id)
+            items = self.dock.provider.drawn_context(profile.id)
         except Exception:                           # degenerate geometry or no context
             return None
         best = None

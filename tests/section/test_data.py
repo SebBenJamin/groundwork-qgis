@@ -339,6 +339,7 @@ def test_a_chained_read_error_leaves_no_reference_cycle(store_with_model, tmp_pa
         assert layers[1].mesh is None and "no usable rows" in layers[1].error
         assert placed and all(ref() is not None for ref in placed)
         del layers
+        prov.notify_changed()                             # drops the cached placement
         assert all(ref() is None for ref in placed)       # freed without the collector
     finally:
         gc.enable()

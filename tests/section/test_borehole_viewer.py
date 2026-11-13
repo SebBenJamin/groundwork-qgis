@@ -65,6 +65,9 @@ def fake_dock(qgis_app):
         def topography(self, pid):
             return None
 
+        def is_local(self, pid):
+            return False
+
         def notify_changed(self):
             self.changed += 1
 

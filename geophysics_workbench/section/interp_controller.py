@@ -184,14 +184,15 @@ class InterpController(QObject):
 
     def snap_targets(self, exclude: str | None = None):
         """Vertices of the open profile's current pieces (all features, but not the piece
-        ``exclude`` being edited), borehole layer boundaries, and the ground line."""
+        ``exclude`` being edited), the layer boundaries of the boreholes drawn (none in a
+        local section), and the ground line."""
         from ..core.interp_snap import SnapTargets
         if self._targets is not None and self._targets[0] == exclude:
             return self._targets[1]
         verts = [v for p in self.current_pieces() if p.id != exclude for v in p.vertices]
         bounds = []
         try:
-            ctx = self.dock.provider.context(self.dock.current_profile_id())
+            ctx = self.dock.provider.drawn_context(self.dock.current_profile_id())
         except Exception:                       # broken context must not block drawing
             ctx = None
         surface = self.surface()
@@ -449,7 +450,8 @@ class InterpController(QObject):
     def _mark_local(self, profile_id: str) -> None:
         """A piece saved on a profile without real heights (a local or referenced local
         section) marks the profile, so the pieces are re-hung once real heights arrive
-        (``SectionDataProvider.settle_local_interpretation``). Written once, not per draw."""
+        (``SectionDataProvider.settle_local_interpretation``). Written once, not per draw;
+        the provider's surface is the one worked out for drawing (no placement per save)."""
         from .topography import LOCAL_KINDS
         prov = self.dock.provider
         try:
@@ -564,7 +566,7 @@ class InterpController(QObject):
             self.undo.clear()
             self.dock._reload_interp_layers()
         # a profile without heights is held back: its pieces have no real elevations
-        held ={p.id for p in prov.store.profiles() if prov.is_local(p.id)}
+        held = {p.id for p in prov.store.profiles() if prov.is_local(p.id)}
         try:
             n = export_pieces(prov.store, version, ids, path, held_back=held)
         except (OSError, ValueError, RuntimeError) as exc:
