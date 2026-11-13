@@ -57,12 +57,10 @@ def _points_dialog(make_dialog, name, xy):
 
 def test_line_feature_profile_has_no_stations(qgis_app, fake_iface, project_store, make_dialog,
                                               line_layer, warnings_shown):
-    from qgis.PyQt.QtWidgets import QDoubleSpinBox
-
     st, prj = project_store
     dlg = make_dialog("Crooked")
     dlg.placement.select_source("line")
-    assert not dlg.findChildren(QDoubleSpinBox, "line_spacing")
+    assert not dlg.placement.spacing_edit.isVisible()
     assert not dlg.method_combo.isVisible()              # a line makes no station set
     dlg.accept()                                         # nothing selected yet
     assert "select" in warnings_shown[-1].lower() and st.profiles() == []
@@ -72,7 +70,7 @@ def test_line_feature_profile_has_no_stations(qgis_app, fake_iface, project_stor
     [p] = st.profiles()
     assert p.name == "Crooked" and dlg.profile.id == p.id
     assert np.allclose(p.xy, [[0, 0], [30, 40], [60, 40]])
-    assert st.station_sets(p.id) == [] and not dlg.findChildren(QDoubleSpinBox, "line_spacing")
+    assert st.station_sets(p.id) == []
     assert "electrode_spacing" not in p.metadata
     assert prj.mapLayersByName("profiles")[0].featureCount() == 1
 
@@ -248,3 +246,15 @@ def test_looks_like_degrees_rule():
     assert not looks_like_degrees(np.array([[0.0, 0.0], [50.0, 0.0]]))       # local metres
     assert not looks_like_degrees(np.array([[437731.3, 5850754.4], [437730.7, 5850759.4]]))
     assert not looks_like_degrees(np.array([[10.0, 20.0], [10.5, 95.0]]))     # |y| > 90
+
+
+def test_dialog_opens_at_its_content_and_grows_with_it(qgis_app, make_dialog):
+    dlg = make_dialog("Sized")
+    line_height = dlg.height()
+    dlg.placement.set_positions_file(WILD / "positions_sparse.csv")
+    qgis_app.processEvents()
+    assert dlg.height() > line_height and dlg.height() <= 580
+    grown = dlg.height()
+    dlg.placement.select_source("line")
+    qgis_app.processEvents()
+    assert dlg.height() == grown                     # never shrinks

@@ -74,8 +74,12 @@ class PlacementWidget(QGroupBox):
     changed = pyqtSignal()
 
     def __init__(self, iface, store, project, allow_existing: bool = True,
-                 allow_file_coordinates: bool = False, parent=None):
+                 allow_file_coordinates: bool = False, sources: tuple | None = None,
+                 show_spacing: bool = True, parent=None):
+        """``sources``: offer only these rows (default all); ``show_spacing=False``: the
+        dialog asks the station spacing itself and sets ``spacing_edit``."""
         super().__init__("Where the Line Runs", parent)
+        self._show_spacing = show_spacing
         self.iface, self.store, self.project = iface, store, project
         self._table = None                  # the positions file as read
         self._table_error = ""
@@ -95,6 +99,7 @@ class PlacementWidget(QGroupBox):
         self._pick.ended.connect(self._pick_ended)
         self._radios: dict[str, QRadioButton] = {}
         self._details: dict[str, QWidget] = {}
+        self._controls: dict[str, QWidget] = {}
         self._buttons = QButtonGroup(self)
 
         self._collapsed_row = QWidget()
@@ -168,6 +173,12 @@ class PlacementWidget(QGroupBox):
             layout.addWidget(w)
         self._connect()
         default = "existing" if allow_existing and self.profile_combo.count() else "line"
+        if sources is not None:
+            for name, radio in self._radios.items():
+                if name not in sources:
+                    radio.hide()
+                    self._controls[name].hide()
+            default = sources[0]
         self._radios[default].setChecked(True)
         self.destroyed.connect(partial(_remove_bands, iface.mapCanvas(), self._bands))
         self.destroyed.connect(partial(release, iface.mapCanvas(), self._pick.state))
@@ -179,6 +190,7 @@ class PlacementWidget(QGroupBox):
         radio.setObjectName(f"source_{name}")
         self._buttons.addButton(radio)
         self._radios[name] = radio
+        self._controls[name] = control
         r = self._grid.rowCount()
         self._grid.addWidget(radio, r, 0)
         self._grid.addWidget(control, r, 1)
@@ -597,7 +609,7 @@ class PlacementWidget(QGroupBox):
             detail.setVisible(name == src)
         self._update_line_info()
         self._update_file_info()
-        self._spacing_row.setVisible(self._numbers_only())
+        self._spacing_row.setVisible(self._numbers_only() and self._show_spacing)
         self._distance_row.setVisible(self._needs_distance)
         current = self.zero_combo.currentData()
         self.zero_combo.clear()

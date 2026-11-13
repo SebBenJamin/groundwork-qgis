@@ -79,7 +79,7 @@ class SectionDock(QDockWidget):
     cursor_left = pyqtSignal()                  # the mouse left the section
     profile_changed = pyqtSignal(object)        # open profile id, or None when closed
     borehole_clicked = pyqtSignal(int, str)     # (borehole entry, label): open the viewer
-    rename_requested = pyqtSignal(str)          # profile id: "Rename Profile…"
+    rename_requested = pyqtSignal(str)          # profile id: "Profile Properties…"
     delete_requested = pyqtSignal(str)          # profile id: "Delete Profile…"
 
     def __init__(self, parent=None):
@@ -103,7 +103,7 @@ class SectionDock(QDockWidget):
         self.profile_combo.currentIndexChanged.connect(self._combo_changed)
         self.profile_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.profile_combo.customContextMenuRequested.connect(self._show_profile_menu)
-        self.profile_combo.setToolTip("Right-click to rename or delete the profile")
+        self.profile_combo.setToolTip("Right-click for the profile's properties or to delete it")
         self.topo = TopoSwitch(self)
         self.topo_combo = self.topo.combo
         self.ve_spin = QDoubleSpinBox()

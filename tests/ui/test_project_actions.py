@@ -283,3 +283,11 @@ def test_add_model_keeps_the_readers_quantity_and_unit(qgis_app, tmp_path, store
     assert (d.quantity, d.unit) == ("Sensitivity(log10)", "")
     [back] = [x for x in st.datasets(p.id) if x.id == d.id]
     assert (back.quantity, back.unit) == ("Sensitivity(log10)", "")
+
+
+def test_build_profile_refuses_a_placement_on_an_existing_profile(store_with_model):
+    from geophysics_workbench.core.placement import Placement
+    from geophysics_workbench.ui.project_actions import build_profile
+    st, p, _ = store_with_model
+    with pytest.raises(ValueError, match="existing profile"):
+        build_profile(st, Placement(profile_id=p.id), "X", "ert")

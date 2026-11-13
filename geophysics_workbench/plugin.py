@@ -89,9 +89,10 @@ class WorkbenchPlugin:
         self.add_action("New Workbench Project…", self.new_workbench_project)
         self.add_action("Open Workbench Project…", self.open_workbench_project)
         self.menu.addSeparator()
+        from .ui.profile_actions import RENAME_TEXT
         self.new_profile_action = self.add_action("New Profile…", self.new_profile)
         self.add_data_action = self.add_action("Add Data…", self.add_data)
-        self.rename_action = self.add_action("Rename Profile…", lambda: self.rename_profile())
+        self.rename_action = self.add_action(RENAME_TEXT, lambda: self.rename_profile())
         self.delete_action = self.add_action("Delete Profile…", lambda: self.delete_profile())
         self.context_action = self.add_action("Context Layers…", self.edit_context)
         self.ties_action = self.add_action("Profile Ties…", self.show_ties_panel)
@@ -475,25 +476,17 @@ class WorkbenchPlugin:
 
     # -- profiles: rename and delete ---------------------------------------------------------
     def rename_profile(self, profile_id: str | None = None) -> None:
-        from .ui import profile_actions
-        from .ui.project_actions import refresh_layers
+        """Open Profile Properties for the profile (the open one by default)."""
+        from .ui.profile_properties_dialog import ProfilePropertiesDialog
         pid = profile_id or (self.dock.current_profile_id() if self.dock else None)
         if self.store is None or not pid:
             return
-        old = self.store.profile(pid).name
-        name = profile_actions.ask_new_name(self.iface.mainWindow(), old)
-        if name is None or name.strip() == old:
-            return
+        dialog = ProfilePropertiesDialog(self.iface, self.store, pid, self.provider,
+                                         QgsProject.instance(), dock=self.dock)
         try:
-            self.store.rename_profile(pid, name)
-        except ValueError as exc:
-            self._warn(str(exc))
-            return
-        refresh_layers(self.store, QgsProject.instance())
-        self.provider.notify_changed()
-        if self.dock is not None:
-            self.dock._fill_combo()
-        self._info(f"Profile “{old}” renamed to “{name.strip()}”.")
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     def delete_profile(self, profile_id: str | None = None) -> None:
         from .ui import profile_actions

@@ -40,28 +40,32 @@ def test_context_menu_on_profile_combo(plugin):
     plug, st, p = plugin
     menu = plug.dock.profile_menu()
     assert [a.text() for a in menu.actions()] == [RENAME_TEXT, DELETE_TEXT]
-    assert RENAME_TEXT == "Rename Profile…" and DELETE_TEXT == "Delete Profile…"
+    assert RENAME_TEXT == "Profile Properties…" and DELETE_TEXT == "Delete Profile…"
 
 
-def test_rename_profile(plugin, fake_iface, monkeypatch):
-    from geophysics_workbench.ui import profile_actions
+def test_profile_properties_open_from_the_plugin(plugin, fake_iface, monkeypatch):
+    """The menu entry and the panel's right-click entry open the dialog; OK renames."""
+    from geophysics_workbench.ui.profile_properties_dialog import ProfilePropertiesDialog
     plug, st, p = plugin
-    monkeypatch.setattr(profile_actions, "ask_new_name", lambda parent, current: "Line A")
-    plug.rename_profile()
+
+    def fake_exec(dialog):
+        assert dialog.profile_id == p.id and dialog.dock is plug.dock
+        dialog.name_edit.setText("Line A")
+        dialog.accept()
+        return 1
+
+    monkeypatch.setattr(ProfilePropertiesDialog, "exec", fake_exec)
+    plug.dock.rename_requested.emit(p.id)
     assert st.profile(p.id).name == "Line A"
     assert plug.dock.profile_combo.currentText() == "Line A"
-    assert any("Line A" in t for t in _bar_texts(fake_iface))
 
 
-def test_rename_duplicate_is_refused(plugin, fake_iface, monkeypatch):
-    from geophysics_workbench.core.model import Profile
-    from geophysics_workbench.ui import profile_actions
-    plug, st, p = plugin
-    st.save_profile(Profile("p2", "Line B", p.xy + 100.0, st.crs_authid))
-    monkeypatch.setattr(profile_actions, "ask_new_name", lambda parent, current: "Line B")
-    plug.rename_profile()
-    assert st.profile(p.id).name == p.name
-    assert any("already" in t for t in _bar_texts(fake_iface))
+def test_move_message_lists_what_moves():
+    from geophysics_workbench.ui.profile_actions import move_message
+    text = move_message("P1", {"stations": 5, "pieces": 3, "notes": 1})
+    assert text == ("Move the line of profile “P1” to the surveyed points? Moved with it: "
+                    "3 interpretation piece(s), 1 field note(s). Delivered interpretation "
+                    "versions keep their old positions.")
 
 
 def test_delete_open_profile_clears_panel(plugin, fake_iface, monkeypatch):

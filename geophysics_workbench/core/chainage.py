@@ -63,3 +63,13 @@ class Chainage:
 
     def reversed(self) -> "Chainage":
         return Chainage(self._xy[::-1])
+
+
+def remap(old: Chainage, new: Chainage, s) -> np.ndarray:
+    """Chainages on ``old`` as chainages on ``new``: each position goes to its map point on
+    the old line, then to the nearest point of the new line (clamped to the old ends)."""
+    s = np.asarray(s, dtype=float)
+    flat = np.clip(s.ravel(), 0.0, old.length)
+    if not flat.size:
+        return np.empty(s.shape)
+    return new.project(old.to_xy(flat))[0].reshape(s.shape)

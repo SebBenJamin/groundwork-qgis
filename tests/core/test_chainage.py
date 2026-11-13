@@ -26,3 +26,11 @@ def test_reversed_flips_chainage():
 def test_rejects_degenerate_lines():
     with pytest.raises(ValueError):
         Chainage(np.array([[1, 1], [1, 1]], float))
+
+def test_remap_carries_a_position_across():
+    from geophysics_workbench.core.chainage import remap
+    old = Chainage(np.array([[0, 0], [100, 0]], float))
+    new = Chainage(np.array([[0, 2], [50, 2], [100, 6]], float))
+    s = remap(old, new, [25.0, 500.0])
+    assert s[0] == pytest.approx(25.0, abs=0.1)
+    assert s[1] == pytest.approx(new.length, abs=1.0)      # beyond the old end: clamped

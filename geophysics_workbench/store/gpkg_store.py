@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 from osgeo import gdal, ogr, osr
 
+from ..core.chainage import remap
 from ..core.model import Dataset, Profile, StationSet
 from .hidden_store import HiddenBoreholesMixin
 from .interp_store import InterpStoreMixin
@@ -420,6 +421,58 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
             raise ValueError(f"Another profile is already called “{name}”.")
         p = self.profile(profile_id)
         self.save_profile(Profile(p.id, name, p.xy, p.crs_authid, p.metadata))
+
+    def move_profile_line(self, profile_id: str, xy: np.ndarray,
+                          station_set: StationSet | None = None,
+                          metadata: dict | None = None) -> dict[str, int]:
+        """Replace the profile's line by ``xy`` and carry everything that sits on it along,
+        in one transaction (a failure changes nothing): field notes, the current
+        interpretation version's piece vertices and the reference height are remapped
+        with ``chainage.remap``; every station set is projected onto the new line again.
+        ``station_set`` (made on the new line) is saved with them and ``metadata`` replaces
+        the profile's. Frozen versions are not touched. Returns the counts
+        ``stations`` (re-projected), ``pieces``, ``notes``."""
+        old = self.profile(profile_id)
+        new = Profile(old.id, old.name, np.asarray(xy, dtype=float), old.crs_authid,
+                      dict(old.metadata if metadata is None else metadata))
+        old_ch, new_ch = old.chainage, new.chainage
+        ref = new.metadata.get("reference_height")
+        if ref:
+            new.metadata["reference_height"] = {
+                "s": float(remap(old_ch, new_ch, ref["s"])), "z": ref["z"]}
+        counts = {"stations": 0, "pieces": 0, "notes": 0}
+        sets = [s for s in self.station_sets(profile_id)
+                if station_set is None or s.id != station_set.id]
+        notes = self.field_notes(profile_id)
+        version = self.current_version().id if self.has_interpretation() else None
+        with self._tx() as ds:
+            self._write_profile(ds, new)
+            for s in sets:
+                s.chainage, s.offset = new_ch.project(np.asarray(s.xyz, float)[:, :2])
+                if len(s.numbers):
+                    s.metre0 = float(s.chainage[np.argmin(s.numbers)])
+                s.warnings = [f"station {n}: {o:.1f} m off line"
+                              for n, o in zip(s.numbers, s.offset) if abs(o) > 5.0]
+                self._write_station_set(ds, s)
+                counts["stations"] += len(s.numbers)
+            for note in notes:
+                note.s_from = float(remap(old_ch, new_ch, note.s_from))
+                if note.s_to is not None:
+                    note.s_to = float(remap(old_ch, new_ch, note.s_to))
+                self._write_note(ds.GetLayerByName("field_notes"), note)
+                counts["notes"] += 1
+            if version is not None:
+                lyr = ds.GetLayerByName("interp_pieces")
+                for f in self._select(lyr, f"version_id = {_q(version)} AND "
+                                           f"profile_id = {_q(profile_id)}"):
+                    piece = self._piece_from(f)
+                    piece.vertices = [(float(remap(old_ch, new_ch, s)), float(z))
+                                      for s, z in piece.vertices]
+                    self._write_piece(lyr, piece)
+                    counts["pieces"] += 1
+            if station_set is not None:
+                self._write_station_set(ds, station_set)
+        return counts
 
     def profile_contents(self, profile_id: str) -> dict[str, int]:
         """What deleting the profile removes from the workbench: stations, dataset links,

@@ -69,16 +69,19 @@ class FieldNotesMixin:
         note.created = note.created or now()
         note.modified = now()
         with self._tx() as ds:
-            lyr = ds.GetLayerByName("field_notes")
-            self._delete_where(lyr, f"id = {_q(note.id)}")
-            f = ogr.Feature(lyr.GetLayerDefn())
-            for name, _ in NOTE_FIELDS:
-                value = getattr(note, name)
-                if name == "shown":
-                    value = int(bool(value))
-                if value is not None:
-                    f[name] = value
-            lyr.CreateFeature(f)
+            self._write_note(ds.GetLayerByName("field_notes"), note)
+
+    def _write_note(self, lyr, note: FieldNote) -> None:
+        """``note``'s row, inside the caller's transaction."""
+        self._delete_where(lyr, f"id = {_q(note.id)}")
+        f = ogr.Feature(lyr.GetLayerDefn())
+        for name, _ in NOTE_FIELDS:
+            value = getattr(note, name)
+            if name == "shown":
+                value = int(bool(value))
+            if value is not None:
+                f[name] = value
+        lyr.CreateFeature(f)
 
     def delete_field_note(self, note_id: str) -> None:
         if not self.has_field_notes():

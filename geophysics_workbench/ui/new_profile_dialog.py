@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 
 from ..section.data import matching_profiles
 from ..section.profile_source import CURVE_TOLERANCE
+from .dialog_size import fit_to_content
 from .placement_widget import PlacementWidget
 from .project_actions import create_profile
 
@@ -67,8 +68,8 @@ class NewProfileDialog(QDialog):
         self._scroll = scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(page)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
-                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons = self._buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                                   | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
@@ -76,10 +77,8 @@ class NewProfileDialog(QDialog):
         layout.addWidget(buttons)
 
         self.placement.changed.connect(self._sync)
+        self.resize(1, 1)                   # the first fit sets the size; later ones only grow
         self._sync()
-        screen = self.screen().availableGeometry()
-        # high enough for a positions file's columns; a longer page scrolls
-        self.resize(min(640, screen.width() - 40), min(480, screen.height() - 80))
 
     # -- state -------------------------------------------------------------------------------
     def _sync(self) -> None:
@@ -94,6 +93,7 @@ class NewProfileDialog(QDialog):
         bar = self._scroll.verticalScrollBar().sizeHint().width()
         self._scroll.setMinimumWidth(self._page.minimumSizeHint().width() + bar
                                      + 2 * self._scroll.frameWidth())
+        fit_to_content(self, self._scroll, self._buttons)
 
     def _placement(self):
         """The placement chosen, the line reversed when asked. ValueError when incomplete."""
