@@ -302,3 +302,43 @@ def test_active_profile_wins_on_identical_geometry(store_with_model):
     assert prov.match_curve(p.xy)[0].id in (p.id, twin.id)
     prov.active_profile_id = "elsewhere"                     # active but not on this curve
     assert prov.match_curve(p.xy)[0].id in (p.id, twin.id)
+
+
+def test_a_chained_read_error_leaves_no_reference_cycle(store_with_model, tmp_path):
+    """A reader that raises inside an ``except`` block (a chained error) must not tie the
+    placed meshes into a cycle: only the error's message is kept for its layer."""
+    import gc
+    import weakref
+
+    st, p, _ = store_with_model
+    bad = tmp_path / "bad_res.dat"
+    shutil.copy(os.path.join(FIXTURES, "f001_res.dat"), bad)
+    _add_dataset(st, p, bad, "r2_res_dat", {"z_kind": "elevation"}, did="bad")
+    prov = SectionDataProvider(st)
+    real_read, real_place = prov._read, prov._place
+    placed = []
+
+    def chained_read(d, profile=None):
+        if d.id == "bad":
+            try:
+                raise KeyError("column")
+            except KeyError:
+                raise ValueError("bad_res.dat: no usable rows") from None
+        return real_read(d, profile)
+
+    def recording_place(*a, **k):
+        mesh, z_kind = real_place(*a, **k)
+        placed.append(weakref.ref(mesh))
+        return mesh, z_kind
+
+    prov._read, prov._place = chained_read, recording_place
+    gc.collect()
+    gc.disable()
+    try:
+        layers = prov.layers(p.id)
+        assert layers[1].mesh is None and "no usable rows" in layers[1].error
+        assert placed and all(ref() is not None for ref in placed)
+        del layers
+        assert all(ref() is None for ref in placed)       # freed without the collector
+    finally:
+        gc.enable()

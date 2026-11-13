@@ -337,6 +337,12 @@ def cell_path_groups(mesh: SectionMesh, scale: ColorScale,
     return [(c, g.reshape(-1)) for c, g in zip(rgba_u, np.split(elems, splits))]
 
 
+@dataclass(frozen=True)
+class _Failed:
+    """A dataset that could not be read or placed: the message its layer shows."""
+    message: str
+
+
 @dataclass
 class _LayoutSources:
     """A profile's layout and the datasets it came from: the readings dataset that gave
@@ -733,8 +739,9 @@ class SectionDataProvider:
 
     def _placed(self, profile: Profile | None, sets: list[StationSet],
                 datasets: list[Dataset]) -> dict:
-        """Every dataset placed in chainage by id: ``_place``'s (mesh, z kind), or the
-        exception reading or placing it raised (that layer's error). Resolved once."""
+        """Every dataset placed in chainage by id: ``_place``'s (mesh, z kind), or a
+        ``_Failed`` with the message of what reading or placing it raised (that layer's
+        error). Resolved once."""
         layout = None if profile is None else self._layout_sources(profile, datasets).layout
         out = {}
         for d in datasets:
@@ -744,9 +751,10 @@ class SectionDataProvider:
                     dmap = resolve(profile, sets, d, layout).map
                 out[d.id] = self._place(d, dmap, profile)
             except Exception as exc:            # shown as the layer's error
-                # without its traceback: it would hold this frame and so ``out`` (a cycle
-                # that keeps the meshes alive until the garbage collector runs)
-                out[d.id] = exc.with_traceback(None)
+                # only the message: the exception (its traceback, or a chained one's) holds
+                # this frame and so ``out``, a cycle that keeps the meshes alive until the
+                # garbage collector runs
+                out[d.id] = _Failed(self._error_text(d, exc))
         return out
 
     def _load_mesh(self, d: Dataset, placed: tuple[SectionMesh, str],
@@ -783,10 +791,10 @@ class SectionDataProvider:
         return hit[1]
 
     def _layer(self, d: Dataset, placed, surface: Surface | None) -> SectionLayer:
-        """``d``'s layer from its ``_placed`` entry (a placed mesh, or the exception)."""
+        """``d``'s layer from its ``_placed`` entry (a placed mesh, or ``_Failed``)."""
         style = self.style(d.id)
-        if isinstance(placed, BaseException):
-            return SectionLayer(d, None, style, self._error_text(d, placed))
+        if isinstance(placed, _Failed):
+            return SectionLayer(d, None, style, placed.message)
         try:
             mesh = self._load_mesh(d, placed, surface)
             if mesh.readings is not None and d.id not in self._readings_seen:

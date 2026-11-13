@@ -178,3 +178,22 @@ def test_hung_from_its_own_top_keeps_the_shape():
     np.testing.assert_allclose(tz, topo - depth[0])
     back = tri.below_top().depth_to_elevation(ts, tz)
     np.testing.assert_allclose(back.vertices, tri.vertices, atol=1e-9)
+
+
+def test_shared_vertices_do_not_fold_at_a_surface_step():
+    """A grid whose cells share vertices, in any cell order, hangs from a stepped surface
+    without inverting a cell edge: every vertex at one x takes the same surface value."""
+    xs, ds = np.arange(5.0), np.arange(4.0)                  # 4 columns x 3 rows of quads
+    verts = np.array([[x, d] for d in ds for x in xs])
+    node = lambda i, j: j * len(xs) + i                       # noqa: E731
+    cells = np.array([[node(i, j), node(i + 1, j), node(i + 1, j + 1), node(i, j + 1)]
+                      for j in range(3) for i in range(4)])
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        order = rng.permutation(len(cells))
+        m = SectionMesh(verts, cells[order], np.ones(len(cells)))
+        hung = m.depth_to_elevation(np.array([0.0, 2.0, 2.0, 4.0]),
+                                    np.array([10.0, 10.0, 15.0, 15.0]))
+        top = hung.vertices[:, 1] + np.abs(m.vertices[:, 1])   # the surface each vertex took
+        for x in xs:
+            assert np.ptp(top[m.vertices[:, 0] == x]) == 0.0, (x, order)

@@ -278,13 +278,17 @@ class SectionMesh:
         return edges[up][keep, :2], edges[up][keep, 2:]
 
     def _vertex_sides(self) -> np.ndarray:
-        """Per vertex: -1 when its cell lies to its left (take a step's left value), 1 when
-        to its right, 0 when unused. A vertex of several cells takes the last one's."""
+        """Per vertex: -1 when its cells lie to its left (take a step's left value), 1 when
+        to its right, 0 when unused or used by cells on both sides (then every vertex at
+        that x takes the same value, so no shared edge can fold at a step)."""
         ring, _orient = self._rings()
         cx = self.vertices[ring, 0].mean(1)
-        sides = np.zeros(len(self.vertices), dtype=int)
-        sides[ring.ravel()] = np.sign(cx[:, None] - self.vertices[ring, 0]).astype(int).ravel()
-        return sides
+        side = np.sign(cx[:, None] - self.vertices[ring, 0]).astype(int).ravel()
+        lo = np.zeros(len(self.vertices), dtype=int)
+        hi = np.zeros(len(self.vertices), dtype=int)
+        np.minimum.at(lo, ring.ravel(), side)
+        np.maximum.at(hi, ring.ravel(), side)
+        return np.where(lo < 0, np.where(hi > 0, 0, -1), hi)
 
     # -- queries --------------------------------------------------------
     def bounds(self) -> tuple[float, float, float, float]:
