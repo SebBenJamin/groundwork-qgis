@@ -434,7 +434,8 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
         """Replace the profile's line by ``xy`` and carry everything that sits on it along,
         in one transaction (a failure changes nothing): field notes, the current
         interpretation version's piece vertices and the reference height are remapped
-        with ``chainage.remap``; every station set is projected onto the new line again.
+        with ``chainage.remap`` (what lies past the old ends goes along 1:1); every
+        station set is projected onto the new line again.
         ``station_set`` (made on the new line) is saved with them, ``metadata`` replaces
         the profile's and ``name`` renames it (checked before anything is written). A
         dataset's ``placement.zero`` (a chainage) is remapped too. Frozen versions are not touched.
@@ -452,6 +453,7 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
         sets = [s for s in self.station_sets(profile_id)
                 if station_set is None or s.id != station_set.id]
         notes = self.field_notes(profile_id)
+        datasets = self.datasets(profile_id)    # read before the write transaction opens
         version = self.current_version().id if self.has_interpretation() else None
         with self._tx() as ds:
             self._write_profile(ds, new)
@@ -478,7 +480,7 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
                                       for s, z in piece.vertices]
                     self._write_piece(lyr, piece)
                     counts["pieces"] += 1
-            for d in self.datasets(profile_id):
+            for d in datasets:
                 zero = (d.reader_options.get("placement") or {}).get("zero")
                 if zero is not None:
                     d.reader_options["placement"]["zero"] = float(

@@ -38,13 +38,14 @@ _BOXES = ("warning", "question", "information", "critical")
 
 
 @pytest.fixture(autouse=True)
-def no_modal_boxes(monkeypatch):
+def no_modal_boxes():
     """Fail the test at once when it would open a real modal box (a static
     QMessageBox.warning/question/information/critical, QMessageBox.exec or QDialog.exec)
     that the test did not stub: offscreen, such a box blocks the whole suite. Autouse
     fixtures run first, so a test's own stubs (``warnings_shown``, monkeypatches of a
-    dialog's ``exec``) replace these. Unstubbed calls are also failed at teardown, in case
-    a slot swallowed the first failure."""
+    dialog's ``exec``) replace these; the guard has its own MonkeyPatch, so a test's
+    ``monkeypatch.undo()`` does not lift it. Unstubbed calls are also failed at teardown,
+    in case a slot swallowed the first failure. Yields the list of boxes refused."""
     from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 
     opened = []
@@ -56,11 +57,12 @@ def no_modal_boxes(monkeypatch):
                         f"(warnings_shown, or monkeypatch)", pytrace=False)
         return call
 
-    for name in _BOXES:
-        monkeypatch.setattr(QMessageBox, name, staticmethod(refuse(f"QMessageBox.{name}")))
-    monkeypatch.setattr(QMessageBox, "exec", refuse("QMessageBox.exec"))
-    monkeypatch.setattr(QDialog, "exec", refuse("QDialog.exec"))
-    yield opened
+    with pytest.MonkeyPatch.context() as guard:
+        for name in _BOXES:
+            guard.setattr(QMessageBox, name, staticmethod(refuse(f"QMessageBox.{name}")))
+        guard.setattr(QMessageBox, "exec", refuse("QMessageBox.exec"))
+        guard.setattr(QDialog, "exec", refuse("QDialog.exec"))
+        yield opened
     if opened:
         pytest.fail(f"real modal boxes were opened: {opened}", pytrace=False)
 

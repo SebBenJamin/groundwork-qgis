@@ -65,11 +65,27 @@ class Chainage:
         return Chainage(self._xy[::-1])
 
 
+def _direction(ch: Chainage, s: float) -> np.ndarray:
+    """Unit direction of ``ch`` at chainage ``s`` (its first/last segment at the ends)."""
+    i = int(np.clip(np.searchsorted(ch._cum, s, side="right") - 1, 0, len(ch._seg_len) - 1))
+    return (ch._xy[i + 1] - ch._xy[i]) / ch._seg_len[i]
+
+
 def remap(old: Chainage, new: Chainage, s) -> np.ndarray:
     """Chainages on ``old`` as chainages on ``new``: each position goes to its map point on
-    the old line, then to the nearest point of the new line (clamped to the old ends)."""
+    the old line, then to the nearest point of the new line. The part beyond an end of the
+    old line is carried over 1:1 from where that end lands, along the new line's direction
+    there (backwards when the new line runs the other way), so nothing drawn past the ends
+    is folded onto them."""
     s = np.asarray(s, dtype=float)
-    flat = np.clip(s.ravel(), 0.0, old.length)
+    flat = s.ravel()
     if not flat.size:
         return np.empty(s.shape)
-    return new.project(old.to_xy(flat))[0].reshape(s.shape)
+    inside = np.clip(flat, 0.0, old.length)
+    out = new.project(old.to_xy(inside))[0]
+    for end, beyond in ((0.0, flat < 0.0), (old.length, flat > old.length)):
+        if beyond.any():
+            landed = float(new.project(old.to_xy(np.array([end])))[0][0])
+            sign = 1.0 if _direction(old, end) @ _direction(new, landed) >= 0 else -1.0
+            out[beyond] += sign * (flat[beyond] - inside[beyond])
+    return out.reshape(s.shape)

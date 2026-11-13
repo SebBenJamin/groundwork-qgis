@@ -33,4 +33,15 @@ def test_remap_carries_a_position_across():
     new = Chainage(np.array([[0, 2], [50, 2], [100, 6]], float))
     s = remap(old, new, [25.0, 500.0])
     assert s[0] == pytest.approx(25.0, abs=0.1)
-    assert s[1] == pytest.approx(new.length, abs=1.0)      # beyond the old end: clamped
+    # beyond the old end: the overhang (400 m) goes on 1:1 past the new end
+    assert s[1] == pytest.approx(remap(old, new, 100.0) + 400.0)
+
+
+def test_remap_carries_the_part_beyond_the_ends_over():
+    from geophysics_workbench.core.chainage import remap
+    old = Chainage(np.array([[0, 0], [100, 0]], float))
+    moved = Chainage(np.array([[0, 1], [100, 1]], float))         # 1 m sideways
+    s = [-20.0, -10.0, 50.0, 115.0, 120.0]
+    assert remap(old, moved, s) == pytest.approx(s)
+    back = Chainage(np.array([[100, 1], [0, 1]], float))         # and running the other way
+    assert remap(old, back, s) == pytest.approx([120.0, 110.0, 50.0, -15.0, -20.0])

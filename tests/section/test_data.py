@@ -358,3 +358,30 @@ def test_imported_electrodes_use_the_set_the_section_ticks_use(store_with_model)
     got = SectionDataProvider(st).electrodes(p.id)
     assert np.array_equal(got.chainage, surveyed.chainage)
     assert not np.array_equal(got.chainage, first.chainage)
+
+
+def test_a_file_locked_for_a_moment_is_read_again_on_the_next_build(store_with_model):
+    """An OSError (a file another program holds) is not kept in the build cache: the next
+    build reads the file again, without a store change."""
+    st, p, src = store_with_model
+    prov = SectionDataProvider(st)
+    real = prov._read
+
+    def locked(d, profile=None):
+        raise PermissionError(13, "Permission denied", str(src))
+
+    prov._read = locked
+    [layer] = prov.layers(p.id)
+    assert layer.mesh is None and "cannot read the file" in layer.error
+    prov._read = real
+    [layer] = prov.layers(p.id)
+    assert layer.error is None and layer.mesh is not None
+
+
+def test_a_station_sets_metre0_is_part_of_the_build_key(store_with_model):
+    st, p, _ = store_with_model
+    prov = SectionDataProvider(st)
+    sets, datasets = st.station_sets(p.id), st.datasets(p.id)
+    key = prov._inputs_key(p, sets, datasets)
+    sets[0].metre0 += 5.0
+    assert prov._inputs_key(p, sets, datasets) != key

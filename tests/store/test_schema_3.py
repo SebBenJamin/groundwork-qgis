@@ -132,6 +132,37 @@ def test_read_only_schema_2_store_says_why(tmp_path, monkeypatch):
     assert _meta(path)["schema_version"] == "2"
 
 
+def test_a_migration_failing_part_way_leaves_the_file_as_it_was(tmp_path, monkeypatch):
+    """The ``inline`` column is added, then the schema_version update fails: the
+    transaction rolls the column back, and the file stays a schema 2 store."""
+    from osgeo import ogr
+
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+    path = tmp_path / "old.gpkg"
+    s = _make_schema_2(path, monkeypatch)
+    real = ogr.DataSource.ExecuteSQL
+    seen = []
+
+    def fail_on_the_version(ds, sql, *args, **kwargs):
+        if sql.lstrip().upper().startswith("UPDATE WB_META"):
+            defn = ds.GetLayerByName("stations").GetLayerDefn()
+            seen.append(defn.GetFieldIndex("inline") >= 0)      # the column is there now
+            raise RuntimeError("disk I/O error")
+        return real(ds, sql, *args, **kwargs)
+
+    monkeypatch.setattr(ogr.DataSource, "ExecuteSQL", fail_on_the_version)
+    with pytest.raises(ValueError, match="one-time update for 0.9"):
+        ProjectStore.open(path)
+    monkeypatch.undo()
+    assert seen == [True]
+    assert _meta(path)["schema_version"] == "2"
+    assert "inline" not in _columns(path, "stations")
+    st = ProjectStore.open(path)                    # the next open updates it
+    assert _meta(path)["schema_version"] == "3"
+    [back] = st.station_sets("p1")
+    np.testing.assert_allclose(back.xyz, s.xyz)
+
+
 def test_newer_store_is_refused(tmp_path):
     from osgeo import ogr
 

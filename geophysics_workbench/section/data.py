@@ -342,8 +342,12 @@ def cell_path_groups(mesh: SectionMesh, scale: ColorScale,
 
 @dataclass(frozen=True)
 class _Failed:
-    """A dataset that could not be read or placed: the message its layer shows."""
+    """A dataset that could not be read or placed: the message its layer shows.
+    ``transient``: an OSError (e.g. a file another program holds for a moment), so the
+    build that holds it is not kept (the next build reads the file again). A missing file
+    is not: the build key changes when it appears."""
     message: str
+    transient: bool = False
 
 
 @dataclass
@@ -358,6 +362,15 @@ class _Built:
     placed: dict | None = None
     surface: Surface | None = None
     has_surface: bool = False
+
+    def transient(self) -> bool:
+        """True when a dataset failed in a way that may pass (see ``_Failed``)."""
+        return self.placed is not None and any(
+            isinstance(v, _Failed) and v.transient for v in self.placed.values())
+
+
+def _transient(exc: BaseException) -> bool:
+    return isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError)
 
 
 def _array_key(a) -> bytes | None:
@@ -603,7 +616,8 @@ class SectionDataProvider:
         return (_array_key(np.asarray(profile.xy, float)),
                 json.dumps(profile.metadata, sort_keys=True, default=str),
                 tuple((s.id, _array_key(s.numbers), _array_key(s.xyz), _array_key(s.chainage),
-                       _array_key(s.offset), _array_key(s.inline)) for s in sets),
+                       _array_key(s.offset), _array_key(s.inline), float(s.metre0))
+                      for s in sets),
                 tuple((d.id, d.station_set_id, d.kind, d.source_path, d.reader,
                        json.dumps(d.reader_options, sort_keys=True, default=str),
                        self._file_times(d), getattr(self._styles.get(d.id), "shown", None))
@@ -611,13 +625,14 @@ class SectionDataProvider:
 
     def _build(self, profile_id: str) -> _Built:
         """The profile's ``_Built``, its inputs read from the store; the placement and
-        surface worked out before are kept only while those inputs are unchanged."""
+        surface worked out before are kept only while those inputs are unchanged, and not
+        after a dataset failed with an OSError (it may read next time)."""
         profile = self._profile(profile_id)
         sets = self.store.station_sets(profile_id)
         datasets = self.store.datasets(profile_id)
         key = self._inputs_key(profile, sets, datasets)
         built = self._builds.get(profile_id)
-        if built is None or built.key != key:
+        if built is None or built.key != key or built.transient():
             built = self._builds[profile_id] = _Built(key)
         built.profile, built.sets, built.datasets = profile, sets, datasets
         return built
@@ -908,7 +923,7 @@ class SectionDataProvider:
                 # only the message: the exception (its traceback, or a chained one's) holds
                 # this frame and so ``out``, a cycle that keeps the meshes alive until the
                 # garbage collector runs
-                out[d.id] = _Failed(self._error_text(d, exc))
+                out[d.id] = _Failed(self._error_text(d, exc), _transient(exc))
         return out
 
     def _load_mesh(self, d: Dataset, placed: tuple[SectionMesh, str],

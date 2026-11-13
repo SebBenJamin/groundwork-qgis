@@ -98,3 +98,89 @@ def test_a_failed_move_changes_nothing(populated, monkeypatch):
     [s0], [s1] = before[2], st.station_sets(p.id)
     assert np.allclose(s0.chainage, s1.chainage) and np.allclose(s0.offset, s1.offset)
     assert st.pieces(st.current_version().id, p.id)[0].vertices == before[3][0].vertices
+
+
+OVERHANG = [-20.0, -10.0, 50.0, 115.0, 120.0]     # on the 100 m line: two before, two after
+
+
+def _overhanging(st, p):
+    """A line piece and a polygon reaching past both ends, and a note range past both."""
+    from geophysics_workbench.core.field_notes import FieldNote
+    from geophysics_workbench.core.interpretation import InterpPiece, new_id
+    v = st.current_version()
+    [f] = st.features(v.id)
+    st.save_piece(InterpPiece("over", v.id, f.id, p.id, "line",
+                              [(s, -2.0) for s in OVERHANG]))
+    st.save_piece(InterpPiece("poly", v.id, f.id, p.id, "polygon",
+                              [(-20.0, -1.0), (120.0, -1.0), (120.0, -9.0), (-20.0, -9.0)]))
+    st.save_field_note(FieldNote("range", p.id, -15.0, 110.0, "wet meadow"))
+
+
+def _moved(st, p):
+    pieces = {q.id: [s for s, _z in q.vertices]
+              for q in st.pieces(st.current_version().id, p.id)}
+    note = next(n for n in st.field_notes(p.id) if n.id == "range")
+    return pieces["over"], pieces["poly"], (note.s_from, note.s_to)
+
+
+def test_a_move_keeps_what_lies_beyond_the_line_ends(populated):
+    st, p, _ = populated
+    _overhanging(st, p)
+    st.move_profile_line(p.id, np.array([[0.0, 1.0], [100.0, 1.0]]))     # 1 m sideways
+    line, poly, note = _moved(st, p)
+    assert line == pytest.approx(OVERHANG)
+    assert poly == pytest.approx([-20.0, 120.0, 120.0, -20.0, -20.0])     # ring closed
+    assert note == pytest.approx((-15.0, 110.0))
+
+
+def test_a_move_onto_a_reversed_line_keeps_what_lies_beyond_the_ends(populated):
+    st, p, _ = populated
+    _overhanging(st, p)
+    st.move_profile_line(p.id, np.array([[100.0, 1.0], [0.0, 1.0]]))     # runs the other way
+    line, poly, note = _moved(st, p)
+    assert line == pytest.approx([120.0, 110.0, 50.0, -15.0, -20.0])
+    assert poly == pytest.approx([120.0, -20.0, -20.0, 120.0, 120.0])
+    assert note == pytest.approx((115.0, -10.0))
+
+
+def test_a_move_failing_after_the_datasets_leaves_their_placement(populated, tmp_path,
+                                                                    monkeypatch):
+    """The last write (the new station set) fails after a placed dataset was rewritten:
+    the whole move rolls back, ``placement.zero`` included."""
+    import shutil
+
+    from geophysics_workbench.core.model import Dataset, attach_station_set, file_fingerprint
+    from tests.conftest import FIXTURES
+
+    st, p, new_xy = populated
+    src = tmp_path / "f001_res.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+    mt, sha = file_fingerprint(src)
+    opts = {"z_kind": "depth", "placement": {"zero": 100.0, "direction": -1}}
+    st.save_dataset(Dataset("d1", p.id, "", "ert_model", str(src), mt, sha, "r2_res_dat",
+                            opts, {}, name="model"))
+    before = (st.profile(p.id), st.station_sets(p.id), st.field_notes(p.id),
+              st.pieces(st.current_version().id, p.id), st.datasets(p.id))
+    new_set = attach_station_set(st.profile(p.id), "new", "ert",
+                                 np.column_stack([new_xy, np.zeros(len(new_xy))]))
+    real = st._write_station_set
+
+    def fail_on_the_new_set(ds, station_set):
+        if station_set.id == new_set.id:
+            raise RuntimeError("disk full")
+        real(ds, station_set)
+
+    monkeypatch.setattr(st, "_write_station_set", fail_on_the_new_set)
+    with pytest.raises(RuntimeError):
+        st.move_profile_line(p.id, new_xy, new_set)
+    monkeypatch.undo()
+    assert [d.reader_options for d in st.datasets(p.id)] == \
+        [d.reader_options for d in before[4]]
+    assert st.datasets(p.id)[0].reader_options["placement"]["zero"] == 100.0
+    assert np.allclose(st.profile(p.id).xy, before[0].xy)
+    assert [s.id for s in st.station_sets(p.id)] == [s.id for s in before[1]]
+    assert np.allclose(st.station_sets(p.id)[0].chainage, before[1][0].chainage)
+    assert [(n.s_from, n.s_to) for n in st.field_notes(p.id)] == \
+        [(n.s_from, n.s_to) for n in before[2]]
+    assert [q.vertices for q in st.pieces(st.current_version().id, p.id)] == \
+        [q.vertices for q in before[3]]
