@@ -15,7 +15,7 @@ import numpy as np
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsFieldProxyModel, QgsGeometry,
                        QgsPointXY, QgsVectorLayer, QgsWkbTypes)
 from qgis.gui import (QgsDoubleSpinBox, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox,
-                      QgsMapToolEmitPoint, QgsProjectionSelectionWidget, QgsRubberBand)
+                      QgsProjectionSelectionWidget, QgsRubberBand)
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QGroupBox,
                                  QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton,
@@ -28,8 +28,9 @@ from ..core.placement import Placement
 from ..core.roles import PositionColumns, guess_position_columns
 from ..readers.texttable import guess_options, read_table
 from ..section.crossing_lines import own_layer_ids
+from .map_tools import TwoPointPick, release
 from .positions_source import crs_of, positions_from_layer, positions_from_table, \
-    selected_line, to_store
+    selected_line
 from .table_widgets import TableOptionsBox
 
 SOURCES = ("existing", "line", "points", "positions", "layer", "file")
@@ -88,7 +89,10 @@ class PlacementWidget(QGroupBox):
         self._shape = None                  # (line, points) the overlay shows
         self._bands: list = []
         self._watched = None                # line layer whose selection the hint follows
-        self.pick_tool, self._picked, self._prev_tool, self._closing = None, [], None, False
+        self._closing = False               # a pick ends without bringing the dialog back
+        self._pick = TwoPointPick(iface, store.crs_authid, project, self)
+        self._pick.picked.connect(self._picked)
+        self._pick.ended.connect(self._pick_ended)
         self._radios: dict[str, QRadioButton] = {}
         self._details: dict[str, QWidget] = {}
         self._buttons = QButtonGroup(self)
@@ -166,6 +170,7 @@ class PlacementWidget(QGroupBox):
         default = "existing" if allow_existing and self.profile_combo.count() else "line"
         self._radios[default].setChecked(True)
         self.destroyed.connect(partial(_remove_bands, iface.mapCanvas(), self._bands))
+        self.destroyed.connect(partial(release, iface.mapCanvas(), self._pick.state))
         self._on_change()
 
     # -- building ----------------------------------------------------------------------------
@@ -281,12 +286,18 @@ class PlacementWidget(QGroupBox):
         self._on_change()
 
     def set_current_profile(self, profile_id: str | None) -> None:
-        """Preselect ``profile_id`` and collapse the group to one line with "Other…"."""
+        """Preselect ``profile_id`` and collapse the group to one line with "Other…". An id
+        that is not in the store chooses no profile (never another one) and expands."""
         if profile_id is None or "existing" not in self._radios:
             self._expand()
             return
         self._fill_profiles()
-        self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(profile_id)))
+        index = self.profile_combo.findData(profile_id)
+        self.profile_combo.setCurrentIndex(index)
+        if index < 0:
+            self._collapsed = False
+            self.select_source("existing")
+            return
         text = f"Profile “{self.profile_combo.currentText()}”"
         self._collapsed_label.setText(text)
         self._collapsed_label.setToolTip(text)
@@ -639,45 +650,14 @@ class PlacementWidget(QGroupBox):
 
     # -- pick on map -------------------------------------------------------------------------
     def start_pick(self) -> None:
-        canvas = self.iface.mapCanvas()
-        self._picked = []
-        self._prev_tool = canvas.mapTool()
-        self.pick_tool = QgsMapToolEmitPoint(canvas)
-        self.pick_tool.canvasClicked.connect(self._pick_clicked)
-        self.pick_tool.deactivated.connect(self._pick_done)
-        canvas.setMapTool(self.pick_tool)
+        self._pick.start()
         self.window().hide()
 
-    def _pick_clicked(self, point, _button=None) -> None:
-        canvas = self.iface.mapCanvas()
-        tr = to_store(canvas.mapSettings().destinationCrs(), self.store.crs_authid,
-                      self.project)
-        if tr is not None:
-            point = tr.transform(point)
-        self._picked.append(point)
-        a, b = (self.x1, self.y1) if len(self._picked) == 1 else (self.x2, self.y2)
-        a.setValue(point.x())
-        b.setValue(point.y())
-        if len(self._picked) >= 2:
-            self._finish_pick()
+    def _picked(self, p1, p2) -> None:
+        self.set_points(p1.x(), p1.y(), p2.x(), p2.y())
 
-    def _finish_pick(self) -> None:
-        canvas, tool = self.iface.mapCanvas(), self.pick_tool
-        if tool is not None and canvas.mapTool() is tool:
-            if self._prev_tool is not None:
-                canvas.setMapTool(self._prev_tool)
-            else:
-                canvas.unsetMapTool(tool)
-        self._pick_done()
-
-    def _pick_done(self) -> None:
-        """The pick tool finished or lost the canvas: bring the dialog back."""
-        if self.pick_tool is None:
-            return
-        tool, self.pick_tool = self.pick_tool, None
-        tool.deactivated.disconnect(self._pick_done)
-        tool.deleteLater()
-        self._prev_tool = None
+    def _pick_ended(self) -> None:
+        """The pick finished or the user took another map tool: bring the dialog back."""
         if not self._closing:
             self.select_source("points")
             self.window().show()
@@ -687,7 +667,6 @@ class PlacementWidget(QGroupBox):
         """End a pick without bringing the dialog back (its ``done()`` calls this)."""
         self._closing = True
         try:
-            if self.pick_tool is not None:
-                self._finish_pick()
+            self._pick.cancel()
         finally:
             self._closing = False

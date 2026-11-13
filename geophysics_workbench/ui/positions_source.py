@@ -4,8 +4,8 @@ layers. Raises ValueError with a message for the user."""
 from __future__ import annotations
 
 import numpy as np
-from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry,
-                       QgsPointXY, QgsWkbTypes)
+from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsCsException,
+                       QgsGeometry, QgsPointXY, QgsWkbTypes)
 
 from ..core.placement import Positions
 from ..core.roles import PositionColumns, looks_like_degrees
@@ -20,13 +20,26 @@ def to_store(crs: QgsCoordinateReferenceSystem, store_crs: str, project):
     return QgsCoordinateTransform(crs, dst, project)
 
 
+def reprojection_error(crs: QgsCoordinateReferenceSystem, store_crs: str) -> ValueError:
+    """The message when coordinates do not fit the CRS they are declared in."""
+    name = crs.authid() or crs.description() or "their CRS"
+    return ValueError(f"The coordinates cannot be reprojected from {name} to {store_crs}: "
+                      "check their CRS")
+
+
 def _transform_xy(xy: np.ndarray, crs: QgsCoordinateReferenceSystem, store_crs: str,
                   project) -> np.ndarray:
     tr = to_store(crs, store_crs, project)
     if tr is None:
         return xy
-    out = [tr.transform(QgsPointXY(float(x), float(y))) for x, y in xy]
-    return np.array([(p.x(), p.y()) for p in out], dtype=float).reshape(-1, 2)
+    try:
+        out = [tr.transform(QgsPointXY(float(x), float(y))) for x, y in xy]
+    except QgsCsException:
+        raise reprojection_error(crs, store_crs) from None
+    out = np.array([(p.x(), p.y()) for p in out], dtype=float).reshape(-1, 2)
+    if not np.isfinite(out).all():
+        raise reprojection_error(crs, store_crs)
+    return out
 
 
 def _check_degrees(xy: np.ndarray, crs: QgsCoordinateReferenceSystem) -> None:
@@ -128,7 +141,10 @@ def selected_line(layer, store_crs: str, project) -> np.ndarray:
     geom = QgsGeometry(layer.selectedFeatures()[0].geometry())
     tr = to_store(layer.crs(), store_crs, project)
     if tr is not None:
-        geom.transform(tr)
+        try:
+            geom.transform(tr)
+        except QgsCsException:
+            raise reprojection_error(layer.crs(), store_crs) from None
     if geom.isMultipart():
         parts = geom.asMultiPolyline()
         if len(parts) != 1:
@@ -139,4 +155,6 @@ def selected_line(layer, store_crs: str, project) -> np.ndarray:
     xy = np.array([(p.x(), p.y()) for p in line], dtype=float)
     if len(xy) < 2:
         raise ValueError("The selected line needs at least 2 vertices")
+    if not np.isfinite(xy).all():               # a failed transform can also give NaN
+        raise reprojection_error(layer.crs(), store_crs)
     return xy

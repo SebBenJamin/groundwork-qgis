@@ -323,3 +323,139 @@ def test_hig_rules_in_the_group(qgis_app, fake_iface, project_store, make_widget
     # (tool buttons inside QGIS's own widgets — file, CRS, clear buttons — are QGIS's)
     entries = [e for e in collect(w) if e[0] != "tool"]
     assert not problems(entries, "Placement")
+
+
+def test_wrong_crs_for_a_positions_file_says_so(qgis_app, fake_iface, project_store,
+                                                make_widget):
+    # metres declared as EPSG:4326: the reprojection fails with a message, not a traceback
+    from qgis.core import QgsCoordinateReferenceSystem
+    from qgis.gui import QgsProjectionSelectionWidget
+
+    w = make_widget()
+    w.set_positions_file(WILD / "positions_sparse.csv")
+    crs = w.findChild(QgsProjectionSelectionWidget, "role_crs")
+    crs.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+    assert "CRS" in w.positions_status.text()
+    with pytest.raises(ValueError, match="CRS"):
+        w.placement()
+    assert w.known_points() is None
+
+
+def test_wrong_crs_for_a_line_layer_says_so(qgis_app, fake_iface, project_store, make_widget):
+    from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer
+
+    layer = QgsVectorLayer("LineString?crs=EPSG:4326", "utm_as_degrees", "memory")
+    f = QgsFeature()
+    f.setGeometry(QgsGeometry.fromWkt("LineString (437700 5850700, 437780 5850750)"))
+    layer.dataProvider().addFeatures([f])
+    layer.selectAll()
+    fake_iface.setActiveLayer(layer)
+    try:
+        w = make_widget()
+        w.select_source("line")
+        assert "CRS" in w.line_info.text()
+        with pytest.raises(ValueError, match="CRS"):
+            w.placement()
+    finally:
+        fake_iface.setActiveLayer(None)
+
+
+def _canvas_in_store_crs(fake_iface):
+    from qgis.core import QgsCoordinateReferenceSystem
+    from qgis.gui import QgsMapToolPan
+
+    canvas = fake_iface.mapCanvas()
+    canvas.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:25832"))
+    pan = QgsMapToolPan(canvas)
+    canvas.setMapTool(pan)
+    return canvas, pan
+
+
+def _click(canvas, x, y):
+    from qgis.core import QgsPointXY
+    from qgis.PyQt.QtCore import Qt
+
+    canvas.mapTool().canvasClicked.emit(QgsPointXY(x, y), Qt.MouseButton.LeftButton)
+
+
+def test_pick_two_clicks_sets_the_points(qgis_app, fake_iface, project_store, make_widget):
+    canvas, pan = _canvas_in_store_crs(fake_iface)
+    w = make_widget()
+    w.select_source("line")
+    w.start_pick()
+    assert not w.isVisible() and canvas.mapTool() is not pan
+    _click(canvas, 1000.0, 2000.0)
+    assert not w.isVisible()                          # waits for the end point
+    _click(canvas, 1000.0, 2100.0)
+    qgis_app.processEvents()
+    assert w.isVisible() and canvas.mapTool() is pan
+    assert [b.value() for b in (w.x1, w.y1, w.x2, w.y2)] == [1000.0, 2000.0, 1000.0, 2100.0]
+    assert _radio(w, "points").isChecked()
+    assert np.allclose(w.placement().line_xy, [[1000, 2000], [1000, 2100]])
+
+
+def test_pick_cancelled_by_another_tool_restores_the_dialog(qgis_app, fake_iface,
+                                                            project_store, make_widget):
+    from qgis.gui import QgsMapToolZoom
+
+    canvas, _pan = _canvas_in_store_crs(fake_iface)
+    w = make_widget()
+    w.start_pick()
+    _click(canvas, 1000.0, 2000.0)
+    zoom = QgsMapToolZoom(canvas, False)
+    canvas.setMapTool(zoom)                           # the user takes another tool
+    qgis_app.processEvents()
+    assert w.isVisible() and canvas.mapTool() is zoom
+    assert [b.value() for b in (w.x1, w.y1, w.x2, w.y2)] == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_pick_tool_released_when_the_widget_is_destroyed(qgis_app, fake_iface, project_store):
+    from qgis.PyQt import sip
+
+    from geophysics_workbench.ui.placement_widget import PlacementWidget
+
+    st, prj = project_store
+    canvas, pan = _canvas_in_store_crs(fake_iface)
+    w = PlacementWidget(fake_iface, st, prj)
+    w.show()
+    w.start_pick()
+    assert canvas.mapTool() is not pan
+    sip.delete(w)                                     # the dialog goes away mid-pick
+    qgis_app.processEvents()
+    assert canvas.mapTool() is pan
+
+
+def test_unknown_profile_is_not_replaced_by_another(qgis_app, fake_iface, project_store,
+                                                    make_widget):
+    from qgis.PyQt.QtWidgets import QPushButton
+
+    from geophysics_workbench.core.model import profile_from_polyline
+
+    st, _prj = project_store
+    for name in ("L1", "L2"):
+        st.save_profile(profile_from_polyline(name, st.crs_authid,
+                                              np.array([[0.0, 0.0], [50.0, 0.0]])))
+    w = make_widget()
+    w.set_current_profile("no-such-profile")
+    qgis_app.processEvents()
+    assert not w.findChild(QPushButton, "other_button").isVisible()     # not collapsed
+    assert _radio(w, "line").isVisible()
+    assert w.profile_combo.currentIndex() == -1
+    with pytest.raises(ValueError, match="Choose a profile"):
+        w.placement()
+
+
+def test_pick_outside_the_canvas_crs_is_refused_with_a_message(qgis_app, fake_iface,
+                                                               project_store, make_widget):
+    from qgis.core import QgsCoordinateReferenceSystem
+
+    canvas, pan = _canvas_in_store_crs(fake_iface)
+    canvas.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+    fake_iface.messageBar().clearWidgets()
+    w = make_widget()
+    w.start_pick()
+    _click(canvas, 437700.0, 5850700.0)              # metres on a degree canvas
+    assert "CRS" in fake_iface.messageBar().currentItem().text()
+    assert canvas.mapTool() is not pan and not w.isVisible()     # still picking
+    w.cancel_pick()
+    assert canvas.mapTool() is pan
