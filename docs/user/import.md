@@ -13,7 +13,7 @@ Choose the file; the dialog fills in what it can guess and shows a preview. You 
 ### File Format (text tables only)
 
 - **Delimiter**: Detect, Comma, Semicolon, Tab or Space.
-- **Header lines to skip**, and **first row has column names**.
+- **Skip lines** (lines before the table), and **First row holds column names**.
 - **Decimal comma** (off while Detect is chosen; Detect decides).
 
 ### What the Columns Are
@@ -29,7 +29,7 @@ First guesses come from the column names (a unit in brackets is ignored, so `Rho
 
 ### Preview
 
-The first rows with each column's role, and a summary line. For a long file the summary is made from the first 1000 rows, and says so. It also lists skipped rows (with the first line number), the fit report (part 3), a note about electrodes (part 4) and warnings. The whole file is read when you press **Add**. If something fails, nothing is saved.
+The first rows with each column's role. Below the scrolling part of the dialog, right above **Add**, a fixed block always shows the result of the check: a summary line, the fit report (part 3), a note about electrodes (part 4) and warnings. For a long file the summary is made from the first 1000 rows, and says so; it also lists skipped rows (with the first line number). The whole file is read when you press **Add**. If something fails, nothing is saved. Once the data are saved, a problem refreshing the view afterwards only shows a warning on the message bar ("Saved, but the view could not be refreshed: …"): the data are in the project, so do not add the file again.
 
 The dialog remembers the last table settings and column roles and offers them again for a file with the same columns.
 
@@ -68,7 +68,7 @@ With no surveyed positions the model sits rigidly on the line: file distance 0 a
 3. Under **Where the Line Runs** choose **the file's own coordinates**, or an existing profile.
 4. **Add**.
 
-Each point is projected onto the line. A profile made from the file's own coordinates follows the cells' map positions: the positions are ordered along the line and simplified to its bends. A model that covers an area instead of following a line is refused. Lines you draw or import are used as drawn; GPS tracks are not smoothed. The preview map shows the line before you save.
+Each point is projected onto the line. Points past the ends of the line (a model's padding) are placed along the line's first or last segment extended: before the start they get a negative distance, after the end a distance beyond the line's length. The preview says how many lie beyond the ends. A profile made from the file's own coordinates follows the cells' map positions: the positions are ordered along the line and simplified to its bends. A model that covers an area instead of following a line is refused. Lines you draw or import are used as drawn; GPS tracks are not smoothed. The preview map shows the line before you save.
 
 ### (c) Adding surveyed positions later
 
@@ -77,9 +77,9 @@ Each point is projected onto the line. A profile made from the file's own coordi
 3. Choose **Keep the line** (the points are projected onto it; points more than 5 m off are listed first) or **Move the line to the points**. Moving asks first and names what moves.
 4. **OK**. Everything is saved together, or not at all.
 
-When the line moves, field notes and the current interpretation follow by map position, frozen interpretation versions keep their stored positions, and the models keep their place on the map.
+When the line moves, field notes and the current interpretation follow by map position, frozen interpretation versions keep their stored positions, and the models keep their place on the map. What lies past the ends of the old line (interpretation drawn over a model's padding, a note range) keeps its distance beyond the ends of the new one.
 
-**Profile Properties…** also holds the **name**, the **station spacing** (empty clears it) and **Reference Height…**. It replaces Rename Profile….
+**Profile Properties…** also holds the **name**, the **station spacing** (empty clears it) and **Reference Height…**. It replaces Rename Profile…. Under the spacing it shows the fit report (part 3) for the spacing and positions as you edit them, before anything is saved.
 
 ---
 
@@ -96,12 +96,12 @@ With two or more known points the model sits at the real positions and is stretc
 
 The **fit report** says how far the file's distances and the surveyed positions disagree, for example:
 
-> 5 known points, largest shift 1.6 m at electrode 16
+> 5 known points, largest shift 1.6 m at station 16
 
-A shift larger than half the gap between known points is highlighted: the file and the survey probably do not belong together, or the spacing is wrong.
+A shift larger than half the gap between known points is shown in the warning colour and followed by *Check the station spacing or the station numbers.*: the file and the survey probably do not belong together, or the spacing is wrong. Add Data shows the report in its result block, Profile Properties under the station spacing.
 
 - A typed spacing is stored with the profile. A guessed one never is.
-- A guess that does not fit is not used. The profile then says *Known points not used: type the station spacing in Profile Properties*.
+- A guess that does not fit is not used. The profile then says *Known points not used: the station spacing guessed from the model does not fit them; type the station spacing in Profile Properties*.
 - Stations numbered out of order along the line are named the same way.
 - Stations that an older version invented from a spacing on a drawn line (no heights, exactly on the line, evenly spaced) are never known points. They stay as they are.
 
@@ -118,7 +118,7 @@ When a profile has no stored stations, the section still shows where the electro
 | **from spacing** | the station spacing you typed |
 | **guessed** | the model's top edge, only for models given as rows or columns of cells |
 
-A triangulated mesh, such as the pyGIMLi VTK results, gives no guess: its surface nodes are three to four times denser than the electrodes and reach past the line ends. A profile with only such a model and no positions says *No electrode positions: import them or type the spacing*.
+A triangulated mesh, such as the pyGIMLi VTK results, gives no guess: its surface nodes are three to four times denser than the electrodes and reach past the line ends. A profile with only such a model and no positions says *No electrode positions: import them or type the spacing in Profile Properties*.
 
 Derived electrodes are **never stored**. They show
 
@@ -137,7 +137,7 @@ A guess is a guess. In the small demo models the cells are half an electrode spa
 
 A profile with no station heights, no DEM and no model with real elevations is drawn **local**: the ground is flat at 0, or at the top of a Local height model. The Topography list shows **Local**.
 
-To give it real heights, choose **Reference Height…** (next to the Topography list, and in Profile Properties…): type one height at one position, a distance or an electrode, and the whole section moves to real elevations. **Ctrl+Z** undoes it; **Remove** takes it away.
+To give it real heights, choose **Reference Height…** (next to the Topography list, and in Profile Properties…): type one height at one position, a distance or an electrode, and the whole section moves to real elevations; the view zooms to the whole section at its new height. **Ctrl+Z** undoes it; **Remove** takes it away. If the workbench file cannot be written at that moment (read-only, open in another program), a line under the section says so and nothing changes.
 
 - Interpretation drawn on a local section moves with the reference height. When real heights arrive later (a positions file with elevations, a DEM), it is moved once onto the real ground, keeping its depth below the ground. Export does this first if needed.
 - While a profile is local there are no DEM line and no boreholes (drawing, hover, snapping, picking on the map, plate legends), no ties with other profiles, and no interpretation export for it; a message says why.
