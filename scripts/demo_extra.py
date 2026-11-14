@@ -55,8 +55,21 @@ def set_author(project, author: str | None = None) -> None:
     project.setMetadata(md)
 
 
+def _relative_to_folder(data: bytes, folder: Path) -> bytes:
+    """Paths under ``folder`` written out in full become ``./...``. QGIS keeps the styles of
+    a layout map with locked layers with absolute sources even in a project saved with
+    relative paths, which would carry the build machine's folders into a shared demo."""
+    root = str(Path(folder).resolve()).rstrip("\\/")
+    for variant in {root, root.replace("\\", "/")}:
+        for sep in ("\\", "/"):
+            pattern = re.compile(re.escape(variant + sep).encode(), re.IGNORECASE)
+            data = pattern.sub(b"./", data)
+    return data
+
+
 def strip_save_user(qgz: Path) -> None:
-    """Blank the ``saveUser`` / ``saveUserFull`` attributes of the .qgs inside ``qgz``."""
+    """Blank the ``saveUser`` / ``saveUserFull`` attributes of the .qgs inside ``qgz``, and
+    make paths under the project's own folder relative (see ``_relative_to_folder``)."""
     qgz = Path(qgz)
     with zipfile.ZipFile(qgz) as zf:
         entries = [(info, zf.read(info.filename)) for info in zf.infolist()]
@@ -65,6 +78,7 @@ def strip_save_user(qgz: Path) -> None:
         for info, data in entries:
             if info.filename.lower().endswith(".qgs"):
                 data = _SAVE_USER.sub(rb'\1=""', data)
+                data = _relative_to_folder(data, qgz.parent)
             zf.writestr(info, data)
     tmp.replace(qgz)
 

@@ -1,12 +1,13 @@
 """Build the release zips in dist/:
 
-    python-qgis.bat scripts/package.py [--guelpe <freshly built Gülpe demo folder>]
+    python-qgis.bat scripts/package.py [--guelpe <fresh Gülpe demo folder>] [--erfurt <fresh Erfurt demo folder>]
 
 dist/geophysics_workbench-<version>.zip       the plugin, top folder geophysics_workbench/
                                               (what Plugins > Install from ZIP expects)
 dist/geophysics_workbench-demo-<version>.zip  the contents of demo/: unzip anywhere and open
                                               demo_project.qgz
 dist/geophysics_workbench-demo-guelpe-<version>.zip  the real-data demo (demo_guelpe/); open guelpe_project.qgz
+dist/geophysics_workbench-demo-erfurt-<version>.zip  the real-data demo (demo_erfurt/); open erfurt_project.qgz
 
 The version comes from geophysics_workbench/metadata.txt. Byte caches, editor or SQLite
 side files and GDAL .aux.xml statistics are left out; so are tests, spikes and the demo
@@ -24,6 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "geophysics_workbench"
 DEMO = REPO / "demo"
 DEMO_GUELPE = REPO / "demo_guelpe"
+DEMO_ERFURT = REPO / "demo_erfurt"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 EXCLUDE_FILES = ("*.qto3settings", "*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
@@ -95,10 +97,12 @@ def write_zip(target: Path, entries: list[tuple[Path, str]]) -> Path:
     return target
 
 
-def build(dist: Path = DIST, guelpe_src: Path = DEMO_GUELPE) -> tuple[Path, Path]:
-    """The three zips. ``guelpe_src``: the Gülpe demo folder to ship, by default the committed
-    demo_guelpe/; a freshly built folder (``build_demo_guelpe.py --out``) ships a clean demo
-    without touching the committed one."""
+def build(dist: Path = DIST, guelpe_src: Path = DEMO_GUELPE,
+          erfurt_src: Path = DEMO_ERFURT) -> tuple[Path, Path, Path, Path]:
+    """The four zips. ``guelpe_src`` / ``erfurt_src``: the real-data demo folders to ship, by
+    default the committed demo_guelpe/ and demo_erfurt/; a freshly built folder
+    (``build_demo_guelpe.py --out``, ``build_demo_erfurt.py --out``) ships a clean demo without
+    touching the committed one."""
     ver = version()
     plugin_entries = [(p, f"{PLUGIN.name}/{p.relative_to(PLUGIN).as_posix()}")
                       for p in files_under(PLUGIN)]
@@ -108,10 +112,12 @@ def build(dist: Path = DIST, guelpe_src: Path = DEMO_GUELPE) -> tuple[Path, Path
     demo_zip = _demo_zip(DEMO, f"{PLUGIN.name}-demo-{ver}", "demo_project.qgz", dist)
     guelpe_zip = _demo_zip(Path(guelpe_src), f"{PLUGIN.name}-demo-guelpe-{ver}", "guelpe_project.qgz",
                            dist)
+    erfurt_zip = _demo_zip(Path(erfurt_src), f"{PLUGIN.name}-demo-erfurt-{ver}", "erfurt_project.qgz",
+                           dist)
     size = plugin_zip.stat().st_size
     if size >= MAX_PLUGIN_BYTES:
         raise RuntimeError(f"{plugin_zip.name} is {size} bytes (limit {MAX_PLUGIN_BYTES})")
-    return plugin_zip, demo_zip, guelpe_zip
+    return plugin_zip, demo_zip, guelpe_zip, erfurt_zip
 
 
 def _demo_zip(src: Path, name: str, project: str, dist: Path) -> Path:
@@ -129,8 +135,11 @@ def main() -> int:
     guelpe = DEMO_GUELPE
     if "--guelpe" in sys.argv:
         guelpe = Path(sys.argv[sys.argv.index("--guelpe") + 1]).resolve()
+    erfurt = DEMO_ERFURT
+    if "--erfurt" in sys.argv:
+        erfurt = Path(sys.argv[sys.argv.index("--erfurt") + 1]).resolve()
     try:
-        zips = build(guelpe_src=guelpe)
+        zips = build(guelpe_src=guelpe, erfurt_src=erfurt)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

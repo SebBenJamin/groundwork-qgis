@@ -53,7 +53,15 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     import package
 
     zips = package.build(tmp_path)
-    assert len(zips) == 3
+    assert len(zips) == 4
+    erfurt = zips[3]
+    assert erfurt.name.startswith("geophysics_workbench-demo-erfurt-")
+    erfurt_names = zipfile.ZipFile(erfurt).namelist()
+    for need in ("erfurt_project.qgz", "erfurt_workbench.gpkg", "ATTRIBUTION.md",
+                 "context/cores.gpkg", "data/ert/ERT02/dcinv.result.vtk",
+                 "data/stations/ERT02_electrodes.csv"):
+        assert need in erfurt_names
+    assert not any(n.endswith((".qto3settings", "-wal", "-shm")) for n in erfurt_names)
     guelpe = zips[2]
     assert guelpe.name.startswith("geophysics_workbench-demo-guelpe-")
     names = zipfile.ZipFile(guelpe).namelist()
