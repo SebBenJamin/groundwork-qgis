@@ -21,6 +21,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 
 from ..core.model import Profile, attach_positions, profile_from_positions
 from ..core.numbers import fmt_trim, parse
+from ..section.dock import NOT_REFRESHED, REFERENCE_FAILED, STORE_ERRORS
 from ..section.topography import LOCAL_KINDS
 from . import profile_actions
 from .dialog_size import fit_to_content
@@ -146,21 +147,47 @@ class ProfilePropertiesDialog(QDialog):
 
     # -- reference height --------------------------------------------------------------------
     def _ask_reference(self) -> None:
-        profile = self.store.profile(self.profile_id)
-        result = self.ask_reference(self, self.provider.electrodes(self.profile_id),
-                                    profile.chainage.length,
+        try:
+            profile = self.store.profile(self.profile_id)
+            electrodes = self.provider.electrodes(self.profile_id)
+        except STORE_ERRORS as exc:             # a slot never raises
+            self._error(REFERENCE_FAILED.format(error=exc))
+            return
+        result = self.ask_reference(self, electrodes, profile.chainage.length,
                                     profile.metadata.get("reference_height"))
         if result is None:
             return
         s, z = (None, None) if result is False else result
         if self.dock is not None and self.dock.current_profile_id() == self.profile_id:
-            self.dock.set_reference_height(s, z)        # one step on the panel's undo stack
+            failed = self.dock.set_reference_height(s, z)   # one step on the panel's undo stack
         else:
+            failed = self._set_reference(s, z)
+        if failed:
+            self._error(failed)
+        self._sync_reference()
+
+    def _set_reference(self, s, z) -> str | None:
+        """The reference height of a profile the panel does not show (no undo step); the
+        message when it could not be saved, else None."""
+        try:
             self.provider.set_reference_height(self.profile_id, s, z)
+        except STORE_ERRORS as exc:
+            if self._stored_reference() == (None if s is None else {"s": s, "z": z}):
+                return NOT_REFRESHED.format(error=exc)     # saved; what follows failed
+            return REFERENCE_FAILED.format(error=exc)
+        try:
             if self.store.has_interpretation():
                 from .interp_layers import reload_interp_layers
                 reload_interp_layers(self.store, self.project)    # pieces moved with it
-        self._sync_reference()
+        except STORE_ERRORS as exc:
+            return NOT_REFRESHED.format(error=exc)
+        return None
+
+    def _stored_reference(self):
+        try:
+            return self.store.profile(self.profile_id).metadata.get("reference_height")
+        except (*STORE_ERRORS, KeyError):
+            return False                        # unknown: never equal to a value
 
     # -- reading the form --------------------------------------------------------------------
     def _spacing(self) -> float | None:

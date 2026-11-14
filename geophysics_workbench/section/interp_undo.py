@@ -13,15 +13,20 @@ from qgis.PyQt.QtGui import QUndoCommand, QUndoStack
 
 
 class _Command(QUndoCommand):
+    """``apply(state, other)``; when it returns False the step did not happen, and the
+    command is made obsolete, so the stack drops it instead of claiming the change."""
+
     def __init__(self, apply, text, before, after):
         super().__init__(text)
         self._apply, self.before, self.after = apply, before, after
 
     def redo(self):
-        self._apply(self.after, self.before)
+        if self._apply(self.after, self.before) is False:
+            self.setObsolete(True)
 
     def undo(self):
-        self._apply(self.before, self.after)
+        if self._apply(self.before, self.after) is False:
+            self.setObsolete(True)
 
 
 class InterpUndo:

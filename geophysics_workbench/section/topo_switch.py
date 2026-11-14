@@ -110,11 +110,15 @@ class TopoSwitch:
             return
         if provider is None or profile is None:
             return
+        from .dock import REFERENCE_FAILED, STORE_ERRORS
         try:
             fresh = provider.store.profile(profile.id)
+            electrodes = provider.electrodes(profile.id)
         except KeyError:
             return
-        electrodes = provider.electrodes(profile.id)
+        except STORE_ERRORS as exc:             # a slot never raises
+            dock.readout.setText(REFERENCE_FAILED.format(error=exc))
+            return
         answer = self.ask_reference(self.reference_button.window(), electrodes,
                                     fresh.chainage.length,
                                     fresh.metadata.get("reference_height"))

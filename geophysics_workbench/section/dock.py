@@ -44,6 +44,13 @@ HINT_NO_PROFILE_LINK = ('Choose a profile above, or <a href="pick">pick one on t
 HINT_HOVER = "Move the mouse over the section to read values."
 MISSING_PROFILE = "Profile not found in the workbench project; it may have been deleted."
 SETTLED = "Interpretation on {profile} moved onto the real surface: {n} piece(s)"
+SETTLE_FAILED = ("Could not move the interpretation on {profile} onto the real surface: "
+                 "{error}. It is tried again when the section is refreshed.")
+REFERENCE_FAILED = "Could not save the reference height: {error}. Nothing was changed."
+#: after the store was written, something that follows it failed
+NOT_REFRESHED = "Saved, but the view could not be refreshed: {error}"
+#: what a store write raises (GDAL: RuntimeError) when the file cannot be written
+STORE_ERRORS = (ValueError, OSError, RuntimeError)
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
@@ -152,6 +159,7 @@ class SectionDock(QDockWidget):
 
         self.layer_list = LayerList()
         self.readout = _Readout()
+        self._reference_error: str | None = None     # set while a reference step applies
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.info = _Readout(lines=1)           # which electrodes are shown, local section
         self.info.hide()
@@ -351,17 +359,24 @@ class SectionDock(QDockWidget):
     def _settle(self, profile) -> str | None:
         """Re-hang the interpretation drawn on ``profile`` while it had no heights, once it
         has real ones (``settle_local_interpretation``); the message to show, or None. Not
-        undoable: the undo stack's piece states predate the move, so it is cleared."""
+        undoable: the undo stack's piece states predate the move, so it is cleared. A store
+        that cannot be written gives a message instead (it is tried again on the next
+        refresh); the undo stack is cleared then too, as the pieces may have moved."""
         if not profile.metadata.get("local_pieces"):     # the usual case: no store reads
             return None
-        store = self.provider.store
-        version = store.current_version().id if store.has_interpretation() else None
-        n = len(store.pieces(version, profile.id)) if version is not None else 0
-        if not self.provider.settle_local_interpretation(profile.id):
-            return None
-        self.interp.undo.clear()
-        self._reload_interp_layers()
-        return SETTLED.format(profile=profile.name or profile.id, n=n) if n else None
+        name = profile.name or profile.id
+        try:
+            store = self.provider.store
+            version = store.current_version().id if store.has_interpretation() else None
+            n = len(store.pieces(version, profile.id)) if version is not None else 0
+            if not self.provider.settle_local_interpretation(profile.id):
+                return None
+            self.interp.undo.clear()
+            self._reload_interp_layers()
+        except STORE_ERRORS as exc:
+            self.interp.undo.clear()
+            return SETTLE_FAILED.format(profile=name, error=exc)
+        return SETTLED.format(profile=name, n=n) if n else None
 
     def _reload_interp_layers(self) -> None:
         """The map's interpretation layers read the rebuilt derived tables again."""
@@ -370,32 +385,62 @@ class SectionDock(QDockWidget):
         if store.has_interpretation():
             reload_interp_layers(store, QgsProject.instance())
 
-    def set_reference_height(self, s: float | None, z: float | None) -> None:
+    def set_reference_height(self, s: float | None, z: float | None) -> str | None:
         """Set the open profile's reference height (chainage ``s``, height ``z``), or remove
         it with None: one step on the panel's undo stack, the interpretation on the profile
-        moving with it. The same value again is no step."""
+        moving with it. The same value again is no step. Returns the message shown under
+        the section when the store could not be written (nothing changed, no step), or
+        None."""
         from .topography import reference_height
         profile_id = self.current_profile_id()
         if profile_id is None or self.provider is None:
-            return
-        stored = reference_height(self.provider.store.profile(profile_id).metadata)
+            return None
+        self._reference_error = None
+        try:
+            stored = reference_height(self.provider.store.profile(profile_id).metadata)
+        except STORE_ERRORS as exc:
+            return self._reference_failed(exc)
         current = None if stored is None else {"s": stored[0], "z": stored[1]}
         wanted = None if s is None or z is None else {"s": float(s), "z": float(z)}
         if wanted == current:
-            return
+            return None
         text = "Remove reference height" if wanted is None else "Set reference height"
         self.interp.undo.push_with(self._apply_reference, text, (profile_id, current),
                                    (profile_id, wanted))
+        return self._reference_error
 
-    def _apply_reference(self, state, _other) -> None:
+    def _apply_reference(self, state, _other) -> bool:
+        """Apply one side of a reference-height step. False (the stack drops the step) when
+        the store could not be written; a failure after the store changed (reloading the
+        map's layers) keeps the step."""
         profile_id, ref = state
         if self.provider is None:
-            return
-        if ref is None:
-            self.provider.set_reference_height(profile_id, None, None)
-        else:
-            self.provider.set_reference_height(profile_id, ref["s"], ref["z"])
-        self._reload_interp_layers()
+            return False
+        try:
+            if ref is None:
+                self.provider.set_reference_height(profile_id, None, None)
+            else:
+                self.provider.set_reference_height(profile_id, ref["s"], ref["z"])
+            self._reload_interp_layers()
+        except STORE_ERRORS as exc:
+            saved = self._stored_reference(profile_id) == ref
+            self._reference_failed(exc, saved)
+            return saved
+        return True
+
+    def _stored_reference(self, profile_id: str):
+        """The profile's stored reference height as a step state; False when unreadable."""
+        from .topography import reference_height
+        try:
+            stored = reference_height(self.provider.store.profile(profile_id).metadata)
+        except (*STORE_ERRORS, KeyError):
+            return False
+        return None if stored is None else {"s": stored[0], "z": stored[1]}
+
+    def _reference_failed(self, exc: BaseException, saved: bool = False) -> str:
+        self._reference_error = (NOT_REFRESHED if saved else REFERENCE_FAILED).format(error=exc)
+        self.readout.setText(self._reference_error)
+        return self._reference_error
 
     def _set_curve(self, profile) -> None:
         self.canvas.setProfileCurve(QgsLineString([QgsPoint(float(x), float(y))

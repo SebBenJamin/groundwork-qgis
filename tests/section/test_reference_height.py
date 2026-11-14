@@ -213,3 +213,82 @@ def test_reference_shift_marks_pieces_for_settling(tmp_path):
     assert "local_pieces" not in st.profile(p.id).metadata
     SectionDataProvider(st).set_reference_height(p.id, 20.0, 57.5)
     assert st.profile(p.id).metadata["local_pieces"] is True
+
+
+# -- store errors never leave a slot or an undo step (fix wave, I3) -------------------------
+def _read_only(st, monkeypatch):
+    """Every write transaction of ``st`` fails as GDAL does on a locked or read-only file."""
+    def refuse():
+        raise RuntimeError("attempt to write a readonly database")
+    monkeypatch.setattr(st, "_tx", refuse)
+
+
+def test_a_failed_reference_height_changes_nothing_and_says_so(qgis_app, tmp_path, make_dock,
+                                                               monkeypatch):
+    st, p = _local_store(tmp_path)
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    _read_only(st, monkeypatch)
+    dock.topo.ask_reference = lambda *a: (20.0, 57.5)
+    dock.topo.reference_button.click()                      # the slot does not raise
+    assert "readonly" in dock.readout.text() and "reference height" in dock.readout.text()
+    assert "reference_height" not in st.profile(p.id).metadata
+    assert _z(st, p.id) == [-3.0, -3.0]
+    stack = dock.interp.undo.stack
+    assert stack.count() == 0 and not stack.canUndo() and not stack.canRedo()
+
+
+def test_a_failed_undo_of_a_reference_height_leaves_no_false_step(qgis_app, tmp_path,
+                                                                  make_dock, monkeypatch):
+    st, p = _local_store(tmp_path)
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    dock.set_reference_height(20.0, 57.5)
+    stack = dock.interp.undo.stack
+    assert stack.count() == 1
+    _read_only(st, monkeypatch)
+    stack.undo()                                            # cannot write: nothing undone
+    assert "readonly" in dock.readout.text()
+    assert st.profile(p.id).metadata["reference_height"] == {"s": 20.0, "z": 57.5}
+    assert _z(st, p.id) == [pytest.approx(54.5)] * 2
+    assert not stack.canRedo()                              # no step claims it was undone
+
+
+def test_a_failed_settle_does_not_break_the_refresh(qgis_app, tmp_path, make_dock,
+                                                    monkeypatch):
+    st, p = _local_store(tmp_path)
+    profile = st.profile(p.id)
+    profile.metadata["local_pieces"] = True
+    st.save_profile(profile)
+    _heights(st, p)
+    _read_only(st, monkeypatch)
+    dock = make_dock(st)
+    assert dock.open_profile(p.id)                          # opens; the settle failed
+    assert "readonly" in dock.readout.text() and "D" in dock.readout.text()
+    assert st.profile(p.id).metadata["local_pieces"] is True
+    assert _z(st, p.id) == [-3.0, -3.0]
+    dock.provider.notify_changed()
+    dock._refresh_now()                                     # a refresh says it again
+    assert "readonly" in dock.readout.text()
+
+
+def test_a_failed_settle_before_export_stops_the_export(qgis_app, tmp_path, make_dock,
+                                                        monkeypatch):
+    st, p = _local_store(tmp_path)
+    profile = st.profile(p.id)
+    profile.metadata["local_pieces"] = True
+    st.save_profile(profile)
+    other = profile_from_polyline("M", CRS, np.array([[0.0, 50.0], [60.0, 50.0]]))
+    st.save_profile(other)
+    dock = make_dock(st)
+    dock.open_profile(other.id)
+    _heights(st, p)
+    _read_only(st, monkeypatch)
+    ctl = dock.interp
+    out = tmp_path / "out.gpkg"
+    ctl.ask_path = lambda: str(out)
+    said = []
+    ctl.info = said.append
+    assert ctl.export() == 0
+    assert said and said[-1].startswith("Export failed") and "readonly" in said[-1]
+    assert not out.exists() and st.profile(p.id).metadata["local_pieces"] is True

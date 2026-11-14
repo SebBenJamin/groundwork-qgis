@@ -242,3 +242,19 @@ def test_a_failed_keep_line_save_keeps_the_old_name_too(qgis_app, make_dialog, d
     dlg.accept()
     assert dlg.result() == 0 and st.profile(p.id).name == "Drawn"
     assert st.station_sets(p.id) == []
+
+
+def test_a_failed_reference_height_is_shown_and_changes_nothing(qgis_app, make_dialog, drawn,
+                                                                warnings_shown, monkeypatch):
+    st, p = drawn
+
+    def refuse():
+        raise RuntimeError("attempt to write a readonly database")
+
+    dlg = make_dialog(st, p.id)
+    monkeypatch.setattr(st, "_tx", refuse)
+    dlg.ask_reference = lambda parent, electrodes, length, current: (10.0, 57.5)
+    dlg.reference_button.click()                                  # the slot does not raise
+    assert "readonly" in warnings_shown[-1] and "reference height" in warnings_shown[-1]
+    assert "reference_height" not in st.profile(p.id).metadata
+    assert dlg.isVisible()
