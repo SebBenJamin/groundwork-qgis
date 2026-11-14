@@ -49,6 +49,24 @@ def test_guelpe_live_layers_point_at_brandenburg(qgis_app):
     sources = [lyr.source() for lyr in prj.mapLayers().values()]
     assert any("inspire.brandenburg.de/services/bpk_wfs" in s for s in sources)
     assert any("ge-core_guek300" in s for s in sources)
+    assert any("inspire.brandenburg.de/services/gk_wfs" in s or
+               "inspire.brandenburg.de/services/gk_wms" in s for s in sources)
+    prj.clear()
+
+
+def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
+    """The band and the visible geology are the 1:25 000 map; the GÜK300 stays as a layer
+    that is switched off (at 1:300 000 the whole demo area is one polygon)."""
+    from geophysics_workbench.ui.context_dialog import read_settings
+
+    prj = _project()
+    by_name = {lyr.name(): lyr for lyr in prj.mapLayers().values()}
+    gk25, guek = by_name["Geology GK 25 (LBGR, live)"], by_name["Geology GÜK300 (LBGR, live)"]
+    root = prj.layerTreeRoot()
+    assert root.findLayer(gk25.id()).isVisible()
+    assert not root.findLayer(guek.id()).isVisible()
+    band = read_settings(prj).band
+    assert band is None or band.layer_id == gk25.id()
     prj.clear()
 
 

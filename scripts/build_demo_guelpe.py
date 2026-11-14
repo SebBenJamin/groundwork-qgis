@@ -44,6 +44,9 @@ OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&z
 BPK_WFS = "https://inspire.brandenburg.de/services/bpk_wfs"
 GUEK_WFS = "https://inspire.brandenburg.de/services/ge-core_guek300_wfs"
 GUEK_WMS = "https://inspire.brandenburg.de/services/ge-core_guek300_wms"
+GK_WFS = "https://inspire.brandenburg.de/services/gk_wfs"      # GK 25, GÜK 100, GÜK 300
+GK_WMS = "https://inspire.brandenburg.de/services/gk_wms"
+GEOLOGY_MARGIN = 1500.0      # m around the transects: the GK 25 units the legend lists
 DOP_WMS = "https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms"
 TITLE = "Geophysics Workbench real-data demo: Gülpe (Havel)"
 ATTRIBUTION = """# Sources and licences
@@ -73,7 +76,8 @@ without changing its values.
 
 ## State data (Datenlizenz Deutschland Namensnennung 2.0, https://www.govdata.de/dl-de/by-2-0)
 - **Boreholes** (live WFS Bohrpunktkarte): © LBGR, dl-de/by-2-0
-- **Geology** GÜK300 (live {geology_kind}): © LBGR, dl-de/by-2-0
+- **Geology** GK 25, Geologische Karte 1 : 25 000 (live {geology_kind}), and GÜK300 (live, switched
+  off): © LBGR, dl-de/by-2-0
 - **DGM1** `context/dgm1.tif` (*derived*: tiles merged and cropped): © GeoBasis-DE/LGB, dl-de/by-2-0
 - **Aerial images** DOP20 (live WMS): © GeoBasis-DE/LGB, dl-de/by-2-0
 
@@ -203,30 +207,60 @@ def _log_action(layer) -> None:
     layer.actions().addAction(action)
 
 
-def _geology(project):
-    """Live GÜK300 WFS with a usable unit-name field, else the WMS (map only)."""
-    from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory, QgsSymbol
+def _unit_label(text: str) -> str:
+    """Legend label of a map unit: its name before the first colon (the GK 25 descriptions
+    continue with the full lithology, which stays in the data and the section band)."""
+    text = text.strip().strip('"').strip()
+    return text.split(":", 1)[0].strip() or text
 
-    layer = _wfs("ge:MappedFeature", GUEK_WFS, "Geology GÜK300 (LBGR, live)")
-    field = None
-    if layer.isValid():
-        names = [f.name() for f in layer.fields()]
-        field = next((n for n in ("name", "gml_name", "gml:name") if n in names), None)
-    if field is None:
-        return _wms(GUEK_WMS, "GE.GeologicUnit", "Geology GÜK300 (LBGR, live)"), None
-    values = sorted({str(v) for v in layer.uniqueValues(layer.fields().indexOf(field))})
+
+def _categorized(layer, field: str, extent) -> None:
+    """Categories for the units of ``field`` inside ``extent`` (a QgsRectangle in the layer's
+    CRS), plus a catch-all. Only the area around the transects is asked for: the state-wide
+    WFS layers are far too large to list every unit."""
+    from qgis.core import (QgsCategorizedSymbolRenderer, QgsFeatureRequest, QgsRendererCategory,
+                           QgsSymbol)
+    from qgis.PyQt.QtGui import QColor
+
+    request = QgsFeatureRequest().setFilterRect(extent).setSubsetOfAttributes([field],
+                                                                               layer.fields())
+    values = sorted({str(f[field]) for f in layer.getFeatures(request) if f[field] is not None})
     cats = []
     for k, v in enumerate(values):
         sym = QgsSymbol.defaultSymbol(layer.geometryType())
-        sym.setColor(__import__("qgis.PyQt.QtGui", fromlist=["QColor"]).QColor.fromHsv(
-            (k * 67) % 360, 90, 230))
-        cats.append(QgsRendererCategory(v, sym, v))
+        sym.setColor(QColor.fromHsv((k * 67) % 360, 90, 230))
+        cats.append(QgsRendererCategory(v, sym, _unit_label(v)))
     other = QgsSymbol.defaultSymbol(layer.geometryType())
-    other.setColor(other.color().fromRgb(200, 200, 200))
+    other.setColor(QColor(200, 200, 200))
     cats.append(QgsRendererCategory(None, other, "other"))   # catch-all: else QGIS sends every
     layer.setRenderer(QgsCategorizedSymbolRenderer(field, cats))   # unit name as a WFS filter (HTTP 400)
     layer.setOpacity(0.4)
-    return layer, field
+
+
+def _geology(project, extent):
+    """The geology layers: the live GK 25 WFS (unit description as the band field), else its
+    WMS (map only); and the live GÜK300 WFS (or WMS) as a second layer. Returns
+    ``(gk25 layer, its field or None, GÜK300 layer)``."""
+    gk25 = _wfs("app:gk25", GK_WFS, "Geology GK 25 (LBGR, live)")
+    field = None
+    if gk25.isValid():
+        names = [f.name() for f in gk25.fields()]
+        field = next((n for n in ("beschreibung", "kennung") if n in names), None)
+    if field is None:
+        gk25 = _wms(GK_WMS, "gk25", "Geology GK 25 (LBGR, live)")
+    else:
+        _categorized(gk25, field, extent)
+
+    guek = _wfs("ge:MappedFeature", GUEK_WFS, "Geology GÜK300 (LBGR, live)")
+    guek_field = None
+    if guek.isValid():
+        names = [f.name() for f in guek.fields()]
+        guek_field = next((n for n in ("name", "gml_name", "gml:name") if n in names), None)
+    if guek_field is None:
+        guek = _wms(GUEK_WMS, "GE.GeologicUnit", "Geology GÜK300 (LBGR, live)")
+    else:
+        _categorized(guek, guek_field, extent)
+    return gk25, field, guek
 
 
 def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: str,
@@ -349,7 +383,10 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         water = QgsVectorLayer(str(ctx / "waterways.geojson"), "Waterways (OSM)", "ogr")
         _symbol(water, "line", {"color": "30,110,200", "width": "0.6"})
         demo_extra._labels(water, '"name"', 8.0, (20, 70, 150), line=True)
-        geology, geology_field = _geology(project)
+        from qgis.core import QgsRectangle as _Rect
+        xy = np.vstack([p.xy for p in ProjectStore.open(out / STORE_NAME).profiles()])
+        (gx0, gy0), (gx1, gy1) = xy.min(axis=0) - GEOLOGY_MARGIN, xy.max(axis=0) + GEOLOGY_MARGIN
+        geology, geology_field, guek = _geology(project, _Rect(gx0, gy0, gx1, gy1))
         dem = QgsRasterLayer(str(ctx / "dgm1.tif"), "DGM1 (LGB)", "gdal")
         dop = _wms(DOP_WMS, "bebb_dop20c", "Aerial images DOP20 (LGB, live)")
         osm = QgsRasterLayer(OSM_URI, "OpenStreetMap", "wms")
@@ -358,12 +395,12 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
             if not layer.isValid():
                 raise RuntimeError(f"demo layer {layer.name()} is not valid")
         root = project.layerTreeRoot()
-        for layer in (cores, logs, curves, bpk, bpk_o, water, geology, dem, dop, osm):
+        for layer in (cores, logs, curves, bpk, bpk_o, water, geology, guek, dem, dop, osm):
             if not layer.isValid() and layer not in offline:
                 print(f"warning: live layer {layer.name()} is not reachable now")
             project.addMapLayer(layer, False)
             root.addLayer(layer)
-        for hidden in (bpk_o, dem, dop):
+        for hidden in (bpk_o, guek, dem, dop):
             root.findLayer(hidden.id()).setItemVisibilityChecked(False)
         write_settings(project, demo_context_settings(
             water.id(), bpk.id(), cores.id(), logs.id(), curves.id(), geology.id(),

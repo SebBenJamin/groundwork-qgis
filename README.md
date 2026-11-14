@@ -93,7 +93,8 @@ details.
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
   https://doi.org/10.1016/j.dib.2025.112372.
-- Boreholes (Bohrpunktkarte) and geology (GÜK300), live WFS: © LBGR, dl-de/by-2-0.
+- Boreholes (Bohrpunktkarte) and geology (Geologische Karte 1 : 25 000, and the GÜK300
+  switched off), live WFS: © LBGR, dl-de/by-2-0.
 - DGM1 terrain model (tiles merged and cropped) and DOP20 aerial images (live WMS):
   © GeoBasis-DE/LGB, dl-de/by-2-0.
 - Waterways: © OpenStreetMap contributors, ODbL.
