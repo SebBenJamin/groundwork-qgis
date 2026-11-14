@@ -13,6 +13,10 @@ without changing its values.
   laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
   https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =
   grain-size class and texture code; core-loss rows marked "offset" left out).
+- **Synthetic curves** (`context/synthetic_logs.gpkg`, layer "Synthetic curves (NOT measured)"):
+  made up for the demo, **not measured**. The cores have no geophysical logs; these seeded
+  random values only show how log curves look in the borehole viewer
+  (scripts/make_synthetic_curves.py).
 - Both are part of: Köhler, A. et al. (2025): Geophysical, Sedimentological and Geochemical Data
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,

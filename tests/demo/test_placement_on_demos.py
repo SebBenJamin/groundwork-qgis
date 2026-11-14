@@ -95,7 +95,9 @@ def test_map_coordinate_copy_lands_on_the_same_cells(qgis_app, tmp_path):
     profile = next((p for p in st.profiles() if p.name == "Transect 3"), None)
     assert profile is not None, "Gülpe has no profile Transect 3"
     provider = SectionDataProvider(st)
-    [layer] = provider.layers(profile.id)
+    model = _model(st, profile)        # Transect 3 also carries its measured readings
+    assert model is not None, "Transect 3 has no model"
+    [layer] = [la for la in provider.layers(profile.id) if la.dataset.id == model.id]
     mesh = layer.mesh
     centres, values = _centres(mesh), mesh.values      # triangles carry -1 padding
     # every cell, also those of the model's padding past the line's ends: their map
