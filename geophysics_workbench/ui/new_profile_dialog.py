@@ -94,7 +94,8 @@ class NewProfileDialog(QDialog):
         self.layout().activate()
         short = 0
         for label in self.placement.findChildren(QLabel):
-            if label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored and                     label.isVisibleTo(self) and label.text():
+            if (label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
+                    and label.isVisibleTo(self) and label.text()):
                 short = max(short, label.fontMetrics().horizontalAdvance(label.text())
                             - label.width())
         if short > 0:
