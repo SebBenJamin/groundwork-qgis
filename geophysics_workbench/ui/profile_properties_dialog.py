@@ -15,18 +15,22 @@ import math
 from dataclasses import replace
 
 from qgis.core import Qgis, QgsProject
-from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit,
-                                 QMessageBox, QPushButton, QRadioButton, QScrollArea,
-                                 QVBoxLayout, QWidget)
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+                                 QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton,
+                                 QScrollArea, QVBoxLayout, QWidget)
 
 from ..core.model import Profile, attach_positions, profile_from_positions
 from ..core.numbers import fmt_trim, parse
+from ..core.placement import fit_report
+from ..section.data import is_map_dataset
 from ..section.dock import NOT_REFRESHED, REFERENCE_FAILED, STORE_ERRORS
+from ..section.placement_resolve import resolve
 from ..section.topography import LOCAL_KINDS
 from . import profile_actions
-from .project_actions import NotRefreshed, after_save
 from .dialog_size import fit_to_content
+from .fit_line import fit_line, show_fit
 from .placement_widget import PlacementWidget
+from .project_actions import NotRefreshed, after_save
 from .reference_height_dialog import ask_reference_height
 
 NEW_SET = "New set"
@@ -61,12 +65,19 @@ class ProfilePropertiesDialog(QDialog):
         stated = profile.metadata.get("electrode_spacing")
         if stated is not None:
             self.spacing_edit.setText(fmt_trim(float(stated), 3))
+        #: how the profile's model would sit on the known points with the spacing and
+        #: positions as edited (the same report as Add Data's)
+        self.fit_label = QLabel()
+        self.fit_label.setObjectName("fit_label")
+        self.fit_label.setWordWrap(True)
         self.reference_button = QPushButton(REFERENCE_TEXT)
         self.reference_button.clicked.connect(self._ask_reference)
         form = QFormLayout()
         form.addRow("Name", self.name_edit)
         form.addRow("Station spacing (m)", self.spacing_edit)
+        form.addRow(self.fit_label)
         form.addRow("Height", self.reference_button)
+        self._form = form
 
         self.placement = PlacementWidget(iface, store, self.project, allow_existing=False,
                                          sources=SOURCES, show_spacing=False)
@@ -121,6 +132,9 @@ class ProfilePropertiesDialog(QDialog):
         self.placement.changed.connect(self._sync)
         self.set_positions.toggled.connect(self._positions_page.setVisible)
         self.set_positions.toggled.connect(self._sync)
+        for signal in (self.spacing_edit.textChanged, self.set_combo.currentIndexChanged,
+                       self.keep_line.toggled):
+            signal.connect(self._sync)
         self.resize(1, 1)                   # the first fit sets the size; later ones only grow
         self._sync_reference()
         self._sync()
@@ -141,10 +155,64 @@ class ProfilePropertiesDialog(QDialog):
             "elevations. Applies at once." if local else NO_REFERENCE_TIP)
 
     def _sync(self, *_args) -> None:
+        try:
+            text, warn = self._fit()
+        except Exception:                   # noqa: BLE001 - feedback only; OK says what is wrong
+            text, warn = "", False
+        show_fit(self.fit_label, text, warn)
+        self._form.setRowVisible(self.fit_label, bool(text))
         bar = self._scroll.verticalScrollBar().sizeHint().width()
         self._scroll.setMinimumWidth(self._page.minimumSizeHint().width() + bar
                                      + 2 * self._scroll.frameWidth())
         fit_to_content(self, self._scroll, self._buttons)
+
+    def _fit(self) -> tuple[str, bool]:
+        """The fit line for the spacing and positions as edited (nothing saved): the known
+        points of the positions when they give two, else the pins of the profile's first
+        pinned dataset, resolved as the section would."""
+        try:
+            spacing = self._spacing()
+        except ValueError:
+            return "", False                # a half-typed number: said on OK
+        old = self.store.profile(self.profile_id)
+        metadata = dict(old.metadata)
+        metadata.pop("electrode_spacing", None)
+        if spacing is not None:
+            metadata["electrode_spacing"] = spacing
+        line, sets, known = old.xy, self.store.station_sets(self.profile_id), None
+        positions = None
+        if self.set_positions.isChecked():
+            try:
+                positions = self.placement.placement().positions
+            except ValueError:
+                positions = None
+        if positions is not None:
+            if self.move_line.isChecked():
+                line = profile_from_positions(old.name, self.store.crs_authid, positions)[0].xy
+            made = self._new_set(Profile(old.id, old.name, line, old.crs_authid, metadata),
+                                 positions)
+            others = [s for s in sets if s.id != made.id]
+            if self.move_line.isChecked():          # the move projects them onto the line
+                chainage = Profile(old.id, old.name, line, old.crs_authid).chainage
+                others = [replace(s, chainage=chainage.project(s.xyz[:, :2])[0])
+                          for s in others]
+            sets = [made] + others
+            known = self.placement.known_points()
+        if known is not None:
+            return fit_line(fit_report(*known))
+        profile = Profile(old.id, old.name, line, old.crs_authid, metadata)
+        layout = self.provider.layout(self.profile_id)
+        layout.spacing = spacing
+        for d in self.store.datasets(self.profile_id):
+            if is_map_dataset(d):
+                continue
+            try:
+                r = resolve(profile, sets, d, layout)
+            except Exception:               # noqa: BLE001 - its layer shows the error
+                continue
+            if r.fit is not None or r.note:
+                return fit_line(r.fit, r.source == "guessed", r.note)
+        return "", False
 
     # -- reference height --------------------------------------------------------------------
     def _ask_reference(self) -> None:

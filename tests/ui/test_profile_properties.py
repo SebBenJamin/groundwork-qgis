@@ -275,3 +275,33 @@ def test_a_refresh_failing_after_the_save_is_a_warning(qgis_app, fake_iface, mak
     assert st.profile(p.id).name == "Renamed"
     assert dlg.last_warning == "Saved, but the view could not be refreshed: panel gone"
     assert any("panel gone" in i.text() for i in fake_iface.messageBar().items())
+
+
+def test_the_fit_line_follows_the_spacing_and_positions(qgis_app, make_dialog, drawn,
+                                                        store_with_model):
+    """The same fit line as Add Data's, for what is being edited, live; nothing is saved."""
+    from geophysics_workbench.ui.fit_line import FIT_WARNING, WARNING_STYLE
+
+    st, p = drawn
+    dlg = make_dialog(st, p.id)
+    assert not dlg.fit_label.isVisibleTo(dlg)            # no positions, no stations: nothing
+    dlg.set_positions.setChecked(True)
+    dlg.placement.set_positions_file(POSITIONS)
+    dlg.spacing_edit.setText("5")
+    qgis_app.processEvents()
+    assert dlg.fit_label.isVisibleTo(dlg)
+    assert dlg.fit_label.text().startswith("5 known points, largest shift")
+    assert dlg.fit_label.styleSheet() == ""
+    dlg.spacing_edit.setText("12")
+    assert dlg.fit_label.styleSheet() == WARNING_STYLE
+    assert dlg.fit_label.text().endswith(FIT_WARNING)
+    assert st.station_sets(p.id) == []
+
+    st2, p2, _ = store_with_model                         # stations 1 and 2, 50 m apart
+    dlg = make_dialog(st2, p2.id)
+    dlg.spacing_edit.setText("50")
+    assert dlg.fit_label.text().startswith("2 known points, largest shift 0 m")
+    assert dlg.fit_label.styleSheet() == ""
+    dlg.spacing_edit.setText("5")
+    assert dlg.fit_label.styleSheet() == WARNING_STYLE
+    assert "electrode_spacing" not in st2.profile(p2.id).metadata

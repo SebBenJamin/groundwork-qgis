@@ -31,6 +31,7 @@ from ..readers.text_columns import map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
 from ..section.placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
+from .fit_line import WARNING_STYLE, fit_line, show_fit
 from .new_profile_dialog import METHODS
 from .placement_widget import PlacementWidget
 from .positions_source import xy_to_store
@@ -39,6 +40,7 @@ from .project_actions import (NotRefreshed, add_data, dataset_options, draft_pro
 from .table_widgets import PreviewTable, TableOptionsBox
 
 CHOOSE_OTHER = "Choose another file, or another format above."
+MISSING_FILE = "Check the path, or choose another file."
 Z_ITEMS = [("Choose…", None)] + list(VERTICAL_KINDS)
 FILE_FILTER = ("Model and data files (*.dat *.txt *.csv *.xyz *.vtk *.data *.ohm);;"
                "All files (*)")
@@ -59,7 +61,6 @@ GUESSED_ELECTRODES = ("Electrodes: none in this file; guessed from the top row o
                       "{n}, about {spacing} m apart. Shown as a guess until real positions "
                       "are imported.")
 ERROR_STYLE = "color: #b00020;"
-WARNING_STYLE = "color: #9a5b00;"
 
 
 def guess_response(path) -> str:
@@ -129,7 +130,8 @@ def _guarded(method):
         try:
             return method(self, *args)
         except Exception as exc:                # noqa: BLE001 - shown, never raised
-            self._show_error(plain_error(exc, self._path() or None, CHOOSE_OTHER))
+            self._show_error(plain_error(exc, self._path() or None, CHOOSE_OTHER,
+                                         MISSING_FILE))
     return run
 
 
@@ -215,7 +217,7 @@ class AddDataDialog(QDialog):
         self.placement.setObjectName("placement")
         self.placement.set_current_profile(profile_id)
 
-        preview = QGroupBox("Preview")
+        self._preview_group = preview = QGroupBox("Preview")
         self.preview_table = PreviewTable()
         self.preview_table.setObjectName("preview_table")
         self.preview_table.setMaximumHeight(170)
@@ -226,10 +228,15 @@ class AddDataDialog(QDialog):
         self.electrode_label = _label("electrode_label")
         self.warning_label = _label("warning_label")
         self.warning_label.setStyleSheet(WARNING_STYLE)
-        box = QVBoxLayout(preview)
-        for w in (self.preview_table, self.summary_label, self.fit_label,
-                  self.electrode_label, self.warning_label):
-            box.addWidget(w)
+        QVBoxLayout(preview).addWidget(self.preview_table)
+        # the verdict stays in view above the buttons; only the groups and the table scroll
+        self.status_block = QWidget()
+        self.status_block.setObjectName("status_block")
+        status = QVBoxLayout(self.status_block)
+        status.setContentsMargins(0, 0, 0, 0)
+        for w in (self.summary_label, self.fit_label, self.electrode_label,
+                  self.warning_label):
+            status.addWidget(w)
 
         self._page = page = QWidget()
         column = QVBoxLayout(page)
@@ -246,7 +253,8 @@ class AddDataDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, 1)
+        layout.addWidget(self.status_block)
         layout.addWidget(buttons)
 
         self.format_combo.currentIndexChanged.connect(self._format_changed)
@@ -426,7 +434,7 @@ class AddDataDialog(QDialog):
 
     def _update(self) -> None:
         table = self._is_table()
-        for w in (self.table_options, self.columns_group, self.preview_table):
+        for w in (self.table_options, self.columns_group, self._preview_group):
             w.setVisible(table)
         self._form.setRowVisible(self.response_row, self._reader() in RESPONSE_READERS)
         self._form.setRowVisible(self.z_combo, not table)
@@ -434,6 +442,7 @@ class AddDataDialog(QDialog):
                       self.warning_label):
             label.clear()
         self.summary_label.setStyleSheet("")
+        self.fit_label.setStyleSheet("")
         self._confirm = []
         problems = []
         if table and self._path():
@@ -567,8 +576,7 @@ class AddDataDialog(QDialog):
             known = self.placement.known_points()
             fit = fit_report(*known) if known is not None else resolution.fit
             guess_used = self.placement.spacing_is_guess() if known is not None else guessed
-            text = fit.text(guessed=guess_used) if fit is not None and fit.n >= 2 else ""
-            self.fit_label.setText("; ".join(t for t in (text, resolution.note) if t))
+            show_fit(self.fit_label, *fit_line(fit, guess_used, resolution.note))
         self.electrode_label.setText(self._electrode_text(placement, profile, sets, readings,
                                                           guess))
         if station_set is not None and not guessed:
@@ -675,7 +683,7 @@ class AddDataDialog(QDialog):
                 self._warn(str(exc))
             self.created = placement.profile_id is None
         except Exception as exc:                    # noqa: BLE001 - a slot never raises
-            self._error(plain_error(exc, path or None, CHOOSE_OTHER))
+            self._error(plain_error(exc, path or None, CHOOSE_OTHER, MISSING_FILE))
             return
         if self._is_table():
             QgsSettings().setValue(SETTINGS_KEY, json.dumps(

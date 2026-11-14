@@ -105,3 +105,22 @@ def test_demo_project_carries_no_personal_data():
     cp = ConfigParser()
     cp.read(DEMO.parent / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
     assert re.findall(r"<author>([^<]*)</author>", text) == [cp["general"]["author"]]
+
+
+def test_demo_profiles_open_without_a_placement_note(qgis_app, tmp_path):
+    """P1 and P2 carry a typed station spacing of 5 m (built by scripts/build_demo.py), so
+    their models are pinned to the stations and the section shows no note."""
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.store.gpkg_store import ProjectStore
+
+    copy = tmp_path / "demo"
+    shutil.copytree(DEMO, copy)
+    st = ProjectStore.open(copy / "demo_workbench.gpkg")
+    prov = SectionDataProvider(st)
+    by_name = {p.name: p for p in st.profiles()}
+    for name in ("P1", "P2"):
+        p = by_name[name]
+        assert p.metadata.get("electrode_spacing") == 5.0
+        assert prov.placement_note(p.id) == ""
+        [d] = st.datasets(p.id)
+        assert prov.fit(p.id, d.id) is not None                  # pinned by the spacing

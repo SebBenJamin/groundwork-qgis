@@ -26,9 +26,11 @@ from ..core.layout import inline_distances
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport, fit_report, pinned_map, rigid_map
 
-GUESS_REJECTED_NOTE = "Known points not used: type the station spacing in Profile Properties"
+GUESS_REJECTED_NOTE = ("Known points not used: the station spacing guessed from the model "
+                       "does not fit them; type the station spacing in Profile Properties")
 NOT_USED_NOTE = "Known points not used: {reason}"
-NO_ELECTRODES_NOTE = "No electrode positions: import them or type the spacing"
+NO_ELECTRODES_NOTE = ("No electrode positions: import them or type the spacing in Profile "
+                      "Properties")
 #: metres: offsets and gaps of invented stations agree to this (float noise on UTM lines)
 INVENTED_TOL = 1e-6
 

@@ -599,3 +599,41 @@ def test_a_refresh_failing_after_the_save_is_a_warning_not_a_failed_import(
     assert len(st.datasets(p.id)) == 2 and dlg.dataset is not None
     assert dlg.last_warning == "Saved, but the view could not be refreshed: panel gone"
     assert any("panel gone" in i.text() for i in fake_iface.messageBar().items())
+
+
+def test_the_verdict_stays_above_the_buttons(qgis_app, make_dialog, project_store):
+    """Summary, fit line, electrode note and warnings sit outside the scroll area, right above
+    Add/Cancel; only the groups and the preview table scroll."""
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(WILD / "dist_y_rho_junk.txt")
+    for label in (dlg.summary_label, dlg.fit_label, dlg.electrode_label, dlg.warning_label):
+        assert dlg.status_block.isAncestorOf(label) and not dlg._scroll.isAncestorOf(label)
+    assert dlg._scroll.isAncestorOf(dlg.preview_table)
+    layout = dlg.layout()
+    assert layout.indexOf(dlg.status_block) == layout.indexOf(dlg._scroll) + 1
+
+
+def test_a_fit_that_warns_is_shown_in_the_warning_style(qgis_app, make_dialog, project_store):
+    from geophysics_workbench.ui.fit_line import FIT_WARNING, WARNING_STYLE
+
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(WILD / "dist_y_rho_junk.txt")
+    dlg.placement.set_positions_file(WILD / "positions_sparse.csv")
+    dlg.placement.spacing_edit.setText("12")             # stations 16 and 20 land far off
+    qgis_app.processEvents()
+    assert dlg.fit_label.styleSheet() == WARNING_STYLE
+    assert dlg.fit_label.text().endswith(". " + FIT_WARNING)
+    dlg.placement.spacing_edit.setText("5")
+    qgis_app.processEvents()
+    assert dlg.fit_label.styleSheet() == "" and FIT_WARNING not in dlg.fit_label.text()
+
+
+def test_a_missing_file_says_what_to_do_here(qgis_app, make_dialog, project_store, tmp_path):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(tmp_path / "does_not_exist.txt")
+    text = dlg.summary_label.text()
+    assert "does_not_exist.txt: file not found" in text
+    assert text.endswith("Check the path, or choose another file.") and "layer" not in text

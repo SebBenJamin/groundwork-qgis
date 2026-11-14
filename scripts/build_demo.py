@@ -8,8 +8,9 @@ Reads demo/context/powerline.geojson (fetch_demo_context.py) and writes, under d
   stations/P{1,2,3,4}_electrodes.csv number,x,y,z (P4: station file only, see demo_extra.py)
 under demo/context/ the synthetic context (pylons, boreholes, geology, DEM: demo_context.py),
 and, under demo/ (with the plugin's own code, so it needs QGIS's Python):
-  demo_workbench.gpkg       workbench store: P1-P3, station sets, one model each; model
-                            source paths are relative to the store's folder
+  demo_workbench.gpkg       workbench store: P1-P3, station sets, one model each (P1, P2 with
+                            a typed station spacing of 5 m); model source paths are relative
+                            to the store's folder
   demo_project.qgz          QGIS project (EPSG:25832): OSM tiles, powerline, context layers and
                             settings, workbench group; every path relative, so the demo works
                             wherever it is unpacked
@@ -47,6 +48,9 @@ DEMO_MODELS = {"P1": ("data/ert/P1/f001_res.dat", "r2_res_dat", "elevation"),
 OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
 SEED = 42
 SPACING = 5.0                        # electrode spacing (m)
+#: profiles stored with a typed station spacing: their row models are pinned to the stations
+#: by it (the guess from the model's 2.5 m cells would not fit and is not used)
+TYPED_SPACING = ("P1", "P2")
 ANCHOR = (437791.67, 5850874.70)     # near a straight stretch of the fetched powerline (EPSG:25832)
 BASE_ELEVATION = 60.0                # m a.s.l.
 LAYER_RHO = {"topsoil": 80.0, "till": 30.0, "sandstone": 450.0}
@@ -278,6 +282,8 @@ def build_workbench(demo_dir: Path = DEMO) -> Path:
     for name, (rel, reader, z_kind) in DEMO_MODELS.items():
         numbers, xyz = read_stations(demo_dir / f"data/stations/{name}_electrodes.csv")
         profile, stations = profile_from_stations(name, CRS, xyz, numbers)
+        if name in TYPED_SPACING:               # as typed in Profile Properties
+            profile.metadata["electrode_spacing"] = SPACING
         store.save_profile(profile)
         store.save_station_set(stations)
         src = demo_dir / rel

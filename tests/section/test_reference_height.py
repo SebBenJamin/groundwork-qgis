@@ -292,3 +292,21 @@ def test_a_failed_settle_before_export_stops_the_export(qgis_app, tmp_path, make
     assert ctl.export() == 0
     assert said and said[-1].startswith("Export failed") and "readonly" in said[-1]
     assert not out.exists() and st.profile(p.id).metadata["local_pieces"] is True
+
+
+def test_the_view_follows_a_reference_height(qgis_app, tmp_path, make_dock):
+    """Set or removed (also by undo), the section zooms to its full extent, so the data
+    moved to real elevations stay in view."""
+    st, p = _local_store(tmp_path)
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+
+    def shown(z):
+        e = dock.canvas.visibleElevationRange()
+        return e.lower() <= z <= e.upper()
+
+    assert shown(0.0) and not shown(57.5)                # the flat local surface
+    dock.set_reference_height(20.0, 57.5)
+    assert shown(57.5) and not shown(0.0)
+    dock.interp.undo.stack.undo()
+    assert shown(0.0) and not shown(57.5)

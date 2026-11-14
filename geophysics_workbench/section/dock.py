@@ -410,9 +410,9 @@ class SectionDock(QDockWidget):
         return self._reference_error
 
     def _apply_reference(self, state, _other) -> bool:
-        """Apply one side of a reference-height step. False (the stack drops the step) when
-        the store could not be written; a failure after the store changed (reloading the
-        map's layers) keeps the step."""
+        """Apply one side of a reference-height step and zoom the open profile to its full
+        extent. False (the stack drops the step) when the store could not be written; a
+        failure after the store changed (reloading the map's layers) keeps the step."""
         profile_id, ref = state
         if self.provider is None:
             return False
@@ -422,6 +422,9 @@ class SectionDock(QDockWidget):
             else:
                 self.provider.set_reference_height(profile_id, ref["s"], ref["z"])
             self._reload_interp_layers()
+            if profile_id == self.current_profile_id():     # the data moved: keep them in view
+                self._refresh_now()
+                self.zoom_full()
         except STORE_ERRORS as exc:
             saved = self._stored_reference(profile_id) == ref
             self._reference_failed(exc, saved)
@@ -495,7 +498,8 @@ class SectionDock(QDockWidget):
                 parts.append(note)
             if self.provider.is_local(pid):
                 parts.append(LOCAL_INFO)
-        self.info.setText(" · ".join(parts))
+        text = " · ".join(parts)
+        self.info.setText(text[:1].upper() + text[1:])     # a line under the section
         self.info.setVisible(bool(parts))
 
     def _show_errors(self, lines: list[str]) -> None:

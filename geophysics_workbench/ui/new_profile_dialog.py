@@ -14,7 +14,8 @@ from pathlib import Path
 
 from qgis.core import Qgis, QgsProject
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-                                 QLineEdit, QMessageBox, QScrollArea, QVBoxLayout, QWidget)
+                                 QLabel, QLineEdit, QMessageBox, QScrollArea, QSizePolicy,
+                                 QVBoxLayout, QWidget)
 
 from ..section.data import matching_profiles
 from ..section.profile_source import CURVE_TOLERANCE
@@ -78,7 +79,27 @@ class NewProfileDialog(QDialog):
 
         self.placement.changed.connect(self._sync)
         self.resize(1, 1)                   # the first fit sets the size; later ones only grow
+        self._widened = False
         self._sync()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._widened:
+            self._widened = True
+            self._widen_for_hints()
+
+    def _widen_for_hints(self) -> None:
+        """Open wide enough for the placement's hints. They never widen the dialog
+        themselves (a long layer name must not), so the content size leaves them cut."""
+        self.layout().activate()
+        short = 0
+        for label in self.placement.findChildren(QLabel):
+            if label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored and                     label.isVisibleTo(self) and label.text():
+                short = max(short, label.fontMetrics().horizontalAdvance(label.text())
+                            - label.width())
+        if short > 0:
+            screen = self.screen().availableGeometry()
+            self.resize(min(self.width() + short + 2, screen.width() - 40), self.height())
 
     # -- state -------------------------------------------------------------------------------
     def _sync(self) -> None:

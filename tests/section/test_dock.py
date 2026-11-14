@@ -430,7 +430,7 @@ def test_info_line_names_the_kind(qgis_app, tmp_path, make_dock):
     dock = make_dock(st)
     assert dock.info_text() == "" and dock.info.isHidden()
     dock.open_profile(p.id)
-    assert "electrodes guessed from the model" in dock.info_text()
+    assert dock.info_text().startswith("Electrodes guessed from the model")   # a capital
     assert not dock.info.isHidden()
 
 
@@ -438,4 +438,5 @@ def test_info_line_asks_for_positions_when_there_is_no_guess(qgis_app, tmp_path,
     st, p = _drawn_store(tmp_path, "ert/f001_res.vtk", "vtk_legacy")
     dock = make_dock(st)
     dock.open_profile(p.id)
-    assert "No electrode positions: import them or type the spacing" in dock.info_text()
+    assert ("No electrode positions: import them or type the spacing in Profile Properties"
+            in dock.info_text())

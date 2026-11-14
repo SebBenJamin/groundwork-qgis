@@ -258,3 +258,18 @@ def test_dialog_opens_at_its_content_and_grows_with_it(qgis_app, make_dialog):
     dlg.placement.select_source("line")
     qgis_app.processEvents()
     assert dlg.height() == grown                     # never shrinks
+
+
+def test_opens_wide_enough_for_its_hints(qgis_app, make_dialog):
+    """"Make a line layer active and select one line feature" and the positions hint are
+    not cut off when the dialog opens."""
+    from qgis.PyQt.QtWidgets import QLabel, QSizePolicy
+
+    dlg = make_dialog()
+    hints = [label for label in dlg.placement.findChildren(QLabel)
+             if label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
+             and label.isVisibleTo(dlg) and label.text()]
+    assert len(hints) >= 2
+    for label in hints:
+        assert label.width() >= label.fontMetrics().horizontalAdvance(label.text()), \
+            label.text()
