@@ -181,6 +181,32 @@ def reload_stale_layers(store: ProjectStore, project: QgsProject) -> int:
     return 1
 
 
+#: shown when the store write committed but what follows it (layers, panel) failed
+NOT_REFRESHED = "Saved, but the view could not be refreshed: {error}"
+
+
+class NotRefreshed(Exception):
+    """The data were saved, but refreshing the layers or the panel afterwards raised.
+    ``saved`` is what the call returns otherwise; ``error`` is what was raised."""
+
+    def __init__(self, saved, error: BaseException):
+        super().__init__(NOT_REFRESHED.format(error=error))
+        self.saved, self.error = saved, error
+
+
+def after_save(saved, *steps) -> None:
+    """Run each refresh step after a committed save (all of them, even when one fails);
+    raise ``NotRefreshed(saved, first error)`` when any failed."""
+    failed = None
+    for step in steps:
+        try:
+            step()
+        except Exception as exc:                # noqa: BLE001 - the data are saved anyway
+            failed = failed or exc
+    if failed is not None:
+        raise NotRefreshed(saved, failed)
+
+
 def refresh_layers(store: ProjectStore, project: QgsProject) -> None:
     """Make the store's layers show what was just written to the GeoPackage."""
     for layer in store_layers(store, project).values():
@@ -268,7 +294,8 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     files, and ValueError when it is still unknown what Z means. A depth or local-height
     model hangs from the profile's surface, whatever heights the profile has. ``result``: the
     file already read that way (it is then not read again). ``profile`` and ``station_set``
-    are saved with the dataset in one transaction (nothing is saved when one write fails)."""
+    are saved with the dataset in one transaction (nothing is saved when one write fails).
+    A failure of ``provider``'s listeners after the save raises ``NotRefreshed``."""
     path = Path(path)
     opts = dict(options)
     opts["chainage_offset"] = float(opts.get("chainage_offset") or 0.0)
@@ -287,7 +314,7 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     else:
         store.save_import(profile, station_set, dataset)
     if provider is not None:
-        provider.notify_changed()
+        after_save(dataset, provider.notify_changed)
     return dataset
 
 
@@ -371,7 +398,9 @@ def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
     positions. A stated station spacing is stored with the profile (a guessed one never).
     ``station_set_id`` chooses among an existing profile's station sets (default the first).
     The whole file is read before anything is saved; the profile, station set and dataset
-    are then saved in one transaction, so a failure saves nothing."""
+    are then saved in one transaction, so a failure saves nothing. A failure of what follows
+    the save (layers, ``provider``'s listeners) raises ``NotRefreshed`` with
+    ``(profile, dataset)``."""
     path = Path(path)
     created = placement.profile_id is None
     if created:                             # made exactly as New Profile makes it
@@ -386,8 +415,11 @@ def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
     result = read_for(store, profile, path, reader, opts)
     changed = profile if created or placement.spacing is not None else None
     dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
-                        provider=provider, result=result, profile=changed,
-                        station_set=new_set)
+                        result=result, profile=changed, station_set=new_set)
+    steps = []
     if created or new_set is not None:
-        refresh_layers(store, project)
+        steps.append(lambda: refresh_layers(store, project))
+    if provider is not None:
+        steps.append(provider.notify_changed)
+    after_save((profile, dataset), *steps)
     return profile, dataset

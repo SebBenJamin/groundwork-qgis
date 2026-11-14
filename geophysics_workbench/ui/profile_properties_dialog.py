@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from qgis.core import QgsProject
+from qgis.core import Qgis, QgsProject
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit,
                                  QMessageBox, QPushButton, QRadioButton, QScrollArea,
                                  QVBoxLayout, QWidget)
@@ -24,6 +24,7 @@ from ..core.numbers import fmt_trim, parse
 from ..section.dock import NOT_REFRESHED, REFERENCE_FAILED, STORE_ERRORS
 from ..section.topography import LOCAL_KINDS
 from . import profile_actions
+from .project_actions import NotRefreshed, after_save
 from .dialog_size import fit_to_content
 from .placement_widget import PlacementWidget
 from .reference_height_dialog import ask_reference_height
@@ -45,7 +46,7 @@ class ProfilePropertiesDialog(QDialog):
         self.iface, self.store, self.provider, self.dock = iface, store, provider, dock
         self.profile_id = profile_id
         self.project = project if project is not None else QgsProject.instance()
-        self.last_error = None
+        self.last_error = self.last_warning = None
         #: (parent, electrodes, length, current) -> (s, z), None (cancel) or False (remove);
         #: tests replace it
         self.ask_reference = ask_reference_height
@@ -251,13 +252,17 @@ class ProfilePropertiesDialog(QDialog):
             metadata["electrode_spacing"] = float(spacing)
         if move:
             self.store.move_profile_line(self.profile_id, line, made, metadata, name)
-            self._after_move()
         elif made is not None or metadata != old.metadata or name != old.name:
             kept = self.store.profile(self.profile_id)
             kept.name, kept.metadata = name, metadata
             self.store.save_import(kept, made, None)
+        steps = [self._after_move] if move else []
         if name != old.name or move or made is not None or metadata != old.metadata:
-            self._refresh()
+            steps.append(self._refresh)
+        try:                                    # saved: what follows never fails the dialog
+            after_save(None, *steps)
+        except NotRefreshed as exc:
+            self._warn(str(exc))
         return True
 
     def _after_move(self) -> None:
@@ -285,6 +290,13 @@ class ProfilePropertiesDialog(QDialog):
     def _error(self, message: str) -> None:
         self.last_error = message
         QMessageBox.warning(self, self.windowTitle(), message)
+
+    def _warn(self, message: str) -> None:
+        """Non-blocking, for after the dialog closes: on the message bar."""
+        self.last_warning = message
+        bar = self.iface.messageBar() if hasattr(self.iface, "messageBar") else None
+        if bar is not None:
+            bar.pushMessage(self.windowTitle(), message, Qgis.MessageLevel.Warning, 15)
 
     def done(self, result: int) -> None:
         self.placement.cancel_pick()

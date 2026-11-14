@@ -97,11 +97,11 @@ def test_map_coordinate_copy_lands_on_the_same_cells(qgis_app, tmp_path):
     provider = SectionDataProvider(st)
     [layer] = provider.layers(profile.id)
     mesh = layer.mesh
-    centres = _centres(mesh)       # triangles carry -1 padding
-    # map coordinates cannot say how far a cell lies beyond the line's ends (they project
-    # onto the end point): the file holds only the cells above the line
-    above = (centres[:, 0] >= 0) & (centres[:, 0] <= profile.chainage.length)
-    centres, values = centres[above], mesh.values[above]
+    centres, values = _centres(mesh), mesh.values      # triangles carry -1 padding
+    # every cell, also those of the model's padding past the line's ends: their map
+    # positions lie on the first/last segment extended, and the import puts them back there
+    outer = (centres[:, 0] < 0) | (centres[:, 0] > profile.chainage.length)
+    assert outer.sum() >= 40, outer.sum()     # 47 when measured in Task 16; the demo may change
     xy = profile.chainage.to_xy(centres[:, 0])
     table = tmp_path / "t3_map.csv"
     rows = np.column_stack([xy[:, 0], xy[:, 1], centres[:, 1], values])
@@ -130,6 +130,9 @@ def test_map_coordinate_copy_lands_on_the_same_cells(qgis_app, tmp_path):
     # the data gives about 1e-5 m, so 1 cm is a real check, far below the 0.5 m that a
     # misplaced import (a shifted or stretched line) would show.
     assert np.abs(got[:, 0] - centres[match, 0]).max() <= 0.01, "chainage differs"
+    beyond = outer[match]
+    assert beyond.sum() == outer.sum()                 # the outer cells came back too
+    assert np.abs(got[beyond, 0] - centres[match][beyond, 0]).max() <= 0.01
     assert np.abs(got[:, 1] - centres[match, 1]).max() <= 0.01, "elevation differs"
     assert gap.max() <= 0.01
     # each triangle takes the log-mean of its three points' values: the original ones

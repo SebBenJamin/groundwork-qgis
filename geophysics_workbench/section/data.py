@@ -62,10 +62,28 @@ def _past_ends(xy: np.ndarray, line: np.ndarray, tol: float = 1e-6) -> np.ndarra
     return out
 
 
+def _extend_past_ends(xy: np.ndarray, line: np.ndarray, length: float, beyond: np.ndarray,
+                      s: np.ndarray, offset: np.ndarray) -> None:
+    """For the points ``beyond`` the line's ends: chainage and offset along the first/last
+    segment extended (negative before the start, beyond ``length`` after the end), in place."""
+    for end, inner, start in ((line[0], line[1], 0.0), (line[-1], line[-2], length)):
+        u = (end - inner) / np.hypot(*(end - inner))     # pointing out of the line
+        rel = xy - end
+        along = rel @ u
+        take = beyond & (along > 0)
+        if not take.any():
+            continue
+        forward = -u if start == 0.0 else u              # the line's own direction there
+        cross = forward[0] * rel[take, 1] - forward[1] * rel[take, 0]
+        s[take] = start - along[take] if start == 0.0 else start + along[take]
+        offset[take] = cross
+
+
 def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callable:
     """``xy_to_distance(easting, northing) -> (chainage, offset, beyond)`` for the free-text
     reader: map coordinates in ``file_crs`` ("" = the store's) projected onto ``profile``'s
-    line in ``store_crs``. Never stored."""
+    line in ``store_crs``; points past the line's ends are placed along its first/last
+    segment extended (``beyond`` marks them). Never stored."""
     chainage = profile.chainage
     line = chainage.xy
     transform = None
@@ -86,7 +104,9 @@ def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callab
                           dtype=float).reshape(-1, 2)
         s, offset = chainage.project(xy)
         at_end = (s <= 1e-9) | (s >= chainage.length - 1e-9)
-        return s, offset, at_end & _past_ends(xy, line)
+        beyond = at_end & _past_ends(xy, line)
+        _extend_past_ends(xy, line, chainage.length, beyond, s, offset)
+        return s, offset, beyond
 
     return xy_to_distance
 
@@ -752,17 +772,21 @@ class SectionDataProvider:
     def _layout_sources(self, profile: Profile | None, datasets: list[Dataset]
                         ) -> _LayoutSources:
         """The readings x from the first readings dataset that reads and has an electrode
-        block, the guess from the first distance-based model that reads, the spacing from
-        the profile's metadata. Datasets that cannot be read, or whose electrode block or
-        mesh gives nothing usable, are skipped."""
+        block, the guess from the first distance-based model that gives one (a model of
+        rows or columns of cells; one without a guess, e.g. triangulated, is skipped), the
+        spacing from the profile's metadata. ``model`` is the model that gave the guess, else
+        the first model that reads (its extent serves a stated spacing). Datasets that
+        cannot be read, or whose electrode block or mesh gives nothing usable, are skipped.
+        The Add Data preview follows the same rule (``AddDataDialog._layout``)."""
         out = _LayoutSources(ProfileLayout())
+        first = None                            # (dataset, x max) of the first model
         spacing = (profile.metadata.get("electrode_spacing") if profile is not None else None)
         try:
             out.layout.spacing = None if spacing is None else float(spacing)
         except (TypeError, ValueError):
             pass
         for d in datasets:
-            if out.readings is not None and out.model is not None:
+            if out.readings is not None and out.layout.guess is not None:
                 break
             if is_map_dataset(d):
                 continue
@@ -774,16 +798,20 @@ class SectionDataProvider:
                         readings_x = np.array(
                             [np.nan if v is None else v for v in electrode_x], dtype=float)
                         out.readings, out.layout.readings_x = d, readings_x
-                elif out.model is None:
+                elif out.layout.guess is None:
                     guess = self._model_guess(d, result,
                                               d.reader_options.get("z_kind") or result.z_kind)
                     x_max = float(result.mesh.bounds()[1])
-                    out.model, out.model_x_max = d, x_max
+                    if first is None:
+                        first = (d, x_max)
                     if guess.size >= 2:
+                        out.model, out.model_x_max = d, x_max
                         out.layout.guess = guess
                         out.layout.guessed_spacing = float(np.median(np.diff(guess)))
             except Exception:
                 continue
+        if out.model is None and first is not None:
+            out.model, out.model_x_max = first
         return out
 
     def _resolved(self, profile: Profile, sets: list[StationSet], datasets: list[Dataset],

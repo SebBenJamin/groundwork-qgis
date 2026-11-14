@@ -365,9 +365,10 @@ def test_map_file_follows_a_moved_line(qgis_app, tmp_path):
     st, p, _ = _map_profile(tmp_path, pts[-1])
     provider = SectionDataProvider(st)
     full = provider.layers(p.id)[0].mesh.bounds()[1]
-    p.xy = np.array([pts[0], pts[len(pts) // 2]])
+    p.xy = np.array([pts[len(pts) // 2], pts[-1]])                     # starts half-way
     st.save_profile(p)
-    assert provider.layers(p.id)[0].mesh.bounds()[1] < full - 30.0     # re-read, clamped
+    lo, hi = provider.layers(p.id)[0].mesh.bounds()[:2]                 # re-read
+    assert hi < full - 30.0 and lo < -30.0       # the first half now lies before the start
 
 
 def test_map_file_in_another_crs_is_transformed(qgis_app, tmp_path):
@@ -440,3 +441,43 @@ def test_real_pins_survive_a_rejected_guess(tmp_path):
     # pinned by the three: file 0, 4, 8 at chainage 0, 5, 10, one metre per metre beyond
     assert _mesh(provider, p.id, "d").bounds()[:2] == pytest.approx((0.0, 12.0))
     assert provider.placement_note(p.id) == ""
+
+
+def _surveyed_with_a_triangulated_model(tmp_path):
+    """Profile G with six surveyed stations about 2 m apart and a triangulated VTK model
+    (no guess) as its first dataset."""
+    st = ProjectStore.create(tmp_path / "p.gpkg", CRS)
+    p = profile_from_polyline("G", CRS, np.array([[0.0, 0.0], [30.0, 0.0]]))
+    s_true = np.array([0.0, 2.1, 3.9, 6.2, 8.0, 10.1])
+    s = attach_station_set(p, "G", "ert", np.column_stack([s_true, np.full(6, 0.3),
+                                                           np.full(6, 100.0)]))
+    st.save_profile(p); st.save_station_set(s)
+    tri = tmp_path / "f001_res.vtk"
+    shutil.copy(FIXTURES / "ert" / "f001_res.vtk", tri)
+    _add(st, p, tri, "vtk_legacy", {"z_kind": "elevation"}, "t", s.id)
+    return st, p, s, s_true
+
+
+def test_the_guess_comes_from_the_first_model_that_gives_one(tmp_path):
+    """A triangulated model listed first gives no guess; the row model after it does."""
+    st, p, s, s_true = _surveyed_with_a_triangulated_model(tmp_path)
+    _add(st, p, _f001(tmp_path), "r2_res_dat", {"z_kind": "elevation"}, "d", s.id)
+    provider = SectionDataProvider(st)
+    assert provider.layout(p.id).guess is not None
+    assert _source(provider, p.id, "d") == "guessed"
+    xs = np.unique(np.round(_mesh(provider, p.id, "d").vertices[:, 0], 6))
+    assert xs == pytest.approx(s_true)
+
+
+def test_map_points_past_the_line_ends_extend_its_end_segments():
+    """Before the start: negative chainage; after the end: beyond the length, along the
+    first/last segment; ``beyond`` still marks them."""
+    from geophysics_workbench.core.model import Profile
+    from geophysics_workbench.section.data import xy_to_distance_on
+
+    p = Profile("p", "P", np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), CRS)
+    s, offset, beyond = xy_to_distance_on(p, "", CRS)(np.array([-5.0, 5.0, 9.0]),
+                                                       np.array([1.0, -2.0, 15.0]))
+    assert s == pytest.approx([-5.0, 5.0, 25.0])
+    assert offset == pytest.approx([1.0, -2.0, 1.0])
+    assert beyond.tolist() == [True, False, True]

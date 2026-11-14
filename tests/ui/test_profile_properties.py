@@ -258,3 +258,20 @@ def test_a_failed_reference_height_is_shown_and_changes_nothing(qgis_app, make_d
     assert "readonly" in warnings_shown[-1] and "reference height" in warnings_shown[-1]
     assert "reference_height" not in st.profile(p.id).metadata
     assert dlg.isVisible()
+
+
+def test_a_refresh_failing_after_the_save_is_a_warning(qgis_app, fake_iface, make_dialog,
+                                                       store_with_model, warnings_shown):
+    st, p, _ = store_with_model
+    dlg = make_dialog(st, p.id)
+
+    def broken():
+        raise RuntimeError("panel gone")
+
+    dlg.provider.on_change.append(broken)
+    dlg.name_edit.setText("Renamed")
+    dlg.accept()
+    assert dlg.result() == 1 and warnings_shown == []
+    assert st.profile(p.id).name == "Renamed"
+    assert dlg.last_warning == "Saved, but the view could not be refreshed: panel gone"
+    assert any("panel gone" in i.text() for i in fake_iface.messageBar().items())

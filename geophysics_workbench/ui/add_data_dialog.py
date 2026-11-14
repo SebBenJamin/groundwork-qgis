@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from qgis.core import QgsProject, QgsSettings
+from qgis.core import Qgis, QgsProject, QgsSettings
 from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
                                  QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                  QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget)
@@ -34,7 +34,8 @@ from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .new_profile_dialog import METHODS
 from .placement_widget import PlacementWidget
 from .positions_source import xy_to_store
-from .project_actions import add_data, dataset_options, draft_profile, read_for
+from .project_actions import (NotRefreshed, add_data, dataset_options, draft_profile,
+                              read_for)
 from .table_widgets import PreviewTable, TableOptionsBox
 
 CHOOSE_OTHER = "Choose another file, or another format above."
@@ -148,7 +149,7 @@ class AddDataDialog(QDialog):
         self.setWindowTitle("Add Data")
         self.dataset = self.profile = None
         self.created = False                        # the profile was made here
-        self.last_error = None
+        self.last_error = self.last_warning = None
         self._profile_id = profile_id
         self._auto_name = ""
         self._file = ""                             # the file set_file last showed
@@ -599,7 +600,9 @@ class AddDataDialog(QDialog):
         return out
 
     def _layout(self, placement, profile, guess, result) -> ProfileLayout:
-        """What the section would resolve the placement from, with this file added."""
+        """What the section would resolve the placement from, with this file added: the
+        file comes after the profile's datasets, so its guess counts only when none of
+        theirs gives one (``SectionDataProvider._layout_sources``)."""
         if placement.profile_id is not None and self.provider is not None:
             layout = self.provider.layout(placement.profile_id)
         else:
@@ -661,10 +664,15 @@ class AddDataDialog(QDialog):
             if self._on_map() and self._more and self.placement.source() == "file":
                 self._whole_file_line()
                 placement = self.placement.placement()
-            self.profile, self.dataset = add_data(
-                self.store, placement, Path(path), self._reader(), self._reader_options(),
-                self._name(), self.method_combo.currentData(), self.project, self.provider,
-                self.station_set_combo.currentData() if self._sets else None)
+            try:
+                self.profile, self.dataset = add_data(
+                    self.store, placement, Path(path), self._reader(),
+                    self._reader_options(), self._name(), self.method_combo.currentData(),
+                    self.project, self.provider,
+                    self.station_set_combo.currentData() if self._sets else None)
+            except NotRefreshed as exc:             # saved: never reported as a failure
+                self.profile, self.dataset = exc.saved
+                self._warn(str(exc))
             self.created = placement.profile_id is None
         except Exception as exc:                    # noqa: BLE001 - a slot never raises
             self._error(plain_error(exc, path or None, CHOOSE_OTHER))
@@ -697,6 +705,13 @@ class AddDataDialog(QDialog):
     def _error(self, message: str) -> None:
         self.last_error = message
         QMessageBox.warning(self, self.windowTitle(), message)
+
+    def _warn(self, message: str) -> None:
+        """Non-blocking, for after the dialog closes: on the message bar."""
+        self.last_warning = message
+        bar = self.iface.messageBar() if hasattr(self.iface, "messageBar") else None
+        if bar is not None:
+            bar.pushMessage(self.windowTitle(), message, Qgis.MessageLevel.Warning, 15)
 
     def done(self, result: int) -> None:
         self.placement.cancel_pick()

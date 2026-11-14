@@ -554,3 +554,48 @@ def test_a_sample_without_a_section_waits_for_add(qgis_app, make_dialog, project
     assert dlg.result() == 1, warnings_shown
     [p] = st.profiles()
     assert st.datasets(p.id)[0].provenance["n_rows"] == 2400
+
+
+def test_preview_and_section_take_the_guess_from_the_same_model(qgis_app, make_dialog,
+                                                                tmp_path, warnings_shown):
+    """A triangulated model is already on the profile; the row model added now gives the
+    guess, in the preview and in the section after Add."""
+    from geophysics_workbench.section.data import SectionDataProvider
+    from geophysics_workbench.section.placement_resolve import resolve_map
+    from tests.section.test_placement_resolve import _surveyed_with_a_triangulated_model
+
+    st, p, s, s_true = _surveyed_with_a_triangulated_model(tmp_path)
+    src = tmp_path / "f001_res.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+    provider = SectionDataProvider(st)
+    dlg = make_dialog(st, p.id, provider=provider)
+    dlg.set_file(src)
+    dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("elevation"))
+    assert "(pinned with a guessed spacing)" in dlg.fit_label.text()
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    d = dlg.dataset
+    assert resolve_map(st.profile(p.id), st.station_sets(p.id), d,
+                       provider.layout(p.id))[1] == "guessed"
+
+
+def test_a_refresh_failing_after_the_save_is_a_warning_not_a_failed_import(
+        qgis_app, fake_iface, make_dialog, store_with_model, warnings_shown):
+    """The data are committed; a listener that raises afterwards must not make the dialog
+    report a failed import (a second Add would duplicate the dataset)."""
+    from geophysics_workbench.section.data import SectionDataProvider
+
+    st, p, src = store_with_model
+    provider = SectionDataProvider(st)
+
+    def broken():
+        raise RuntimeError("panel gone")
+
+    provider.on_change.append(broken)
+    dlg = make_dialog(st, p.id, provider=provider)
+    dlg.set_file(src)
+    dlg.accept()
+    assert dlg.result() == 1 and warnings_shown == []
+    assert len(st.datasets(p.id)) == 2 and dlg.dataset is not None
+    assert dlg.last_warning == "Saved, but the view could not be refreshed: panel gone"
+    assert any("panel gone" in i.text() for i in fake_iface.messageBar().items())

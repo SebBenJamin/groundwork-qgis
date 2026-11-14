@@ -8,7 +8,8 @@ detected: the user picks this reader when no fixed format fits.
 Vertical meanings: "elevation" and "local" heights are used as they are; "depth" values must
 be all >= 0 or all <= 0 and their magnitude is used. A file with map coordinates (easting,
 northing) needs ``xy_to_distance(easting, northing) -> (chainage, offset[, beyond])`` to place
-it on a profile line; ``beyond`` marks rows whose projection was clamped to a line end.
+it on a profile line; ``beyond`` marks rows that lie past the line's ends (placed along its
+first/last segment extended, counted as ``n_beyond``).
 """
 from __future__ import annotations
 
