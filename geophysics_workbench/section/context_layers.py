@@ -176,7 +176,7 @@ class ContextGatherer:
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
                 b, xy, box, settings.buffer, dem_layer, index, settings.dem_tolerance)) or []
         for strip, b in enumerate(settings.shown_bands()):
-            items.band += self._try(b.layer_id, "geology layer", lambda: self._band(
+            items.band += self._try(b.layer_id, "strip layer", lambda: self._band(
                 b, xy, box, strip)) or []
         items.crossings.sort(key=lambda c: c.s)
         items.points.sort(key=lambda p: p.s)
@@ -515,7 +515,7 @@ class ContextGatherer:
         renderer = layer.renderer()
         styled = renderer is not None and renderer.type() != "singleSymbol"
         ctx = QgsRenderContext()
-        fields = [setting.label_field]
+        fields = [setting.label_field] if setting.label_field else []
         if styled:
             ctx.expressionContext().appendScopes(
                 QgsExpressionContextUtils.globalProjectLayerScopes(layer))
@@ -525,7 +525,7 @@ class ContextGatherer:
         polygons, labels, colours = [], [], {}
         try:
             for feature, geom in self._features(layer, box, tuple(fields)):
-                label = _text(feature[setting.label_field]) or layer.name()
+                label = (_text(feature[setting.label_field]) if setting.label_field else "") or layer.name()
                 if styled and label not in colours:     # first feature of a label decides
                     ctx.expressionContext().setFeature(feature)
                     symbols = renderer.symbolsForFeature(feature, ctx)

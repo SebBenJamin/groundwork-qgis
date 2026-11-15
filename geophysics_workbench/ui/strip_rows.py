@@ -68,7 +68,7 @@ class StripRows(QGroupBox):
     def __init__(self, project, polygon_layers):
         super().__init__("Surface Strips")
         self.project = project
-        self.polygon_layers = list(polygon_layers)
+        self.polygon_layer_ids = [layer.id() for layer in polygon_layers]
         self.rows: list[StripRow] = []
         self.current = -1
         hint = QLabel(HINT)
@@ -104,8 +104,13 @@ class StripRows(QGroupBox):
         self._refresh()
 
     # -- rows --------------------------------------------------------------------------------
-    def _new_row(self) -> StripRow:
-        row = StripRow(self.project, self.polygon_layers)
+    def polygon_layers(self) -> list:
+        """The polygon layers that are still in the project (it is open while the map is used)."""
+        layers = (self.project.mapLayer(i) for i in self.polygon_layer_ids)
+        return [layer for layer in layers if layer is not None]
+
+    def _new_row(self, layers=None) -> StripRow:
+        row = StripRow(self.project, self.polygon_layers() if layers is None else layers)
         for w in row.widgets():
             w.installEventFilter(self)
         self.rows.append(row)
@@ -113,12 +118,19 @@ class StripRows(QGroupBox):
 
     def add_row(self) -> None:
         """A new row on the first polygon layer, below the others and selected."""
-        if not self.polygon_layers:
+        layers = self.polygon_layers()
+        if not layers:
+            self._refresh()
             return
-        row = self._new_row()
-        row.show.setChecked(True)
-        self.current = len(self.rows) - 1
-        self._refresh()
+        try:
+            row = self._new_row(layers)
+            if row.field.count() > 1:                     # the first real field, not "None"
+                row.field.setCurrentIndex(1)
+            row.show.setChecked(True)
+            self.current = len(self.rows) - 1
+            self._refresh()
+        except RuntimeError:                              # a layer went while the row was built
+            self._refresh()
 
     def remove_row(self, i: int) -> None:
         if not 0 <= i < len(self.rows):
@@ -176,9 +188,9 @@ class StripRows(QGroupBox):
             row.number.setFont(font)
         n = len(self.rows)
         self.empty.setVisible(n == 0)
-        self.add_button.setEnabled(bool(self.polygon_layers))
-        self.add_button.setToolTip("" if self.polygon_layers
-                                   else "This project has no polygon layers")
+        has_layers = bool(self.polygon_layers())
+        self.add_button.setEnabled(has_layers)
+        self.add_button.setToolTip("" if has_layers else "This project has no polygon layers")
         self.remove_button.setEnabled(n > 0)
         self.remove_button.setToolTip("Remove the selected strip" if n
                                       else "There is no strip to remove")

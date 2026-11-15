@@ -66,7 +66,7 @@ def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
     assert root.findLayer(gk25.id()).isVisible()
     assert not root.findLayer(guek.id()).isVisible()
     bands = read_settings(prj).bands
-    assert gk25.id() in [b.layer_id for b in bands] or bands == []
+    assert gk25.id() in [b.layer_id for b in bands]
     prj.clear()
 
 

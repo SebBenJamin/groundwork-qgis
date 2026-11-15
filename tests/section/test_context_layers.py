@@ -231,6 +231,16 @@ def test_band_from_polygon_layer(project, profile):
         ("Sand", 0, 60), ("Loess", 60, 100)]
 
 
+def test_strip_with_an_empty_label_field_uses_the_layer_name(project, profile):
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    geo = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geo, "POLYGON((0 -10, 100 -10, 100 10, 0 10, 0 -10))", ["Sand"])
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "")]))
+    items = g.items_for(profile)
+    g.close()
+    assert [(b.label, b.title) for b in items.band] == [("Geo", "Geo")]
+
+
 def _write_dem(path, nodata_cols=range(40, 50)):
     from osgeo import gdal, osr
     with gdal.ExceptionMgr(useExceptions=True), osr.ExceptionMgr(useExceptions=True):

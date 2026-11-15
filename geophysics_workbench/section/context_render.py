@@ -6,6 +6,7 @@ via ``rc.convertToPainterUnits``. Only plain snapshot data is used. Boreholes an
 live in ``context_render_points``."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -115,6 +116,9 @@ def context_headroom_px(px_per_mm: float, line_height: float, labels: bool = Tru
 
 
 # -- geology strips ----------------------------------------------------------------------------
+TITLE_MIN_UNIT_PX = 6.0     # of a unit that must remain beside a strip's title
+
+
 def draw_band(painter, rc, wt, items, surface) -> None:
     if not items.band or surface is None or len(surface[0]) < 2:
         return
@@ -122,9 +126,17 @@ def draw_band(painter, rc, wt, items, surface) -> None:
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     ss = np.asarray(surface[0], float)
     strips = strips_of(items.band)
+    # the visible plot in the device space wt.map returns (the panel and plates clip to it)
+    clip = painter.clipBoundingRect() if painter.hasClipping() else QRectF()
+    left = clip.left() if not clip.isEmpty() else -math.inf
+    right = clip.right() if not clip.isEmpty() else math.inf
+    inv, _ok = wt.inverted()
+    px = font.pixelSize()
+    flags = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     for k, (title, segs) in enumerate(strips):
         near, far = band_offsets(rc, len(strips) - 1 - k)
-        title_end = None                    # right edge (px) of the title, once drawn
+        mid = 0.5 * (near + far)
+        title_seg = title_end = None        # the unit the title sits in; its right edge (px)
         for i, seg in enumerate(segs):
             inner = ss[(ss > seg.s0) & (ss < seg.s1)]
             xs = np.r_[seg.s0, inner, seg.s1]
@@ -138,27 +150,33 @@ def draw_band(painter, rc, wt, items, surface) -> None:
             x0, x1 = pts[0].x(), pts[-1].x()
             width = abs(x1 - x0)
             xm = 0.5 * (x0 + x1)
-            ym = surface_y(wt, surface, 0.5 * (seg.s0 + seg.s1)) - 0.5 * (near + far)
+            lo, hi = max(min(x0, x1), left), min(max(x0, x1), right)    # the visible part
             fm = painter.fontMetrics()
-            if i == 0 and title:
+            if title and title_seg is None and hi > lo:     # the first visible unit with room
                 need = fm.horizontalAdvance(title) + 4
-                if need + TITLE_MIN_UNIT_PX <= width:       # title and some of the unit fit
+                if need + TITLE_MIN_UNIT_PX <= hi - lo:
+                    tx = lo + 2
+                    s_t = inv.map(QPointF(tx + need / 2, 0.0)).x()      # chainage under it
+                    ty = surface_y(wt, surface, s_t) - mid
                     painter.setPen(QPen(QColor(0, 0, 0), 1))
-                    painter.drawText(QRectF(min(x0, x1) + 2, ym - font.pixelSize(), need,
-                                            2 * font.pixelSize()),
-                                     int(Qt.AlignmentFlag.AlignLeft
-                                         | Qt.AlignmentFlag.AlignVCenter), title)
-                    title_end = min(x0, x1) + 2 + need
-            if seg.label:
-                lw = fm.horizontalAdvance(seg.label) + 4
-                if lw <= width and (title_end is None or i > 0 or xm - lw / 2 >= title_end):
-                    painter.setPen(QPen(QColor(0, 0, 0), 1))
-                    painter.drawText(QRectF(xm - width / 2, ym - font.pixelSize(),
-                                            width, 2 * font.pixelSize()),
-                                     int(Qt.AlignmentFlag.AlignCenter), seg.label)
-
-
-TITLE_MIN_UNIT_PX = 6.0     # of the first unit that must remain beside a strip's title
+                    painter.drawText(QRectF(tx, ty - px, need, 2 * px), flags, title)
+                    title_seg, title_end = i, tx + need
+            if not seg.label:
+                continue
+            lw = fm.horizontalAdvance(seg.label) + 4
+            if i == title_seg:                  # beside the title, in what is left of the unit
+                if lw > hi - title_end:
+                    continue
+                cx = 0.5 * (title_end + hi)
+                cw = hi - title_end
+            elif lw <= width:                   # centred on the whole unit, as before
+                cx, cw = xm, width
+            else:
+                continue
+            cy = surface_y(wt, surface, inv.map(QPointF(cx, 0.0)).x()) - mid
+            painter.setPen(QPen(QColor(0, 0, 0), 1))
+            painter.drawText(QRectF(cx - cw / 2, cy - px, cw, 2 * px),
+                             int(Qt.AlignmentFlag.AlignCenter), seg.label)
 
 
 # -- DEM line and flagged stations ---------------------------------------------------------------

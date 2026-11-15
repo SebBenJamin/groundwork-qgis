@@ -505,8 +505,45 @@ def test_strip_rows_round_trip(project, fake_iface):
     dlg.strips.move_row(0, 1)
     assert [b.layer_id for b in dlg.strips.settings()] == [soil.id(), geo.id()]
     assert dlg.strips.settings()[1].title == "Geology"
+    assert [r.field.currentData() for r in dlg.strips.rows] == ["type", "age"]
+    assert [r.title.placeholderText() for r in dlg.strips.rows] == ["Soil", "Geology"]
     dlg.strips.move_row(0, -1)                            # the first row cannot go up
     assert [b.layer_id for b in dlg.strips.settings()] == [soil.id(), geo.id()]
+    assert [r.field.currentData() for r in dlg.strips.rows] == ["type", "age"]
+    assert [r.title.placeholderText() for r in dlg.strips.rows] == ["Soil", "Geology"]
+    dlg.close()
+
+
+def test_added_row_starts_on_the_first_field(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    dlg.strips.add_row()
+    assert dlg.strips.settings()[0].label_field != ""
+    dlg.close()
+
+
+def test_add_after_a_polygon_layer_is_removed(project, fake_iface):
+    """The dialog is non-modal: a layer removed from the project is no longer offered, and
+    Add raises nothing."""
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    geo, soil = _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    project.removeMapLayer(geo.id())
+    project.removeMapLayer(soil.id())
+    dlg.strips.add_row()                                   # nothing left to add: no error
+    assert dlg.strips.rows == [] and not dlg.strips.add_button.isEnabled()
+    dlg.close()
+
+
+def test_add_offers_only_the_layers_still_in_the_project(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    geo, soil = _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    project.removeMapLayer(geo.id())
+    dlg.strips.add_row()
+    row = dlg.strips.rows[0]
+    assert [row.layer.itemData(i) for i in range(row.layer.count())] == [soil.id()]
     dlg.close()
 
 

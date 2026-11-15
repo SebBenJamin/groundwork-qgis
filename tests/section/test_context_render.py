@@ -38,13 +38,13 @@ def _band_offsets(img, level=0):
         painter.end()
 
 
-def _results(context, stations=(), z_range=Z_RANGE, topo_z=0.0, layers=()):
+def _results(context, stations=(), z_range=Z_RANGE, topo_z=0.0, layers=(), topo=None):
     """``layers`` are the viewed profile's snapshot layers (not drawn here: the results
     get no cell paths), which the tie strips take their colour scale from."""
     from geophysics_workbench.section.data import SectionSnapshot
     from geophysics_workbench.section.profile_source import WorkbenchProfileResults
 
-    topo = (np.array([40.0, 80.0]), np.array([topo_z, topo_z]))
+    topo = topo or (np.array([40.0, 80.0]), np.array([topo_z, topo_z]))
     snap = SectionSnapshot("p1", list(layers), topo, [(float(s), "") for s in stations], None,
                            context)
     station_z = np.interp([float(s) for s in stations], *topo) if stations else None
@@ -512,3 +512,57 @@ def test_title_drawn_at_the_left_end_of_a_long_strip(qgis_app):
     dark = [x for x in range(img.width()) for y in range(max(0, _y(0.0) - 60), _y(0.0))
             if QColor(img.pixel(x, y)).lightness() < 30]
     assert dark and min(dark) < _x(48.0)                   # title sits at the left end
+
+
+def _dark(img, xs, ys):
+    from qgis.PyQt.QtGui import QColor
+
+    return [(x, y) for x in xs for y in ys if QColor(img.pixel(x, y)).lightness() < 30]
+
+
+def test_title_follows_the_view_into_the_first_unit(qgis_app):
+    """One unit 0..79 seen over 40..80: its title sits at the left edge of what is visible."""
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+
+    def image(title):
+        return _img(_results(ContextItems(band=[BandSegment(
+            0, 79, "Seesand", rgb=(240, 240, 120), title=title)])))
+    with_title, without = image("GK 25"), image("")
+    changed = [x for x in range(60) for y in range(with_title.height())
+               if with_title.pixel(x, y) != without.pixel(x, y)]
+    assert changed and min(changed) < 20
+
+
+def test_title_height_follows_the_ground_under_it(qgis_app):
+    """On sloping ground the title lies in its own strip, not at the unit's midpoint height."""
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+
+    topo = (np.array([40.0, 80.0]), np.array([0.0, -1.5]))
+    items = ContextItems(band=[BandSegment(42, 78, "Seesand", rgb=(240, 240, 120), title="GK 25")])
+    img = _img(_results(items, topo=topo))
+    near, far = _band_offsets(img)
+
+    def gy(s):
+        return _y(-(s - 40.0) * 1.5 / 40.0)
+    dark = [(x, y) for x, y in _dark(img, range(_x(42.0), _x(42.0) + 50), range(0, img.height()))
+            if y < gy((x + 400.0) / 10.0) - 1]       # the drawn ground line is dark too
+    assert dark
+    for x, y in dark:
+        ground = gy((x + 400.0) / 10.0)
+        assert ground - far - 3 <= y <= ground - near + 3
+
+
+def test_first_unit_keeps_its_label_beside_the_title(qgis_app):
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+
+    def dark_xs(label):
+        items = ContextItems(band=[BandSegment(48, 78, label, rgb=(240, 240, 120),
+                                               title="Geology GK 25 (LBGR, live service), geology GK 25")])
+        img = _img(_results(items))
+        near, far = _band_offsets(img)
+        ys = range(_y(0.0) - round(far), _y(0.0) - round(near))
+        return {x for x, _y_ in _dark(img, range(_x(48.0) + 2, _x(78.0) - 2), ys)}
+    title_only, both = dark_xs(""), dark_xs("Seesand")
+    assert max(title_only) > _x(48.0) + 120                 # the title is long: it passes the middle
+    assert max(both) > max(title_only) + 20                 # and the label still fits beside it
+
