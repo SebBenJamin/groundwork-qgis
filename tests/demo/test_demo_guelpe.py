@@ -65,8 +65,8 @@ def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
     root = prj.layerTreeRoot()
     assert root.findLayer(gk25.id()).isVisible()
     assert not root.findLayer(guek.id()).isVisible()
-    band = read_settings(prj).band
-    assert band is None or band.layer_id == gk25.id()
+    bands = read_settings(prj).bands
+    assert bands == [] or bands[0].layer_id == gk25.id()
     prj.clear()
 
 
@@ -78,7 +78,7 @@ def test_guelpe_settings_reference_project_layers(qgis_app):
     layer = prj.mapLayer
     assert layer(s.boreholes[0].layer_id).name().startswith("Cores")
     assert layer(s.boreholes[0].log_layer_id).name() == "Core logs"
-    assert s.band is None or "Geology" in layer(s.band.layer_id).name()
+    assert s.bands == [] or "Geology" in layer(s.bands[0].layer_id).name()
     assert layer(s.dem_layer_id).name() == "DGM1 (LGB)"
     assert any(ls.checked for ls in s.line_layers)
     # 0.5: the LBGR boreholes are a borehole entry (total depth); older builds: a point layer

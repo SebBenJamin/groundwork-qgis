@@ -10,7 +10,7 @@ import math
 import re
 from dataclasses import asdict, dataclass, field, fields
 
-VERSION = 3
+VERSION = 4
 MAX_DISTANCE = 1e6                                     # metres; the dialog's spin boxes allow the same
 
 
@@ -76,8 +76,11 @@ class BoreholeSetting:
 
 @dataclass
 class BandSetting:
+    """One strip of surface polygons (geology, soil, land use) above the ground."""
     layer_id: str
     label_field: str
+    title: str = ""                   # "" = the layer's name
+    shown: bool = True
 
 
 @dataclass
@@ -85,16 +88,21 @@ class ContextSettings:
     line_layers: list = field(default_factory=list)
     point_layers: list = field(default_factory=list)
     boreholes: list = field(default_factory=list)       # [BoreholeSetting]
-    band: BandSetting | None = None
+    bands: list = field(default_factory=list)          # [BandSetting], top strip first
     dem_layer_id: str = ""
     buffer: float = 25.0
     near_miss: float = 10.0
     dem_tolerance: float = 1.0
 
+    def shown_bands(self) -> list:
+        return [b for b in self.bands if b.shown]
+
     def to_json(self) -> str:
         data = asdict(self)
         # the first entry also under the 0.2-0.4 key, so an older plugin still shows it
         data["borehole"] = data["boreholes"][0] if data["boreholes"] else None
+        shown = self.shown_bands()                      # likewise the first shown strip as ``band``
+        data["band"] = asdict(shown[0]) if shown else None
         data["version"] = VERSION
         return json.dumps(data)
 
@@ -118,7 +126,11 @@ class ContextSettings:
         else:                                           # v2: one borehole layer
             legacy = _item(data.get("borehole"), BoreholeSetting)
             out.boreholes = [legacy] if legacy is not None else []
-        out.band = _item(data.get("band"), BandSetting)
+        if isinstance(data.get("bands"), list):
+            out.bands = _items(data["bands"], BandSetting)
+        else:                                           # v3: one band
+            legacy_band = _item(data.get("band"), BandSetting)
+            out.bands = [legacy_band] if legacy_band is not None else []
         dem = data.get("dem_layer_id")
         out.dem_layer_id = dem if isinstance(dem, str) else ""
         for name in ("buffer", "near_miss", "dem_tolerance"):

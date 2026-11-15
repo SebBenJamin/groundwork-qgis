@@ -279,7 +279,7 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
         boreholes=[BoreholeSetting(cores, "id", "elevation", logs, "core_id", "top", "bottom",
                                    "lithology", curve_tables=[synthetic]),
                    BoreholeSetting(bpk, "Bohrungsname", total_depth_field="Teufe_in_m")],
-        band=BandSetting(geology, geology_field) if geology_field else None,
+        bands=[BandSetting(geology, geology_field)] if geology_field else [],
         dem_layer_id=dem, buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
 
 

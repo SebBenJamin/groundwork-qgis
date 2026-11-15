@@ -183,7 +183,7 @@ def demo_context_settings(cores: str, logs: str):
         line_layers=[], point_layers=[],
         boreholes=[BoreholeSetting(cores, "id", "", logs, "core_id", "top", "bottom", "unit",
                                    total_depth_field="depth", layer_text=True)],
-        band=None, dem_layer_id="", buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
+        bands=[], dem_layer_id="", buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
 
 
 DEMO_DETAILS = {"project": "Erfurt demo", "client": "(example)", "job": "(example)",

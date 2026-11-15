@@ -221,10 +221,10 @@ class ContextDialog(QDialog):
                 self.point_rows[item.layer_id].load(item.label_field, item.depth_field)
         self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
         self.boreholes.load(s.boreholes)
-        self.loaded_band = s.band
-        if s.band is not None:
-            keep_missing(self.band_combo, self.project, s.band.layer_id)
-            self.select_band(s.band.layer_id, s.band.label_field)
+        self.loaded_band = s.bands[0] if s.bands else None
+        if self.loaded_band is not None:
+            keep_missing(self.band_combo, self.project, self.loaded_band.layer_id)
+            self.select_band(self.loaded_band.layer_id, self.loaded_band.label_field)
         keep_missing(self.dem_combo, self.project, s.dem_layer_id)
         self.select_dem(s.dem_layer_id)
         missing = (self.lines.stale_count() + len(self.stale_points) + self.boreholes.missing_count()
@@ -248,7 +248,7 @@ class ContextDialog(QDialog):
                           for r in self.point_rows.values() if r.check.isChecked()]
             + list(self.stale_points),
             boreholes=self.boreholes.entries(),
-            band=BandSetting(band_id, band_label) if band_id else None,
+            bands=[BandSetting(band_id, band_label)] if band_id else [],
             dem_layer_id=self.dem_combo.currentData() or "",
             buffer=self.buffer_spin.value(), near_miss=self.near_miss_spin.value(),
             dem_tolerance=self.dem_tolerance_spin.value())

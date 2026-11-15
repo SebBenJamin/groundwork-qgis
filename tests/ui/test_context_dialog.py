@@ -47,7 +47,7 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     got = read_settings(prj)
     assert got.line_layers == [LineLayerSetting(line.id(), "name"), LineLayerSetting(other.id())]
     assert [s.layer_id for s in got.point_layers] == [pts.id()]
-    assert got.band.layer_id == poly.id() and got.band.label_field == "unit"
+    assert got.bands[0].layer_id == poly.id() and got.bands[0].label_field == "unit"
     assert got.dem_layer_id == dem.id()
     assert got.boreholes[0].layer_id == pts.id() and got.boreholes[0].log_layer_id == table.id()
     assert got.buffer == 30.0 and got.near_miss == 10.0 and got.dem_tolerance == 1.0
@@ -225,7 +225,7 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     saved = ContextSettings(line_layers=[LineLayerSetting("gone_line", "name", checked=True)],
                             boreholes=[BoreholeSetting("gone_bh", "id", "z", "gone_log", "hid",
                                                       "t", "b", "lith")],
-                            band=BandSetting("gone_band", "unit"), dem_layer_id="gone_dem")
+                            bands=[BandSetting("gone_band", "unit")], dem_layer_id="gone_dem")
     write_settings(prj, saved)
     dlg = ContextDialog(fake_iface, prj)
     assert "4" in dlg.note.text() or "5" in dlg.note.text()
@@ -238,7 +238,7 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     got = read_settings(prj)
     assert got.dem_layer_id == ""
     assert got.line_layers == saved.line_layers and got.boreholes == saved.boreholes
-    assert got.band == saved.band
+    assert got.bands == saved.bands
 
 
 def test_context_dialog_is_non_modal_and_apply_redraws(qgis_app, fake_iface, store_with_model):

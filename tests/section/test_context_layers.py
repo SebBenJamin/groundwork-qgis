@@ -224,7 +224,7 @@ def test_band_from_polygon_layer(project, profile):
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Loess"])
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]))
     items = g.items_for(profile)
     g.close()
     assert [(b.label, round(b.s0), round(b.s1)) for b in items.band] == [
@@ -333,7 +333,7 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
         line_layers=[LineLayerSetting("gone-id", "voltage", checked=True),
                      LineLayerSetting(lines.id(), "voltage_old", checked=True),
                      LineLayerSetting(good.id(), checked=True)],
-        band=BandSetting(renamed.id(), "unit")))
+        bands=[BandSetting(renamed.id(), "unit")]))
     try:
         items = g.items_for(profile)
         n_first = len(got)
@@ -661,7 +661,7 @@ def test_band_colours_follow_the_layer_style(project, profile):
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Sand, grob"])
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand, fein"])
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]))
     single = {b.label: b.rgb for b in g.items_for(profile).band}
     g.close()
     assert single["Sand, fein"] != single["Sand, grob"]                 # not one "sand" yellow
@@ -670,7 +670,7 @@ def test_band_colours_follow_the_layer_style(project, profile):
             QgsRendererCategory("Sand, grob", QgsFillSymbol.createSimple({"color": "200,20,10"}),
                                 "grob")]
     geo.setRenderer(QgsCategorizedSymbolRenderer("unit", cats))
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]))
     styled = {b.label: b.rgb for b in g.items_for(profile).band}
     g.close()
     assert styled == {"Sand, fein": (10, 20, 200), "Sand, grob": (200, 20, 10)}
@@ -683,7 +683,7 @@ def test_restyling_the_band_layer_redraws(project, profile, qgis_app):
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
     calls = []
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")),
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]),
                   lambda: calls.append(1))
     try:
         g.items_for(profile)
