@@ -240,7 +240,7 @@ def _categorized(layer, field: str, extent) -> None:
 def _geology(project, extent):
     """The geology layers: the live GK 25 WFS (unit description as the band field), else its
     WMS (map only); and the live GÜK300 WFS (or WMS) as a second layer. Returns
-    ``(gk25 layer, its field or None, GÜK300 layer)``."""
+    ``(gk25 layer, its field or None, GÜK300 layer, its field or None)``."""
     gk25 = _wfs("app:gk25", GK_WFS, "Geology GK 25 (LBGR, live)")
     field = None
     if gk25.isValid():
@@ -260,11 +260,12 @@ def _geology(project, extent):
         guek = _wms(GUEK_WMS, "GE.GeologicUnit", "Geology GÜK300 (LBGR, live)")
     else:
         _categorized(guek, guek_field, extent)
-    return gk25, field, guek
+    return gk25, field, guek, guek_field
 
 
 def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: str,
-                          geology: str, geology_field: str | None, dem: str):
+                          geology: str, geology_field: str | None, dem: str,
+                          guek: str = "", guek_field: str | None = None):
     """The demo's Context layers settings (layer ids in): the cores with their logs and the
     synthetic curves, and the LBGR boreholes as a second entry drawn to their total depth."""
     from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
@@ -279,7 +280,8 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
         boreholes=[BoreholeSetting(cores, "id", "elevation", logs, "core_id", "top", "bottom",
                                    "lithology", curve_tables=[synthetic]),
                    BoreholeSetting(bpk, "Bohrungsname", total_depth_field="Teufe_in_m")],
-        bands=[BandSetting(geology, geology_field)] if geology_field else [],
+        bands=([BandSetting(guek, guek_field, "GÜK 300")] if guek_field else [])
+        + ([BandSetting(geology, geology_field, "GK 25")] if geology_field else []),
         dem_layer_id=dem, buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
 
 
@@ -386,7 +388,7 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         from qgis.core import QgsRectangle as _Rect
         xy = np.vstack([p.xy for p in ProjectStore.open(out / STORE_NAME).profiles()])
         (gx0, gy0), (gx1, gy1) = xy.min(axis=0) - GEOLOGY_MARGIN, xy.max(axis=0) + GEOLOGY_MARGIN
-        geology, geology_field, guek = _geology(project, _Rect(gx0, gy0, gx1, gy1))
+        geology, geology_field, guek, guek_field = _geology(project, _Rect(gx0, gy0, gx1, gy1))
         dem = QgsRasterLayer(str(ctx / "dgm1.tif"), "DGM1 (LGB)", "gdal")
         dop = _wms(DOP_WMS, "bebb_dop20c", "Aerial images DOP20 (LGB, live)")
         osm = QgsRasterLayer(OSM_URI, "OpenStreetMap", "wms")
@@ -404,7 +406,7 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
             root.findLayer(hidden.id()).setItemVisibilityChecked(False)
         write_settings(project, demo_context_settings(
             water.id(), bpk.id(), cores.id(), logs.id(), curves.id(), geology.id(),
-            geology_field, dem.id()))
+            geology_field, dem.id(), guek.id(), guek_field))
         apply_core_style(project, logs.id(), ctx / "core_logs_style.qml")
         store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top
         add_demo_plate(project, store)

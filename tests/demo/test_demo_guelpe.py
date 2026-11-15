@@ -66,7 +66,20 @@ def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
     assert root.findLayer(gk25.id()).isVisible()
     assert not root.findLayer(guek.id()).isVisible()
     bands = read_settings(prj).bands
-    assert bands == [] or bands[0].layer_id == gk25.id()
+    assert gk25.id() in [b.layer_id for b in bands] or bands == []
+    prj.clear()
+
+
+def test_guelpe_has_two_strips(qgis_app):
+    """Two strips above the ground: the GÜK 300 on top, the GK 25 below, both shown."""
+    from geophysics_workbench.ui.context_dialog import read_settings
+
+    prj = _project()
+    by_name = {lyr.name(): lyr for lyr in prj.mapLayers().values()}
+    gk25, guek = by_name["Geology GK 25 (LBGR, live)"], by_name["Geology GÜK300 (LBGR, live)"]
+    bands = read_settings(prj).bands
+    assert [(b.layer_id, b.title, b.shown) for b in bands] == [
+        (guek.id(), "GÜK 300", True), (gk25.id(), "GK 25", True)]
     prj.clear()
 
 
@@ -187,7 +200,7 @@ def test_demo_context_settings_two_borehole_entries():
     from geophysics_workbench.core.context_settings import curve_key
     s = build_demo_guelpe.demo_context_settings(
         water="w", bpk="b", cores="c", logs="l", curves="k", geology="g", geology_field="u",
-        dem="d")
+        dem="d", guek="e", guek_field="n")
     cores, state = s.boreholes
     assert (cores.layer_id, cores.log_layer_id) == ("c", "l")
     [table] = cores.curve_tables
@@ -196,6 +209,8 @@ def test_demo_context_settings_two_borehole_entries():
     assert cores.section_curves == []                     # curves on the section: user's choice
     assert (state.layer_id, state.id_field, state.total_depth_field) == (
         "b", "Bohrungsname", "Teufe_in_m")
+    assert [(b.layer_id, b.label_field, b.title) for b in s.bands] == [
+        ("e", "n", "GÜK 300"), ("g", "u", "GK 25")]
     assert s.point_layers == [] and curve_key("k", "gamma_synthetic") == "k:gamma_synthetic"
 
 

@@ -21,7 +21,7 @@ What changed: [0.9.0 release note](docs/releases/0.9.0.md), earlier notes in
   - drawn as cells, a smooth field or contours (automatic, or major and minor levels you type),
     with QGIS colour ramps, a coverage fade and automatic vertical exaggeration.
 - **Context on the section**: crossing lines, points, boreholes as lithology columns with log
-  curves, a surface geology band, a DEM line, and ties to crossing profiles showing their model.
+  curves, one or several surface strips (geology maps stacked above the ground, each with a title), a DEM line, and ties to crossing profiles showing their model.
 - **Borehole viewer**: a profile's boreholes side by side; leave a borehole out of one section.
 - **Interpretation**: lines, polygons and points drawn per profile with type, name, confidence
   and note; undo and redo; frozen versions; QGIS layers in 2D and 3D; DXF and CSV export.
