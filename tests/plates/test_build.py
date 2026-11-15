@@ -331,3 +331,16 @@ def test_plate_legend_skips_boreholes_of_a_local_frame(env):
     prov.notify_changed()
     assert prov.is_local(p.id)
     assert legend.rows() == []
+
+
+def test_plate_headroom_counts_strips(env):
+    from dataclasses import replace
+
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from geophysics_workbench.plates.build import label_room_mm
+    st, p, prov, prj = env
+    snap = prov.snapshot(p.id)
+    one = replace(snap, context=ContextItems(band=[BandSegment(0, 5, "a", strip=0)]))
+    two = replace(snap, context=ContextItems(band=[BandSegment(0, 5, "a", strip=0),
+                                                   BandSegment(0, 5, "b", strip=1)]))
+    assert label_room_mm(two) - label_room_mm(one) == pytest.approx(3.6)

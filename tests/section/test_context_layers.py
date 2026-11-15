@@ -890,3 +890,28 @@ def test_decimal_comma_numbers_are_read(project, profile):
     p = g.items_for(profile).points[0]
     g.close()
     assert p.z_top == approx(31.2) and [(iv.top, iv.bottom) for iv in p.log] == [(0.0, 0.4)]
+
+
+def test_two_strips_on_one_layer(project, profile):
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    geo = _layer(project, "Polygon", "Geo", "unit:string&field=code:string")
+    _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand", "Q"])
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit", "Units"),
+                                                  BandSetting(geo.id(), "code", "")]))
+    items = g.items_for(profile)
+    g.close()
+    assert sorted({(b.strip, b.title) for b in items.band}) == [(0, "Units"), (1, "Geo")]
+
+
+def test_one_failing_strip_leaves_the_other(project, profile):
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    gone = _layer(project, "Polygon", "Gone", "unit:string")
+    geo = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
+    settings = ContextSettings(bands=[BandSetting(gone.id(), "unit"),
+                                      BandSetting(geo.id(), "unit", "Second")])
+    project.removeMapLayer(gone.id())
+    g = _gatherer(project, settings)
+    items = g.items_for(profile)
+    g.close()
+    assert [(b.label, b.strip, b.title) for b in items.band] == [("Sand", 1, "Second")]

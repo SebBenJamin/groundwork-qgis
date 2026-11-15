@@ -225,7 +225,9 @@ def label_room_mm(snap) -> float:
     labels = bool(ctx.crossings or ctx.points or ctx.ties or ctx.field_notes)
     if not (labels or ctx.band):
         return 0.0
-    return context_headroom_px(1.0, LABEL_LINE_MM, labels) + lanes_px(1.0, ctx.field_notes)
+    from ..core.context import strips_of
+    return context_headroom_px(1.0, LABEL_LINE_MM, labels, max(1, len(strips_of(ctx.band)))) \
+        + lanes_px(1.0, ctx.field_notes)
 
 
 def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float,

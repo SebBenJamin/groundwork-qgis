@@ -182,3 +182,13 @@ def test_hover_over_a_curve_track_right_of_the_column():
     hits = context_hits(items, 22.0, 98.0, 0.1, half, right_extent_s=right)
     assert "Borehole B1 gr: 45.0 API (interpolated)" in hits
     assert not any("B1" in h for h in context_hits(items, 22.0, 98.0, 0.1, half))
+
+
+def test_readout_one_line_per_strip():
+    items = ContextItems(band=[BandSegment(0, 30, "Talsand", strip=0, title="GÜK 300"),
+                               BandSegment(0, 30, "Seesand", strip=1, title="GK 25")])
+    lines = context_hits(items, 10.0, 0.0, tol_s=1.0, column_half_width_s=0.5)
+    assert lines[:2] == ["GÜK 300: Talsand", "GK 25: Seesand"]
+    plain = ContextItems(band=[BandSegment(0, 30, "Talsand")])
+    assert context_hits(plain, 10.0, 0.0, tol_s=1.0, column_half_width_s=0.5) == [
+        "Surface geology: Talsand"]

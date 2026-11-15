@@ -175,9 +175,9 @@ class ContextGatherer:
         for index, b in enumerate(settings.boreholes):
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
                 b, xy, box, settings.buffer, dem_layer, index, settings.dem_tolerance)) or []
-        for b in settings.shown_bands():
+        for strip, b in enumerate(settings.shown_bands()):
             items.band += self._try(b.layer_id, "geology layer", lambda: self._band(
-                b, xy, box)) or []
+                b, xy, box, strip)) or []
         items.crossings.sort(key=lambda c: c.s)
         items.points.sort(key=lambda p: p.s)
         return items
@@ -505,7 +505,7 @@ class ContextGatherer:
             return []
         return sorted(rows, key=lambda r: (r.top, r.bottom))
 
-    def _band(self, setting, xy, box) -> list[BandSegment]:
+    def _band(self, setting, xy, box, strip: int = 0) -> list[BandSegment]:
         """Units along the profile. Colours come from the band layer's own style, so the band
         matches the map; a single-symbol style says nothing about units, so each label then
         gets its own colour. Only features near the profile are read (never the whole
@@ -546,6 +546,7 @@ class ContextGatherer:
         segments = polygon_intervals(xy, polygons, labels)
         for seg in segments:
             seg.rgb = colours.get(seg.label) or label_colour(seg.label)
+            seg.strip, seg.title = strip, setting.title or layer.name()
         return segments
 
 

@@ -106,3 +106,17 @@ def test_context_items_mirrored():
     assert (m.crossings[0].rgb, m.crossings[0].layer) == ((1, 2, 3), "Lyr")
     assert items.crossings[0].s == 10                      # original untouched
     assert ContextItems().mirrored(10.0).dem is None
+
+
+def test_mirrored_keeps_strip_and_title():
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+    m = ContextItems(band=[BandSegment(0, 40, "x", strip=1, title="T")]).mirrored(100)
+    assert (m.band[0].s0, m.band[0].strip, m.band[0].title) == (60, 1, "T")
+
+
+def test_strips_of_orders_by_strip_and_drops_empty():
+    from geophysics_workbench.core.context import BandSegment, strips_of
+    band = [BandSegment(50, 60, "b2", strip=2, title="C"), BandSegment(10, 20, "a2", strip=0, title="A"),
+            BandSegment(0, 10, "a1", strip=0, title="A")]
+    assert [(t, [s.label for s in segs]) for t, segs in strips_of(band)] == [
+        ("A", ["a1", "a2"]), ("C", ["b2"])]

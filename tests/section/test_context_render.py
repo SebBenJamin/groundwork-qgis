@@ -25,7 +25,7 @@ def _mm(img, value):
         painter.end()
 
 
-def _band_offsets(img):
+def _band_offsets(img, level=0):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QPainter
 
@@ -33,7 +33,7 @@ def _band_offsets(img):
 
     painter = QPainter(img)
     try:
-        return band_offsets(QgsRenderContext.fromQPainter(painter))
+        return band_offsets(QgsRenderContext.fromQPainter(painter), level)
     finally:
         painter.end()
 
@@ -449,3 +449,66 @@ def test_section_layer_text_beside_the_column(qgis_app):
         return sum(1 for dx in range(10, 70) for y in range(_y(-0.2), _y(-2.3))
                    if _close(img.pixel(_x(60.0) + dx, y), (40, 40, 40), tol=60))
     assert dark(on) > 5 and dark(off) == 0
+
+
+def _mid(img, level):
+    near, far = _band_offsets(img, level)
+    return _y(0.0) - round(0.5 * (near + far))
+
+
+def test_two_strips_stack_with_the_first_on_top(qgis_app):
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+
+    items = ContextItems(band=[BandSegment(50, 70, "Seesand", rgb=(10, 20, 200), strip=1,
+                                           title="GK 25"),
+                               BandSegment(50, 70, "Talsand", rgb=(200, 20, 10), strip=0,
+                                           title="GÜK 300")])
+    img = _img(_results(items))
+    x = _x(68.0)                                            # off the label text
+    assert _close(img.pixel(x, _mid(img, 1)), _blend((200, 20, 10), 0.85))    # strip 0 on top
+    assert _close(img.pixel(x, _mid(img, 0)), _blend((10, 20, 200), 0.85))    # strip 1 lower
+    assert _mid(img, 1) < _mid(img, 0) < _y(0.0)
+
+
+def test_empty_strip_takes_no_room(qgis_app):
+    from geophysics_workbench.core.context import BandSegment, ContextItems, strips_of
+
+    items = ContextItems(band=[BandSegment(50, 70, "A", rgb=(10, 20, 200), strip=0, title="a"),
+                               BandSegment(50, 70, "B", rgb=(200, 20, 10), strip=2, title="c")])
+    assert len(strips_of(items.band)) == 2
+    img = _img(_results(items))
+    x = _x(68.0)
+    assert _close(img.pixel(x, _mid(img, 1)), _blend((10, 20, 200), 0.85))
+    assert _close(img.pixel(x, _mid(img, 0)), _blend((200, 20, 10), 0.85))
+    from geophysics_workbench.section.context_render import context_headroom_px
+    assert context_headroom_px(4.0, 10.0, True, strips=2) > context_headroom_px(4.0, 10.0, True)
+
+
+def test_headroom_grows_with_strips():
+    from geophysics_workbench.section.context_render import context_headroom_px
+
+    assert context_headroom_px(4.0, 10.0, True, strips=2) -         context_headroom_px(4.0, 10.0, True, strips=1) == pytest.approx(4.0 * (3.0 + 0.6))
+
+
+def test_titles_dropped_on_short_strips(qgis_app):
+    from qgis.PyQt.QtGui import QColor
+
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+
+    items = ContextItems(band=[BandSegment(50, 52, "Seesand", rgb=(240, 240, 120), title="GK 25")])
+    img = _img(_results(items))
+    dark = [(x, y) for x in range(_x(49.0), _x(53.0)) for y in range(max(0, _y(0.0) - 60), _y(0.0))
+            if QColor(img.pixel(x, y)).lightness() < 30]
+    assert not dark                                        # no title, no label text, nothing outside
+
+
+def test_title_drawn_at_the_left_end_of_a_long_strip(qgis_app):
+    from qgis.PyQt.QtGui import QColor
+
+    from geophysics_workbench.core.context import BandSegment, ContextItems
+
+    items = ContextItems(band=[BandSegment(42, 78, "Seesand", rgb=(240, 240, 120), title="GK 25")])
+    img = _img(_results(items))
+    dark = [x for x in range(img.width()) for y in range(max(0, _y(0.0) - 60), _y(0.0))
+            if QColor(img.pixel(x, y)).lightness() < 30]
+    assert dark and min(dark) < _x(48.0)                   # title sits at the left end

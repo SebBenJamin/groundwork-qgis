@@ -117,10 +117,12 @@ def context_hits(items: ContextItems, s: float, z: float, tol_s: float,
         strip_width_s = 2.0 * (column_half_width_s if not callable(column_half_width_s)
                                else 0.0)
     lines: list[str] = []
-    for seg in items.band:
-        if seg.s0 <= s <= seg.s1:
-            lines.append(f"Surface geology: {seg.label}")
-            break
+    from ..core.context import strips_of
+    for title, segs in strips_of(items.band):
+        for seg in segs:
+            if seg.s0 <= s <= seg.s1:
+                lines.append(f"{title or 'Surface geology'}: {seg.label}")
+                break
     for c in items.crossings:
         if abs(s - c.s) <= tol_s:
             source = f" \u00b7 {c.layer}" if c.layer and c.layer != c.label else ""

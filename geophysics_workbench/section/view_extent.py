@@ -51,5 +51,7 @@ def headroom_px(dock) -> float:
     px_per_mm = dock.canvas.logicalDpiY() / 25.4
     font = QFont(dock.canvas.font())
     font.setPixelSize(label_font_px(px_per_mm))
-    return context_headroom_px(px_per_mm, QFontMetrics(font).height(), labels) + \
+    from ..core.context import strips_of
+    return context_headroom_px(px_per_mm, QFontMetrics(font).height(), labels,
+                               max(1, len(strips_of(ctx.band)))) + \
         lanes_px(px_per_mm, ctx.field_notes)
