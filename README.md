@@ -1,19 +1,21 @@
-# Geophysics Workbench
+# Groundwork
+
+*Geophysical profiles in QGIS.* Formerly “Groundwork”.
 
 **See your geophysical profiles where they are: on the map, next to the boreholes and the
-geology.** A workbench for profile-based geophysics in QGIS: sections as a panel under the
+geology.** Groundwork is a plugin for profile-based geophysics in QGIS: sections as a panel under the
 map, with your boreholes, geology and crossing lines on them, your interpretation as ordinary
 QGIS layers and report plates in the QGIS layout.
 
 Today it works with **resistivity (ERT)**. **Ground-penetrating radar (GPR) and seismics**
 are planned next, on the same profiles, next to the same context.
 
-[![Version 0.9.1](https://img.shields.io/badge/version-0.9.1-2b7bb9)](https://github.com/SebBenJamin/geophysics-workbench/releases/latest)
+[![Version 0.10.0](https://img.shields.io/badge/version-0.10.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
 [![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
 [![Licence GPL-2.0-or-later](https://img.shields.io/badge/licence-GPL--2.0--or--later-lightgrey)](LICENSE)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
 
-![The Gülpe demo in the workbench: aerial image with the profile and its cores above, the resistivity section with cores and two geology strips below](docs/images/overview.jpg)
+![The Gülpe demo in Groundwork: aerial image with the profile and its cores above, the resistivity section with cores and two geology strips below](docs/images/overview.jpg)
 
 *Lake Gülpe, Brandenburg: a resistivity profile on the map (top) and as a section under it,
 with sediment cores and two geology maps drawn as strips above the ground. Real open data,
@@ -35,14 +37,14 @@ included as a demo.*
 ## Get started
 
 1. **Install** QGIS 4.2 or newer.
-2. **Download** `geophysics_workbench-0.9.1.zip` from the
-   [latest release](https://github.com/SebBenJamin/geophysics-workbench/releases/latest).
+2. **Download** `groundwork_geophysics-0.10.0.zip` from the
+   [latest release](https://github.com/SebBenJamin/groundwork-qgis/releases/latest).
 3. In QGIS choose **Plugins → Manage and Install Plugins… → Install from ZIP**, pick the zip
-   and click **Install Plugin**. A **Geophysics Workbench** menu appears.
+   and click **Install Plugin**. A **Groundwork** menu appears.
    (German QGIS: **Erweiterungen → Erweiterungen verwalten und installieren… → Aus ZIP
    installieren**.)
 4. **Try a demo:** download a demo zip from the same release, unzip it into a folder of its
-   own and open its project. Then choose **Geophysics Workbench → Show Section Panel** and
+   own and open its project. Then choose **Groundwork → Show Section Panel** and
    pick a profile.
 
 | Demo | Data | Open |
@@ -52,7 +54,7 @@ included as a demo.*
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
 The background maps and the Gülpe state layers load from the internet. Opening a demo writes
-to its workbench file; keep a copy of the folder if you want to start over.
+to its Groundwork file; keep a copy of the folder if you want to start over.
 
 <p align="center">
   <img src="docs/images/plate.jpg" width="720"
@@ -62,7 +64,7 @@ to its workbench file; keep a copy of the folder if you want to start over.
 
 ## Where it is going
 
-The workbench is built around the profile, not around one method. A profile is a line on the
+Groundwork is built around the profile, not around one method. A profile is a line on the
 map with its surveyed positions; any data measured along it can be placed on it and shown
 with the same boreholes, geology and interpretation. Planned:
 
@@ -71,25 +73,25 @@ with the same boreholes, geology and interpretation. Planned:
 - 🔀 **Several methods on one profile**: ERT, GPR and seismics side by side, interpreted
   together.
 
-Ideas and wishes are welcome as [GitHub issues](https://github.com/SebBenJamin/geophysics-workbench/issues).
+Ideas and wishes are welcome as [GitHub issues](https://github.com/SebBenJamin/groundwork-qgis/issues).
 
 ## Documentation
 
 - [Adding data and placing it on a profile](docs/user/import.md)
 - [Boreholes and logs](docs/user/boreholes.md)
 - [Field notes, dataset info and plates](docs/user/plates.md)
-- [What changed in each release](docs/releases/), latest: [0.9.1](docs/releases/0.9.1.md)
+- [What changed in each release](docs/releases/), latest: [0.10.0](docs/releases/0.10.0.md)
 
-Your work is kept in one GeoPackage next to the QGIS project (`<project>_workbench.gpkg`).
+Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundwork.gpkg`).
 
 ## Status and feedback
 
 The plugin is **experimental**: it works on the demos and on real projects, but it is young
 and things still change between versions. Please report problems and wishes as
-[GitHub issues](https://github.com/SebBenJamin/geophysics-workbench/issues): what you did,
+[GitHub issues](https://github.com/SebBenJamin/groundwork-qgis/issues): what you did,
 what you expected, what happened, and a screenshot if it helps.
 
-If the workbench saves you time, you can buy me a coffee:
+If Groundwork saves you time, you can buy me a coffee:
 
 <a href="https://www.buymeacoffee.com/Ben.jamin"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=Ben.jamin&button_colour=40DCA5&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" alt="Buy me a coffee" height="42"></a>
 
@@ -102,7 +104,7 @@ If the workbench saves you time, you can buy me a coffee:
 - **Release zips** (`dist/`): `& "<QGIS folder>\bin\python-qgis.bat" scripts/package.py`.
 - **README pictures** (`docs/images/`): `scripts/render_readme_images.py`, from the Gülpe demo
   (needs the internet for the live layers).
-- **Working copy in QGIS**: `scripts/dev_install.ps1` links `geophysics_workbench/` into the
+- **Working copy in QGIS**: `scripts/dev_install.ps1` links `groundwork_geophysics/` into the
   plugin folder of your QGIS 4 default profile.
 - The scripts expect QGIS 4.2.3 in its default install folder (`C:\Program Files\QGIS 4.2.3`).
 

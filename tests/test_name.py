@@ -13,8 +13,11 @@ def test_no_old_name_in_plugin():
             continue
         if path.name == "ids.py" and path.parent == PACKAGE:
             continue
-        if "Geophysics Workbench" in path.read_text(encoding="utf-8", errors="ignore"):
-            offenders.append(path.relative_to(REPO).as_posix())
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            # the 0.10.0 changelog line names the old plugin once, on purpose
+            if "Geophysics Workbench" in line and "(was Geophysics Workbench)" not in line:
+                offenders.append(path.relative_to(REPO).as_posix())
+                break
     assert offenders == []
 
 
@@ -49,3 +52,13 @@ def test_layout_item_names(qgis_app):
     names = {reg.itemMetadata(t).visibleName()
              for t in (items.COLOUR_BAR_TYPE, items.BOREHOLE_LEGEND_TYPE)}
     assert names == {"Colour bar (Groundwork)", "Borehole legend (Groundwork)"}
+
+
+def test_docs_use_new_name():
+    files = [REPO / "README.md", *sorted((REPO / "docs" / "user").glob("*.md"))]
+    offenders = []
+    for path in files:
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "Geophysics Workbench" in line and "ormerly" not in line:
+                offenders.append(f"{path.name}:{n}")
+    assert not offenders, offenders

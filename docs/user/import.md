@@ -1,8 +1,8 @@
 # Adding data and placing it on a profile
 
-This guide shows how to bring a model into the Geophysics Workbench from an ordinary text file, and how the plugin decides where along the line it sits.
+This guide shows how to bring a model into the Groundwork from an ordinary text file, and how the plugin decides where along the line it sits.
 
-**Geophysics Workbench → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data) are recognised as before. For any other text table you say what the columns are. The menu entry is available as soon as a workbench project is open; no profile has to be open.
+**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data) are recognised as before. For any other text table you say what the columns are. The menu entry is available as soon as a Groundwork project is open; no profile has to be open.
 
 ---
 
@@ -122,7 +122,7 @@ A triangulated mesh, such as the pyGIMLi VTK results, gives no guess: its surfac
 
 Derived electrodes are **never stored**. They show
 
-- on the map as the temporary layer **electrodes (derived)**, in the Geophysics Workbench group. Style it like any layer; your style is kept with the QGIS project. If you remove it, it comes back the next time the project is opened;
+- on the map as the temporary layer **electrodes (derived)**, in the Groundwork group. Style it like any layer; your style is kept with the QGIS project. If you remove it, it comes back the next time the project is opened;
 - in the section as dashed ticks.
 
 A line under the section says which kind is shown, any placement note, and for a local section *Local section: no heights yet, values are depth below the surface*.
@@ -137,7 +137,7 @@ A guess is a guess. In the small demo models the cells are half an electrode spa
 
 A profile with no station heights, no DEM and no model with real elevations is drawn **local**: the ground is flat at 0, or at the top of a Local height model. The Topography list shows **Local**.
 
-To give it real heights, choose **Reference Height…** (next to the Topography list, and in Profile Properties…): type one height at one position, a distance or an electrode, and the whole section moves to real elevations; the view zooms to the whole section at its new height. **Ctrl+Z** undoes it; **Remove** takes it away. If the workbench file cannot be written at that moment (read-only, open in another program), a line under the section says so and nothing changes.
+To give it real heights, choose **Reference Height…** (next to the Topography list, and in Profile Properties…): type one height at one position, a distance or an electrode, and the whole section moves to real elevations; the view zooms to the whole section at its new height. **Ctrl+Z** undoes it; **Remove** takes it away. If the Groundwork file cannot be written at that moment (read-only, open in another program), a line under the section says so and nothing changes.
 
 - Interpretation drawn on a local section moves with the reference height. When real heights arrive later (a positions file with elevations, a DEM), it is moved once onto the real ground, keeping its depth below the ground. Export does this first if needed.
 - While a profile is local there are no DEM line and no boreholes (drawing, hover, snapping, picking on the map, plate legends), no ties with other profiles, and no interpretation export for it; a message says why.

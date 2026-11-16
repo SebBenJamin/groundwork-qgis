@@ -1,4 +1,4 @@
-# Borehole data in the Geophysics Workbench
+# Borehole data in the Groundwork
 
 This guide shows how to get borehole data, as clients usually deliver it, onto your sections and into the borehole viewer.
 
@@ -56,7 +56,7 @@ Three tables, linked by a **borehole ID**. Column names are free: you pick them 
   The readout says which one was used.
 - **Height check:** when the elevation column and the DEM differ by more than the tolerance in Context Layers…, the borehole gets a **red triangle**, and hovering shows both numbers. Nothing is corrected for you.
 - **Which boreholes appear on a section:** collar points within the **buffer** (Context Layers…, distance from the profile line) are projected onto it.
-- **Coordinates:** the collar points can be in any coordinate system QGIS knows. They are transformed to the workbench's system.
+- **Coordinates:** the collar points can be in any coordinate system QGIS knows. They are transformed to the project's system.
 
 ---
 
@@ -108,7 +108,7 @@ Client exports differ every time. These are the layouts we see, and what to do w
 
 ## 4. Context Layers…: field by field
 
-**Geophysics Workbench** menu → **Context Layers…** → **Boreholes**. Each borehole entry is one set of collars with its tables. Use **Add** for a second set, e.g. state boreholes next to your own.
+**Groundwork** menu → **Context Layers…** → **Boreholes**. Each borehole entry is one set of collars with its tables. Use **Add** for a second set, e.g. state boreholes next to your own.
 
 | Field in the dialog | What to choose |
 |---|---|

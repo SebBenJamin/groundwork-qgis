@@ -6,7 +6,7 @@ This guide shows how to turn sections into report plates (PDF), how to record wh
 
 ## 1. Field notes
 
-Field notes are what the crew experienced along the line: "electrodes 23–28 disabled (farmer)", "fence at 140 m", "wet ground". They are stored with the profile in the workbench GeoPackage. Your own QGIS layers are never changed.
+Field notes are what the crew experienced along the line: "electrodes 23–28 disabled (farmer)", "fence at 140 m", "wet ground". They are stored with the profile in the Groundwork GeoPackage. Your own QGIS layers are never changed.
 
 **Adding a note on the section**
 1. In the section panel, choose the **Note** tool.
@@ -22,7 +22,7 @@ Field notes are what the crew experienced along the line: "electrodes 23–28 di
 
 On the section, a note at one place shows as an orange mark down to the ground; a stretch as a bar in its own lane just above the ground (overlapping stretches get separate lanes). Each has a label with the first line of its text. The full text is shown when you hover or click. A stretch that runs past the ends of the profile is cut to the profile, and the note says so.
 
-**On the map**, the layers "Field notes" and "Field notes (stretches)" in the Geophysics Workbench group show the notes. They are read-only and are updated when you change a note. They are added to the project as soon as it has notes.
+**On the map**, the layers "Field notes" and "Field notes (stretches)" in the Groundwork group show the notes. They are read-only and are updated when you change a note. They are added to the project as soon as it has notes.
 
 **Styling notes**: the section takes each note's colour from these layers, a stretch's line width from "Field notes (stretches)". Restyle them in Layer Properties like any layer; a categorized style on `category` colours each note by its category. The section follows at once.
 
@@ -54,7 +54,7 @@ Only what is known is shown. An empty field is left out; nothing is guessed.
 
 ## 3. Making plates
 
-Open **Geophysics Workbench → Plates…**.
+Open **Groundwork → Plates…**.
 
 1. **Add** a plate. It starts with one frame showing the profile and look of the section panel.
 2. Set its **number**, **title** and **template**: A4 or A3, portrait or landscape. You can also choose **Own template…** (see section 5).
@@ -91,7 +91,7 @@ Anything you moved, resized, restyled or added in the layout designer stays as i
 
 Deleting a plate in the dialog keeps its layout. Delete the layout in the Layout Manager if you no longer need it.
 
-If a plate's profile was removed from the workbench, its frame says "Profile not found". The plate can still be exported.
+If a plate's profile was removed from the project, its frame says "Profile not found". The plate can still be exported.
 
 ---
 
