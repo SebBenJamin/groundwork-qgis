@@ -19,7 +19,7 @@ def logs(project):
 
 
 def _entry(log):
-    from geophysics_workbench.core.context_settings import BoreholeSetting
+    from groundwork_geophysics.core.context_settings import BoreholeSetting
     return BoreholeSetting("pts", "bid", "", log.id(), "bid", "top", "bot", "lith")
 
 
@@ -30,28 +30,28 @@ def _categorized(colour="10,200,30"):
 
 
 def test_style_copy_has_fields_and_all_rows_for_local_source(logs):
-    from geophysics_workbench.ui.borehole_style_dialog import style_copy
+    from groundwork_geophysics.ui.borehole_style_dialog import style_copy
     copy = style_copy(logs, None, "bid")
     assert copy.isSpatial() and copy.featureCount() == 3
     assert copy.fields().names() == logs.fields().names()
 
 
 def test_style_copy_filters_ids_for_remote_provider(logs):
-    from geophysics_workbench.ui.borehole_style_dialog import style_copy
+    from groundwork_geophysics.ui.borehole_style_dialog import style_copy
     copy = style_copy(logs, ["B2"], "bid")
     assert copy.featureCount() == 1
     assert next(copy.getFeatures())["lith"] == "peat"
 
 
 def test_remote_detection(logs, monkeypatch):
-    from geophysics_workbench.ui import borehole_style_dialog as m
+    from groundwork_geophysics.ui import borehole_style_dialog as m
     assert not m.is_remote(logs)
     monkeypatch.setattr(type(logs), "providerType", lambda self: "WFS")
     assert m.is_remote(logs)
 
 
 def test_copy_is_never_added_to_project(project, logs, qgis_app):
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     before = set(project.mapLayers())
     dlg = BoreholeStyleDialog(project, _entry(logs), ["B1"], lambda: None)
     assert set(project.mapLayers()) == before
@@ -59,8 +59,8 @@ def test_copy_is_never_added_to_project(project, logs, qgis_app):
 
 
 def test_apply_saves_renderer_and_calls_back(project, logs, qgis_app):
-    from geophysics_workbench.section.borehole_style import load_renderer
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.section.borehole_style import load_renderer
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     calls = []
     dlg = BoreholeStyleDialog(project, _entry(logs), ["B1"], lambda: calls.append(1))
     dlg.copy.setRenderer(_categorized())
@@ -73,8 +73,8 @@ def test_apply_saves_renderer_and_calls_back(project, logs, qgis_app):
 
 
 def test_existing_style_is_loaded_into_the_editor(project, logs, qgis_app):
-    from geophysics_workbench.section.borehole_style import save_renderer
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.section.borehole_style import save_renderer
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     save_renderer(project, logs.id(), _categorized())
     dlg = BoreholeStyleDialog(project, _entry(logs), [], lambda: None)
     assert dlg.copy.renderer().type() == "categorizedSymbol"
@@ -82,8 +82,8 @@ def test_existing_style_is_loaded_into_the_editor(project, logs, qgis_app):
 
 
 def test_export_import_round_trip(project, logs, qgis_app, tmp_path):
-    from geophysics_workbench.section.borehole_style import load_renderer
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.section.borehole_style import load_renderer
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     dlg = BoreholeStyleDialog(project, _entry(logs), [], lambda: None)
     dlg.copy.setRenderer(_categorized("1,2,3"))
     dlg.reload_editor()
@@ -99,7 +99,7 @@ def test_export_import_round_trip(project, logs, qgis_app, tmp_path):
 
 
 def test_remote_note_names_the_profile(project, logs, qgis_app, monkeypatch):
-    from geophysics_workbench.ui import borehole_style_dialog as m
+    from groundwork_geophysics.ui import borehole_style_dialog as m
     monkeypatch.setattr(m, "is_remote", lambda layer: True)
     dlg = m.BoreholeStyleDialog(project, _entry(logs), ["B1"], lambda: None,
                                 profile_name="Transect 3")
@@ -110,7 +110,7 @@ def test_remote_note_names_the_profile(project, logs, qgis_app, monkeypatch):
 def test_editor_is_embedded_and_visible(project, logs, qgis_app):
     """QGIS's style editor is a QDialog: it must sit inside the window as a widget (the
     window was empty when it stayed a separate, hidden top-level dialog)."""
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     dlg = BoreholeStyleDialog(project, _entry(logs), [], lambda: None)
     dlg.show()
     qgis_app.processEvents()
@@ -126,9 +126,9 @@ def test_without_saved_style_the_editor_starts_with_the_drawn_look(project, logs
     """Nothing saved yet: the editor opens with what the section shows now (one category per
     interval text, in its neutral colour), not QGIS's default single symbol. Nothing is
     saved until Apply/OK."""
-    from geophysics_workbench.core.lithology import label_colour
-    from geophysics_workbench.section.borehole_style import load_renderer
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.core.lithology import label_colour
+    from groundwork_geophysics.section.borehole_style import load_renderer
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     dlg = BoreholeStyleDialog(project, _entry(logs), [], lambda: None)
     r = dlg.copy.renderer()
     assert r.type() == "categorizedSymbol" and r.classAttribute() == "lith"

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.section_mesh import SectionMesh
-from geophysics_workbench.core.ties import TieColumn, mismatch_text, tie_mismatch
+from groundwork_geophysics.core.section_mesh import SectionMesh
+from groundwork_geophysics.core.ties import TieColumn, mismatch_text, tie_mismatch
 
 
 def test_column_at_quads_and_outside():

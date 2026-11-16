@@ -14,14 +14,14 @@ def test_demo_project_opens_and_resolves_sources(qgis_app, tmp_path):
     """On a copy: opening a store may update it (0.8: schema 1 -> 2); the suite must never
     write to the committed demo."""
     from qgis.core import QgsProject
-    from geophysics_workbench.ui.project_actions import attach_store
-    from geophysics_workbench.section.data import SectionDataProvider
-    before = _sha1(DEMO / "demo_workbench.gpkg")
+    from groundwork_geophysics.ui.project_actions import attach_store
+    from groundwork_geophysics.section.data import SectionDataProvider
+    before = _sha1(DEMO / "demo_groundwork.gpkg")
     copy = tmp_path / "demo"
     shutil.copytree(DEMO, copy)
     prj = QgsProject(); assert prj.read(str(copy / "demo_project.qgz"))
     st = attach_store(prj)
-    assert _sha1(DEMO / "demo_workbench.gpkg") == before
+    assert _sha1(DEMO / "demo_groundwork.gpkg") == before
     prov = SectionDataProvider(st)
     profs = st.profiles()
     assert len(profs) == 3
@@ -34,15 +34,15 @@ def test_demo_works_from_another_folder(qgis_app, tmp_path):
     every layer (including the powerline GeoJSON) loads from the new folder."""
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import attach_store
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import attach_store
 
     copy = tmp_path / "unpacked demo"
     shutil.copytree(DEMO, copy)
     prj = QgsProject()
     assert prj.read(str(copy / "demo_project.qgz"))
     st = attach_store(prj)
-    assert st.path.resolve() == (copy / "demo_workbench.gpkg").resolve()
+    assert st.path.resolve() == (copy / "demo_groundwork.gpkg").resolve()
     prov = SectionDataProvider(st)
     layers = [la for p in st.profiles() for la in prov.layers(p.id)]
     assert len(layers) == 3 and all(la.error is None for la in layers)
@@ -56,12 +56,12 @@ def test_demo_works_from_another_folder(qgis_app, tmp_path):
 def test_demo_project_content(qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import GROUP_NAME, SCOPE, STORE_KEY
+    from groundwork_geophysics.ui.project_actions import GROUP_NAME, SCOPE, STORE_KEY
 
     prj = QgsProject()
     assert prj.read(str(DEMO / "demo_project.qgz"))
     assert prj.crs().authid() == "EPSG:25832"
-    assert prj.readEntry(SCOPE, STORE_KEY, "")[0] == "demo_workbench.gpkg"
+    assert prj.readEntry(SCOPE, STORE_KEY, "")[0] == "demo_groundwork.gpkg"
     names = {l.name(): l for l in prj.mapLayers().values()}
     assert "OpenStreetMap" in names and names["OpenStreetMap"].providerType() == "wms"
     powerline = [l for n, l in names.items() if n.lower().startswith("powerline")]
@@ -73,10 +73,10 @@ def test_demo_project_content(qgis_app):
 
 
 def test_demo_store_datasets_use_relative_paths(qgis_app, tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
-    copy = tmp_path / "demo_workbench.gpkg"                    # never the committed file
-    shutil.copy(DEMO / "demo_workbench.gpkg", copy)
+    copy = tmp_path / "demo_groundwork.gpkg"                    # never the committed file
+    shutil.copy(DEMO / "demo_groundwork.gpkg", copy)
     st = ProjectStore.open(copy)
     by_name = {p.name: p for p in st.profiles()}
     assert sorted(by_name) == ["P1", "P2", "P3"]
@@ -103,19 +103,19 @@ def test_demo_project_carries_no_personal_data():
         text = zf.read(qgs).decode("utf-8")
     assert re.findall(r'saveUser(?:Full)?="([^"]*)"', text) in ([], ["", ""])
     cp = ConfigParser()
-    cp.read(DEMO.parent / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
+    cp.read(DEMO.parent / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
     assert re.findall(r"<author>([^<]*)</author>", text) == [cp["general"]["author"]]
 
 
 def test_demo_profiles_open_without_a_placement_note(qgis_app, tmp_path):
     """P1 and P2 carry a typed station spacing of 5 m (built by scripts/build_demo.py), so
     their models are pinned to the stations and the section shows no note."""
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     copy = tmp_path / "demo"
     shutil.copytree(DEMO, copy)
-    st = ProjectStore.open(copy / "demo_workbench.gpkg")
+    st = ProjectStore.open(copy / "demo_groundwork.gpkg")
     prov = SectionDataProvider(st)
     by_name = {p.name: p for p in st.profiles()}
     for name in ("P1", "P2"):

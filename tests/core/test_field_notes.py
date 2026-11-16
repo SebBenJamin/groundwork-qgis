@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.field_notes import (FieldNote, clamp_to_profile, note_range,
+from groundwork_geophysics.core.field_notes import (FieldNote, clamp_to_profile, note_range,
                                                    stations_to_chainage)
 
 NAMES = [str(i) for i in range(1, 81)]

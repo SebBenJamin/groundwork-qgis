@@ -70,9 +70,9 @@ def test_build_workbench_seven_transects_with_info(tmp_path, qgis_app):
         pytest.skip("Erfurt cache missing")
     import build_demo_erfurt
 
-    from geophysics_workbench.core.dataset_info import dataset_info, provenance_line
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.dataset_info import dataset_info, provenance_line
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     build_demo_erfurt.build_data(cache=CACHE, out=tmp_path)
     st = ProjectStore.open(build_demo_erfurt.build_workbench(out=tmp_path, cache=CACHE))
     assert sorted(p.name for p in st.profiles()) == [

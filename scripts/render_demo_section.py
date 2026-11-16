@@ -13,7 +13,7 @@ from the powerline crossing on, at a higher vertical exaggeration, with Topograp
 the surface follows the 2 m road embankment near s = 250, while the stations stay at
 their measured heights (red) on a thin line of their own. The ties panel is shown with
 the P1 x P3 row selected. The demo is copied to a temporary folder first, so switching
-the topography never writes to the committed demo/demo_workbench.gpkg.
+the topography never writes to the committed demo/demo_groundwork.gpkg.
 """
 import os
 import shutil
@@ -111,12 +111,12 @@ def zoom_to(dock, ve: float, s0: float, s1: float, z_top: float) -> None:
 
 def version() -> str:
     cp = ConfigParser()
-    cp.read(REPO / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
+    cp.read(REPO / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
     return cp["general"]["version"]
 
 
 def render(out_dir: Path, ver: str, demo: Path) -> list[Path]:
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics.plugin import WorkbenchPlugin
 
     project = QgsProject.instance()
     if not project.read(str(demo / "demo_project.qgz")):

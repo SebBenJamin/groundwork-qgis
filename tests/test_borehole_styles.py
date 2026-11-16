@@ -21,8 +21,8 @@ def _copy():
 def test_shipped_style_loads_with_its_classes_and_patterns(qgis_app, name, codes):
     from qgis.core import QgsMapLayer, QgsSVGFillSymbolLayer
 
-    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
-    from geophysics_workbench.styles import STYLE_DIR
+    from groundwork_geophysics.patterns import register_svg_path, unregister_svg_path
+    from groundwork_geophysics.styles import STYLE_DIR
     path = STYLE_DIR / "boreholes" / name
     text = path.read_text(encoding="utf-8")
     assert ":/" not in text.split("<renderer-v2")[1].split("</renderer-v2>")[0].replace(
@@ -45,14 +45,14 @@ def test_shipped_style_loads_with_its_classes_and_patterns(qgis_app, name, codes
 
 
 def test_readme_says_the_choices_are_not_a_standard():
-    from geophysics_workbench.styles import STYLE_DIR
+    from groundwork_geophysics.styles import STYLE_DIR
     text = (STYLE_DIR / "boreholes" / "README.md").read_text(encoding="utf-8")
     assert "not" in text and "DIN 4023" in text and "EN ISO 14688-1" in text
 
 
 def test_import_starts_in_the_shipped_styles(qgis_app):
-    from geophysics_workbench.styles import STYLE_DIR
-    from geophysics_workbench.ui.borehole_style_dialog import import_folder
+    from groundwork_geophysics.styles import STYLE_DIR
+    from groundwork_geophysics.ui.borehole_style_dialog import import_folder
     assert Path(import_folder()) == STYLE_DIR / "boreholes"
 
 
@@ -86,7 +86,7 @@ def test_guelpe_core_style_classifies_by_main_class(qgis_app):
     demo style is Categorized on an expression (the text before "·"), five classes."""
     from qgis.core import QgsMapLayer
 
-    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
+    from groundwork_geophysics.patterns import register_svg_path, unregister_svg_path
     path = Path(__file__).resolve().parents[1] / "demo_guelpe" / "context" / "core_logs_style.qml"
     register_svg_path()
     try:
@@ -109,10 +109,10 @@ def test_gatherer_colours_intervals_by_main_class(qgis_app):
     import numpy as np
     from qgis.core import QgsMapLayer, QgsProject
 
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
-    from geophysics_workbench.core.model import Profile
-    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
-    from geophysics_workbench.section.borehole_style import save_renderer
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.model import Profile
+    from groundwork_geophysics.patterns import register_svg_path, unregister_svg_path
+    from groundwork_geophysics.section.borehole_style import save_renderer
     from test_context_layers import _add, _gatherer, _layer
     prj = QgsProject.instance()
     prj.clear()

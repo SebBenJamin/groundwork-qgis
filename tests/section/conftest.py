@@ -7,9 +7,9 @@ import pytest
 def make_dock(qgis_app):
     """Factory: ``make_dock(store) -> SectionDock`` with a registered source, shown at a
     usable size. Teardown detaches the canvas, unregisters the source, deletes the dock."""
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.dock import SectionDock
-    from geophysics_workbench.section.profile_source import register_source, unregister_source
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.dock import SectionDock
+    from groundwork_geophysics.section.profile_source import register_source, unregister_source
 
     made = []
 
@@ -39,7 +39,7 @@ def make_dock_and_link(make_dock, fake_iface):
     store CRS and shows the store's profiles."""
     from qgis.core import QgsCoordinateReferenceSystem, QgsRectangle
 
-    from geophysics_workbench.section.map_link import MapLink
+    from groundwork_geophysics.section.map_link import MapLink
 
     links = []
 

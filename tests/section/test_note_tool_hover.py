@@ -18,7 +18,7 @@ def _send(canvas, et, pos, buttons):
 def test_note_tool_moves_map_cursor(qgis_app, dock):
     from qgis.PyQt.QtCore import QEvent, Qt
 
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     seen = []
     dock.cursor_moved.connect(lambda s, z: seen.append(s))
     dock.interp.note_form_factory = lambda note, categories: None

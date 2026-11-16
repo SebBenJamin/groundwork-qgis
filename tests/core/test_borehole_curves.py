@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.borehole_curves import (CurveStyle, data_range, track_fraction,
+from groundwork_geophysics.core.borehole_curves import (CurveStyle, data_range, track_fraction,
                                                        value_at)
-from geophysics_workbench.core.context import Curve
+from groundwork_geophysics.core.context import Curve
 
 
 def _curve(depth, values, key="k"):

@@ -18,8 +18,8 @@ def _dock(make_dock, store, qgis_app, w=1366, h=300):
 def test_auto_ve_fills_the_docked_panel(qgis_app, store_with_model, make_dock, monkeypatch):
     """A real section is wide and shallow (here 50 m x 10 m; the test store's station
     heights sit 100 m above its model)."""
-    from geophysics_workbench.section import dock as dock_module
-    from geophysics_workbench.section.dock import AUTO_VE
+    from groundwork_geophysics.section import dock as dock_module
+    from groundwork_geophysics.section.dock import AUTO_VE
     monkeypatch.setattr(dock_module, "data_extent", lambda d: (0.0, 50.0, -8.0, 2.0))
     st, p, _ = store_with_model
     dock = _dock(make_dock, st, qgis_app)
@@ -44,7 +44,7 @@ def test_typed_ve_is_kept(qgis_app, store_with_model, make_dock):
 def test_auto_ve_keeps_room_for_labels(qgis_app, store_with_model, make_dock, monkeypatch):
     """Auto chooses the exaggeration with the label room included: labels stay inside the
     plot and the section still fills the width."""
-    from geophysics_workbench.section import dock as dock_module
+    from groundwork_geophysics.section import dock as dock_module
     monkeypatch.setattr(dock_module, "data_extent", lambda d: (0.0, 50.0, -8.0, 2.0))
     monkeypatch.setattr(dock_module, "headroom_px", lambda d: 60.0)
     st, p, _ = store_with_model
@@ -60,7 +60,7 @@ def test_auto_ve_keeps_room_for_labels(qgis_app, store_with_model, make_dock, mo
 
 
 def test_empty_panel_shows_hint_not_axes(qgis_app, store_with_model, make_dock):
-    from geophysics_workbench.section.dock import HINT_NO_PROFILE
+    from groundwork_geophysics.section.dock import HINT_NO_PROFILE
     st, p, _ = store_with_model
     dock = make_dock(st)
     dock.show()
@@ -76,8 +76,8 @@ def test_auto_on_a_short_laptop_panel(qgis_app, store_with_model, make_dock, mon
     """Usability review 2, R1: at the default docked height (~289 px on 1366x768) Auto went
     down to 0.5x with labels taking 62 % of the plot: a thin strip with wide margins. Now
     label room is at most 30 %, the section fills the width, and the box shows the VE."""
-    from geophysics_workbench.section import dock as dock_module
-    from geophysics_workbench.section.view_fit import AUTO_HEADROOM, AUTO_MIN
+    from groundwork_geophysics.section import dock as dock_module
+    from groundwork_geophysics.section.view_fit import AUTO_HEADROOM, AUTO_MIN
     monkeypatch.setattr(dock_module, "data_extent", lambda d: (0.0, 49.0, 172.0, 182.0))
     monkeypatch.setattr(dock_module, "headroom_px", lambda d: 91.0)
     st, p, _ = store_with_model
@@ -96,8 +96,8 @@ def test_labels_above_the_plot_top_are_left_out(qgis_app):
     from qgis.PyQt.QtCore import QRectF
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
-    from geophysics_workbench.section.context_render import plan_labels
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.context_render import plan_labels
     img = QImage(800, 400, QImage.Format.Format_ARGB32)
     painter = QPainter(img)
     try:

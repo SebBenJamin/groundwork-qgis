@@ -10,8 +10,8 @@ from test_borehole_viewer import _bh, fake_dock  # noqa: F401
 def viewer(fake_dock, qgis_app):  # noqa: F811
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
     fake_dock.provider.items["p1"] = ContextItems(points=[
         _bh(10.0, "RK15", 25.0, [(0, 2, "sand", (200, 20, 20))], bid="RK15", layer_id="L1"),
         _bh(40.0, "RK16", 25.0, [(0, 2, "sand", (200, 20, 20))], bid="RK16", layer_id="L1"),
@@ -62,7 +62,7 @@ def test_ctrl_click_selects_several(viewer):
 
 
 def test_menu_hides_selection(viewer):
-    from geophysics_workbench.section.dock import HIDE_IN_SECTION
+    from groundwork_geophysics.section.dock import HIDE_IN_SECTION
     _click(viewer, "RK15")
     _click(viewer, "RK17", ctrl=True)
     menu = viewer.canvas.column_menu(_rects(viewer)["RK17"].center())
@@ -73,7 +73,7 @@ def test_menu_hides_selection(viewer):
 
 
 def test_menu_on_unselected_column_acts_on_it_alone(viewer):
-    from geophysics_workbench.section.dock import HIDE_IN_SECTION
+    from groundwork_geophysics.section.dock import HIDE_IN_SECTION
     _click(viewer, "RK15")
     menu = viewer.canvas.column_menu(_rects(viewer)["RK16"].center())
     [hide] = [a for a in menu.actions() if a.text() == HIDE_IN_SECTION]
@@ -82,7 +82,7 @@ def test_menu_on_unselected_column_acts_on_it_alone(viewer):
 
 
 def test_menu_shows_hidden(viewer):
-    from geophysics_workbench.section.dock import HIDE_IN_SECTION, SHOW_IN_SECTION
+    from groundwork_geophysics.section.dock import HIDE_IN_SECTION, SHOW_IN_SECTION
     viewer.dock.provider.set_boreholes_hidden("p1", [("L1", "RK16")], True)
     menu = viewer.canvas.column_menu(_rects(viewer)["RK16"].center())
     assert [a.text() for a in menu.actions()] == [SHOW_IN_SECTION]
@@ -107,7 +107,7 @@ def test_option_persisted(viewer):
 
 def test_viewer_hiding_is_undoable(viewer):
     """Final review: hiding from the viewer goes through the panel's undo stack."""
-    from geophysics_workbench.section.dock import HIDE_IN_SECTION
+    from groundwork_geophysics.section.dock import HIDE_IN_SECTION
     _click(viewer, "RK15")
     menu = viewer.canvas.column_menu(_rects(viewer)["RK15"].center())
     [hide] = [a for a in menu.actions() if a.text() == HIDE_IN_SECTION]

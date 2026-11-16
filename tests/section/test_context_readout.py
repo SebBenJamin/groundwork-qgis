@@ -1,12 +1,12 @@
 """The readout lines for third-party context under the cursor, and the second readout line."""
 import numpy as np
 
-from geophysics_workbench.core.colors import ColorScale
-from geophysics_workbench.core.context import (BandSegment, ContextItems, Crossing, LogInterval,
+from groundwork_geophysics.core.colors import ColorScale
+from groundwork_geophysics.core.context import (BandSegment, ContextItems, Crossing, LogInterval,
                                                ProjectedPoint)
-from geophysics_workbench.core.ties import Tie, TieColumn
-from geophysics_workbench.section.context_readout import context_hits
-from geophysics_workbench.section.readout import format_readout
+from groundwork_geophysics.core.ties import Tie, TieColumn
+from groundwork_geophysics.section.context_readout import context_hits
+from groundwork_geophysics.section.readout import format_readout
 
 S = np.array([0.0, 100.0])
 
@@ -77,7 +77,7 @@ def test_readout_second_line():
 def test_strip_start_is_the_nearest_free_slot_beside_the_tie_line():
     """R15: right of the tie line unless a borehole column stands there; then left of the
     line when that is free, else just past the columns, on the nearer side (right on a draw)."""
-    from geophysics_workbench.section.context_readout import strip_start
+    from groundwork_geophysics.section.context_readout import strip_start
 
     items = _items()                                        # B1 column at 20 +- 0.5
     pts = items.points
@@ -115,8 +115,8 @@ def test_crossing_readout_omits_layer_when_same_as_label():
 
 
 def test_details_show_height_source_flag_interval_and_curves():
-    from geophysics_workbench.core.context import Curve
-    from geophysics_workbench.section.context_readout import borehole_details
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.context_readout import borehole_details
     p = ProjectedPoint(20.0, 4.0, "B1", "borehole", 25.0,
                        [LogInterval(0.0, 1.0, "Topsoil"), LogInterval(1.0, 3.0, "Sand")],
                        z_source="field", z_dem=23.0, flagged=True,
@@ -129,7 +129,7 @@ def test_details_show_height_source_flag_interval_and_curves():
 
 
 def test_details_say_when_the_surface_gives_the_height():
-    from geophysics_workbench.section.context_readout import borehole_details
+    from groundwork_geophysics.section.context_readout import borehole_details
     p = ProjectedPoint(20.0, 4.0, "B1", "borehole", None, [LogInterval(0.0, 2.0, "Sand")])
     lines = borehole_details(ContextItems(points=[p]), 20.0, 99.0, 0.5,
                              (S, np.array([100.0, 100.0])))
@@ -137,7 +137,7 @@ def test_details_say_when_the_surface_gives_the_height():
 
 
 def test_hover_lists_curve_values_at_the_cursor_depth():
-    from geophysics_workbench.core.context import Curve
+    from groundwork_geophysics.core.context import Curve
     p = ProjectedPoint(20.0, 4.0, "B1", "borehole", 100.0, [LogInterval(0.0, 4.0, "Sand")],
                        curves=[Curve("t:gr", "gr", "API", np.array([1.0, 3.0]),
                                      np.array([40.0, 50.0]))])
@@ -157,9 +157,9 @@ def test_per_borehole_half_widths():
 
 def test_readout_shows_small_curve_values_and_respects_log_gaps():
     """Minor 4: 0.004 S/m is not shown as 0.0; on a log scale no value across a <= 0 gap."""
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.core.context import Curve
-    from geophysics_workbench.section.context_readout import curve_lines
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.context_readout import curve_lines
     p = ProjectedPoint(20.0, 0.0, "B1", "borehole", 100.0, curves=[
         Curve("t:c", "cond", "S/m", np.array([1.0, 3.0]), np.array([0.004, 0.004])),
         Curve("t:r", "res", "ohm.m", np.array([1.0, 2.0, 3.0]), np.array([10.0, 0.0, 30.0]))])
@@ -171,7 +171,7 @@ def test_readout_shows_small_curve_values_and_respects_log_gaps():
 
 def test_hover_over_a_curve_track_right_of_the_column():
     """Minor 8: the curve track drawn right of the column also answers the readout."""
-    from geophysics_workbench.core.context import BoreholeView, Curve
+    from groundwork_geophysics.core.context import BoreholeView, Curve
     p = ProjectedPoint(20.0, 4.0, "B1", "borehole", 100.0, [LogInterval(0.0, 4.0, "Sand")],
                        entry=0, curves=[Curve("t:gr", "gr", "API", np.array([1.0, 3.0]),
                                               np.array([40.0, 50.0]))])

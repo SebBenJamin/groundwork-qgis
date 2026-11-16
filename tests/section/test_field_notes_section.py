@@ -5,17 +5,17 @@ from test_context_render import _close, _img, _results, _x, _y
 
 
 def _note(nid, s_from, s_to, text, shown=True, stations=""):
-    from geophysics_workbench.core.field_notes import FieldNote
+    from groundwork_geophysics.core.field_notes import FieldNote
     return FieldNote(nid, "p1", s_from, s_to, text, shown=shown, stations=stations)
 
 
 def _items(notes, crossings=()):
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
     return ContextItems(crossings=list(crossings), field_notes=list(notes))
 
 
 def _note_pixels(img, x0, x1, y0, y1):
-    from geophysics_workbench.section.field_notes_render import NOTE_RGB
+    from groundwork_geophysics.section.field_notes_render import NOTE_RGB
     return sum(1 for x in range(x0, x1) for y in range(y0, y1)
                if _close(img.pixel(x, y), NOTE_RGB, tol=50))
 
@@ -39,8 +39,8 @@ def test_labels_do_not_overlap_crossing_labels(qgis_app):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.core.context import Crossing
-    from geophysics_workbench.section.context_render import plan_labels
+    from groundwork_geophysics.core.context import Crossing
+    from groundwork_geophysics.section.context_render import plan_labels
     note = _note("a", 60.0, None, "fence")
     c = Crossing(60.0, "380 kV", "line", 90.0)
     img = QImage(400, 200, QImage.Format.Format_ARGB32)
@@ -56,7 +56,7 @@ def test_labels_do_not_overlap_crossing_labels(qgis_app):
 
 def test_multiline_long_text_one_line_on_section_full_on_hover(qgis_app):
     """Review Focus 5."""
-    from geophysics_workbench.section.field_notes_render import field_note_lines, label_text
+    from groundwork_geophysics.section.field_notes_render import field_note_lines, label_text
     long = "electrodes 23-28 disabled because the farmer drove over the cable twice\nsee log"
     assert label_text(long) == "electrodes 23-28 disabled because the f…"
     n = _note("a", 115.0, 140.0, long, stations="23–28")
@@ -74,14 +74,14 @@ def test_mirrored_profile_mirrors_notes():
 
 
 def test_hover_readout_lists_the_note(qgis_app):
-    from geophysics_workbench.section.context_readout import context_hits
+    from groundwork_geophysics.section.context_readout import context_hits
     hits = context_hits(_items([_note("b", 60.0, 70.0, "wet ground")]), 65.0, 0.5, 0.5, 0.5)
     assert "Field note 60.0–70.0 m: wet ground" in hits
 
 
 def test_provider_context_carries_shown_notes_and_the_switch(store_with_model, qgis_app):
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     st.save_field_note(_note("a", 5.0, None, "fence").__class__(
         "a", p.id, 5.0, None, "fence"))
@@ -109,8 +109,8 @@ def test_interpretation_menu_switches_field_notes(qgis_app, store_with_model, ma
 def test_stretches_get_their_own_lanes():
     """Long stretches clutter no labels: each lies in a lane along the ground, overlapping
     stretches in separate lanes."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.section.field_notes_render import stretch_lanes
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.section.field_notes_render import stretch_lanes
     a = FieldNote("a", "p", 0.0, 80.0, "wet ground")
     b = FieldNote("b", "p", 50.0, 120.0, "fence")
     c = FieldNote("c", "p", 100.0, 140.0, "cows")

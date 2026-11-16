@@ -1,5 +1,5 @@
 import numpy as np, pytest
-from geophysics_workbench.core.context import (
+from groundwork_geophysics.core.context import (
     BandSegment, Crossing, LogInterval, ProjectedPoint,
     line_crossings, polygon_intervals, profile_ties, project_points)
 
@@ -76,16 +76,16 @@ def test_polygon_intervals_overlapping_same_label_merge(order):
 
 
 def test_context_items_defaults_are_empty():
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
     items = ContextItems()
     assert items.crossings == [] and items.ties == [] and items.dem is None
     assert items.dem_tolerance == 1.0
 
 
 def test_context_items_mirrored():
-    from geophysics_workbench.core.context import (BandSegment, ContextItems, Crossing,
+    from groundwork_geophysics.core.context import (BandSegment, ContextItems, Crossing,
                                                    LogInterval, ProjectedPoint)
-    from geophysics_workbench.core.ties import Tie
+    from groundwork_geophysics.core.ties import Tie
     col = object()
     items = ContextItems(
         crossings=[Crossing(10, "a", "line", 30.0), Crossing(70, "b", "line", 80.0, (1, 2, 3), "Lyr")],
@@ -109,13 +109,13 @@ def test_context_items_mirrored():
 
 
 def test_mirrored_keeps_strip_and_title():
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
     m = ContextItems(band=[BandSegment(0, 40, "x", strip=1, title="T")]).mirrored(100)
     assert (m.band[0].s0, m.band[0].strip, m.band[0].title) == (60, 1, "T")
 
 
 def test_strips_of_orders_by_strip_and_drops_empty():
-    from geophysics_workbench.core.context import BandSegment, strips_of
+    from groundwork_geophysics.core.context import BandSegment, strips_of
     band = [BandSegment(50, 60, "b2", strip=2, title="C"), BandSegment(10, 20, "a2", strip=0, title="A"),
             BandSegment(0, 10, "a1", strip=0, title="A")]
     assert [(t, [s.label for s in segs]) for t, segs in strips_of(band)] == [

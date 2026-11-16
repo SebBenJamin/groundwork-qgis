@@ -8,17 +8,17 @@ Reads demo/context/powerline.geojson (fetch_demo_context.py) and writes, under d
   stations/P{1,2,3,4}_electrodes.csv number,x,y,z (P4: station file only, see demo_extra.py)
 under demo/context/ the synthetic context (pylons, boreholes, geology, DEM: demo_context.py),
 and, under demo/ (with the plugin's own code, so it needs QGIS's Python):
-  demo_workbench.gpkg       workbench store: P1-P3, station sets, one model each (P1, P2 with
+  demo_groundwork.gpkg      store: P1-P3, station sets, one model each (P1, P2 with
                             a typed station spacing of 5 m); model source paths are relative
                             to the store's folder
   demo_project.qgz          QGIS project (EPSG:25832): OSM tiles, powerline, context layers and
-                            settings, workbench group; every path relative, so the demo works
+                            settings, Groundwork group; every path relative, so the demo works
                             wherever it is unpacked
 The clay bodies and the earthing artefact are defined in map coordinates (demo_context.py).
 
 Small functions (geometry, topography, model, writers, main) that later milestones can extend.
 Re-running reproduces byte-identical text files, context/boreholes.gpkg and context/dem.tif
-(demo_workbench.gpkg / .qgz carry fresh ids and timestamps).
+(demo_groundwork.gpkg / .qgz carry fresh ids and timestamps).
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ CONTEXT = DEMO / "context"
 POWERLINE = CONTEXT / "powerline.geojson"
 DATA = DEMO / "data"
 CRS = "EPSG:25832"
-STORE_NAME, PROJECT_NAME = "demo_workbench.gpkg", "demo_project.qgz"
+STORE_NAME, PROJECT_NAME = "demo_groundwork.gpkg", "demo_project.qgz"
 #: profile -> (model path relative to demo/, reader, z_kind)
 DEMO_MODELS = {"P1": ("data/ert/P1/f001_res.dat", "r2_res_dat", "elevation"),
                "P2": ("data/ert/P2/P2_model.dat", "zondres_xyz", "depth"),
@@ -270,11 +270,11 @@ def _remove(path: Path) -> None:
 
 
 def build_workbench(demo_dir: Path = DEMO) -> Path:
-    """demo_workbench.gpkg: one profile per station file, one model dataset per profile."""
+    """demo_groundwork.gpkg: one profile per station file, one model dataset per profile."""
     sys.path.insert(0, str(ROOT))
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     path = demo_dir / STORE_NAME
     _remove(path)
@@ -307,15 +307,15 @@ def build_qgis_project(demo_dir: Path = DEMO) -> Path:
     if QgsApplication.instance() is None:
         app = QgsApplication([], False)
         app.initQgis()
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import use_store
 
     path = demo_dir / PROJECT_NAME
     path.unlink(missing_ok=True)
     project = QgsProject()
     try:
         project.setFileName(str(path))           # before use_store: store path goes relative
-        project.setTitle("Geophysics Workbench demo")
+        project.setTitle("Groundwork demo")
         demo_extra.set_author(project)            # not the account running the build
         crs = QgsCoordinateReferenceSystem(CRS)
         project.setCrs(crs)

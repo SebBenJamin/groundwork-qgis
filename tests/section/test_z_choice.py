@@ -9,8 +9,8 @@ DEMO = Path(__file__).resolve().parent.parent.parent / "demo" / "data" / "ert" /
 
 
 def _store_with(tmp_path, src, z_kind):
-    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     xyz = np.column_stack([np.arange(72) * 5.0, np.zeros(72), 50 + 0.02 * np.arange(72) * 5.0])
@@ -24,7 +24,7 @@ def _store_with(tmp_path, src, z_kind):
 
 
 def test_z_header_file_saved_as_depth_touches_the_surface(tmp_path):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     lines = (DEMO / "P2_model.dat").read_text().splitlines()
     lines[0] = "#X\tZ\tlog_Rho\tRho"                 # the header of the user's real files
@@ -40,7 +40,7 @@ def test_z_header_file_saved_as_depth_touches_the_surface(tmp_path):
 
 
 def test_depth_header_file_saved_as_elevation_is_not_snapped(tmp_path):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     src = tmp_path / "P2_model.dat"
     shutil.copy(DEMO / "P2_model.dat", src)

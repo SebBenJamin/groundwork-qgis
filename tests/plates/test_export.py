@@ -22,9 +22,9 @@ def pdf_content(path):
 
 
 def test_export_writes_one_pdf_per_plate_with_vector_content(env, tmp_path):
-    from geophysics_workbench.core.plates import PlateSpec
-    from geophysics_workbench.plates.build import create_or_update_plate
-    from geophysics_workbench.plates.export import export_plates
+    from groundwork_geophysics.core.plates import PlateSpec
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.export import export_plates
     st, p, prov, prj = env
     a = _plate(st, p)
     b = PlateSpec("pl9", "4b", "Line: A/B?", "A4_portrait", _plate(st, p).frames)
@@ -46,8 +46,8 @@ def test_export_writes_one_pdf_per_plate_with_vector_content(env, tmp_path):
 def test_combined_pdf_that_cannot_be_written_raises(env, tmp_path):
     """Review I5: a combined PDF that cannot be opened (e.g. locked by a viewer) must not be
     reported as exported."""
-    from geophysics_workbench.plates.build import create_or_update_plate
-    from geophysics_workbench.plates.export import export_plates
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.export import export_plates
     st, p, prov, prj = env
     create_or_update_plate(prj, st, prov, _plate(st, p))
     (tmp_path / "Plates.pdf").mkdir()                      # cannot be opened as a file
@@ -56,8 +56,8 @@ def test_combined_pdf_that_cannot_be_written_raises(env, tmp_path):
 
 
 def test_a_failing_update_leaves_other_plates_attached(env, monkeypatch):
-    from geophysics_workbench.core.plates import PlateSpec
-    from geophysics_workbench.plates import build
+    from groundwork_geophysics.core.plates import PlateSpec
+    from groundwork_geophysics.plates import build
     st, p, prov, prj = env
     first = build.create_or_update_plate(prj, st, prov, _plate(st, p))
     second = PlateSpec("pl2", "5", "Other", "A4_landscape", _plate(st, p).frames)
@@ -75,8 +75,8 @@ def test_a_failing_update_leaves_other_plates_attached(env, monkeypatch):
 def test_export_dialog_does_not_export_after_a_failed_update(env, tmp_path, monkeypatch):
     from qgis.PyQt.QtWidgets import QFileDialog
 
-    from geophysics_workbench.plates.sources import write_plates
-    from geophysics_workbench.ui import plates_dialog
+    from groundwork_geophysics.plates.sources import write_plates
+    from groundwork_geophysics.ui import plates_dialog
     st, p, prov, prj = env
     write_plates(prj, [_plate(st, p)])
     dlg = plates_dialog.PlatesDialog(prj, st, prov)

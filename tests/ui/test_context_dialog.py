@@ -1,6 +1,6 @@
 import pytest
 
-from geophysics_workbench.core.context_settings import ContextSettings
+from groundwork_geophysics.core.context_settings import ContextSettings
 
 
 def _tif(path):
@@ -15,8 +15,8 @@ def _tif(path):
 def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_path):
     from qgis.core import QgsProject, QgsRasterLayer, QgsVectorLayer
 
-    from geophysics_workbench.core.context_settings import LineLayerSetting
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    from groundwork_geophysics.core.context_settings import LineLayerSetting
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings
 
     prj = QgsProject()
     line = QgsVectorLayer("LineString?crs=EPSG:25832&field=name:string", "Lines (OSM)", "memory")
@@ -37,7 +37,7 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     dlg.lines.rows[line.id()].label.setCurrentIndex(
         dlg.lines.rows[line.id()].label.findData("name"))
     dlg.point_rows[pts.id()].check.setChecked(True)
-    from geophysics_workbench.core.context_settings import BandSetting
+    from groundwork_geophysics.core.context_settings import BandSetting
     dlg.strips.load([BandSetting(poly.id(), "unit")])
     dlg.select_dem(dem.id())
     dlg.borehole.set_layer(pts.id())
@@ -82,7 +82,7 @@ def _red(layer):
 
 
 def test_visible_rows_start_ticked_and_follow_the_map(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
 
     a, b = _line(project, "A"), _line(project, "B")
     node_b = project.layerTreeRoot().findLayer(b.id())
@@ -107,7 +107,7 @@ def test_visible_rows_start_ticked_and_follow_the_map(project, fake_iface):
 def test_excluded_layers_not_listed(project, fake_iface):
     from qgis.core import QgsVectorLayer
 
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
 
     line = _line(project, "Own profiles")
     pts = QgsVectorLayer("Point?crs=EPSG:25832&field=name:string", "Own stations", "memory")
@@ -123,8 +123,8 @@ def test_excluded_layers_not_listed(project, fake_iface):
 def test_row_colour_and_selection_saved(project, fake_iface):
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.core.context_settings import LineLayerSetting
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    from groundwork_geophysics.core.context_settings import LineLayerSetting
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings
 
     lines = _line(project, "Red")
     _red(lines)
@@ -148,7 +148,7 @@ def test_row_colour_and_selection_saved(project, fake_iface):
 
 
 def test_layer_added_and_removed_while_open(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings
 
     a, b = _line(project, "A").id(), _line(project, "B").id()
     dlg = ContextDialog(fake_iface, project)
@@ -168,7 +168,7 @@ def test_layer_added_and_removed_while_open(project, fake_iface):
 
 
 def test_apply_writes_and_stays_open(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings
 
     dlg = ContextDialog(fake_iface, project)
     fired = []
@@ -190,14 +190,14 @@ def test_apply_writes_and_stays_open(project, fake_iface):
 def test_read_settings_empty_project(qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.context_dialog import read_settings
+    from groundwork_geophysics.ui.context_dialog import read_settings
     assert read_settings(QgsProject()) == ContextSettings()
 
 
 def test_menu_action_enabled_only_with_store(qgis_app, fake_iface, store_with_model):
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics.plugin import WorkbenchPlugin
 
     store = store_with_model[0]
     plugin = WorkbenchPlugin(fake_iface)
@@ -217,9 +217,9 @@ def test_menu_action_enabled_only_with_store(qgis_app, fake_iface, store_with_mo
 def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+    from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
                                                             LineLayerSetting)
-    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+    from groundwork_geophysics.ui.context_dialog import (ContextDialog, read_settings,
                                                         write_settings)
 
     prj = QgsProject()
@@ -246,9 +246,9 @@ def test_context_dialog_is_non_modal_and_apply_redraws(qgis_app, fake_iface, sto
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.section.crossing_lines import own_layer_ids
-    from geophysics_workbench.ui.project_actions import add_store_layers
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.ui.project_actions import add_store_layers
 
     store = store_with_model[0]
     project = QgsProject.instance()
@@ -281,8 +281,8 @@ def test_context_dialog_is_non_modal_and_apply_redraws(qgis_app, fake_iface, sto
 
 
 def test_saved_entry_for_excluded_layer_is_not_stale(project, fake_iface):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
-    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.ui.context_dialog import (ContextDialog, read_settings,
                                                         write_settings)
 
     own = _line(project, "profiles")
@@ -299,8 +299,8 @@ def test_saved_entry_for_excluded_layer_is_not_stale(project, fake_iface):
 
 
 def test_group_slots_survive_a_failing_project(project, fake_iface, monkeypatch):
-    from geophysics_workbench.ui import crossing_rows
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui import crossing_rows
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
 
     dlg = ContextDialog(fake_iface, project)
     try:
@@ -319,8 +319,8 @@ def test_group_slots_survive_a_failing_project(project, fake_iface, monkeypatch)
 def test_saved_entry_for_unavailable_layer_survives_apply(project, fake_iface):
     from qgis.core import QgsVectorLayer
 
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
-    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.ui.context_dialog import (ContextDialog, read_settings,
                                                         write_settings)
 
     gone = QgsVectorLayer("does_not_exist_anywhere.shp", "Pipeline (drive offline)", "ogr")
@@ -341,7 +341,7 @@ def test_saved_entry_for_unavailable_layer_survives_apply(project, fake_iface):
 def test_point_row_depth_combo_saves(project, fake_iface):
     from qgis.core import QgsVectorLayer
 
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings
 
     pts = QgsVectorLayer("Point?crs=EPSG:25832&field=name:string&field=Teufe:double",
                          "Holes", "memory")
@@ -376,9 +376,9 @@ def _bh_layers(project):
 
 
 def test_dialog_round_trips_two_entries(project, fake_iface):
-    from geophysics_workbench.core.context_settings import (BoreholeSetting, CurveField,
+    from groundwork_geophysics.core.context_settings import (BoreholeSetting, CurveField,
                                                             CurveTableSetting)
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings, write_settings
     a, b, logs, curves = _bh_layers(project)
     saved = ContextSettings(boreholes=[
         BoreholeSetting(a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith",
@@ -396,8 +396,8 @@ def test_dialog_round_trips_two_entries(project, fake_iface):
 
 
 def test_existing_single_borehole_project_opens_as_one_entry(project, fake_iface):
-    from geophysics_workbench.core.context_settings import BoreholeSetting
-    from geophysics_workbench.ui.context_dialog import ContextDialog, write_settings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, write_settings
     a, _b, logs, _c = _bh_layers(project)
     write_settings(project, ContextSettings(boreholes=[BoreholeSetting(
         a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith")]))
@@ -407,7 +407,7 @@ def test_existing_single_borehole_project_opens_as_one_entry(project, fake_iface
 
 
 def test_add_and_remove_entries(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     a, b, _logs, _c = _bh_layers(project)
     dlg = ContextDialog(fake_iface, project)
     assert dlg.boreholes.count() == 1                    # one empty entry to fill in
@@ -420,8 +420,8 @@ def test_add_and_remove_entries(project, fake_iface):
 
 
 def test_curve_table_editor_returns_checked_fields_with_units(project, qgis_app):
-    from geophysics_workbench.core.context_settings import CurveField, CurveTableSetting
-    from geophysics_workbench.ui.borehole_mapping import CurveTableEditor
+    from groundwork_geophysics.core.context_settings import CurveField, CurveTableSetting
+    from groundwork_geophysics.ui.borehole_mapping import CurveTableEditor
     _a, _b, _logs, curves = _bh_layers(project)
     ed = CurveTableEditor(project, [curves])
     ed.set_layer(curves.id())
@@ -435,9 +435,9 @@ def test_curve_table_editor_returns_checked_fields_with_units(project, qgis_app)
 def test_section_look_is_kept_but_not_edited_here(project, fake_iface):
     """How the section draws boreholes is set in the borehole viewer; Context Layers… keeps
     those settings unchanged on OK and has no switches for them."""
-    from geophysics_workbench.core.context_settings import (BoreholeSetting, CurveField,
+    from groundwork_geophysics.core.context_settings import (BoreholeSetting, CurveField,
                                                             CurveTableSetting)
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings, write_settings
     a, _b, logs, c = _bh_layers(project)
     write_settings(project, ContextSettings(boreholes=[BoreholeSetting(
         a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith", column_px=24,
@@ -454,7 +454,7 @@ def test_section_look_is_kept_but_not_edited_here(project, fake_iface):
 
 
 def test_style_button_disabled_without_interval_table(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     a, _b, logs, _c = _bh_layers(project)
     dlg = ContextDialog(fake_iface, project)
     dlg.borehole.set_layer(a.id())
@@ -466,8 +466,8 @@ def test_style_button_disabled_without_interval_table(project, fake_iface):
 
 def test_open_dialog_does_not_undo_the_viewers_look(project, fake_iface):
     """I2: the viewer writes the look while Context Layers… is open; Apply/OK keeps it."""
-    from geophysics_workbench.core.context_settings import BoreholeSetting
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings, write_settings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings, write_settings
     a, _b, logs, _c = _bh_layers(project)
     write_settings(project, ContextSettings(boreholes=[BoreholeSetting(
         a.id(), "id", "z", logs.id(), "hole", "top", "bot", "lith")]))
@@ -491,12 +491,12 @@ def _strip_world(project):
 
 
 def test_strip_rows_round_trip(project, fake_iface):
-    from geophysics_workbench.core.context_settings import BandSetting
-    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    from groundwork_geophysics.core.context_settings import BandSetting
+    from groundwork_geophysics.ui.context_dialog import ContextDialog, read_settings
     geo, soil = _strip_world(project)
     saved = [BandSetting(geo.id(), "age", "Geology", True), BandSetting(soil.id(), "type", "", False)]
     first = ContextSettings(bands=list(saved))
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.context_dialog import write_settings
     write_settings(project, first)
     dlg = ContextDialog(fake_iface, project)
     assert dlg.strips.settings() == saved
@@ -515,7 +515,7 @@ def test_strip_rows_round_trip(project, fake_iface):
 
 
 def test_added_row_starts_on_the_first_field(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     _strip_world(project)
     dlg = ContextDialog(fake_iface, project)
     dlg.strips.add_row()
@@ -526,7 +526,7 @@ def test_added_row_starts_on_the_first_field(project, fake_iface):
 def test_add_after_a_polygon_layer_is_removed(project, fake_iface):
     """The dialog is non-modal: a layer removed from the project is no longer offered, and
     Add raises nothing."""
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     geo, soil = _strip_world(project)
     dlg = ContextDialog(fake_iface, project)
     project.removeMapLayer(geo.id())
@@ -537,7 +537,7 @@ def test_add_after_a_polygon_layer_is_removed(project, fake_iface):
 
 
 def test_add_offers_only_the_layers_still_in_the_project(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     geo, soil = _strip_world(project)
     dlg = ContextDialog(fake_iface, project)
     project.removeMapLayer(geo.id())
@@ -548,8 +548,8 @@ def test_add_offers_only_the_layers_still_in_the_project(project, fake_iface):
 
 
 def test_missing_layer_row_is_kept(project, fake_iface):
-    from geophysics_workbench.core.context_settings import BandSetting
-    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+    from groundwork_geophysics.core.context_settings import BandSetting
+    from groundwork_geophysics.ui.context_dialog import (ContextDialog, read_settings,
                                                         write_settings)
     geo, _soil = _strip_world(project)
     gone = BandSetting("gone-id", "kind", "Old", False)
@@ -564,7 +564,7 @@ def test_missing_layer_row_is_kept(project, fake_iface):
 
 
 def test_add_and_remove(project, fake_iface):
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     geo, _soil = _strip_world(project)
     dlg = ContextDialog(fake_iface, project)
     strips = dlg.strips
@@ -590,7 +590,7 @@ def test_clicking_a_row_selects_it(project, fake_iface):
     from qgis.PyQt.QtGui import QFocusEvent
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtWidgets import QApplication
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     _strip_world(project)
     dlg = ContextDialog(fake_iface, project)
     dlg.strips.add_row()

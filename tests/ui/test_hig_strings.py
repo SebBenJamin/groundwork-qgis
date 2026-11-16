@@ -83,9 +83,9 @@ def problems(entries, where: str) -> list[str]:
 def world(qgis_app, fake_iface, store_with_model):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import use_store
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -100,17 +100,17 @@ def world(qgis_app, fake_iface, store_with_model):
 def _dialogs(iface, st, p, prov, prj):
     from qgis.core import QgsCategorizedSymbolRenderer
 
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.section.scale_dialog import ColorScaleDialog, DisplayDialog
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
-    from geophysics_workbench.ui.context_dialog import ContextDialog
-    from geophysics_workbench.ui.curve_style_dialog import CurveStyleDialog
-    from geophysics_workbench.ui.dataset_info_dialog import DatasetInfoDialog
-    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog, NoteForm
-    from geophysics_workbench.ui.misfit_panel import MisfitSummary
-    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
-    from geophysics_workbench.ui.pattern_table import PatternTable
-    from geophysics_workbench.ui.plates_dialog import PlateDetailsDialog, PlatesDialog
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.section.scale_dialog import ColorScaleDialog, DisplayDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.curve_style_dialog import CurveStyleDialog
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    from groundwork_geophysics.ui.field_notes_dialog import FieldNotesDialog, NoteForm
+    from groundwork_geophysics.ui.misfit_panel import MisfitSummary
+    from groundwork_geophysics.ui.new_profile_dialog import NewProfileDialog
+    from groundwork_geophysics.ui.pattern_table import PatternTable
+    from groundwork_geophysics.ui.plates_dialog import PlateDetailsDialog, PlatesDialog
     ds = st.datasets(p.id)[0]
     layer = prov.layers(p.id)[0]
     return {
@@ -142,7 +142,7 @@ def test_hig_rules_in_every_dialog(world):
 def test_hig_rules_in_menu_and_panel(world, qgis_app):
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     iface, st, p, prov, prj = world
     plugin = classFactory(iface)
     plugin.initGui()
@@ -165,7 +165,7 @@ def test_disabled_actions_say_why(qgis_app, fake_iface):
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     QgsProject.instance().clear()
     plugin = classFactory(fake_iface)
     plugin.initGui()
@@ -175,7 +175,7 @@ def test_disabled_actions_say_why(qgis_app, fake_iface):
         for a in disabled:
             assert a.toolTip() and a.toolTip() != a.text().replace("&", ""), a.text()
         add = next(a for a in plugin.actions if a.text().startswith("Add Data"))
-        assert "Open or create a workbench project" in add.toolTip()
+        assert "Open or create a Groundwork project" in add.toolTip()
         pick = next(a for a in plugin.actions if a.text().startswith("Pick Profile"))
         assert not pick.isEnabled()
     finally:

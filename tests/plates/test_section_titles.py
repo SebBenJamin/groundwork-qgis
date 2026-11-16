@@ -6,17 +6,17 @@ from tests.plates.test_build import _plate, env  # noqa: F401
 
 
 def _build(prj, st, prov, plate):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     return create_or_update_plate(prj, st, prov, plate)
 
 
 def _rect(item):
-    from geophysics_workbench.plates.build import _rect
+    from groundwork_geophysics.plates.build import _rect
     return _rect(item)
 
 
 def _second_profile(st, p):
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
     q = Profile("p2", "Line B", p.chainage.xy + 100.0, st.crs_authid)
     st.save_profile(q)
     return q
@@ -29,7 +29,7 @@ def test_title_per_frame(env):
         title = layout.itemById(f"wb_section_title_{n}")
         assert title is not None and title.text() == p.name
         assert title.textFormat().font().bold()
-        from geophysics_workbench.plates.build import SECTION_TITLE_MM, _interior_rect_mm
+        from groundwork_geophysics.plates.build import SECTION_TITLE_MM, _interior_rect_mm
         frame = layout.itemById(f"wb_frame_{n}")
         fx, fy, fw, fh = _rect(frame)
         left, top, width, _h = _interior_rect_mm(frame)
@@ -40,7 +40,7 @@ def test_title_per_frame(env):
 
 
 def test_title_does_not_overlap_section(env):
-    from geophysics_workbench.plates.build import (SECTION_TITLE_MM, frame_scale_and_ve,
+    from groundwork_geophysics.plates.build import (SECTION_TITLE_MM, frame_scale_and_ve,
                                                    label_room_mm, snapshot_extent)
     st, p, prov, prj = env
     plate = _plate(st, p)
@@ -73,7 +73,7 @@ def test_profile_change_updates_unedited_title(env):
 
 
 def test_moved_title_stays(env):
-    from geophysics_workbench.plates.build import _place
+    from groundwork_geophysics.plates.build import _place
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = _build(prj, st, prov, plate)

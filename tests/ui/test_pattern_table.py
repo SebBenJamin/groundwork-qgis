@@ -24,7 +24,7 @@ def _symbols(renderer):
 
 
 def test_rows_follow_the_classes_with_their_colours(qgis_app):
-    from geophysics_workbench.ui.pattern_table import PatternTable
+    from groundwork_geophysics.ui.pattern_table import PatternTable
     t = PatternTable(_renderer())
     assert t.values() == ["sand", "clay"]
     c = t.colour("sand")
@@ -34,8 +34,8 @@ def test_rows_follow_the_classes_with_their_colours(qgis_app):
 
 
 def test_chosen_pattern_becomes_a_qgis_svg_fill_over_the_colour(qgis_app):
-    from geophysics_workbench.patterns import catalogue
-    from geophysics_workbench.ui.pattern_table import PatternTable
+    from groundwork_geophysics.patterns import catalogue
+    from groundwork_geophysics.ui.pattern_table import PatternTable
     sand = next(p for p in catalogue() if p.code == "607")
     t = PatternTable(_renderer())
     t.set_pattern("sand", sand)
@@ -49,8 +49,8 @@ def test_chosen_pattern_becomes_a_qgis_svg_fill_over_the_colour(qgis_app):
 
 
 def test_existing_pattern_is_recognised_and_can_be_removed(qgis_app):
-    from geophysics_workbench.patterns import catalogue
-    from geophysics_workbench.ui.pattern_table import PatternTable
+    from groundwork_geophysics.patterns import catalogue
+    from groundwork_geophysics.ui.pattern_table import PatternTable
     sand = next(p for p in catalogue() if p.code == "607")
     first = PatternTable(_renderer())
     first.set_pattern("sand", sand)
@@ -63,7 +63,7 @@ def test_existing_pattern_is_recognised_and_can_be_removed(qgis_app):
 
 
 def test_pattern_search_matches_names(qgis_app):
-    from geophysics_workbench.ui.pattern_table import PatternTable
+    from groundwork_geophysics.ui.pattern_table import PatternTable
     t = PatternTable(_renderer())
     hits = t.search("sandstone")
     assert hits and all("sandstone" in p.name.lower() for p in hits)
@@ -79,9 +79,9 @@ def test_style_window_patterns_need_categorized(qgis_app):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "section"))
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context_settings import BoreholeSetting
-    from geophysics_workbench.patterns import catalogue
-    from geophysics_workbench.ui.borehole_style_dialog import BoreholeStyleDialog
+    from groundwork_geophysics.core.context_settings import BoreholeSetting
+    from groundwork_geophysics.patterns import catalogue
+    from groundwork_geophysics.ui.borehole_style_dialog import BoreholeStyleDialog
     from test_context_layers import _add, _layer
     prj = QgsProject.instance()
     prj.clear()

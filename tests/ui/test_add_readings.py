@@ -19,7 +19,7 @@ def _files(tmp_path, response=True):
 def test_dialog_pairs_the_response_and_saves_a_misfit_dataset(qgis_app, fake_iface,
                                                                store_with_model, tmp_path,
                                                                warnings_shown):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
     st, p, _ = store_with_model
     data = _files(tmp_path)
     dlg = AddDataDialog(fake_iface, st, p.id)
@@ -38,7 +38,7 @@ def test_dialog_pairs_the_response_and_saves_a_misfit_dataset(qgis_app, fake_ifa
 
 def test_measured_only_dataset(qgis_app, fake_iface, store_with_model, tmp_path,
                                warnings_shown):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
     st, p, _ = store_with_model
     dlg = AddDataDialog(fake_iface, st, p.id)
     dlg.set_file(_files(tmp_path, response=False))
@@ -50,7 +50,7 @@ def test_measured_only_dataset(qgis_app, fake_iface, store_with_model, tmp_path,
 
 
 def test_model_files_hide_the_response_row(qgis_app, fake_iface, store_with_model):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
     st, p, src = store_with_model
     dlg = AddDataDialog(fake_iface, st, p.id)
     dlg.set_file(src)
@@ -59,7 +59,7 @@ def test_model_files_hide_the_response_row(qgis_app, fake_iface, store_with_mode
 
 def test_response_found_when_its_name_differs_from_the_data_stem(tmp_path):
     # Gülpe demo: T3_measured.data next to T3_response.vector
-    from geophysics_workbench.ui.add_data_dialog import guess_response
+    from groundwork_geophysics.ui.add_data_dialog import guess_response
     data = tmp_path / "T3_measured.data"
     data.write_text("x")
     (tmp_path / "T3_response.vector").write_text("1")
@@ -68,7 +68,7 @@ def test_response_found_when_its_name_differs_from_the_data_stem(tmp_path):
 
 
 def test_two_unrelated_responses_are_not_guessed(tmp_path):
-    from geophysics_workbench.ui.add_data_dialog import guess_response
+    from groundwork_geophysics.ui.add_data_dialog import guess_response
     data = tmp_path / "line.data"
     data.write_text("x")
     (tmp_path / "a_response.vector").write_text("1")

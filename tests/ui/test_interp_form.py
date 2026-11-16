@@ -2,8 +2,8 @@
 
 
 def test_form_accepts_free_text_type_and_warns_duplicate_name(qgis_app):
-    from geophysics_workbench.core.interpretation import InterpFeature
-    from geophysics_workbench.ui.interp_form import InterpForm
+    from groundwork_geophysics.core.interpretation import InterpFeature
+    from groundwork_geophysics.ui.interp_form import InterpForm
 
     form = InterpForm(None, InterpFeature("f", "v"), ["anomaly", "fault"], {"A"})
     assert form.confidence.currentText() == "probable"

@@ -16,8 +16,8 @@ def project(qgis_app):
 
 
 def _notes(st, p):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.ui.field_notes_dialog import after_change
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.ui.field_notes_dialog import after_change
     st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence", "obstacle"))
     st.save_field_note(FieldNote("b", p.id, 10.0, 20.0, "wet ground", "ground"))
     st.rebuild_field_note_geometry({q.id: q.chainage for q in st.profiles()})
@@ -31,7 +31,7 @@ def _colour(layer, rgb):
 
 
 def test_layers_added_when_notes_exist(store_with_model, project):
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers, field_note_layers
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers, field_note_layers
     st, p, _ = store_with_model
     _notes(st, p)
     assert field_note_layers(st, project) == {}
@@ -40,15 +40,15 @@ def test_layers_added_when_notes_exist(store_with_model, project):
 
 
 def test_no_layers_without_notes(store_with_model, project):
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers, field_note_layers
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers, field_note_layers
     st, _p, _ = store_with_model
     ensure_note_layers(st, project)
     assert field_note_layers(st, project) == {}
 
 
 def test_default_style_matches_today(store_with_model, project):
-    from geophysics_workbench.section.field_notes_render import NOTE_RGB, note_looks
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers
+    from groundwork_geophysics.section.field_notes_render import NOTE_RGB, note_looks
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers
     st, p, _ = store_with_model
     _notes(st, p)
     ensure_note_layers(st, project)
@@ -60,8 +60,8 @@ def test_default_style_matches_today(store_with_model, project):
 def test_old_layers_migrated_once(store_with_model, project):
     from qgis.core import QgsSingleSymbolRenderer, QgsSymbol
 
-    from geophysics_workbench.section.field_notes_render import NOTE_RGB, note_looks
-    from geophysics_workbench.ui.field_note_layers import (NOTE_STYLE_PROPERTY,
+    from groundwork_geophysics.section.field_notes_render import NOTE_RGB, note_looks
+    from groundwork_geophysics.ui.field_note_layers import (NOTE_STYLE_PROPERTY,
                                                            add_field_note_layers,
                                                            migrate_note_styles)
     st, p, _ = store_with_model
@@ -82,9 +82,9 @@ def test_old_layers_migrated_once(store_with_model, project):
 def test_categorized_per_note(store_with_model, project):
     from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory, QgsSymbol
 
-    from geophysics_workbench.section.field_notes_render import note_looks
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers, field_note_layers
-    from geophysics_workbench.core.field_notes import FieldNote
+    from groundwork_geophysics.section.field_notes_render import note_looks
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers, field_note_layers
+    from groundwork_geophysics.core.field_notes import FieldNote
     st, p, _ = store_with_model
     _notes(st, p)
     st.save_field_note(FieldNote("c", p.id, 40.0, None, "gate", "access"))
@@ -104,8 +104,8 @@ def test_categorized_per_note(store_with_model, project):
 def test_plugin_adds_layers_and_reads_looks(store_with_model, project, fake_iface):
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.ui.field_note_layers import field_note_layers
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.ui.field_note_layers import field_note_layers
     st, p, _ = store_with_model
     _notes(st, p)
     plug = classFactory(fake_iface)
@@ -122,7 +122,7 @@ def test_plugin_adds_layers_and_reads_looks(store_with_model, project, fake_ifac
 
 
 def test_note_tool_preview_in_layer_colour(store_with_model, project):
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers, stretch_rgb
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers, stretch_rgb
     st, p, _ = store_with_model
     _notes(st, p)
     layers = ensure_note_layers(st, project)

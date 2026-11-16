@@ -10,8 +10,8 @@ def test_open_workbench_project_errors_are_shown(qgis_app, fake_iface, tmp_path,
     """A corrupt, locked or foreign .gpkg shows a message box instead of a traceback."""
     from qgis.PyQt.QtWidgets import QFileDialog
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.ui import project_actions
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui import project_actions
 
     target = tmp_path / "broken.gpkg"
     target.write_bytes(b"not a database")

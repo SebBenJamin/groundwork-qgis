@@ -9,7 +9,7 @@ def _draw(p, opts, y_of_depth=lambda d: 20.0 + 40.0 * d, styles=None, ranges=Non
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter
 
-    from geophysics_workbench.section.borehole_draw import draw_borehole
+    from groundwork_geophysics.section.borehole_draw import draw_borehole
 
     img = QImage(400, 300, QImage.Format.Format_ARGB32)
     img.fill(0xFFFFFFFF)
@@ -23,8 +23,8 @@ def _draw(p, opts, y_of_depth=lambda d: 20.0 + 40.0 * d, styles=None, ranges=Non
 
 
 def _bh(intervals=(), curves=(), total=None):
-    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
-    from geophysics_workbench.section.borehole_style import default_symbol
+    from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
+    from groundwork_geophysics.section.borehole_style import default_symbol
     log = []
     for top, bottom, text, rgb in intervals:
         sym = default_symbol(text)
@@ -37,7 +37,7 @@ def _bh(intervals=(), curves=(), total=None):
 
 
 def test_interval_drawn_with_its_symbol_colour(qgis_app):
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
     img, _ = _draw(_bh([(0, 2, "a", (200, 20, 20)), (2, 4, "b", (20, 20, 200))]),
                    ColumnOptions(width_px=16))
     assert _close(img.pixel(100, 60), (200, 20, 20))      # depth 1 -> y 60
@@ -45,7 +45,7 @@ def test_interval_drawn_with_its_symbol_colour(qgis_app):
 
 
 def test_column_width_is_screen_pixels_under_any_scale(qgis_app):
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
     p = _bh([(0, 2, "a", (200, 20, 20))])
     _, r1 = _draw(p, ColumnOptions(width_px=16), y_of_depth=lambda d: 20 + 40 * d)
     _, r2 = _draw(p, ColumnOptions(width_px=16), y_of_depth=lambda d: 20 + 120 * d)
@@ -54,9 +54,9 @@ def test_column_width_is_screen_pixels_under_any_scale(qgis_app):
 
 
 def test_curve_track_right_of_column(qgis_app):
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.core.context import Curve
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
     c = Curve("t:gr", "gr", "API", np.linspace(0, 4, 41), np.linspace(10, 140, 41))
     p = _bh([(0, 4, "a", (200, 200, 200))], curves=[c])
     img, rect = _draw(p, ColumnOptions(width_px=16, curve_keys=("t:gr",), track_px=60),
@@ -69,15 +69,15 @@ def test_curve_track_right_of_column(qgis_app):
 
 
 def test_curves_off_draw_no_track(qgis_app):
-    from geophysics_workbench.core.context import Curve
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
     c = Curve("t:gr", "gr", "API", np.linspace(0, 4, 5), np.linspace(10, 140, 5))
     _, rect = _draw(_bh([(0, 4, "a", None)], curves=[c]), ColumnOptions(width_px=16))
     assert round(rect.width()) == 16
 
 
 def test_highlight_frame(qgis_app):
-    from geophysics_workbench.section.borehole_draw import HIGHLIGHT_RGB, ColumnOptions
+    from groundwork_geophysics.section.borehole_draw import HIGHLIGHT_RGB, ColumnOptions
     img, rect = _draw(_bh([(0, 2, "a", (255, 255, 255))]),
                       ColumnOptions(width_px=16, highlight=True))
     edge = [img.pixel(int(rect.left()) - 1 + dx, 60) for dx in range(0, 3)]
@@ -85,7 +85,7 @@ def test_highlight_frame(qgis_app):
 
 
 def test_total_depth_only_draws_outlined_empty_column(qgis_app):
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
     img, rect = _draw(_bh(total=5.0), ColumnOptions(width_px=16))
     assert round(rect.bottom()) == 220                     # depth 5 -> y 220
     assert img.pixel(100, 120) == 0xFFFFFFFF               # empty inside
@@ -93,7 +93,7 @@ def test_total_depth_only_draws_outlined_empty_column(qgis_app):
 
 
 def test_opacity_lightens_the_fill(qgis_app):
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
     img, _ = _draw(_bh([(0, 2, "a", (0, 0, 200))]), ColumnOptions(width_px=16, opacity=0.5))
     assert _close(img.pixel(100, 60), (127, 127, 227), tol=20)
 
@@ -104,8 +104,8 @@ def test_symbol_pool_starts_each_symbol_once_without_copying(qgis_app):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter
 
-    from geophysics_workbench.section.borehole_draw import SymbolPool
-    from geophysics_workbench.section.borehole_style import default_symbol
+    from groundwork_geophysics.section.borehole_draw import SymbolPool
+    from groundwork_geophysics.section.borehole_style import default_symbol
     img = QImage(10, 10, QImage.Format.Format_ARGB32)
     painter = QPainter(img)
     try:
@@ -119,9 +119,9 @@ def test_symbol_pool_starts_each_symbol_once_without_copying(qgis_app):
 
 
 def test_frame_draws_many_shared_intervals_with_one_pool(qgis_app):
-    from geophysics_workbench.core.context import LogInterval
-    from geophysics_workbench.section.borehole_draw import ColumnOptions
-    from geophysics_workbench.section.borehole_style import default_symbol
+    from groundwork_geophysics.core.context import LogInterval
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions
+    from groundwork_geophysics.section.borehole_style import default_symbol
     p = _bh()
     shared = default_symbol("sand")
     p.log = [LogInterval(i * 0.1, i * 0.1 + 0.1, "sand", shared) for i in range(40)]
@@ -134,9 +134,9 @@ def test_frame_draws_many_shared_intervals_with_one_pool(qgis_app):
 def test_log_scale_with_min_at_or_below_zero_uses_the_smallest_positive_value(qgis_app):
     """Minor 3: a log track with min <= 0 still shows the curve (min = smallest positive
     sample), instead of an empty track."""
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.core.context import Curve
-    from geophysics_workbench.section.borehole_draw import curve_range
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.borehole_draw import curve_range
     c = Curve("k", "res", "ohm.m", np.array([0.0, 1.0, 2.0]), np.array([0.0, 5.0, 500.0]))
     assert curve_range(c, CurveStyle(log=True, vmin=0.0), None) == (5.0, 500.0)
     assert curve_range(c, CurveStyle(log=True), (0.0, 500.0)) == (5.0, 500.0)

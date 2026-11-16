@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-DEMOS = {"Erfurt": (REPO / "demo_erfurt", "erfurt_workbench.gpkg"),
-         "Gülpe": (REPO / "demo_guelpe", "guelpe_workbench.gpkg")}
+DEMOS = {"Erfurt": (REPO / "demo_erfurt", "erfurt_groundwork.gpkg"),
+         "Gülpe": (REPO / "demo_guelpe", "guelpe_groundwork.gpkg")}
 SMALL_DEMO = REPO / "demo" / "data"
 #: metres of chainage the thinned placement may differ from the fully surveyed one
 TOLERANCE = 0.5
@@ -25,7 +25,7 @@ def _copy(tmp_path, name) -> Path:
 
 
 def _open(tmp_path, name):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     return ProjectStore.open(_copy(tmp_path, name))
 
 
@@ -47,7 +47,7 @@ def test_sparse_known_points_land_like_the_full_survey(qgis_app, tmp_path, demo,
                                                        capsys):
     """Every 5th electrode (and the last), a typed spacing: the model lands within 0.5 m of
     where all electrodes put it."""
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     st = _open(tmp_path, demo)
     profile = next((p for p in st.profiles() if p.name == profile_name), None)
@@ -87,9 +87,9 @@ def test_sparse_known_points_land_like_the_full_survey(qgis_app, tmp_path, demo,
 def test_map_coordinate_copy_lands_on_the_same_cells(qgis_app, tmp_path):
     """Gülpe Transect 3's model rewritten as easting, northing, elevation, rho (cell
     centres along the real line) and imported through text_columns on the same profile."""
-    from geophysics_workbench.core.model import Dataset, file_fingerprint
-    from geophysics_workbench.core.roles import ModelColumns
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint
+    from groundwork_geophysics.core.roles import ModelColumns
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     st = _open(tmp_path, "Gülpe")
     profile = next((p for p in st.profiles() if p.name == "Transect 3"), None)
@@ -157,8 +157,8 @@ def _real_spacing(csv: Path) -> tuple[int, float]:
 def test_guess_against_the_real_electrodes(tmp_path, capsys):
     """The demo's row models against their surveyed electrodes: the guess finds the cell
     edges, half the real spacing. The figures go into the 0.9.0 release notes."""
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.layout import guess_electrodes
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.layout import guess_electrodes
 
     lines = []
     for name, model, electrodes in (
@@ -183,8 +183,8 @@ def test_guess_against_the_real_electrodes(tmp_path, capsys):
 @pytest.mark.parametrize("demo", ["Erfurt", "Gülpe"])
 def test_no_guess_from_the_demo_vtk_models(qgis_app, tmp_path, demo):
     """Triangulated pyGIMLi results give no electrode guess."""
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.layout import guess_electrodes
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.layout import guess_electrodes
 
     folder = _copy(tmp_path, demo).parent
     files = sorted(folder.glob("data/ert/*/dcinv.result.vtk"))
@@ -199,10 +199,10 @@ def test_0_8_demo_projects_open_and_are_pinned(qgis_app, tmp_path, capsys, demo)
     """The committed (0.8) stores open on a copy and move to schema 3 with no layer error, no
     new profile and no new metadata key; a profile with a readings file is pinned by it. The
     largest shift against 0.8's rule goes into the release notes."""
-    from geophysics_workbench.core.model import data_to_chainage
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.placement_resolve import resolve
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import data_to_chainage
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.placement_resolve import resolve
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     folder, gpkg = DEMOS[demo]
     original = hashlib.sha1((folder / gpkg).read_bytes()).hexdigest()

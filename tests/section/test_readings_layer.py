@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "readers"))
 def misfit_store(store_with_model, tmp_path):
     from test_bert_data import DATA
 
-    from geophysics_workbench.core.model import Dataset, file_fingerprint
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint
     st, p, _ = store_with_model
     data = tmp_path / "line.data"
     data.write_text(DATA.replace("\n0 10.0\n1 10.1\n2 10.2\n3 10.3\n4 10.4\n5 10.5",
@@ -33,7 +33,7 @@ def _readings_layer(prov, p):
 
 
 def test_misfit_layer_defaults_to_points_and_centred_scale(qgis_app, misfit_store):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p = misfit_store
     prov = SectionDataProvider(st)
     layer = _readings_layer(prov, p)
@@ -45,7 +45,7 @@ def test_misfit_layer_defaults_to_points_and_centred_scale(qgis_app, misfit_stor
 
 
 def test_shown_value_switch_rebuilds_values(qgis_app, misfit_store):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p = misfit_store
     prov = SectionDataProvider(st)
     _readings_layer(prov, p)
@@ -56,8 +56,8 @@ def test_shown_value_switch_rebuilds_values(qgis_app, misfit_store):
 
 
 def test_identify_reports_the_reading(qgis_app, misfit_store):
-    from geophysics_workbench.section.data import SectionDataProvider, identify_layers
-    from geophysics_workbench.section.readout import format_readout
+    from groundwork_geophysics.section.data import SectionDataProvider, identify_layers
+    from groundwork_geophysics.section.readout import format_readout
     st, p = misfit_store
     prov = SectionDataProvider(st)
     layer = _readings_layer(prov, p)
@@ -70,8 +70,8 @@ def test_identify_reports_the_reading(qgis_app, misfit_store):
 
 
 def test_points_mode_draws_markers(qgis_app, misfit_store):
-    from geophysics_workbench.section.display_render import build_drawing
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.display_render import build_drawing
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p = misfit_store
     prov = SectionDataProvider(st)
     layer = _readings_layer(prov, p)
@@ -81,9 +81,9 @@ def test_points_mode_draws_markers(qgis_app, misfit_store):
 
 
 def test_readings_layers_are_not_tie_columns(qgis_app, misfit_store):
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.ties_data import build_ties
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.ties_data import build_ties
     st, p = misfit_store
     prov = SectionDataProvider(st)
     layers = prov.layers(p.id)
@@ -98,7 +98,7 @@ def test_rewritten_response_is_read_again(qgis_app, misfit_store, tmp_path):
     import os
     import time
 
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p = misfit_store
     prov = SectionDataProvider(st)
     before = _readings_layer(prov, p).mesh.readings.calculated.copy()

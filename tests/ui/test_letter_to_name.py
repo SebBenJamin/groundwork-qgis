@@ -3,15 +3,15 @@ A 0.7 project's interpretation layers keep labelling after their store is update
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
 
 TABLES = ("interp_features", "interp_lines_3d", "interp_polygons_3d", "interp_points_3d",
           "interp_footprints")
 
 
 def _store(path, name="Clay A"):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(path, "EPSG:25832")
     st.ensure_interpretation()
     v = st.current_version()
@@ -60,7 +60,7 @@ def project(qgis_app):
 
 
 def test_form_says_name(qgis_app):
-    from geophysics_workbench.ui.interp_form import InterpForm
+    from groundwork_geophysics.ui.interp_form import InterpForm
     form = InterpForm(None, InterpFeature("f", "v", name="Clay A"), [], {"clay b"})
     label = form.layout().labelForField(form.name_edit)
     assert label.text() == "Name"
@@ -72,13 +72,13 @@ def test_form_says_name(qgis_app):
 
 
 def test_default_style_labels_name(qgis_app, tmp_path, project):
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
     layers = add_interp_layers(_store(tmp_path / "wb.gpkg"), project)
     assert layers["interp_polygons_3d"].labeling().settings().fieldName == "name"
 
 
 def test_migrate_letter_styles(qgis_app, tmp_path, project):
-    from geophysics_workbench.ui.interp_layers import add_interp_layers, migrate_letter_styles
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, migrate_letter_styles
     st = _store(tmp_path / "wb.gpkg")
     layer = add_interp_layers(st, project)["interp_polygons_3d"]
     _old_style(layer)
@@ -93,9 +93,9 @@ def test_open_project_layers_survive_migration(qgis_app, tmp_path, project, fake
     """Review Focus 1: the layers are loaded from the 0.7 file before the plugin updates it."""
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
     path = tmp_path / "wb.gpkg"
     _store(path)
     _to_schema_1(path)

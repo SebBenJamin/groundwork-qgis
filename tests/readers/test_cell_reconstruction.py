@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geophysics_workbench import readers
-from geophysics_workbench.section.data import cell_path_groups
-from geophysics_workbench.core.colors import ColorScale
+from groundwork_geophysics import readers
+from groundwork_geophysics.section.data import cell_path_groups
+from groundwork_geophysics.core.colors import ColorScale
 
 DEMO = Path("demo/data/ert")
 

@@ -1,7 +1,7 @@
 """Freezing, viewing and restoring interpretation versions from the section dock."""
 import pytest
 
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_start_from_clears_undo(bar):
     vb.ask_name = lambda title: "Old"
     vb.freeze()
     [p] = store.pieces(store.current_version().id)
-    from geophysics_workbench.section.interp_edit import move_vertex
+    from groundwork_geophysics.section.interp_edit import move_vertex
     ctl.replace_piece(p, move_vertex(p, 0, 2.0, -0.5))
     assert ctl.undo.stack.count() == 1
     vb.combo.setCurrentIndex(1)
@@ -92,8 +92,8 @@ def test_viewing_frozen_keeps_derived_layers_current(bar):
 
 
 def test_sync_detached_when_store_has_no_interpretation(bar, tmp_path):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     vb, store, dock = bar
     ctl = dock.interp
     ctl.changed(store.current_version().id)

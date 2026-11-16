@@ -25,10 +25,10 @@ def test_guelpe_demo_opens_offline(qgis_app, tmp_path):
     import hashlib
     import shutil
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import attach_store
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import attach_store
 
-    store_file = GUELPE / "guelpe_workbench.gpkg"
+    store_file = GUELPE / "guelpe_groundwork.gpkg"
     before = hashlib.sha1(store_file.read_bytes()).hexdigest()
     copy = tmp_path / "demo_guelpe"
     shutil.copytree(GUELPE, copy, ignore=shutil.ignore_patterns("*-wal", "*-shm"))
@@ -57,7 +57,7 @@ def test_guelpe_live_layers_point_at_brandenburg(qgis_app):
 def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
     """The band and the visible geology are the 1:25 000 map; the GÜK300 stays as a layer
     that is switched off (at 1:300 000 the whole demo area is one polygon)."""
-    from geophysics_workbench.ui.context_dialog import read_settings
+    from groundwork_geophysics.ui.context_dialog import read_settings
 
     prj = _project()
     by_name = {lyr.name(): lyr for lyr in prj.mapLayers().values()}
@@ -72,7 +72,7 @@ def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
 
 def test_guelpe_has_two_strips(qgis_app):
     """Two strips above the ground: the GÜK 300 on top, the GK 25 below, both shown."""
-    from geophysics_workbench.ui.context_dialog import read_settings
+    from groundwork_geophysics.ui.context_dialog import read_settings
 
     prj = _project()
     by_name = {lyr.name(): lyr for lyr in prj.mapLayers().values()}
@@ -84,7 +84,7 @@ def test_guelpe_has_two_strips(qgis_app):
 
 
 def test_guelpe_settings_reference_project_layers(qgis_app):
-    from geophysics_workbench.ui.context_dialog import read_settings
+    from groundwork_geophysics.ui.context_dialog import read_settings
 
     prj = _project()
     s = read_settings(prj)
@@ -156,8 +156,8 @@ def test_build_adds_transect3_misfit(tmp_path, qgis_app):
 
     import build_demo_guelpe
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     build_demo_guelpe.build_data(out=tmp_path)
     path = build_demo_guelpe.build_workbench(out=tmp_path)
     st = ProjectStore.open(path)
@@ -197,7 +197,7 @@ def test_synthetic_curves_are_labelled_and_deterministic(tmp_path):
 def test_demo_context_settings_two_borehole_entries():
     import build_demo_guelpe
 
-    from geophysics_workbench.core.context_settings import curve_key
+    from groundwork_geophysics.core.context_settings import curve_key
     s = build_demo_guelpe.demo_context_settings(
         water="w", bpk="b", cores="c", logs="l", curves="k", geology="g", geology_field="u",
         dem="d", guek="e", guek_field="n")
@@ -219,7 +219,7 @@ def test_demo_build_styles_the_core_logs(qgis_app):
     from qgis.core import QgsProject
 
     import build_demo_guelpe
-    from geophysics_workbench.section.borehole_style import load_renderer
+    from groundwork_geophysics.section.borehole_style import load_renderer
     prj = QgsProject()
     build_demo_guelpe.apply_core_style(prj, "logs_id",
                                        REPO / "demo_guelpe" / "context" / "core_logs_style.qml")
@@ -248,9 +248,9 @@ def test_demo_build_adds_one_plate_and_no_field_notes(tmp_path, qgis_app):
     from qgis.core import QgsExpressionContextUtils, QgsProject
 
     import build_demo_guelpe
-    from geophysics_workbench.plates.sources import read_plates
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.plates.sources import read_plates
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import use_store
     build_demo_guelpe.build_data(out=tmp_path)
     st = ProjectStore.open(build_demo_guelpe.build_workbench(out=tmp_path))
     prj = QgsProject()

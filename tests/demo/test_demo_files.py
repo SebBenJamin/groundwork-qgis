@@ -1,6 +1,6 @@
 from pathlib import Path
 import numpy as np
-from geophysics_workbench import readers
+from groundwork_geophysics import readers
 D = Path("demo/data")
 
 def test_demo_models_read_and_are_plausible():

@@ -1,6 +1,6 @@
 import json
 
-from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
                                                         ContextSettings, CurveField,
                                                         CurveTableSetting, LineLayerSetting,
                                                         PointLayerSetting, curve_key)
@@ -62,7 +62,7 @@ def test_bad_line_fields_fall_back():
 def test_point_setting_depth_roundtrip_and_old_json():
     import json
 
-    from geophysics_workbench.core.context_settings import ContextSettings, PointLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, PointLayerSetting
     s = ContextSettings(point_layers=[PointLayerSetting("p", "name", "Teufe_in_m")])
     assert ContextSettings.from_json(s.to_json()).point_layers == s.point_layers
     old = json.dumps({"version": 2, "point_layers": [{"layer_id": "p", "label_field": "n"}]})

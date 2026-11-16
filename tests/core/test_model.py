@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import (
+from groundwork_geophysics.core.model import (
     Dataset, Profile, StationSet, attach_station_set, data_to_chainage,
     file_fingerprint, profile_from_line, profile_from_stations)
 

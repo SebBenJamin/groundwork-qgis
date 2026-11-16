@@ -3,8 +3,8 @@ import pytest
 
 
 def _with_content(st, p):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
     st.ensure_interpretation()
     v = st.current_version()
     f = InterpFeature(new_id(), v.id, type="clay", name="A")
@@ -23,7 +23,7 @@ def test_rename_profile(store_with_model):
 
 
 def test_rename_refuses_duplicate(store_with_model):
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
     st, p, _ = store_with_model
     other = Profile("p2", "Line B", p.xy + 100.0, st.crs_authid)
     st.save_profile(other)

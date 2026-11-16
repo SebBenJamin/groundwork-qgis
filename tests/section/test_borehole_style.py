@@ -33,7 +33,7 @@ def _rgb(symbol):
 
 
 def test_save_load_round_trip(project):
-    from geophysics_workbench.section.borehole_style import load_renderer, save_renderer
+    from groundwork_geophysics.section.borehole_style import load_renderer, save_renderer
     save_renderer(project, "logs1", _categorized())
     back = load_renderer(project, "logs1")
     assert back is not None and back.type() == "categorizedSymbol"
@@ -44,8 +44,8 @@ def test_save_load_round_trip(project):
 
 
 def test_no_renderer_gives_label_colour(qgis_app):
-    from geophysics_workbench.core.lithology import label_colour
-    from geophysics_workbench.section.borehole_style import interval_symbols
+    from groundwork_geophysics.core.lithology import label_colour
+    from groundwork_geophysics.section.borehole_style import interval_symbols
     fields = _fields("lithology")
     (sym, feat), = interval_symbols(None, fields, [_feature(fields, lithology="Sand")],
                                     texts=["Sand"])
@@ -53,8 +53,8 @@ def test_no_renderer_gives_label_colour(qgis_app):
 
 
 def test_renderer_on_missing_field_falls_back(qgis_app):
-    from geophysics_workbench.core.lithology import label_colour
-    from geophysics_workbench.section.borehole_style import interval_symbols
+    from groundwork_geophysics.core.lithology import label_colour
+    from groundwork_geophysics.section.borehole_style import interval_symbols
     fields = _fields("lithology")
     (sym, _f), = interval_symbols(_categorized(field="gone"), fields,
                                   [_feature(fields, lithology="Sand")], texts=["Sand"])
@@ -63,8 +63,8 @@ def test_renderer_on_missing_field_falls_back(qgis_app):
 
 def test_rule_with_bad_expression_falls_back(qgis_app):
     from qgis.core import QgsFillSymbol, QgsRuleBasedRenderer
-    from geophysics_workbench.core.lithology import label_colour
-    from geophysics_workbench.section.borehole_style import interval_symbols
+    from groundwork_geophysics.core.lithology import label_colour
+    from groundwork_geophysics.section.borehole_style import interval_symbols
     # built from a symbol: QGIS owns every rule (no Python-made rules handed over)
     renderer = QgsRuleBasedRenderer(QgsFillSymbol.createSimple({"color": "255,0,0"}))
     renderer.rootRule().children()[0].setFilterExpression("\"lithology\" = = 'x' (((")
@@ -75,8 +75,8 @@ def test_rule_with_bad_expression_falls_back(qgis_app):
 
 
 def test_gatherer_attaches_symbols(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
-    from geophysics_workbench.section.borehole_style import save_renderer
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.section.borehole_style import save_renderer
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
     log = _layer(project, "NoGeometry", "Log",
@@ -90,15 +90,15 @@ def test_gatherer_attaches_symbols(project, profile):
         bh.id(), "bid", "", log.id(), "bid", "top", "bot", "lith")]))
     p = g.items_for(profile).points[0]
     g.close()
-    from geophysics_workbench.core.lithology import label_colour
+    from groundwork_geophysics.core.lithology import label_colour
     assert _rgb(p.log[0].symbol) == (10, 200, 30)
     assert _rgb(p.log[1].symbol) == label_colour("clay")      # no category: neutral default
     assert p.log[0].feature["code"] == "S"
 
 
 def test_curve_styles_round_trip(project):
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.section.borehole_style import curve_styles, save_curve_styles
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.section.borehole_style import curve_styles, save_curve_styles
     assert curve_styles(project) == {}
     styles = {"t:gr": CurveStyle(colour="#ff0000", log=True, vmin=1.0, vmax=1000.0)}
     save_curve_styles(project, styles)
@@ -106,9 +106,9 @@ def test_curve_styles_round_trip(project):
 
 
 def test_gatherer_carries_views_and_curve_styles(project, profile):
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
-    from geophysics_workbench.section.borehole_style import save_curve_styles
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.section.borehole_style import save_curve_styles
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
     save_curve_styles(project, {"t:gr": CurveStyle(colour="#123456")})
@@ -126,8 +126,8 @@ def test_gatherer_carries_views_and_curve_styles(project, profile):
 def test_style_loaded_once_per_entry_and_shared_per_class(project, profile, monkeypatch):
     """Performance: one load of the stored style per interval table and gather (not one per
     borehole), and intervals of the same class share one symbol copy."""
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
-    from geophysics_workbench.section import borehole_style
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.section import borehole_style
     bh = _layer(project, "Point", "BH", "bid:string")
     for i, x in enumerate((10, 30, 50, 70)):
         _add(bh, f"POINT({x} 1)", [f"B{i}"])
@@ -155,7 +155,7 @@ def test_snapshot_copy_clones_each_distinct_symbol_once(qgis_app):
 
     from qgis.core import QgsFillSymbol
 
-    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
     sym = QgsFillSymbol.createSimple({})
     pts = [ProjectedPoint(float(i), 0.0, f"B{i}", "borehole", 10.0,
                           [LogInterval(0.0, 1.0, "sand", sym), LogInterval(1.0, 2.0, "sand", sym)])
@@ -171,8 +171,8 @@ def test_bad_curve_style_values_fall_back_one_by_one(project):
     never a crash later when drawing."""
     import json
 
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.section.borehole_style import (CURVE_STYLES_KEY, STYLE_SCOPE,
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.section.borehole_style import (CURVE_STYLES_KEY, STYLE_SCOPE,
                                                              curve_styles)
     project.writeEntry(STYLE_SCOPE, CURVE_STYLES_KEY, json.dumps({"k": {
         "colour": "red", "width_mm": "x", "dash": "wiggly", "fill": "up", "log": "yes",
@@ -185,7 +185,7 @@ def test_bad_curve_style_values_fall_back_one_by_one(project):
 
 
 def test_curve_style_dialog_rejects_nan_and_inf(qgis_app):
-    from geophysics_workbench.ui.curve_style_dialog import _number
+    from groundwork_geophysics.ui.curve_style_dialog import _number
     assert _number("nan") is None and _number("inf") is None and _number("2,5") == 2.5
 
 
@@ -193,8 +193,8 @@ def test_curve_style_dialog_rejects_nan_and_inf(qgis_app):
 def test_class_switched_off_is_left_unfilled(qgis_app):
     """Minor 6: a category the user unticked draws no fill (not a neutral colour); values
     without any class still get their neutral colour."""
-    from geophysics_workbench.core.lithology import label_colour
-    from geophysics_workbench.section.borehole_style import interval_symbols
+    from groundwork_geophysics.core.lithology import label_colour
+    from groundwork_geophysics.section.borehole_style import interval_symbols
     fields = _fields("lithology")
     r = _categorized()
     r.updateCategoryRenderState(0, False)

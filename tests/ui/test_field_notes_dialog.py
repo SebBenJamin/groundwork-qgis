@@ -5,8 +5,8 @@ import pytest
 
 @pytest.fixture
 def setup(qgis_app, store_with_model):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.ui.field_notes_dialog import FieldNotesDialog
     st, p, _ = store_with_model
     st.ensure_field_notes()
     st.save_field_note(FieldNote("n1", p.id, 30.0, None, "fence", "obstacle"))
@@ -48,8 +48,8 @@ def test_switching_shown_off_and_deleting(setup):
 
 
 def test_note_form_returns_the_edited_note(qgis_app):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.ui.field_notes_dialog import NoteForm
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.ui.field_notes_dialog import NoteForm
     form = NoteForm(FieldNote("x", "p", 5.0, None, ""), ["obstacle", "access"])
     form.text_edit.setPlainText("fence\nbroken")
     form.category_combo.setEditText("obstacle")
@@ -61,11 +61,11 @@ def test_note_form_returns_the_edited_note(qgis_app):
 def _guessed(qgis_app, tmp_path):
     import shutil
 
-    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+    from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                                  profile_from_polyline)
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.field_notes_dialog import FieldNotesDialog
     from pathlib import Path
     FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
     st = ProjectStore.create(tmp_path / "g.gpkg", "EPSG:25832")
@@ -89,8 +89,8 @@ def test_note_by_guessed_electrode_is_labelled(qgis_app, tmp_path):
 
 
 def test_note_by_imported_electrode_is_unlabelled(qgis_app, store_with_model):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.field_notes_dialog import FieldNotesDialog
     st, p, _ = store_with_model
     st.ensure_field_notes()
     dlg = FieldNotesDialog(st, p.id, lambda: None, provider=SectionDataProvider(st))

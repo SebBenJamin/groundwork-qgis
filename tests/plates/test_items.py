@@ -3,7 +3,7 @@ import pytest
 
 
 def test_colour_bar_ticks_auto_step_list():
-    from geophysics_workbench.plates.items import colour_bar_ticks
+    from groundwork_geophysics.plates.items import colour_bar_ticks
     assert colour_bar_ticks(1.0, 1000.0, True, "auto") == [1.0, 10.0, 100.0, 1000.0]
     assert colour_bar_ticks(0.0, 100.0, False, "step:25") == [0.0, 25.0, 50.0, 75.0, 100.0]
     assert colour_bar_ticks(1.0, 1000.0, True, "list:5, 50,500, 5000") == [5.0, 50.0, 500.0]
@@ -14,7 +14,7 @@ def test_colour_bar_ticks_auto_step_list():
 
 
 def test_colour_bar_renders_log_scale_tick_labels(qgis_app):
-    from geophysics_workbench.plates.items import default_settings, tick_labels
+    from groundwork_geophysics.plates.items import default_settings, tick_labels
     assert tick_labels([1.0, 10.0, 100.0, 1000.0], default_settings()) == [
         "1", "10", "100", "1000"]                     # never "1.000" (German locale)
 
@@ -31,7 +31,7 @@ def test_colour_bar_settings_survive_write_read(qgis_app):
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtXml import QDomDocument
 
-    from geophysics_workbench.plates.items import ColourBarItem, register_items
+    from groundwork_geophysics.plates.items import ColourBarItem, register_items
     register_items()
     layout = _layout()
     bar = ColourBarItem(layout)
@@ -57,8 +57,8 @@ def test_borehole_legend_lists_only_classes_present(qgis_app):
     from qgis.core import QgsFillSymbol, QgsRendererCategory
     from qgis.PyQt.QtCore import QMetaType
 
-    from geophysics_workbench.core.context import LogInterval
-    from geophysics_workbench.plates.items import legend_rows
+    from groundwork_geophysics.core.context import LogInterval
+    from groundwork_geophysics.plates.items import legend_rows
     fields = QgsFields()
     fields.append(QgsField("lithology", QMetaType.Type.QString))
     renderer = QgsCategorizedSymbolRenderer("lithology", [
@@ -79,7 +79,7 @@ def test_borehole_legend_lists_only_classes_present(qgis_app):
 def test_items_registered_once(qgis_app):
     from qgis.core import QgsApplication
 
-    from geophysics_workbench.plates.items import (BOREHOLE_LEGEND_TYPE, COLOUR_BAR_TYPE,
+    from groundwork_geophysics.plates.items import (BOREHOLE_LEGEND_TYPE, COLOUR_BAR_TYPE,
                                                    register_items)
     register_items()
     register_items()
@@ -92,9 +92,9 @@ def test_borehole_legend_lists_curves_shown(qgis_app):
     """Spec: the borehole legend also lists the curves shown (name, unit, line style)."""
     import numpy as np
 
-    from geophysics_workbench.core.borehole_curves import CurveStyle
-    from geophysics_workbench.core.context import BoreholeView, Curve, ProjectedPoint
-    from geophysics_workbench.plates.items import curve_rows
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.context import BoreholeView, Curve, ProjectedPoint
+    from groundwork_geophysics.plates.items import curve_rows
 
     def curve(key, name, unit):
         return Curve(key, name, unit, np.array([0.0, 1.0]), np.array([1.0, 2.0]))

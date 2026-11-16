@@ -41,7 +41,7 @@ def _line(p) -> np.ndarray:
 
 
 def _model(name):
-    from geophysics_workbench import readers
+    from groundwork_geophysics import readers
     rel = {"P1": "ert/P1/f001_res.dat", "P2": "ert/P2/P2_model.dat", "P3": "ert/P3/f001_res.vtk"}
     return readers.read(DEMO / "data" / rel[name])
 
@@ -78,7 +78,7 @@ def _boreholes_raw(ogr):
 
 # -- clay bodies and the earthing artefact ----------------------------------------------------
 def test_body_a_seen_on_both_profiles_at_tie(demo, profiles):
-    from geophysics_workbench.core.context import profile_ties
+    from groundwork_geophysics.core.context import profile_ties
 
     [(s1, s3, dist)] = profile_ties(_line(profiles["P1"]), _line(profiles["P3"]), 10.0)
     assert dist == 0.0
@@ -97,7 +97,7 @@ def test_body_b_on_p2_where_the_lens_was(demo, profiles):
 
 
 def test_earthing_artefact_near_powerline_on_p1(demo, profiles):
-    from geophysics_workbench.core.context import line_crossings, project_points
+    from groundwork_geophysics.core.context import line_crossings, project_points
 
     p1 = profiles["P1"]
     [crossing] = line_crossings(_line(p1), _powerline(), "380 kV", "line")
@@ -154,7 +154,7 @@ def test_boreholes_and_logs_consistent_with_model(demo, profiles):
 
 
 def _project(p, xy):
-    from geophysics_workbench.core.context import project_points
+    from groundwork_geophysics.core.context import project_points
     [(_i, s, off)] = project_points(_line(p), np.array([xy]), 1e6)
     return s, off
 
@@ -170,7 +170,7 @@ def test_borehole_placement(profiles):
 
 
 def test_b4_outside_default_buffer(profiles):
-    from geophysics_workbench.core.context import project_points
+    from groundwork_geophysics.core.context import project_points
 
     points, _logs = _boreholes()
     b4 = np.array([points["B4"][1:3]])
@@ -185,7 +185,7 @@ def test_b4_outside_default_buffer(profiles):
 
 # -- geology ----------------------------------------------------------------------------------
 def test_geology_crossed_by_every_profile(profiles):
-    from geophysics_workbench.core.context import polygon_intervals
+    from groundwork_geophysics.core.context import polygon_intervals
 
     gj = json.loads((CONTEXT / "geology.geojson").read_text(encoding="utf-8"))
     assert {f["properties"]["unit"] for f in gj["features"]} == UNITS
@@ -212,7 +212,7 @@ def _stations(name):
 def test_dem_embankment_on_p2(qgis_app, profiles):
     from qgis.core import QgsRasterLayer
 
-    from geophysics_workbench.section.dem_sampling import sample_point
+    from groundwork_geophysics.section.dem_sampling import sample_point
 
     layer = QgsRasterLayer(str(CONTEXT / "dem.tif"), "dem", "gdal")
     assert layer.isValid() and layer.crs().authid() == "EPSG:25832"
@@ -245,7 +245,7 @@ def _qgs_text() -> str:
 def test_project_has_context_settings_and_relative_paths(qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
 
     root = ET.fromstring(_qgs_text())
     assert root.get("saveUser", "") == "" and root.get("saveUserFull", "") == ""
@@ -279,7 +279,7 @@ def test_project_has_context_settings_and_relative_paths(qgis_app):
     assert geology.opacity() == pytest.approx(0.4)
     renderer = geology.renderer()
     assert renderer.type() == "categorizedSymbol" and renderer.classAttribute() == "unit"
-    from geophysics_workbench.core.lithology import lithology_colour
+    from groundwork_geophysics.core.lithology import lithology_colour
     assert {c.value(): c.symbol().color().getRgb()[:3] for c in renderer.categories()} == {
         u: lithology_colour(u) for u in UNITS}
     tree = prj.layerTreeRoot()

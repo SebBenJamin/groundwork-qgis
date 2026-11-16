@@ -4,10 +4,10 @@ from pathlib import Path
 
 import numpy as np
 
-from geophysics_workbench.core.model import Dataset, file_fingerprint
-from geophysics_workbench.core.roles import ModelColumns
-from geophysics_workbench.readers.texttable import TableOptions
-from geophysics_workbench.section.data import SectionDataProvider
+from groundwork_geophysics.core.model import Dataset, file_fingerprint
+from groundwork_geophysics.core.roles import ModelColumns
+from groundwork_geophysics.readers.texttable import TableOptions
+from groundwork_geophysics.section.data import SectionDataProvider
 
 WILD = Path(__file__).resolve().parent.parent / "fixtures" / "wild"
 

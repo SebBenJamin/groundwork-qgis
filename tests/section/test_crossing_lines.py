@@ -24,7 +24,7 @@ def _layer(project, kind, name, fields="", crs=AUTH):
 
 
 def test_candidates_are_line_layers_minus_excluded(project):
-    from geophysics_workbench.section.crossing_lines import candidate_line_layers
+    from groundwork_geophysics.section.crossing_lines import candidate_line_layers
     _layer(project, "LineString", "b")
     _layer(project, "LineString", "A")
     c = _layer(project, "LineString", "c")
@@ -34,8 +34,8 @@ def test_candidates_are_line_layers_minus_excluded(project):
 
 
 def test_unsaved_visible_layer_is_active_hidden_is_not(project):
-    from geophysics_workbench.core.context_settings import ContextSettings
-    from geophysics_workbench.section.crossing_lines import active_line_settings
+    from groundwork_geophysics.core.context_settings import ContextSettings
+    from groundwork_geophysics.section.crossing_lines import active_line_settings
     shown = _layer(project, "LineString", "shown")
     hidden = _layer(project, "LineString", "hidden")
     project.layerTreeRoot().findLayer(hidden.id()).setItemVisibilityChecked(False)
@@ -44,7 +44,7 @@ def test_unsaved_visible_layer_is_active_hidden_is_not(project):
 
 
 def test_layer_in_hidden_group_is_not_visible(project):
-    from geophysics_workbench.section.crossing_lines import map_visible
+    from groundwork_geophysics.section.crossing_lines import map_visible
     from qgis.core import QgsVectorLayer
     layer = QgsVectorLayer(f"LineString?crs={AUTH}", "L", "memory")
     project.addMapLayer(layer, False)          # only in the group, not at the root
@@ -57,8 +57,8 @@ def test_layer_in_hidden_group_is_not_visible(project):
 
 
 def test_explicit_tick_wins_over_visibility(project):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
-    from geophysics_workbench.section.crossing_lines import active_line_settings
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.section.crossing_lines import active_line_settings
     hidden = _layer(project, "LineString", "hidden")
     shown = _layer(project, "LineString", "shown")
     project.layerTreeRoot().findLayer(hidden.id()).setItemVisibilityChecked(False)
@@ -80,8 +80,8 @@ def test_symbol_colour_single_categorised_and_none(project):
     from qgis.core import (QgsCategorizedSymbolRenderer, QgsLineSymbol,
                            QgsRendererCategory)
     from qgis.PyQt.QtGui import QColor
-    from geophysics_workbench.core.context import DEFAULT_LINE_RGB
-    from geophysics_workbench.section.crossing_lines import symbol_colour
+    from groundwork_geophysics.core.context import DEFAULT_LINE_RGB
+    from groundwork_geophysics.section.crossing_lines import symbol_colour
     layer = _layer(project, "LineString", "L", "kind:string")
     _single(layer, (220, 0, 0))
     assert symbol_colour(layer) == (220, 0, 0)
@@ -103,8 +103,8 @@ def test_symbol_colour_single_categorised_and_none(project):
 
 
 def test_line_colour_prefers_saved_hex(project):
-    from geophysics_workbench.core.context_settings import LineLayerSetting
-    from geophysics_workbench.section.crossing_lines import line_colour
+    from groundwork_geophysics.core.context_settings import LineLayerSetting
+    from groundwork_geophysics.section.crossing_lines import line_colour
     layer = _layer(project, "LineString", "L")
     _single(layer, (220, 0, 0))
     assert line_colour(LineLayerSetting(layer.id(), colour="#0000ff"), layer) == (0, 0, 255)
@@ -112,8 +112,8 @@ def test_line_colour_prefers_saved_hex(project):
 
 
 def test_own_layer_ids_are_store_layers(project, store_with_model):
-    from geophysics_workbench.section.crossing_lines import own_layer_ids
-    from geophysics_workbench.ui import project_actions
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.ui import project_actions
     st, _p, _src = store_with_model
     added = project_actions.add_store_layers(st, project)
     assert own_layer_ids(st, project) == {layer.id() for layer in added.values()}
@@ -123,10 +123,10 @@ def test_own_layer_ids_are_store_layers(project, store_with_model):
 def test_field_note_layers_are_own_layers(project, store_with_model):
     """Usability review: the plugin's own field-note map layers were drawn on the section
     as crossing lines (and offered as context)."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.section.crossing_lines import own_layer_ids
-    from geophysics_workbench.ui.field_note_layers import add_field_note_layers, field_note_layers
-    from geophysics_workbench.ui.project_actions import add_store_layers
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.ui.field_note_layers import add_field_note_layers, field_note_layers
+    from groundwork_geophysics.ui.project_actions import add_store_layers
     st, p, _ = store_with_model
     add_store_layers(st, project)
     st.save_field_note(FieldNote("n", p.id, 1.0, 5.0, "boggy"))

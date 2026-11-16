@@ -20,7 +20,7 @@ def project(qgis_app):
 
 @pytest.fixture
 def profile():
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
     return Profile("p1", "P1", np.array([[0.0, 0.0], [100.0, 0.0]]), AUTH)
 
 
@@ -44,8 +44,8 @@ def _add(layer, wkt, attrs=()):
 
 
 def _gatherer(project, settings, on_change=lambda: None):
-    from geophysics_workbench.section.context_layers import ContextGatherer
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.section.context_layers import ContextGatherer
+    from groundwork_geophysics.ui.context_dialog import write_settings
     write_settings(project, settings)
     return ContextGatherer(project, AUTH, on_change)
 
@@ -59,7 +59,7 @@ def _red(layer):
 
 
 def test_crossing_with_voltage_label_and_layer_colour(project, profile):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines", "voltage:string")
     _red(lines)
     _add(lines, "LINESTRING(30 -50, 30 50)", ["380000"])
@@ -78,7 +78,7 @@ def test_crossing_with_voltage_label_and_layer_colour(project, profile):
 
 
 def test_voltage_label_only_for_voltage_fields():
-    from geophysics_workbench.section.context_layers import voltage_label
+    from groundwork_geophysics.section.context_layers import voltage_label
     assert voltage_label("380000;110000", "voltage") == "380 kV"
     assert voltage_label("62500", "Spannung_V") == "62.5 kV"
     assert voltage_label("110000 V", "Spannung_V") == "110 kV"
@@ -90,14 +90,14 @@ def test_voltage_label_only_for_voltage_fields():
 
 def test_v1_powerline_entry_still_draws(project, profile):
     import json
-    from geophysics_workbench.ui.context_dialog import KEY
-    from geophysics_workbench.ui.project_actions import SCOPE
+    from groundwork_geophysics.ui.context_dialog import KEY
+    from groundwork_geophysics.ui.project_actions import SCOPE
     lines = _layer(project, "LineString", "Lines", "voltage:string")
     _red(lines)
     _add(lines, "LINESTRING(30 -50, 30 50)", ["380000"])
     project.writeEntry(SCOPE, KEY, json.dumps({"version": 1, "line_layers": [
         {"layer_id": lines.id(), "label_field": "voltage", "powerline": True}]}))
-    from geophysics_workbench.section.context_layers import ContextGatherer
+    from groundwork_geophysics.section.context_layers import ContextGatherer
     g = ContextGatherer(project, AUTH, lambda: None)
     try:
         items = g.items_for(profile)
@@ -107,7 +107,7 @@ def test_v1_powerline_entry_still_draws(project, profile):
 
 
 def test_only_selected_uses_selection(project, profile):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines")
     _add(lines, "LINESTRING(30 -50, 30 50)")
     _add(lines, "LINESTRING(60 -50, 60 50)")
@@ -123,7 +123,7 @@ def test_only_selected_uses_selection(project, profile):
 
 
 def test_unsaved_visible_line_layer_is_gathered(project, profile):
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
     lines = _layer(project, "LineString", "Road")
     _add(lines, "LINESTRING(30 -50, 30 50)")
     g = _gatherer(project, ContextSettings())
@@ -134,9 +134,9 @@ def test_unsaved_visible_line_layer_is_gathered(project, profile):
 
 
 def test_excluded_layer_is_not_gathered(project, profile):
-    from geophysics_workbench.core.context_settings import ContextSettings
-    from geophysics_workbench.section.context_layers import ContextGatherer
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.core.context_settings import ContextSettings
+    from groundwork_geophysics.section.context_layers import ContextGatherer
+    from groundwork_geophysics.ui.context_dialog import write_settings
     lines = _layer(project, "LineString", "Road")
     _add(lines, "LINESTRING(30 -50, 30 50)")
     write_settings(project, ContextSettings())
@@ -148,7 +148,7 @@ def test_excluded_layer_is_not_gathered(project, profile):
 
 
 def test_line_without_label_field_uses_layer_name(project, profile):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Road")
     _add(lines, "LINESTRING(10 -5, 10 5)")
     g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id(), checked=True)]))
@@ -162,7 +162,7 @@ def test_empty_multipoint_skips_only_that_feature(project, profile, monkeypatch)
     the layer is kept. (QGIS' own providers mostly drop empty geometries at the bbox
     filter, so the features are fed in directly.)"""
     from qgis.core import QgsFeature, QgsGeometry
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
     g = _gatherer(project, ContextSettings())
     try:
         empty, good, single = QgsFeature(), QgsFeature(), QgsFeature()
@@ -179,13 +179,13 @@ def test_empty_multipoint_skips_only_that_feature(project, profile, monkeypatch)
 
 def test_points_in_other_crs_are_transformed(project, profile):
     from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY
-    from geophysics_workbench.core.context_settings import ContextSettings, PointLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, PointLayerSetting
     pts = _layer(project, "Point", "Pts", "name:string", crs="EPSG:4326")
     to_wgs = QgsCoordinateTransform(QgsCoordinateReferenceSystem(AUTH),
                                     QgsCoordinateReferenceSystem("EPSG:4326"), project)
     lon_lat = to_wgs.transform(QgsPointXY(500000.0 + 40, 5400000.0 + 5))
     _add(pts, f"POINT({lon_lat.x()} {lon_lat.y()})", ["tree"])
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
     prof = Profile("p", "P", np.array([[500000.0, 5400000.0], [500100.0, 5400000.0]]), AUTH)
     g = _gatherer(project, ContextSettings(point_layers=[PointLayerSetting(pts.id(), "name")]))
     items = g.items_for(prof)
@@ -197,7 +197,7 @@ def test_points_in_other_crs_are_transformed(project, profile):
 
 
 def test_borehole_with_log_table(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:string&field=elev:double")
     _add(bh, "POINT(40 3)", ["B1", 101.5])
     _add(bh, "POINT(40 300)", ["FAR", 99.0])
@@ -220,7 +220,7 @@ def test_borehole_with_log_table(project, profile):
 
 
 def test_band_from_polygon_layer(project, profile):
-    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BandSetting, ContextSettings
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Loess"])
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
@@ -232,7 +232,7 @@ def test_band_from_polygon_layer(project, profile):
 
 
 def test_strip_with_an_empty_label_field_uses_the_layer_name(project, profile):
-    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BandSetting, ContextSettings
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((0 -10, 100 -10, 100 10, 0 10, 0 -10))", ["Sand"])
     g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "")]))
@@ -265,7 +265,7 @@ def _write_dem_raw(path, nodata_cols, gdal, osr):
 
 def test_dem_sampling_with_nodata(project, profile, tmp_path):
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
     arr = _write_dem(tmp_path / "dem.tif")
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     assert dem.isValid()
@@ -284,7 +284,7 @@ def test_dem_sampling_with_nodata(project, profile, tmp_path):
 
 def test_dem_all_nodata_gives_none(project, profile, tmp_path):
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
     _write_dem(tmp_path / "dem.tif", nodata_cols=range(101))
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     project.addMapLayer(dem)
@@ -296,7 +296,7 @@ def test_dem_all_nodata_gives_none(project, profile, tmp_path):
 
 def test_borehole_without_elevation_uses_dem(project, profile, tmp_path):
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     arr = _write_dem(tmp_path / "dem.tif")
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     project.addMapLayer(dem)
@@ -311,7 +311,7 @@ def test_borehole_without_elevation_uses_dem(project, profile, tmp_path):
 
 
 def test_borehole_without_elevation_or_dem_has_no_z_top(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
     g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid")]))
@@ -330,7 +330,7 @@ def _capture_log(qgis_app):
 
 def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app):
     from qgis.core import Qgis
-    from geophysics_workbench.core.context_settings import (BandSetting, ContextSettings,
+    from groundwork_geophysics.core.context_settings import (BandSetting, ContextSettings,
                                                             LineLayerSetting)
     lines = _layer(project, "LineString", "Lines", "voltage:string")
     _add(lines, "LINESTRING(30 -50, 30 50)", ["380000"])
@@ -353,7 +353,7 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
         g.close()
     assert [(c.label, c.s) for c in items.crossings] == [("Good", approx(60))]
     assert items.band == []
-    warnings = [m for m, tag, level in got if tag == "Geophysics Workbench"
+    warnings = [m for m, tag, level in got if tag == "Groundwork"
                 and level == Qgis.MessageLevel.Warning]
     assert len(warnings) == 2                     # a stale entry is ignored silently
     for needle in ("voltage_old", "'unit'"):
@@ -362,8 +362,8 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
 
 
 def test_large_layer_uses_rect_filter_and_is_fast(project, profile, qgis_app):
-    from geophysics_workbench.core.context import line_crossings
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context import line_crossings
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     rng = np.random.default_rng(7)
     layer = _layer(project, "LineString", "Many")
     from qgis.core import QgsFeature, QgsGeometry, QgsPointXY
@@ -405,7 +405,7 @@ def _wait(qgis_app, ms):
 
 
 def test_change_triggers_on_change_once(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines")
     calls = []
     g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]),
@@ -434,7 +434,7 @@ def _add_edit(layer, wkt):
 
 
 def test_close_stops_notifications(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines")
     calls = []
     g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]),
@@ -449,8 +449,8 @@ def test_close_stops_notifications(project, profile, qgis_app):
 
 
 def test_changed_settings_reconnect(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.ui.context_dialog import write_settings
     a = _layer(project, "LineString", "A")
     b = _layer(project, "LineString", "B")
     calls = []
@@ -477,7 +477,7 @@ def test_changed_settings_reconnect(project, profile, qgis_app):
 
 
 def test_removed_watched_layer_does_not_break_gatherer(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines")
     calls = []
     g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]),
@@ -493,7 +493,7 @@ def test_removed_watched_layer_does_not_break_gatherer(project, profile, qgis_ap
 
 
 def test_close_after_layer_removed_twice(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines")
     g = _gatherer(project, ContextSettings(line_layers=[LineLayerSetting(lines.id())]))
     g.items_for(profile)
@@ -505,8 +505,8 @@ def test_close_after_layer_removed_twice(project, profile, qgis_app):
 def test_dem_outside_profile_logs_one_warning(project, profile, tmp_path, qgis_app):
     from osgeo import gdal
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import ContextSettings
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.model import Profile
     _write_dem(tmp_path / "dem.tif")
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     project.addMapLayer(dem)
@@ -519,13 +519,13 @@ def test_dem_outside_profile_logs_one_warning(project, profile, tmp_path, qgis_a
     finally:
         stop()
         g.close()
-    dem_warnings = [m for m, tag, _l in got if tag == "Geophysics Workbench" and "DEM" in m]
+    dem_warnings = [m for m, tag, _l in got if tag == "Groundwork" and "DEM" in m]
     assert len(dem_warnings) == 1
 
 
 def test_null_elevation_falls_back_to_dem(project, profile, tmp_path):
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     arr = _write_dem(tmp_path / "dem.tif")
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     project.addMapLayer(dem)
@@ -539,8 +539,8 @@ def test_null_elevation_falls_back_to_dem(project, profile, tmp_path):
 
 
 def _counting(project, profile, settings, exclude=lambda: set()):
-    from geophysics_workbench.section.context_layers import ContextGatherer
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.section.context_layers import ContextGatherer
+    from groundwork_geophysics.ui.context_dialog import write_settings
     write_settings(project, settings)
     calls = []
     g = ContextGatherer(project, AUTH, lambda: calls.append(1), exclude=exclude)
@@ -549,7 +549,7 @@ def _counting(project, profile, settings, exclude=lambda: set()):
 
 
 def test_selection_change_redraws_selected_only_layer(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     only = _layer(project, "LineString", "Only")
     _add(only, "LINESTRING(30 -50, 30 50)")
     plain = _layer(project, "LineString", "Plain")
@@ -571,7 +571,7 @@ def test_selection_change_redraws_selected_only_layer(project, profile, qgis_app
 def test_renderer_change_redraws(project, profile, qgis_app):
     from qgis.core import QgsLineSymbol, QgsSingleSymbolRenderer
     from qgis.PyQt.QtGui import QColor
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     lines = _layer(project, "LineString", "Lines")
     _add(lines, "LINESTRING(30 -50, 30 50)")
     g, calls = _counting(project, profile, ContextSettings(line_layers=[
@@ -588,7 +588,7 @@ def test_renderer_change_redraws(project, profile, qgis_app):
 
 
 def test_new_visible_line_layer_redraws(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
     g, calls = _counting(project, profile, ContextSettings())
     try:
         _layer(project, "Point", "Pts")
@@ -602,7 +602,7 @@ def test_new_visible_line_layer_redraws(project, profile, qgis_app):
 
 
 def test_hiding_auto_layer_redraws_but_not_explicit_one(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings, LineLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, LineLayerSetting
     auto = _layer(project, "LineString", "Auto")
     explicit = _layer(project, "LineString", "Explicit")
     g, calls = _counting(project, profile, ContextSettings(line_layers=[
@@ -620,7 +620,7 @@ def test_hiding_auto_layer_redraws_but_not_explicit_one(project, profile, qgis_a
 
 
 def test_close_disconnects_project_signals(project, profile, qgis_app):
-    from geophysics_workbench.core.context_settings import ContextSettings
+    from groundwork_geophysics.core.context_settings import ContextSettings
     g, calls = _counting(project, profile, ContextSettings())
     g.close()
     _layer(project, "LineString", "New")
@@ -631,8 +631,8 @@ def test_close_disconnects_project_signals(project, profile, qgis_app):
 def test_active_set_check_and_close_do_not_raise(qgis_app, monkeypatch):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context_settings import ContextSettings
-    from geophysics_workbench.section import context_layers as cl
+    from groundwork_geophysics.core.context_settings import ContextSettings
+    from groundwork_geophysics.section import context_layers as cl
 
     project = QgsProject.instance()
     project.clear()
@@ -648,12 +648,12 @@ def test_active_set_check_and_close_do_not_raise(qgis_app, monkeypatch):
 
 
 def test_point_depth_field_read_and_bad_values_ignored(project, profile):
-    from geophysics_workbench.core.context_settings import ContextSettings, PointLayerSetting
+    from groundwork_geophysics.core.context_settings import ContextSettings, PointLayerSetting
     pts = _layer(project, "Point", "Holes", "name:string&field=depth:string")
     _add(pts, f"POINT({500000.0 + 20} {5400000.0 + 2})", ["a", "3.5"])
     _add(pts, f"POINT({500000.0 + 50} {5400000.0 + 2})", ["b", "deep"])
     _add(pts, f"POINT({500000.0 + 70} {5400000.0 + 2})", ["c", "-1"])
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
     prof = Profile("p", "P", np.array([[500000.0, 5400000.0], [500100.0, 5400000.0]]), AUTH)
     g = _gatherer(project, ContextSettings(
         point_layers=[PointLayerSetting(pts.id(), "name", "depth")]))
@@ -667,7 +667,7 @@ def test_band_colours_follow_the_layer_style(project, profile):
     a single-symbol style gives each label its own colour."""
     from qgis.core import (QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsRendererCategory)
 
-    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BandSetting, ContextSettings
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Sand, grob"])
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand, fein"])
@@ -689,7 +689,7 @@ def test_band_colours_follow_the_layer_style(project, profile):
 def test_restyling_the_band_layer_redraws(project, profile, qgis_app):
     from qgis.core import QgsCategorizedSymbolRenderer
 
-    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BandSetting, ContextSettings
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
     calls = []
@@ -705,7 +705,7 @@ def test_restyling_the_band_layer_redraws(project, profile, qgis_app):
 
 
 def test_two_borehole_entries_both_gathered(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     a = _layer(project, "Point", "A", "bid:string")
     _add(a, "POINT(20 1)", ["A1"])
     b = _layer(project, "Point", "B", "name:string")
@@ -719,7 +719,7 @@ def test_two_borehole_entries_both_gathered(project, profile):
 
 def test_dem_sampled_even_with_elevation_field_and_flag_set(project, profile, tmp_path):
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     arr = _write_dem(tmp_path / "dem.tif")
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     project.addMapLayer(dem)
@@ -737,7 +737,7 @@ def test_dem_sampled_even_with_elevation_field_and_flag_set(project, profile, tm
 
 def test_dem_source_recorded(project, profile, tmp_path):
     from qgis.core import QgsRasterLayer
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     _write_dem(tmp_path / "dem.tif")
     dem = QgsRasterLayer(str(tmp_path / "dem.tif"), "DEM")
     project.addMapLayer(dem)
@@ -751,7 +751,7 @@ def test_dem_source_recorded(project, profile, tmp_path):
 
 
 def test_total_depth_without_interval_table(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:string&field=td:double")
     _add(bh, "POINT(20 1)", ["B1", 12.0])
     g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(
@@ -762,7 +762,7 @@ def test_total_depth_without_interval_table(project, profile):
 
 
 def test_curves_read_sorted_with_nan_gaps(project, profile):
-    from geophysics_workbench.core.context_settings import (BoreholeSetting, ContextSettings,
+    from groundwork_geophysics.core.context_settings import (BoreholeSetting, ContextSettings,
                                                             CurveField, CurveTableSetting)
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
@@ -784,7 +784,7 @@ def test_curves_read_sorted_with_nan_gaps(project, profile):
 
 
 def test_ids_match_as_stripped_text(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:integer")
     _add(bh, "POINT(20 1)", [7])
     log = _layer(project, "NoGeometry", "Log",
@@ -798,7 +798,7 @@ def test_ids_match_as_stripped_text(project, profile):
 
 
 def test_interval_top_bottom_swapped_and_null_rows_skipped(project, profile):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
     log = _layer(project, "NoGeometry", "Log",
@@ -817,7 +817,7 @@ def test_interval_top_bottom_swapped_and_null_rows_skipped(project, profile):
 def test_remote_tables_get_a_server_side_id_filter():
     """C1: a WFS/OAPIF table gets a plain equality the server can run (trim/to_string would
     make QGIS download the whole table); local tables keep the forgiving form."""
-    from geophysics_workbench.section.context_layers import _id_filter
+    from groundwork_geophysics.section.context_layers import _id_filter
     assert _id_filter("bid", "B1", remote=True, numeric=False) == "\"bid\" = 'B1'"
     assert _id_filter("bid", "7", remote=True, numeric=True) == "\"bid\" = 7"
     assert _id_filter("bid", "x7", remote=True, numeric=True) == "\"bid\" = 'x7'"
@@ -827,7 +827,7 @@ def test_remote_tables_get_a_server_side_id_filter():
 def test_remote_interval_table_still_links(project, profile, monkeypatch):
     from qgis.core import QgsVectorLayer
 
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", "bid:string")
     _add(bh, "POINT(20 1)", ["B1"])
     log = _layer(project, "NoGeometry", "Log",
@@ -849,7 +849,7 @@ def test_remote_interval_table_still_links(project, profile, monkeypatch):
 def test_numeric_ids_match_however_stored(project, profile, point_type, point_id, log_type,
                                            log_id):
     """I1: ids stored as Real (7.0, common after Excel imports) still match 7 / " 7 "."""
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     bh = _layer(project, "Point", "BH", f"bid:{point_type}")
     _add(bh, "POINT(20 1)", [point_id])
     log = _layer(project, "NoGeometry", "Log",
@@ -865,7 +865,7 @@ def test_numeric_ids_match_however_stored(project, profile, point_type, point_id
 
 def test_swapped_top_and_bottom_are_logged_once(project, profile, qgis_app):
     """Minor 7: rows with top below bottom are used swapped, and the log says so (once)."""
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     got, stop = _capture_log(qgis_app)
     try:
         bh = _layer(project, "Point", "BH", "bid:string")
@@ -887,8 +887,8 @@ def test_swapped_top_and_bottom_are_logged_once(project, profile, qgis_app):
 
 def test_decimal_comma_numbers_are_read(project, profile):
     """Minor 11: "0,4" from a German CSV is 0.4, not a skipped row."""
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
-    from geophysics_workbench.section.context_layers import _number
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.section.context_layers import _number
     assert _number("0,4") == 0.4 and _number("-12,75") == -12.75 and _number("1.234,5") is None
     bh = _layer(project, "Point", "BH", "bid:string&field=z:string")
     _add(bh, "POINT(20 1)", ["B1", "31,2"])
@@ -903,7 +903,7 @@ def test_decimal_comma_numbers_are_read(project, profile):
 
 
 def test_two_strips_on_one_layer(project, profile):
-    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BandSetting, ContextSettings
     geo = _layer(project, "Polygon", "Geo", "unit:string&field=code:string")
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand", "Q"])
     g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit", "Units"),
@@ -914,7 +914,7 @@ def test_two_strips_on_one_layer(project, profile):
 
 
 def test_one_failing_strip_leaves_the_other(project, profile):
-    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BandSetting, ContextSettings
     gone = _layer(project, "Polygon", "Gone", "unit:string")
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])

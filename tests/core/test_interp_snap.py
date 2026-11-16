@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.interp_snap import SnapTargets, snap
+from groundwork_geophysics.core.interp_snap import SnapTargets, snap
 
 T = SnapTargets(vertices=[(10.0, -2.0)], boundaries=[(20.0, -3.0)],
                 ground=(np.array([0.0, 40.0]), np.array([0.0, 4.0])))

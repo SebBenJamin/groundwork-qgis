@@ -24,7 +24,7 @@ BBOXES = [
 ]
 VOLTAGE_RE = "^(110000|220000|380000)"
 ENDPOINT = "https://overpass-api.de/api/interpreter"
-USER_AGENT = "geophysics-workbench-demo-builder/0.1 (QGIS plugin demo data; one-off fetch)"
+USER_AGENT = "groundwork-qgis-demo-builder/0.1 (QGIS plugin demo data; one-off fetch)"
 OUT = Path(__file__).resolve().parent.parent / "demo" / "context" / "powerline.geojson"
 
 

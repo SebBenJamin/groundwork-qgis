@@ -5,7 +5,7 @@ from tests.section.test_display_dialog import _layer
 
 
 def _dialog(store_with_model, **style):
-    from geophysics_workbench.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
     _prov, layer = _layer(store_with_model)
     layer = replace(layer, style=replace(layer.style, mode="contours", **style))
     return DisplayDialog(None, layer)

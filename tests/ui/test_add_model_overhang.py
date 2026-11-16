@@ -30,8 +30,8 @@ def questions(monkeypatch):
 def p4(qgis_app, tmp_path):
     """Store with profile P4: 11 stations every 5 m (chainage 0 .. 50), and a copy of the
     Zond fixture (cell centres x 1 .. 9, cells 0 .. 10 m)."""
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     xyz = np.column_stack([np.arange(11) * 5.0, np.zeros(11), np.full(11, 100.0)])
@@ -44,7 +44,7 @@ def p4(qgis_app, tmp_path):
 
 
 def _dialog(fake_iface, st, p, src, offset):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     dlg = AddDataDialog(fake_iface, st, p.id)
     dlg.set_file(src)

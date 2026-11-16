@@ -11,8 +11,8 @@ class _Profile:
 
 
 def _bh(s, label, z_top, intervals, entry=0, **kw):
-    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
-    from geophysics_workbench.section.borehole_style import default_symbol
+    from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
+    from groundwork_geophysics.section.borehole_style import default_symbol
     log = []
     for top, bottom, text, rgb in intervals:
         sym = default_symbol(text)
@@ -27,7 +27,7 @@ def _bh(s, label, z_top, intervals, entry=0, **kw):
 def fake_dock(qgis_app):
     from qgis.PyQt.QtCore import QObject, pyqtSignal
 
-    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
 
     class Provider:
         def __init__(self):
@@ -45,7 +45,7 @@ def fake_dock(qgis_app):
         def context(self, pid, include_hidden=False):
             from dataclasses import replace
 
-            from geophysics_workbench.core.context import borehole_key
+            from groundwork_geophysics.core.context import borehole_key
             items = self.items.get(pid)
             hidden = self.hidden.get(pid, set())
             if items is None or include_hidden or not hidden:
@@ -98,7 +98,7 @@ def fake_dock(qgis_app):
 def viewer(fake_dock, qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
     v = BoreholeViewer(fake_dock, QgsProject.instance())
     v.resize(900, 600)
     v.show_profile("p1", (1, "RK16"))
@@ -125,7 +125,7 @@ def test_heightless_borehole_listed_not_drawn_in_elevation(viewer):
 
 
 def test_highlighted_borehole_drawn_with_frame(viewer):
-    from geophysics_workbench.section.borehole_draw import HIGHLIGHT_RGB
+    from groundwork_geophysics.section.borehole_draw import HIGHLIGHT_RGB
     img = viewer.canvas.render_image()
     rect = dict((p.label, r) for p, r in viewer.canvas.column_rects)["RK16"]
     y = int(rect.center().y())
@@ -197,7 +197,7 @@ def test_readout_names_borehole_depth_and_interval(viewer):
 def test_options_round_trip_through_project(viewer, fake_dock):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
     viewer.set_mode("even")
     viewer.set_axis("depth")
     viewer.show_check["ticks"].setChecked(True)
@@ -218,8 +218,8 @@ def test_ve_spin_only_in_true_distance(viewer):
 def test_curve_style_dialog_saves_and_calls_back(qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_style import curve_styles
-    from geophysics_workbench.ui.curve_style_dialog import CurveStyleDialog
+    from groundwork_geophysics.section.borehole_style import curve_styles
+    from groundwork_geophysics.ui.curve_style_dialog import CurveStyleDialog
     calls = []
     dlg = CurveStyleDialog(QgsProject.instance(), {"t:gr": "gr API"}, lambda: calls.append(1))
     row = dlg.rows["t:gr"]
@@ -235,9 +235,9 @@ def test_curve_style_dialog_saves_and_calls_back(qgis_app):
 
 # -- the viewer is the one place for how boreholes look (the section follows) ------------
 def _two_entries(project):
-    from geophysics_workbench.core.context_settings import (BoreholeSetting, ContextSettings,
+    from groundwork_geophysics.core.context_settings import (BoreholeSetting, ContextSettings,
                                                             CurveField, CurveTableSetting)
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.context_dialog import write_settings
     write_settings(project, ContextSettings(boreholes=[
         BoreholeSetting("cores", "id", curve_tables=[CurveTableSetting(
             "t", "id", "d", [CurveField("gr", "API")])]),
@@ -245,7 +245,7 @@ def _two_entries(project):
 
 
 def _curve_bh(qgis_app, fake_dock):
-    from geophysics_workbench.core.context import Curve
+    from groundwork_geophysics.core.context import Curve
     p = fake_dock.provider.items["p1"].points[0]
     p.curves = [Curve("t:gr", "gr", "API", np.array([0.0, 2.0]), np.array([10.0, 90.0]))]
 
@@ -253,8 +253,8 @@ def _curve_bh(qgis_app, fake_dock):
 def test_viewer_layer_text_and_curves_reach_the_section_settings(fake_dock, qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
-    from geophysics_workbench.ui.context_dialog import read_settings
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.ui.context_dialog import read_settings
     prj = QgsProject.instance()
     _two_entries(prj)
     _curve_bh(qgis_app, fake_dock)
@@ -279,8 +279,8 @@ def test_viewer_layer_text_and_curves_reach_the_section_settings(fake_dock, qgis
 def test_viewer_starts_from_the_section_settings(fake_dock, qgis_app):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
-    from geophysics_workbench.ui.context_dialog import read_settings, write_settings
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.ui.context_dialog import read_settings, write_settings
     prj = QgsProject.instance()
     _two_entries(prj)
     s = read_settings(prj)
@@ -301,9 +301,9 @@ def test_section_curves_of_other_profiles_are_kept(fake_dock, qgis_app):
     profile without that curve is shown."""
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context_settings import CurveField, CurveTableSetting
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
-    from geophysics_workbench.ui.context_dialog import read_settings, write_settings
+    from groundwork_geophysics.core.context_settings import CurveField, CurveTableSetting
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.ui.context_dialog import read_settings, write_settings
     prj = QgsProject.instance()
     _two_entries(prj)
     s = read_settings(prj)
@@ -327,7 +327,7 @@ def test_options_saved_when_changed_not_on_close(fake_dock, qgis_app):
     being cleared) writes nothing into whatever project is current then."""
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_viewer import OPTIONS_KEY, SCOPE, BoreholeViewer
+    from groundwork_geophysics.section.borehole_viewer import OPTIONS_KEY, SCOPE, BoreholeViewer
     prj = QgsProject.instance()
     prj.removeEntry(SCOPE, OPTIONS_KEY)
     v = BoreholeViewer(fake_dock, prj)

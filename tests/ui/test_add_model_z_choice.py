@@ -17,7 +17,7 @@ def test_preview_rereads_with_the_chosen_z(qgis_app, fake_iface, store_with_mode
                                            monkeypatch):
     from qgis.PyQt.QtWidgets import QMessageBox
 
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     # the 355 m model overhangs this 50 m profile: answer the question with Yes
     monkeypatch.setattr(QMessageBox, "question",
@@ -47,8 +47,8 @@ def test_preview_rereads_with_the_chosen_z(qgis_app, fake_iface, store_with_mode
 
 
 def test_describe_counts_blank_cells(tmp_path):
-    from geophysics_workbench import readers
-    from geophysics_workbench.ui.add_data_dialog import describe
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.ui.add_data_dialog import describe
 
     lines = (FIXTURES / "f001_res.dat").read_text().splitlines()
     lines[3] = lines[3].replace(lines[3].split()[2], "-9.99900e+03")

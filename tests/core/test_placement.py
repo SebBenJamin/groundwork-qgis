@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.placement import (Placement, Positions, fit_report, pinned_map,
+from groundwork_geophysics.core.placement import (Placement, Positions, fit_report, pinned_map,
                                                  rigid_map)
 
 

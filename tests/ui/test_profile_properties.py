@@ -16,8 +16,8 @@ POSITIONS = WILD / "positions_sparse.csv"
 def make_dialog(qgis_app, fake_iface):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.profile_properties_dialog import ProfilePropertiesDialog
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.profile_properties_dialog import ProfilePropertiesDialog
 
     made = []
 
@@ -39,9 +39,9 @@ def make_dialog(qgis_app, fake_iface):
 @pytest.fixture
 def drawn(tmp_path):
     """A drawn-line profile along the positions file's direction, with a model (no stations)."""
-    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+    from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                                  profile_from_polyline)
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st = ProjectStore.create(tmp_path / "d.gpkg", "EPSG:25832")
     line = np.array([[437700.0, 5850700.0], [437800.0, 5850757.7]])
@@ -56,13 +56,13 @@ def drawn(tmp_path):
 
 
 def _bounds(st, pid):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     layer = SectionDataProvider(st).layers(pid)[0]
     return layer.mesh.bounds()[:2]
 
 
 def test_menu_entry_text(qgis_app, fake_iface):
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     plugin = classFactory(fake_iface)
     plugin.initGui()
     try:
@@ -87,7 +87,7 @@ def test_rename_only(qgis_app, make_dialog, store_with_model, warnings_shown):
 
 
 def test_duplicate_name_is_refused(qgis_app, make_dialog, store_with_model, warnings_shown):
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
     st, p, _ = store_with_model
     st.save_profile(Profile("p2", "Line B", p.xy + 100.0, st.crs_authid))
     dlg = make_dialog(st, p.id)
@@ -116,7 +116,7 @@ def test_keep_line_attaches_positions_and_pins(qgis_app, make_dialog, drawn, war
 
 
 def test_keep_line_lists_points_off_the_line(qgis_app, make_dialog, drawn, monkeypatch):
-    from geophysics_workbench.ui import profile_actions
+    from groundwork_geophysics.ui import profile_actions
     st, p = drawn
     far = st.profile(p.id)
     far.xy = far.xy + np.array([0.0, 40.0])                       # the line lies 40 m away
@@ -137,7 +137,7 @@ def test_keep_line_lists_points_off_the_line(qgis_app, make_dialog, drawn, monke
 
 def test_move_line_asks_first_and_cancel_changes_nothing(qgis_app, make_dialog, drawn,
                                                          monkeypatch, warnings_shown):
-    from geophysics_workbench.ui import profile_actions
+    from groundwork_geophysics.ui import profile_actions
     st, p = drawn
     asked = []
     answer = [False]
@@ -209,7 +209,7 @@ def test_dialog_opens_at_its_content_and_does_not_shrink(qgis_app, make_dialog, 
 
 def test_a_failed_move_keeps_the_old_name_too(qgis_app, make_dialog, drawn, monkeypatch,
                                               warnings_shown):
-    from geophysics_workbench.ui import profile_actions
+    from groundwork_geophysics.ui import profile_actions
     st, p = drawn
     monkeypatch.setattr(profile_actions, "confirm_move", lambda parent, name, counts: True)
     dlg = make_dialog(st, p.id)
@@ -280,7 +280,7 @@ def test_a_refresh_failing_after_the_save_is_a_warning(qgis_app, fake_iface, mak
 def test_the_fit_line_follows_the_spacing_and_positions(qgis_app, make_dialog, drawn,
                                                         store_with_model):
     """The same fit line as Add Data's, for what is being edited, live; nothing is saved."""
-    from geophysics_workbench.ui.fit_line import FIT_WARNING, WARNING_STYLE
+    from groundwork_geophysics.ui.fit_line import FIT_WARNING, WARNING_STYLE
 
     st, p = drawn
     dlg = make_dialog(st, p.id)

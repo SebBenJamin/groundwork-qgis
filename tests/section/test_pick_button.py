@@ -7,7 +7,7 @@ def plugin(qgis_app, fake_iface, store_with_model):
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     st, p, _ = store_with_model
     QgsProject.instance().clear()
     plug = classFactory(fake_iface)

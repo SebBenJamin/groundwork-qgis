@@ -7,7 +7,7 @@ from test_interp_tools import dock  # noqa: F401
 
 
 def _bh(s=5.0, label="RK1", bid="RK1"):
-    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
     return ProjectedPoint(s, 1.5, label, "borehole", 0.0, [LogInterval(0.0, 3.0, "sand")],
                           entry=0, bid=bid, layer_id="L1")
 
@@ -20,8 +20,8 @@ def _visible(qgis_app, dock):
 
 def test_typed_levels_survive_ok(qgis_app, dock, monkeypatch):
     """Critical 1: Display… OK kept the automatic levels (fields not copied)."""
-    from geophysics_workbench.section import layer_list as ll
-    from geophysics_workbench.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.section import layer_list as ll
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
     pid = dock.current_profile_id()
     dataset_id = dock.provider.layers(pid)[0].dataset.id
 
@@ -42,8 +42,8 @@ def test_show_hidden_from_anywhere_in_section(qgis_app, dock, monkeypatch):
     """Critical 2: with every borehole hidden there was no way back from the section."""
     from qgis.PyQt.QtWidgets import QMenu
 
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.section.dock import show_hidden_text
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.section.dock import show_hidden_text
     pid = dock.current_profile_id()
     dock.provider.context_source = lambda profile: ContextItems(points=[_bh()])
     dock.provider.set_boreholes_hidden(pid, [("L1", "RK1")], True)
@@ -66,7 +66,7 @@ def test_hide_says_so_and_is_undoable(qgis_app, dock, monkeypatch):
     """Important 7: no feedback, no undo."""
     from qgis.PyQt.QtWidgets import QMenu
 
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
     pid = dock.current_profile_id()
     dock.provider.context_source = lambda profile: ContextItems(points=[_bh()])
     dock.provider.notify_changed()
@@ -87,7 +87,7 @@ def test_hide_says_so_and_is_undoable(qgis_app, dock, monkeypatch):
 ])
 def test_space_separated_levels_named(qgis_app, text, message):
     """Important 4: "10 30 100" became one level 1030100 without a word."""
-    from geophysics_workbench.core.numbers import parse_levels
+    from groundwork_geophysics.core.numbers import parse_levels
     with pytest.raises(ValueError, match=message):
         parse_levels(text)
 
@@ -96,8 +96,8 @@ def test_levels_outside_scale_named(qgis_app, store_with_model):
     """Important 4: levels outside the colour scale were dropped silently."""
     from dataclasses import replace
 
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
     from tests.section.test_display_dialog import _layer
     _prov, layer = _layer(store_with_model)
     layer = replace(layer, style=replace(layer.style, mode="contours",
@@ -111,7 +111,7 @@ def test_levels_outside_scale_named(qgis_app, store_with_model):
 
 def test_duplicate_name_hint_only_on_this_profile(qgis_app, dock):
     """Important 6: interpretation is per profile; a name on another profile is no clash."""
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
     store = dock.provider.store
     store.ensure_interpretation()
     v = store.current_version()

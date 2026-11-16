@@ -11,8 +11,8 @@ def _renderer(n):
 
 
 def test_icons_built_once(qgis_app, monkeypatch):
-    from geophysics_workbench.patterns import catalogue
-    from geophysics_workbench.ui import pattern_table
+    from groundwork_geophysics.patterns import catalogue
+    from groundwork_geophysics.ui import pattern_table
     real, built = pattern_table.QIcon, []
 
     def counting(*args):
@@ -29,8 +29,8 @@ def test_icons_built_once(qgis_app, monkeypatch):
 
 
 def test_choices_unchanged(qgis_app):
-    from geophysics_workbench.patterns import catalogue
-    from geophysics_workbench.ui.pattern_table import NO_PATTERN, PatternTable
+    from groundwork_geophysics.patterns import catalogue
+    from groundwork_geophysics.ui.pattern_table import NO_PATTERN, PatternTable
     t = PatternTable(_renderer(2))
     combo = t._combos["c0"]
     assert [combo.itemText(i) for i in range(combo.count())] == \

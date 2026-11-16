@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.pseudo import median_depth, midpoint
+from groundwork_geophysics.core.pseudo import median_depth, midpoint
 
 NAN = np.nan
 

@@ -2,15 +2,15 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.field_notes import FieldNote
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.field_notes import FieldNote
 
 BENT = Chainage(np.array([[0.0, 0.0], [50.0, 0.0], [50.0, 50.0]]))
 
 
 @pytest.fixture
 def store(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     st.ensure_field_notes()
     return st
@@ -46,6 +46,6 @@ def test_geometry_rebuilt_on_bent_profile(store):
 
 
 def test_store_without_notes_opens_and_lists_none(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "old.gpkg", "EPSG:25832")
     assert st.field_notes() == [] and not st.has_field_notes()

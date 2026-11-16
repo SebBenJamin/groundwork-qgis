@@ -2,8 +2,8 @@
 
 
 def test_dialog_saves_and_shows_detected_rms(qgis_app, store_with_model):
-    from geophysics_workbench.core.dataset_info import dataset_info
-    from geophysics_workbench.ui.dataset_info_dialog import DatasetInfoDialog
+    from groundwork_geophysics.core.dataset_info import dataset_info
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, _ = store_with_model
     d = st.datasets(p.id)[0]
     d.provenance["rms_percent"] = 4.2

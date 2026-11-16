@@ -12,7 +12,7 @@ Writes under demo_guelpe/:
   context/synthetic_logs.gpkg         SYNTHETIC log curves for the cores (NOT measured;
                                       scripts/make_synthetic_curves.py)
   context/dgm1.tif                    DGM1 cropped to the transects + 100 m
-  guelpe_workbench.gpkg               workbench store: Transect 1-4, one model each
+  guelpe_groundwork.gpkg              store: Transect 1-4, one model each
   guelpe_project.qgz                  QGIS project (EPSG:25833), every path relative
   ATTRIBUTION.md                      sources and licences
 """
@@ -37,7 +37,7 @@ DEMO_GUELPE = ROOT / "demo_guelpe"
 #: our pyGIMLi response for transect 3 (not in the raw cache: made once by invert_guelpe.py)
 MISFIT_INPUTS = ROOT / "scripts" / "data" / "guelpe"
 CRS = "EPSG:25833"
-STORE_NAME, PROJECT_NAME = "guelpe_workbench.gpkg", "guelpe_project.qgz"
+STORE_NAME, PROJECT_NAME = "guelpe_groundwork.gpkg", "guelpe_project.qgz"
 SPACING = {1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0}
 MAX_CHAINAGE_MISFIT = 0.5             # m, station chainage against the model's electrode x
 OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
@@ -48,7 +48,7 @@ GK_WFS = "https://inspire.brandenburg.de/services/gk_wfs"      # GK 25, GÜK 100
 GK_WMS = "https://inspire.brandenburg.de/services/gk_wms"
 GEOLOGY_MARGIN = 1500.0      # m around the transects: the GK 25 units the legend lists
 DOP_WMS = "https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms"
-TITLE = "Geophysics Workbench real-data demo: Gülpe (Havel)"
+TITLE = "Groundwork real-data demo: Gülpe (Havel)"
 ATTRIBUTION = """# Sources and licences
 
 This demo uses only open data. Files marked *derived* were converted from the source
@@ -133,10 +133,10 @@ def read_stations(path: Path) -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------- workbench store
 def build_workbench(out: Path = DEMO_GUELPE) -> Path:
     sys.path.insert(0, str(ROOT))
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                                  profile_from_stations, x_to_chainage)
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     path = out / STORE_NAME
     path.unlink(missing_ok=True)
@@ -268,7 +268,7 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
                           guek: str = "", guek_field: str | None = None):
     """The demo's Context layers settings (layer ids in): the cores with their logs and the
     synthetic curves, and the LBGR boreholes as a second entry drawn to their total depth."""
-    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+    from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
                                                             ContextSettings, CurveField,
                                                             CurveTableSetting, LineLayerSetting)
     synthetic = CurveTableSetting(curves, "core_id", "depth",
@@ -291,8 +291,8 @@ def apply_core_style(project, logs_id: str, style: Path) -> None:
     folder is registered while reading and writing)."""
     from qgis.core import QgsMapLayer, QgsVectorLayer
 
-    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
-    from geophysics_workbench.section.borehole_style import save_renderer
+    from groundwork_geophysics.patterns import register_svg_path, unregister_svg_path
+    from groundwork_geophysics.section.borehole_style import save_renderer
     register_svg_path()
     try:
         copy = QgsVectorLayer("Polygon?field=lithology:string", "style", "memory")
@@ -313,7 +313,7 @@ def demo_plate(profile_id: str, dataset_id: str):
     """The demo's report plate: A3 landscape, Transect 3's model with the interpretation and
     the boreholes. No field notes are added: the published data has none, and invented field
     observations do not belong in a real-data demo."""
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
     look = FrameLook([ModelLook(dataset_id)], None, boreholes=True, field_notes=True,
                      context=False)
     return PlateSpec("demo_plate_t3", "1", "Transect 3", "A3_landscape",
@@ -322,9 +322,9 @@ def demo_plate(profile_id: str, dataset_id: str):
 
 def add_demo_plate(project, store) -> None:
     """Make the demo plate's layout (its section is drawn live when the project is open)."""
-    from geophysics_workbench.plates.build import create_or_update_plate, set_plate_details
-    from geophysics_workbench.plates.sources import detach_frame_items, unregister_frame_sources
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.plates.build import create_or_update_plate, set_plate_details
+    from groundwork_geophysics.plates.sources import detach_frame_items, unregister_frame_sources
+    from groundwork_geophysics.section.data import SectionDataProvider
     [p3] = [p for p in store.profiles() if p.name == "Transect 3"]
     set_plate_details(project, **DEMO_DETAILS)
     try:
@@ -346,9 +346,9 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
     if QgsApplication.instance() is None:
         app = QgsApplication([], False)
         app.initQgis()
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.context_dialog import write_settings
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.project_actions import use_store
 
     path = out / PROJECT_NAME
     path.unlink(missing_ok=True)

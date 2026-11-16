@@ -10,7 +10,7 @@ import shutil
 import numpy as np
 import pytest
 
-# Make the repo root importable so `import geophysics_workbench` works.
+# Make the repo root importable so `import groundwork_geophysics` works.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -20,8 +20,8 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 def store_with_model(tmp_path):
     """Store with one profile (0,0,100) -> (50,0,102), its station set and one R2 model
     dataset (a copy of f001_res.dat in tmp_path). Returns (store, profile, source_path)."""
-    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     src = tmp_path / "f001_res.dat"
     shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)

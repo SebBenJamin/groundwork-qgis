@@ -2,7 +2,7 @@
 
 
 def test_types_dialog_lists_and_renames(qgis_app):
-    from geophysics_workbench.ui.interp_types import TypesDialog
+    from groundwork_geophysics.ui.interp_types import TypesDialog
 
     counts = {"clay": 2, "anomaly": 1}
     calls = []
@@ -23,7 +23,7 @@ def test_types_dialog_lists_and_renames(qgis_app):
 
 
 def test_cancelled_rename_does_nothing(qgis_app):
-    from geophysics_workbench.ui.interp_types import TypesDialog
+    from groundwork_geophysics.ui.interp_types import TypesDialog
 
     calls = []
     dlg = TypesDialog(None, lambda: {"clay": 1}, lambda o, n: calls.append(1) or 0)

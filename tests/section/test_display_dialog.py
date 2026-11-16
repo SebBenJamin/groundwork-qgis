@@ -5,7 +5,7 @@ import numpy as np
 
 
 def _layer(store_with_model, coverage=None):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
     layer = prov.layers(p.id)[0]
@@ -15,7 +15,7 @@ def _layer(store_with_model, coverage=None):
 
 
 def test_style_defaults_and_copy():
-    from geophysics_workbench.section.data import DISPLAY_MODES, LayerStyle, _copy_style
+    from groundwork_geophysics.section.data import DISPLAY_MODES, LayerStyle, _copy_style
     s = LayerStyle()
     assert (s.mode, s.contour_step, s.grid_cell, s.fade_coverage, s.coverage_threshold,
             s.fade_mode) == ("cells", None, None, False, None, "fade")
@@ -25,7 +25,7 @@ def test_style_defaults_and_copy():
 
 
 def test_dialog_round_trip(qgis_app, store_with_model):
-    from geophysics_workbench.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
     _prov, layer = _layer(store_with_model)
     dlg = DisplayDialog(None, layer)
     dlg.mode_combo.setCurrentIndex(dlg.mode_combo.findData("smooth+contours"))
@@ -40,7 +40,7 @@ def test_dialog_round_trip(qgis_app, store_with_model):
 
 
 def test_coverage_group_disabled_without_coverage(qgis_app, store_with_model):
-    from geophysics_workbench.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
     _prov, layer = _layer(store_with_model)
     assert not DisplayDialog(None, layer).coverage_group.isEnabled()
     _prov, layer = _layer(store_with_model, coverage=lambda m: np.linspace(-3, 0, len(m.values)))
@@ -53,7 +53,7 @@ def test_coverage_group_disabled_without_coverage(qgis_app, store_with_model):
 
 
 def test_row_menu_has_display(qgis_app, store_with_model):
-    from geophysics_workbench.section.layer_list import LayerList
+    from groundwork_geophysics.section.layer_list import LayerList
     prov, layer = _layer(store_with_model)
     ll = LayerList()
     try:

@@ -53,14 +53,14 @@ def test_source_registers_and_renders(qgis_app, store_with_model, tmp_path):
     from qgis.gui import QgsElevationProfileCanvas
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import (SOURCE_ID, register_source,
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import (SOURCE_ID, register_source,
                                                              unregister_source)
 
     st, p, _ = store_with_model
     source = register_source(SectionDataProvider(st))
     assert source.profileSourceId() == SOURCE_ID == "geophysics_workbench"
-    assert source.profileSourceName() == "Geophysics Workbench"
+    assert source.profileSourceName() == "Groundwork"
     assert _registered_ids().count(SOURCE_ID) == 1
 
     crs = QgsCoordinateReferenceSystem(st.crs_authid)
@@ -133,8 +133,8 @@ def test_source_registers_and_renders(qgis_app, store_with_model, tmp_path):
 def test_results_identify_returns_layer_dicts(qgis_app, store_with_model):
     from qgis.core import QgsProfileIdentifyContext, QgsProfilePoint
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import WorkbenchProfileSource
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileSource
 
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
@@ -156,8 +156,8 @@ def test_results_identify_returns_layer_dicts(qgis_app, store_with_model):
 
 
 def test_unmatched_curve_gives_empty_results(qgis_app, store_with_model):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import WorkbenchProfileSource
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileSource
 
     st, p, _ = store_with_model
     source = WorkbenchProfileSource(SectionDataProvider(st))
@@ -168,8 +168,8 @@ def test_unmatched_curve_gives_empty_results(qgis_app, store_with_model):
 
 
 def test_register_twice_does_not_duplicate(qgis_app, store_with_model):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import (SOURCE_ID, register_source,
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import (SOURCE_ID, register_source,
                                                              unregister_source)
 
     st, _, _ = store_with_model
@@ -189,10 +189,10 @@ def test_register_twice_does_not_duplicate(qgis_app, store_with_model):
 def test_station_ticks_follow_topography_or_mesh_top(qgis_app, store_with_model, tmp_path):
     import shutil
 
-    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import WorkbenchProfileSource
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileSource
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st, p, src = store_with_model
     with_topo = _generate(WorkbenchProfileSource(SectionDataProvider(st)), p.xy, st.crs_authid)
@@ -231,8 +231,8 @@ def test_callback_failures_are_logged_not_raised(qgis_app, store_with_model, mon
                            QgsProfileRenderContext, QgsRenderContext)
     from qgis.PyQt.QtGui import QImage, QPainter
 
-    from geophysics_workbench.section import profile_source as ps
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section import profile_source as ps
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     st, p, _ = store_with_model
     source = ps.WorkbenchProfileSource(SectionDataProvider(st))
@@ -243,7 +243,7 @@ def test_callback_failures_are_logged_not_raised(qgis_app, store_with_model, mon
             raise MemoryError("simulated")
 
         # generateProfile (worker thread in the canvas) returns False instead of raising
-        from geophysics_workbench.section import display_render
+        from groundwork_geophysics.section import display_render
         monkeypatch.setattr(display_render, "build_drawing", boom)
         gen = source.createProfileGenerator(_request(p.xy, st.crs_authid))
         assert gen.generateProfile() is False
@@ -263,7 +263,7 @@ def test_callback_failures_are_logged_not_raised(qgis_app, store_with_model, mon
             painter.end()
     finally:
         log.close()
-    mine = [(m, lvl) for m, tag, lvl in log.messages if tag == "Geophysics Workbench"]
+    mine = [(m, lvl) for m, tag, lvl in log.messages if tag == "Groundwork"]
     assert [m.split(" failed")[0] for m, _ in mine] == [
         "Section generation", "Section identify", "Section drawing"]
     assert all(lvl == Qgis.MessageLevel.Critical for _, lvl in mine)

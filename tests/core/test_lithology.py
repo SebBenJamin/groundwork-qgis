@@ -1,4 +1,4 @@
-from geophysics_workbench.core.lithology import lithology_colour
+from groundwork_geophysics.core.lithology import lithology_colour
 
 
 def test_lithology_colours_known_terms_and_stable_fallback():

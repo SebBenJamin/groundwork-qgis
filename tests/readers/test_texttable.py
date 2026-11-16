@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from geophysics_workbench.readers.texttable import (
+from groundwork_geophysics.readers.texttable import (
     TableOptions, guess_options, read_table, select_rows)
 
 WILD = Path("tests/fixtures/wild")

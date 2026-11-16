@@ -3,9 +3,9 @@ import sqlite3
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import (Dataset, Profile, StationSet, attach_station_set,
+from groundwork_geophysics.core.model import (Dataset, Profile, StationSet, attach_station_set,
                                              profile_from_stations)
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 
 def test_roundtrip_profile_stations_dataset(tmp_path):
@@ -48,9 +48,9 @@ def test_create_unknown_crs_and_existing_path(tmp_path):
 def test_open_rejects_non_store(tmp_path):
     plain = tmp_path / "plain.gpkg"
     con = sqlite3.connect(plain); con.execute("create table t(a)"); con.commit(); con.close()
-    with pytest.raises(ValueError, match="not a Geophysics Workbench project"):
+    with pytest.raises(ValueError, match="not a Groundwork project"):
         ProjectStore.open(plain)
-    with pytest.raises(ValueError, match="not a Geophysics Workbench project"):
+    with pytest.raises(ValueError, match="not a Groundwork project"):
         ProjectStore.open(tmp_path / "missing.gpkg")
 
 

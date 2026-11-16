@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.readings import Readings, check, readings_mesh
+from groundwork_geophysics.core.readings import Readings, check, readings_mesh
 
 
 def _readings(calc=None, n=12, **kw):

@@ -17,7 +17,7 @@ def _close(dialog, qgis_app):
 
 @pytest.fixture
 def make_dialog(qgis_app, fake_iface, project_store):
-    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
+    from groundwork_geophysics.ui.new_profile_dialog import NewProfileDialog
 
     st, prj = project_store
     made = []
@@ -240,7 +240,7 @@ def test_hig_rules_with_positions(qgis_app, project_store, make_dialog):
 
 
 def test_looks_like_degrees_rule():
-    from geophysics_workbench.core.roles import looks_like_degrees
+    from groundwork_geophysics.core.roles import looks_like_degrees
 
     assert looks_like_degrees(np.array([[9.85, 52.75], [9.86, 52.76]]))
     assert not looks_like_degrees(np.array([[0.0, 0.0], [50.0, 0.0]]))       # local metres

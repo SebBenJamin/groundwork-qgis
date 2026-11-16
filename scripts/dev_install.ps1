@@ -1,9 +1,9 @@
 # Links the plugin package into the QGIS 4 default profile (directory junction).
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
-$source = Join-Path $repo "geophysics_workbench"
+$source = Join-Path $repo "groundwork_geophysics"
 $pluginsDir = Join-Path $env:APPDATA "QGIS\QGIS4\profiles\default\python\plugins"
-$link = Join-Path $pluginsDir "geophysics_workbench"
+$link = Join-Path $pluginsDir "groundwork_geophysics"
 
 New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
 if (Get-Item $link -Force -ErrorAction SilentlyContinue) {

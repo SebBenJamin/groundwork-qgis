@@ -29,7 +29,7 @@ def _render(layer):
 def setup(qgis_app, store_with_model):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import add_store_layers
+    from groundwork_geophysics.ui.project_actions import add_store_layers
     store, profile, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -40,9 +40,9 @@ def setup(qgis_app, store_with_model):
 
 
 def _place_note(store, profile, prj, text):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.interpretation import new_id
-    from geophysics_workbench.ui.field_notes_dialog import after_change, save_note
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.interpretation import new_id
+    from groundwork_geophysics.ui.field_notes_dialog import after_change, save_note
     save_note(store, FieldNote(new_id(), profile.id, 10.0, None, text))
     after_change(store, None, prj)
 
@@ -126,7 +126,7 @@ def test_saving_a_note_opens_the_file_for_writing_once(qgis_app, setup):
         return real(write)
 
     store._ds = spy
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.interpretation import new_id
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.interpretation import new_id
     store.save_field_note(FieldNote(new_id(), profile.id, 12.0, None, "again"))
     assert writes.count(True) <= 1

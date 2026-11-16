@@ -1,4 +1,4 @@
-"""The shipped borehole styles (geophysics_workbench/styles/boreholes/*.qml).
+"""The shipped borehole styles (groundwork_geophysics/styles/boreholes/*.qml).
 
 Categorized on a column "lithology" (switch the column in QGIS's editor after importing):
 - din_codes.qml: German short codes as commonly used in layer descriptions;
@@ -76,8 +76,8 @@ def write(out: Path) -> list[Path]:
                            QgsVectorLayer)
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.patterns import catalogue, register_svg_path, unregister_svg_path
-    from geophysics_workbench.ui.pattern_table import pattern_symbol
+    from groundwork_geophysics.patterns import catalogue, register_svg_path, unregister_svg_path
+    from groundwork_geophysics.ui.pattern_table import pattern_symbol
     by_code = {p.code: p for p in catalogue()}
     out.mkdir(parents=True, exist_ok=True)
     register_svg_path()                    # so QGIS stores pattern names, not full paths
@@ -106,7 +106,7 @@ def main() -> int:
     from qgis.core import QgsApplication
     app = QgsApplication([], False)
     app.initQgis()
-    for path in write(ROOT / "geophysics_workbench" / "styles" / "boreholes"):
+    for path in write(ROOT / "groundwork_geophysics" / "styles" / "boreholes"):
         print(f"wrote {path.relative_to(ROOT)}")
     os._exit(0)
 

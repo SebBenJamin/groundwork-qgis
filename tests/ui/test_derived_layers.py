@@ -7,10 +7,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import (Dataset, attach_station_set, file_fingerprint,
+from groundwork_geophysics.core.model import (Dataset, attach_station_set, file_fingerprint,
                                              profile_from_polyline)
-from geophysics_workbench.section.data import SectionDataProvider
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.section.data import SectionDataProvider
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 CRS = "EPSG:25832"
@@ -36,7 +36,7 @@ def drawn(qgis_app, tmp_path):
 
 
 def test_layer_appears_for_a_profile_with_guessed_electrodes(drawn):
-    from geophysics_workbench.ui.derived_layers import sync
+    from groundwork_geophysics.ui.derived_layers import sync
     st, p, provider, prj = drawn
     lyr = sync(st, provider, prj)
     assert lyr.name() == "electrodes (derived)" and lyr.featureCount() == 6
@@ -46,7 +46,7 @@ def test_layer_appears_for_a_profile_with_guessed_electrodes(drawn):
 
 
 def test_layer_is_not_in_the_geopackage(drawn):
-    from geophysics_workbench.ui.derived_layers import sync
+    from groundwork_geophysics.ui.derived_layers import sync
     st, p, provider, prj = drawn
     path = Path(st.path)
     before = hashlib.sha1(path.read_bytes()).hexdigest()
@@ -61,7 +61,7 @@ def test_layer_is_not_in_the_geopackage(drawn):
 
 
 def test_layer_goes_when_real_positions_arrive(drawn):
-    from geophysics_workbench.ui.derived_layers import derived_layer, sync
+    from groundwork_geophysics.ui.derived_layers import derived_layer, sync
     st, p, provider, prj = drawn
     sync(st, provider, prj)
     st.save_station_set(attach_station_set(p, "S", "ert", np.column_stack(
@@ -71,8 +71,8 @@ def test_layer_goes_when_real_positions_arrive(drawn):
 
 
 def test_layer_sits_below_the_stations_and_a_second_sync_keeps_it(drawn):
-    from geophysics_workbench.ui import project_actions
-    from geophysics_workbench.ui.derived_layers import sync
+    from groundwork_geophysics.ui import project_actions
+    from groundwork_geophysics.ui.derived_layers import sync
     st, p, provider, prj = drawn
     project_actions.add_store_layers(st, prj)
     lyr = sync(st, provider, prj)
@@ -83,8 +83,8 @@ def test_layer_sits_below_the_stations_and_a_second_sync_keeps_it(drawn):
 
 
 def test_default_style_clones_the_stations_symbol_with_less_opacity(drawn):
-    from geophysics_workbench.ui import project_actions
-    from geophysics_workbench.ui.derived_layers import sync
+    from groundwork_geophysics.ui import project_actions
+    from groundwork_geophysics.ui.derived_layers import sync
     st, p, provider, prj = drawn
     stations = project_actions.add_store_layers(st, prj)["stations"]
     renderer = sync(st, provider, prj).renderer()
@@ -96,7 +96,7 @@ def test_default_style_clones_the_stations_symbol_with_less_opacity(drawn):
 
 def test_user_style_survives_a_reopen(drawn):
     from qgis.core import QgsProject, QgsSingleSymbolRenderer, QgsMarkerSymbol
-    from geophysics_workbench.ui.derived_layers import save_style, sync
+    from groundwork_geophysics.ui.derived_layers import save_style, sync
     st, p, provider, prj = drawn
     lyr = sync(st, provider, prj)
     lyr.setRenderer(QgsSingleSymbolRenderer(QgsMarkerSymbol.createSimple({"color": "10,200,30"})))
@@ -110,15 +110,15 @@ def test_user_style_survives_a_reopen(drawn):
 
 
 def test_layer_counts_as_own(drawn):
-    from geophysics_workbench.section.crossing_lines import own_layer_ids
-    from geophysics_workbench.ui.derived_layers import sync
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.ui.derived_layers import sync
     st, p, provider, prj = drawn
     lyr = sync(st, provider, prj)
     assert lyr.id() in own_layer_ids(st, prj)
 
 
 def test_a_removed_layer_stays_gone_until_the_store_is_opened_again(drawn):
-    from geophysics_workbench.ui.derived_layers import derived_layer, sync
+    from groundwork_geophysics.ui.derived_layers import derived_layer, sync
     st, p, provider, prj = drawn
     lyr = sync(st, provider, prj)
     prj.removeMapLayer(lyr.id())
@@ -127,7 +127,7 @@ def test_a_removed_layer_stays_gone_until_the_store_is_opened_again(drawn):
 
 
 def test_one_profile_that_fails_does_not_stop_the_others(drawn, tmp_path):
-    from geophysics_workbench.ui.derived_layers import sync
+    from groundwork_geophysics.ui.derived_layers import sync
     st, p, provider, prj = drawn
     bad = profile_from_polyline("Bad", CRS, np.array([[0.0, 50.0], [60.0, 50.0]]))
     st.save_profile(bad)
@@ -143,7 +143,7 @@ def test_one_profile_that_fails_does_not_stop_the_others(drawn, tmp_path):
 
 
 def test_untouched_default_style_is_not_written_to_the_project(drawn):
-    from geophysics_workbench.ui.derived_layers import save_style, sync
+    from groundwork_geophysics.ui.derived_layers import save_style, sync
     st, p, provider, prj = drawn
     sync(st, provider, prj)
     save_style(prj)
@@ -151,8 +151,8 @@ def test_untouched_default_style_is_not_written_to_the_project(drawn):
 
 
 def test_notifications_sync_on_data_changes_only_and_once(qgis_app, fake_iface, drawn):
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.ui import derived_layers
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.ui import derived_layers
     from qgis.core import QgsProject
     st, p, _provider, _ = drawn
     plugin = classFactory(fake_iface)

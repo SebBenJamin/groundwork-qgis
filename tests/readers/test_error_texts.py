@@ -16,14 +16,14 @@ def _ok(text: str, name: str):
 
 
 def test_triangulation_error_in_plain_words():
-    from geophysics_workbench.readers.errors import plain_error
+    from groundwork_geophysics.readers.errors import plain_error
     exc = ValueError("All triangles were filtered out; increase max_edge or check the points")
     _ok(plain_error(exc, Path("D:/data/model.xyz")), "model.xyz")
 
 
 def test_unknown_format(tmp_path):
-    from geophysics_workbench import readers
-    from geophysics_workbench.readers.errors import plain_error
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.readers.errors import plain_error
     junk = tmp_path / "notes.txt"
     junk.write_text("hello\nworld\n")
     with pytest.raises(ValueError) as info:
@@ -32,7 +32,7 @@ def test_unknown_format(tmp_path):
 
 
 def test_missing_file(tmp_path):
-    from geophysics_workbench.readers.errors import plain_error
+    from groundwork_geophysics.readers.errors import plain_error
     gone = tmp_path / "gone.vtk"
     exc = FileNotFoundError(2, "No such file or directory", str(gone))
     text = plain_error(exc, gone)
@@ -41,14 +41,14 @@ def test_missing_file(tmp_path):
 
 
 def test_z_meaning_error():
-    from geophysics_workbench.readers.errors import plain_error
+    from groundwork_geophysics.readers.errors import plain_error
     exc = ValueError("z_kind must be one of ('elevation', 'depth', 'unknown'), got 'x'")
     _ok(plain_error(exc, Path("m.dat")), "m.dat")
 
 
 def test_layer_error_on_the_panel_is_plain(qgis_app, store_with_model, tmp_path):
     """A model whose file broke shows a plain message in the layer row."""
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     d = st.datasets(p.id)[0]
     path = Path(st.path).parent / d.source_path
@@ -61,7 +61,7 @@ def test_layer_error_on_the_panel_is_plain(qgis_app, store_with_model, tmp_path)
 def test_add_model_preview_of_a_station_file(qgis_app, fake_iface, store_with_model, tmp_path):
     """Usability review 2: a German electrode CSV chosen in Add ERT Model… showed a raw
     Python error ("unsupported operand type(s) for +: 'int' and 'NoneType')."""
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
     st, p, _ = store_with_model
     csv = tmp_path / "P9_Elektroden.csv"
     csv.write_text("Nr;Rechtswert;Hochwert;Höhe\n1;437681,98;5850793,00;59,06\n"

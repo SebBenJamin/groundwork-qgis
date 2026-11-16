@@ -3,10 +3,10 @@ the interpretation drawn on it follows, and is re-hung once when real heights ar
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-from geophysics_workbench.core.model import attach_station_set, profile_from_polyline
-from geophysics_workbench.section.data import SectionDataProvider
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.core.model import attach_station_set, profile_from_polyline
+from groundwork_geophysics.section.data import SectionDataProvider
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 CRS = "EPSG:25832"
 LINE = [(10.0, -3.0), (30.0, -3.0)]
@@ -158,8 +158,8 @@ def test_reference_button_asks_and_sets(qgis_app, tmp_path, make_dock):
 def test_reference_height_dialog(qgis_app):
     from qgis.PyQt.QtWidgets import QDialogButtonBox
 
-    from geophysics_workbench.core.layout import Electrodes
-    from geophysics_workbench.ui.reference_height_dialog import ReferenceHeightDialog
+    from groundwork_geophysics.core.layout import Electrodes
+    from groundwork_geophysics.ui.reference_height_dialog import ReferenceHeightDialog
     electrodes = Electrodes(np.arange(1, 13), np.arange(12) * 5.0, "spacing")
     dlg = ReferenceHeightDialog(electrodes, 60.0, None)
     assert dlg.windowTitle() == "Reference Height" and dlg.remove_button is None

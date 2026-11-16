@@ -2,15 +2,15 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
 
 BENT = Chainage(np.array([[0.0, 0.0], [50.0, 0.0], [50.0, 50.0]]))
 
 
 @pytest.fixture
 def interp_store(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     st.ensure_interpretation()
     v = st.current_version()
@@ -25,7 +25,7 @@ def interp_store(tmp_path):
 def test_add_interp_layers_once(qgis_app, interp_store):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.interp_layers import INTERP_GROUP, add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import INTERP_GROUP, add_interp_layers
 
     prj = QgsProject()
     a = add_interp_layers(interp_store, prj)
@@ -41,8 +41,8 @@ def test_add_interp_layers_once(qgis_app, interp_store):
 def test_interp_layers_are_not_crossing_line_candidates(qgis_app, interp_store):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.crossing_lines import own_layer_ids
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
 
     prj = QgsProject()
     layers = add_interp_layers(interp_store, prj)
@@ -54,8 +54,8 @@ def test_interp_layers_are_not_crossing_line_candidates(qgis_app, interp_store):
 def test_style_groups_by_entity_with_confidence_line_style(qgis_app, interp_store):
     from qgis.core import QgsProject, QgsSymbolLayer
 
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.ui.interp_layers import add_interp_layers, reload_interp_layers
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, reload_interp_layers
 
     prj = QgsProject()
     polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
@@ -84,7 +84,7 @@ def test_style_groups_by_entity_with_confidence_line_style(qgis_app, interp_stor
 def test_feature_edit_rebuilds_derived(qgis_app, interp_store):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.interp_layers import InterpSync, add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import InterpSync, add_interp_layers
 
     prj = QgsProject()
     layers = add_interp_layers(interp_store, prj)
@@ -107,7 +107,7 @@ def test_feature_edit_rebuilds_derived(qgis_app, interp_store):
 def test_features_layer_hides_frozen_versions(qgis_app, interp_store):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
 
     interp_store.freeze_current("R1")                      # a second copy of every feature
     prj = QgsProject()
@@ -120,7 +120,7 @@ def test_features_layer_hides_frozen_versions(qgis_app, interp_store):
 def test_feature_deleted_in_table_removes_its_pieces(qgis_app, interp_store):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.interp_layers import InterpSync, add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import InterpSync, add_interp_layers
 
     prj = QgsProject()
     layers = add_interp_layers(interp_store, prj)
@@ -141,7 +141,7 @@ def test_layers_panel_legend_lists_a_new_entity(qgis_app, interp_store):
     # a new entity must show up under the layer in the Layers panel, not only in the renderer
     from qgis.core import QgsLayerTreeModel, QgsProject
 
-    from geophysics_workbench.ui.interp_layers import add_interp_layers, reload_interp_layers
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, reload_interp_layers
 
     prj = QgsProject()
     polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]

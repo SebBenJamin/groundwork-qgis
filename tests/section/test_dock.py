@@ -191,8 +191,8 @@ def test_layer_errors_shown_in_red(qgis_app, store_with_model, make_dock):
 
 
 def test_scale_dialog_auto_apply_and_validation(qgis_app, store_with_model, make_dock):
-    from geophysics_workbench.core.colors import COLORMAPS, ColorScale
-    from geophysics_workbench.section.scale_dialog import ColorScaleDialog
+    from groundwork_geophysics.core.colors import COLORMAPS, ColorScale
+    from groundwork_geophysics.section.scale_dialog import ColorScaleDialog
 
     st, p, _ = store_with_model
     dock = make_dock(st); dock.open_profile(p.id)
@@ -218,7 +218,7 @@ def test_scale_dialog_auto_apply_and_validation(qgis_app, store_with_model, make
 
 
 def test_readout_format():
-    from geophysics_workbench.section.readout import format_readout
+    from groundwork_geophysics.section.readout import format_readout
 
     hits = [{"name": "P1 model", "value": 27.31, "unit": "ohm.m"},
             {"name": "P1 it2", "value": 1234.6, "unit": "ohm.m"},
@@ -282,8 +282,8 @@ def test_plugin_reload_leaves_no_dock_marker_tool_or_source(qgis_app, store_with
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
     from qgis.PyQt.QtWidgets import QDockWidget
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.section.profile_source import SOURCE_ID
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.section.profile_source import SOURCE_ID
 
     st, p, _ = store_with_model
     window, map_canvas = fake_iface.mainWindow(), fake_iface.mapCanvas()
@@ -316,8 +316,8 @@ def test_plugin_reload_leaves_no_dock_marker_tool_or_source(qgis_app, store_with
 
 
 def test_set_store_none_tears_down(qgis_app, store_with_model, fake_iface):
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.section.profile_source import SOURCE_ID
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.section.profile_source import SOURCE_ID
 
     st, p, _ = store_with_model
     plugin = WorkbenchPlugin(fake_iface)
@@ -337,7 +337,7 @@ def test_open_profile_makes_it_active_for_the_source(qgis_app, store_with_model,
     """Identical geometry: the canvas draws the opened profile's data, not its twin's."""
     from qgis.core import QgsCoordinateReferenceSystem, QgsProfileRequest, QgsLineString, QgsPoint
 
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
 
     st, p, _ = store_with_model
     twin = Profile("twin", "A twin", p.xy.copy(), p.crs_authid)
@@ -369,7 +369,7 @@ def test_open_missing_profile_shows_message_not_traceback(qgis_app, store_with_m
 
 
 def test_format_value_keeps_small_values_visible():
-    from geophysics_workbench.section.readout import format_value
+    from groundwork_geophysics.section.readout import format_value
 
     assert format_value(0.0123) == "0.0123" and format_value(0.04) == "0.04"
     assert format_value(0.5) == "0.5" and format_value(-0.00456) == "-0.00456"
@@ -409,9 +409,9 @@ def test_second_readout_line_never_resizes_the_canvas(qgis_app, store_with_model
 def _drawn_store(tmp_path, model="ert/f001_res.dat", reader="r2_res_dat"):
     import shutil
 
-    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+    from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                                  profile_from_polyline)
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     from pathlib import Path
     FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
     st = ProjectStore.create(tmp_path / "d.gpkg", "EPSG:25832")
