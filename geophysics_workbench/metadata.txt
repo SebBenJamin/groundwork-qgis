@@ -4,13 +4,14 @@ qgisMinimumVersion=4.2
 supportsQt6=True
 description=Georeferenced geophysical profiles, sections and interpretation
 about=Load, display and interpret georeferenced geophysical profiles and sections (e.g. ERT) in QGIS.
-version=0.9.0
+version=0.9.1
 author=Sebastian Benjamin
 email=8215349+SebBenJamin@users.noreply.github.com
 license=GPL-2.0-or-later
 experimental=True
 icon=icons/workbench.svg
-changelog=0.9.0: Add Data (any text table, columns you assign, map coordinates), models placed on the surveyed electrodes with a fit report, derived electrodes, local sections with a reference height, Profile Properties (files updated once, 0.8 cannot open them; existing models move to surveyed positions)
+changelog=0.9.1: several surface strips (geology maps stacked above the ground with titles, set up in Context Layers; old projects keep their one strip); the Gülpe demo shows GK 25 and GÜK 300
+    0.9.0: Add Data (any text table, columns you assign, map coordinates), models placed on the surveyed electrodes with a fit report, derived electrodes, local sections with a reference height, Profile Properties (files updated once, 0.8 cannot open them; existing models move to surveyed positions)
     0.8.0: round 2 - typed major/minor contour levels, soft coverage fade, hide boreholes per section (viewer shows them faded), field notes styled through their QGIS layers, Name instead of Letter for interpretation features (files updated once), section titles on plates, Update keeps edited plate texts, faster Patterns, Note tool keeps the map cursor, stable tie-strip colours
     0.7.0: usability round 1 - undo for all drawing (Ctrl+Z/Y), right-click finishes, Auto vertical exaggeration fills the panel, no overlapping labels, QGIS wording and locale numbers, Context Layers in tabs, rename/delete profiles, Pick on Map button, QGIS colour ramps, plain error messages
     0.6.0: field notes along profiles (Note tool, list, map layers), Dataset info for provenance, report plates (Plates…: A4/A3 templates, stacked frames with their own look, fit to page, colour bars, interpretation and borehole legends, mini-map, title block, vector PDF export)

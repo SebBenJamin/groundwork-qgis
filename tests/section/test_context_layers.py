@@ -224,11 +224,21 @@ def test_band_from_polygon_layer(project, profile):
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Loess"])
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]))
     items = g.items_for(profile)
     g.close()
     assert [(b.label, round(b.s0), round(b.s1)) for b in items.band] == [
         ("Sand", 0, 60), ("Loess", 60, 100)]
+
+
+def test_strip_with_an_empty_label_field_uses_the_layer_name(project, profile):
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    geo = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geo, "POLYGON((0 -10, 100 -10, 100 10, 0 10, 0 -10))", ["Sand"])
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "")]))
+    items = g.items_for(profile)
+    g.close()
+    assert [(b.label, b.title) for b in items.band] == [("Geo", "Geo")]
 
 
 def _write_dem(path, nodata_cols=range(40, 50)):
@@ -333,7 +343,7 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
         line_layers=[LineLayerSetting("gone-id", "voltage", checked=True),
                      LineLayerSetting(lines.id(), "voltage_old", checked=True),
                      LineLayerSetting(good.id(), checked=True)],
-        band=BandSetting(renamed.id(), "unit")))
+        bands=[BandSetting(renamed.id(), "unit")]))
     try:
         items = g.items_for(profile)
         n_first = len(got)
@@ -661,7 +671,7 @@ def test_band_colours_follow_the_layer_style(project, profile):
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((60 -10, 100 -10, 100 10, 60 10, 60 -10))", ["Sand, grob"])
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand, fein"])
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]))
     single = {b.label: b.rgb for b in g.items_for(profile).band}
     g.close()
     assert single["Sand, fein"] != single["Sand, grob"]                 # not one "sand" yellow
@@ -670,7 +680,7 @@ def test_band_colours_follow_the_layer_style(project, profile):
             QgsRendererCategory("Sand, grob", QgsFillSymbol.createSimple({"color": "200,20,10"}),
                                 "grob")]
     geo.setRenderer(QgsCategorizedSymbolRenderer("unit", cats))
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")))
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]))
     styled = {b.label: b.rgb for b in g.items_for(profile).band}
     g.close()
     assert styled == {"Sand, fein": (10, 20, 200), "Sand, grob": (200, 20, 10)}
@@ -683,7 +693,7 @@ def test_restyling_the_band_layer_redraws(project, profile, qgis_app):
     geo = _layer(project, "Polygon", "Geo", "unit:string")
     _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
     calls = []
-    g = _gatherer(project, ContextSettings(band=BandSetting(geo.id(), "unit")),
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit")]),
                   lambda: calls.append(1))
     try:
         g.items_for(profile)
@@ -890,3 +900,28 @@ def test_decimal_comma_numbers_are_read(project, profile):
     p = g.items_for(profile).points[0]
     g.close()
     assert p.z_top == approx(31.2) and [(iv.top, iv.bottom) for iv in p.log] == [(0.0, 0.4)]
+
+
+def test_two_strips_on_one_layer(project, profile):
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    geo = _layer(project, "Polygon", "Geo", "unit:string&field=code:string")
+    _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand", "Q"])
+    g = _gatherer(project, ContextSettings(bands=[BandSetting(geo.id(), "unit", "Units"),
+                                                  BandSetting(geo.id(), "code", "")]))
+    items = g.items_for(profile)
+    g.close()
+    assert sorted({(b.strip, b.title) for b in items.band}) == [(0, "Units"), (1, "Geo")]
+
+
+def test_one_failing_strip_leaves_the_other(project, profile):
+    from geophysics_workbench.core.context_settings import BandSetting, ContextSettings
+    gone = _layer(project, "Polygon", "Gone", "unit:string")
+    geo = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geo, "POLYGON((0 -10, 60 -10, 60 10, 0 10, 0 -10))", ["Sand"])
+    settings = ContextSettings(bands=[BandSetting(gone.id(), "unit"),
+                                      BandSetting(geo.id(), "unit", "Second")])
+    project.removeMapLayer(gone.id())
+    g = _gatherer(project, settings)
+    items = g.items_for(profile)
+    g.close()
+    assert [(b.label, b.strip, b.title) for b in items.band] == [("Sand", 1, "Second")]

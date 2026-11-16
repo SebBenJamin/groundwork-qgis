@@ -37,7 +37,8 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     dlg.lines.rows[line.id()].label.setCurrentIndex(
         dlg.lines.rows[line.id()].label.findData("name"))
     dlg.point_rows[pts.id()].check.setChecked(True)
-    dlg.select_band(poly.id(), "unit")
+    from geophysics_workbench.core.context_settings import BandSetting
+    dlg.strips.load([BandSetting(poly.id(), "unit")])
     dlg.select_dem(dem.id())
     dlg.borehole.set_layer(pts.id())
     dlg.borehole.set_log_layer(table.id())
@@ -47,7 +48,7 @@ def test_dialog_lists_layers_by_type_and_writes_entry(qgis_app, fake_iface, tmp_
     got = read_settings(prj)
     assert got.line_layers == [LineLayerSetting(line.id(), "name"), LineLayerSetting(other.id())]
     assert [s.layer_id for s in got.point_layers] == [pts.id()]
-    assert got.band.layer_id == poly.id() and got.band.label_field == "unit"
+    assert got.bands[0].layer_id == poly.id() and got.bands[0].label_field == "unit"
     assert got.dem_layer_id == dem.id()
     assert got.boreholes[0].layer_id == pts.id() and got.boreholes[0].log_layer_id == table.id()
     assert got.buffer == 30.0 and got.near_miss == 10.0 and got.dem_tolerance == 1.0
@@ -225,7 +226,7 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     saved = ContextSettings(line_layers=[LineLayerSetting("gone_line", "name", checked=True)],
                             boreholes=[BoreholeSetting("gone_bh", "id", "z", "gone_log", "hid",
                                                       "t", "b", "lith")],
-                            band=BandSetting("gone_band", "unit"), dem_layer_id="gone_dem")
+                            bands=[BandSetting("gone_band", "unit")], dem_layer_id="gone_dem")
     write_settings(prj, saved)
     dlg = ContextDialog(fake_iface, prj)
     assert "4" in dlg.note.text() or "5" in dlg.note.text()
@@ -238,7 +239,7 @@ def test_missing_layers_keep_their_settings(qgis_app, fake_iface):
     got = read_settings(prj)
     assert got.dem_layer_id == ""
     assert got.line_layers == saved.line_layers and got.boreholes == saved.boreholes
-    assert got.band == saved.band
+    assert got.bands == saved.bands
 
 
 def test_context_dialog_is_non_modal_and_apply_redraws(qgis_app, fake_iface, store_with_model):
@@ -477,3 +478,125 @@ def test_open_dialog_does_not_undo_the_viewers_look(project, fake_iface):
     dlg.accept()
     e = read_settings(project).boreholes[0]
     assert (e.column_px, e.layer_text) == (30, True)
+
+
+def _strip_world(project):
+    from qgis.core import QgsVectorLayer
+    geo = QgsVectorLayer("Polygon?crs=EPSG:25832&field=unit:string&field=age:string",
+                         "Geology", "memory")
+    soil = QgsVectorLayer("Polygon?crs=EPSG:25832&field=type:string", "Soil", "memory")
+    project.addMapLayer(geo)
+    project.addMapLayer(soil)
+    return geo, soil
+
+
+def test_strip_rows_round_trip(project, fake_iface):
+    from geophysics_workbench.core.context_settings import BandSetting
+    from geophysics_workbench.ui.context_dialog import ContextDialog, read_settings
+    geo, soil = _strip_world(project)
+    saved = [BandSetting(geo.id(), "age", "Geology", True), BandSetting(soil.id(), "type", "", False)]
+    first = ContextSettings(bands=list(saved))
+    from geophysics_workbench.ui.context_dialog import write_settings
+    write_settings(project, first)
+    dlg = ContextDialog(fake_iface, project)
+    assert dlg.strips.settings() == saved
+    dlg.apply()
+    assert read_settings(project).bands == saved          # Apply drops nothing
+    dlg.strips.move_row(0, 1)
+    assert [b.layer_id for b in dlg.strips.settings()] == [soil.id(), geo.id()]
+    assert dlg.strips.settings()[1].title == "Geology"
+    assert [r.field.currentData() for r in dlg.strips.rows] == ["type", "age"]
+    assert [r.title.placeholderText() for r in dlg.strips.rows] == ["Soil", "Geology"]
+    dlg.strips.move_row(0, -1)                            # the first row cannot go up
+    assert [b.layer_id for b in dlg.strips.settings()] == [soil.id(), geo.id()]
+    assert [r.field.currentData() for r in dlg.strips.rows] == ["type", "age"]
+    assert [r.title.placeholderText() for r in dlg.strips.rows] == ["Soil", "Geology"]
+    dlg.close()
+
+
+def test_added_row_starts_on_the_first_field(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    dlg.strips.add_row()
+    assert dlg.strips.settings()[0].label_field != ""
+    dlg.close()
+
+
+def test_add_after_a_polygon_layer_is_removed(project, fake_iface):
+    """The dialog is non-modal: a layer removed from the project is no longer offered, and
+    Add raises nothing."""
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    geo, soil = _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    project.removeMapLayer(geo.id())
+    project.removeMapLayer(soil.id())
+    dlg.strips.add_row()                                   # nothing left to add: no error
+    assert dlg.strips.rows == [] and not dlg.strips.add_button.isEnabled()
+    dlg.close()
+
+
+def test_add_offers_only_the_layers_still_in_the_project(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    geo, soil = _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    project.removeMapLayer(geo.id())
+    dlg.strips.add_row()
+    row = dlg.strips.rows[0]
+    assert [row.layer.itemData(i) for i in range(row.layer.count())] == [soil.id()]
+    dlg.close()
+
+
+def test_missing_layer_row_is_kept(project, fake_iface):
+    from geophysics_workbench.core.context_settings import BandSetting
+    from geophysics_workbench.ui.context_dialog import (ContextDialog, read_settings,
+                                                        write_settings)
+    geo, _soil = _strip_world(project)
+    gone = BandSetting("gone-id", "kind", "Old", False)
+    saved = [gone, BandSetting(geo.id(), "unit", "", True)]
+    write_settings(project, ContextSettings(bands=list(saved)))
+    dlg = ContextDialog(fake_iface, project)
+    assert dlg.strips.rows[0].is_missing() and not dlg.strips.rows[1].is_missing()
+    assert "1 saved layer(s)" in dlg.note.text()
+    dlg.apply()
+    assert read_settings(project).bands == saved
+    dlg.close()
+
+
+def test_add_and_remove(project, fake_iface):
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    geo, _soil = _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    strips = dlg.strips
+    assert strips.settings() == [] and not strips.remove_button.isEnabled()
+    strips.add_row()
+    strips.add_row()
+    row = strips.rows[0]
+    assert row.layer_id() == geo.id() and row.title.text() == "" and row.show.isChecked()
+    assert row.title.placeholderText() == "Geology"
+    assert len(strips.settings()) == 2
+    assert strips.current == 1 and not strips.down_button.isEnabled()
+    assert strips.up_button.isEnabled()
+    strips.rows[0].title.setText("first")
+    strips.current = 1
+    strips.remove_row(1)
+    assert [b.title for b in strips.settings()] == ["first"]
+    assert not strips.up_button.isEnabled() and not strips.down_button.isEnabled()
+    dlg.close()
+
+
+def test_clicking_a_row_selects_it(project, fake_iface):
+    from qgis.PyQt.QtCore import QEvent
+    from qgis.PyQt.QtGui import QFocusEvent
+    from qgis.PyQt.QtCore import Qt
+    from qgis.PyQt.QtWidgets import QApplication
+    from geophysics_workbench.ui.context_dialog import ContextDialog
+    _strip_world(project)
+    dlg = ContextDialog(fake_iface, project)
+    dlg.strips.add_row()
+    dlg.strips.add_row()
+    assert dlg.strips.current == 1
+    QApplication.sendEvent(dlg.strips.rows[0].title,
+                           QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.MouseFocusReason))
+    assert dlg.strips.current == 0
+    dlg.close()

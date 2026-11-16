@@ -268,7 +268,7 @@ def test_project_has_context_settings_and_relative_paths(qgis_app):
                                                            "elevation")
     assert (b.log_layer_id, b.log_id_field, b.top_field, b.bottom_field, b.lithology_field) == (
         by_name["Borehole logs"], "borehole_id", "top", "bottom", "lithology")
-    assert (s.band.layer_id, s.band.label_field) == (by_name["Surface geology (synthetic)"],
+    assert (s.bands[0].layer_id, s.bands[0].label_field) == (by_name["Surface geology (synthetic)"],
                                                      "unit")
     assert s.dem_layer_id == by_name["DEM (synthetic)"]
     assert (s.buffer, s.near_miss, s.dem_tolerance) == (25.0, 10.0, 1.0)

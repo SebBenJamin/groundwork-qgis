@@ -11,10 +11,10 @@ def test_settings_json_roundtrip():
         line_layers=[LineLayerSetting("l1", "name", "#ff0000", True, True), LineLayerSetting("l2")],
         point_layers=[PointLayerSetting("p1", "label")],
         boreholes=[BoreholeSetting("b", "bid", "elev", "log", "lid", "top", "bot", "lith")],
-        band=BandSetting("g", "unit"), dem_layer_id="dem",
+        bands=[BandSetting("g", "unit")], dem_layer_id="dem",
         buffer=40.0, near_miss=12.5, dem_tolerance=2.5)
     text = s.to_json()
-    assert json.loads(text)["version"] == 3
+    assert json.loads(text)["version"] == 4
     assert ContextSettings.from_json(text) == s
 
 
@@ -36,7 +36,7 @@ def test_line_setting_v2_round_trip():
     s = ContextSettings(line_layers=[LineLayerSetting("a", "name", "#12ab34", True, False),
                                      LineLayerSetting("b")])
     text = s.to_json()
-    assert json.loads(text)["version"] == 3
+    assert json.loads(text)["version"] == 4
     assert ContextSettings.from_json(text) == s
 
 
@@ -91,7 +91,7 @@ def test_v3_round_trip_with_curves_and_section_options():
 def test_v3_also_writes_first_entry_as_legacy_borehole_key():
     s = ContextSettings(boreholes=[BoreholeSetting("pts", "id"), BoreholeSetting("b", "id")])
     data = json.loads(s.to_json())
-    assert data["version"] == 3 and data["borehole"]["layer_id"] == "pts"
+    assert data["version"] == 4 and data["borehole"]["layer_id"] == "pts"
     assert json.loads(ContextSettings().to_json())["borehole"] is None
 
 
@@ -109,3 +109,23 @@ def test_bad_section_options_fall_back_to_defaults():
 
 def test_curve_key():
     assert curve_key("lay", "gr") == "lay:gr"
+
+
+def test_old_single_band_loads_as_one_strip():
+    s = ContextSettings.from_json('{"version": 3, "band": {"layer_id": "g", "label_field": "unit"}}')
+    assert [(b.layer_id, b.label_field, b.title, b.shown) for b in s.bands] == [("g", "unit", "", True)]
+
+
+def test_strips_round_trip():
+    s = ContextSettings(bands=[BandSetting("a", "x", "GK 25"), BandSetting("b", "y", "GÜK 300", shown=False)])
+    back = ContextSettings.from_json(s.to_json())
+    assert back.bands == s.bands and [b.layer_id for b in back.shown_bands()] == ["a"]
+
+
+def test_older_plugin_still_finds_one_band():
+    data = json.loads(ContextSettings(bands=[BandSetting("a", "x", shown=False), BandSetting("b", "y")]).to_json())
+    assert data["band"]["layer_id"] == "b" and data["version"] == 4
+
+
+def test_rows_without_a_layer_are_dropped():
+    assert ContextSettings.from_json('{"version": 4, "bands": [{"label_field": "x"}, 5]}').bands == []

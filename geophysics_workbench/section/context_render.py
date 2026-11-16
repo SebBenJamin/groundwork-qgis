@@ -6,6 +6,7 @@ via ``rc.convertToPainterUnits``. Only plain snapshot data is used. Boreholes an
 live in ``context_render_points``."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -13,13 +14,14 @@ from qgis.core import Qgis
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 
-from ..core.context import DEFAULT_LINE_RGB
+from ..core.context import DEFAULT_LINE_RGB, strips_of
 from ..core.lithology import label_colour
 from ..core.ties import strip_column
 
 _MM = Qgis.RenderUnit.Millimeters
 BAND_GAP = 1.5                          # mm between the station number labels and the band
 BAND_THICKNESS = 3.0                    # mm
+STRIP_GAP = 0.6                         # mm between stacked strips
 LABEL_ROWS = 3
 BAND_OPACITY = 0.85
 DEM_COLOUR = (140, 90, 40)
@@ -83,53 +85,97 @@ def dem_at(dem, s) -> np.ndarray:
     return np.where((s < ds[0]) | (s > ds[-1]), np.nan, out)
 
 
-def band_offsets(rc) -> tuple[float, float]:
-    """Device offsets above the surface of the band's lower and upper edge: clear of the
-    station triangles and their number labels (see ``WorkbenchProfileResults._draw_stations``)."""
-    return band_offsets_px(mm(rc, 1.0))
+def band_offsets(rc, level: int = 0) -> tuple[float, float]:
+    """Device offsets above the surface of a strip's lower and upper edge: clear of the
+    station triangles and their number labels (see ``WorkbenchProfileResults._draw_stations``).
+    Level 0 is the strip nearest the ground."""
+    return band_offsets_px(mm(rc, 1.0), level)
 
 
-def band_offsets_px(px_per_mm: float) -> tuple[float, float]:
+def band_offsets_px(px_per_mm: float, level: int = 0) -> tuple[float, float]:
     """``band_offsets`` for ``px_per_mm`` device pixels per millimetre."""
     half = max(3.0, px_per_mm)
     number = max(10, round(px_per_mm * 3.0))
-    near = 2 * half + 1.6 * number + px_per_mm * BAND_GAP
+    near = 2 * half + 1.6 * number + px_per_mm * BAND_GAP + level * px_per_mm * (
+        BAND_THICKNESS + STRIP_GAP)
     return near, near + px_per_mm * BAND_THICKNESS
 
 
-def context_headroom_px(px_per_mm: float, line_height: float, labels: bool = True) -> float:
-    """Device pixels the band and, with ``labels``, ``LABEL_ROWS`` rows of labels need
-    above the surface, as ``plan_labels`` places them; ``line_height`` is the label font's
-    height (``fontMetrics().height()``). The section panel fits its view with it."""
-    _, far = band_offsets_px(px_per_mm)
+def top_level(items) -> int:
+    """Level of the highest strip drawn for ``items`` (0 for none or one): labels sit above it."""
+    return max(0, len(strips_of(items.band)) - 1)
+
+
+def context_headroom_px(px_per_mm: float, line_height: float, labels: bool = True,
+                        strips: int = 1) -> float:
+    """Device pixels ``strips`` stacked strips and, with ``labels``, ``LABEL_ROWS`` rows of
+    labels need above the surface, as ``plan_labels`` places them; ``line_height`` is the
+    label font's height (``fontMetrics().height()``). The section panel fits its view with it."""
+    _, far = band_offsets_px(px_per_mm, max(1, strips) - 1)
     return far + px_per_mm * 1.0 + (LABEL_ROWS * (line_height + 1) if labels else 0.0)
 
 
-# -- geology band ------------------------------------------------------------------------------
+# -- geology strips ----------------------------------------------------------------------------
+TITLE_MIN_UNIT_PX = 6.0     # of a unit that must remain beside a strip's title
+
+
 def draw_band(painter, rc, wt, items, surface) -> None:
     if not items.band or surface is None or len(surface[0]) < 2:
         return
-    near, far = band_offsets(rc)
     font = set_label_font(painter, rc, 2.4)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     ss = np.asarray(surface[0], float)
-    for seg in items.band:
-        inner = ss[(ss > seg.s0) & (ss < seg.s1)]
-        xs = np.r_[seg.s0, inner, seg.s1]
-        pts = [wt.map(QPointF(float(x), float(np.interp(x, *surface)))) for x in xs]
-        poly = QPolygonF([QPointF(p.x(), p.y() - near) for p in pts]
-                         + [QPointF(p.x(), p.y() - far) for p in reversed(pts)])
-        r, g, b = seg.rgb or label_colour(seg.label)
-        painter.setBrush(QBrush(QColor(r, g, b, round(255 * BAND_OPACITY))))
-        painter.setPen(line_pen(rc, (60, 60, 60), 0.15))
-        painter.drawPolygon(poly)
-        x0, x1 = pts[0].x(), pts[-1].x()
-        if seg.label and painter.fontMetrics().horizontalAdvance(seg.label) + 4 <= abs(x1 - x0):
+    strips = strips_of(items.band)
+    # the visible plot in the device space wt.map returns (the panel and plates clip to it)
+    clip = painter.clipBoundingRect() if painter.hasClipping() else QRectF()
+    left = clip.left() if not clip.isEmpty() else -math.inf
+    right = clip.right() if not clip.isEmpty() else math.inf
+    inv, _ok = wt.inverted()
+    px = font.pixelSize()
+    flags = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    for k, (title, segs) in enumerate(strips):
+        near, far = band_offsets(rc, len(strips) - 1 - k)
+        mid = 0.5 * (near + far)
+        title_seg = title_end = None        # the unit the title sits in; its right edge (px)
+        for i, seg in enumerate(segs):
+            inner = ss[(ss > seg.s0) & (ss < seg.s1)]
+            xs = np.r_[seg.s0, inner, seg.s1]
+            pts = [wt.map(QPointF(float(x), float(np.interp(x, *surface)))) for x in xs]
+            poly = QPolygonF([QPointF(p.x(), p.y() - near) for p in pts]
+                             + [QPointF(p.x(), p.y() - far) for p in reversed(pts)])
+            r, g, b = seg.rgb or label_colour(seg.label)
+            painter.setBrush(QBrush(QColor(r, g, b, round(255 * BAND_OPACITY))))
+            painter.setPen(line_pen(rc, (60, 60, 60), 0.15))
+            painter.drawPolygon(poly)
+            x0, x1 = pts[0].x(), pts[-1].x()
+            width = abs(x1 - x0)
             xm = 0.5 * (x0 + x1)
-            ym = surface_y(wt, surface, 0.5 * (seg.s0 + seg.s1)) - 0.5 * (near + far)
+            lo, hi = max(min(x0, x1), left), min(max(x0, x1), right)    # the visible part
+            fm = painter.fontMetrics()
+            if title and title_seg is None and hi > lo:     # the first visible unit with room
+                need = fm.horizontalAdvance(title) + 4
+                if need + TITLE_MIN_UNIT_PX <= hi - lo:
+                    tx = lo + 2
+                    s_t = inv.map(QPointF(tx + need / 2, 0.0)).x()      # chainage under it
+                    ty = surface_y(wt, surface, s_t) - mid
+                    painter.setPen(QPen(QColor(0, 0, 0), 1))
+                    painter.drawText(QRectF(tx, ty - px, need, 2 * px), flags, title)
+                    title_seg, title_end = i, tx + need
+            if not seg.label:
+                continue
+            lw = fm.horizontalAdvance(seg.label) + 4
+            if i == title_seg:                  # beside the title, in what is left of the unit
+                if lw > hi - title_end:
+                    continue
+                cx = 0.5 * (title_end + hi)
+                cw = hi - title_end
+            elif lw <= width:                   # centred on the whole unit, as before
+                cx, cw = xm, width
+            else:
+                continue
+            cy = surface_y(wt, surface, inv.map(QPointF(cx, 0.0)).x()) - mid
             painter.setPen(QPen(QColor(0, 0, 0), 1))
-            painter.drawText(QRectF(xm - abs(x1 - x0) / 2, ym - font.pixelSize(),
-                                    abs(x1 - x0), 2 * font.pixelSize()),
+            painter.drawText(QRectF(cx - cw / 2, cy - px, cw, 2 * px),
                              int(Qt.AlignmentFlag.AlignCenter), seg.label)
 
 
@@ -188,7 +234,7 @@ def plan_labels(painter, rc, wt, items, surface) -> dict:
         return {}
     set_label_font(painter, rc)
     fm = painter.fontMetrics()
-    _, far = band_offsets(rc)
+    _, far = band_offsets(rc, top_level(items))
     h = fm.height() + 1
     specs = []
     for c in items.crossings:

@@ -61,3 +61,21 @@ def test_size_is_remembered(dialog, qgis_app):
     dialog.reject()
     assert QgsSettings().value(SIZE_KEY) is not None
     QgsSettings().remove(SIZE_KEY)
+
+
+def test_hig_strings_in_the_strip_group(dialog):
+    from qgis.core import QgsProject, QgsVectorLayer
+
+    from geophysics_workbench.core.context_settings import BandSetting
+    from geophysics_workbench.ui.strip_rows import StripRows
+    from tests.ui.test_hig_strings import collect, problems
+    prj = QgsProject.instance()
+    geo = QgsVectorLayer("Polygon?crs=EPSG:25832&field=unit:string", "Geology", "memory")
+    prj.addMapLayer(geo)
+    strips = StripRows(prj, [geo])
+    strips.load([BandSetting(geo.id(), "unit"), BandSetting("gone", "x")])
+    assert strips.title() == "Surface Strips"
+    assert not problems(collect(strips), "strips")
+    assert {b.text() for b in (strips.add_button, strips.remove_button, strips.up_button,
+                               strips.down_button)} == {"Add", "Remove", "Move Up", "Move Down"}
+    strips.close()

@@ -4,8 +4,8 @@ A QGIS plugin that brings geophysical profiles and sections into their map conte
 models and measured data as sections under the map, boreholes, geology and crossing profiles
 on the section, your interpretation as QGIS layers, and report plates in the QGIS layout.
 
-**Version 0.9.0. Experimental.** Shared privately for testing; please do not pass it on.
-What changed: [0.9.0 release note](docs/releases/0.9.0.md), earlier notes in
+**Version 0.9.1. Experimental.** Shared privately for testing; please do not pass it on.
+What changed: [0.9.1 release note](docs/releases/0.9.1.md), earlier notes in
 [docs/releases](docs/releases/).
 
 ## What it does
@@ -21,7 +21,8 @@ What changed: [0.9.0 release note](docs/releases/0.9.0.md), earlier notes in
   - drawn as cells, a smooth field or contours (automatic, or major and minor levels you type),
     with QGIS colour ramps, a coverage fade and automatic vertical exaggeration.
 - **Context on the section**: crossing lines, points, boreholes as lithology columns with log
-  curves, a surface geology band, a DEM line, and ties to crossing profiles showing their model.
+  curves, one or several surface strips (geology maps stacked above the ground, each with a
+  title), a DEM line, and ties to crossing profiles showing their model.
 - **Borehole viewer**: a profile's boreholes side by side; leave a borehole out of one section.
 - **Interpretation**: lines, polygons and points drawn per profile with type, name, confidence
   and note; undo and redo; frozen versions; QGIS layers in 2D and 3D; DXF and CSV export.
@@ -36,7 +37,7 @@ Model files are read where they lie and never changed.
 
 Requires **QGIS 4.2** or newer.
 
-1. Get `geophysics_workbench-0.9.0.zip` (from the person who shared this with you, or build
+1. Get `geophysics_workbench-0.9.1.zip` (from the person who shared this with you, or build
    it, see *For developers*).
 2. In QGIS: **Plugins → Manage and Install Plugins… → Install from ZIP** (German QGIS:
    **Erweiterungen → Erweiterungen verwalten und installieren… → Aus ZIP installieren**).
@@ -94,7 +95,8 @@ details.
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
   https://doi.org/10.1016/j.dib.2025.112372.
 - Boreholes (Bohrpunktkarte) and geology (Geologische Karte 1 : 25 000, and the GÜK300
-  switched off), live WFS: © LBGR, dl-de/by-2-0.
+  switched off on the map; both drawn as strips on the section), live WFS: © LBGR,
+  dl-de/by-2-0.
 - DGM1 terrain model (tiles merged and cropped) and DOP20 aerial images (live WMS):
   © GeoBasis-DE/LGB, dl-de/by-2-0.
 - Waterways: © OpenStreetMap contributors, ODbL.

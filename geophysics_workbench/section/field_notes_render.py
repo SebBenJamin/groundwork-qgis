@@ -88,12 +88,12 @@ def draw_field_notes(painter, rc, wt, items, surface, plan: dict) -> None:
     at one chainage."""
     import numpy as np
 
-    from .context_render import band_offsets, mm, surface_y
+    from .context_render import band_offsets, mm, surface_y, top_level
     notes = [n for n in items.field_notes if n.shown]
     if not notes or surface is None or len(surface[0]) < 1:
         return
     looks = getattr(items, "note_looks", {}) or {}
-    _, far = band_offsets(rc)
+    _, far = band_offsets(rc, top_level(items))
     lanes = stretch_lanes(notes)
     painter.save()
     try:

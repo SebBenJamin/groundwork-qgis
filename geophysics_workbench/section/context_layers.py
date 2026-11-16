@@ -175,10 +175,9 @@ class ContextGatherer:
         for index, b in enumerate(settings.boreholes):
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
                 b, xy, box, settings.buffer, dem_layer, index, settings.dem_tolerance)) or []
-        if settings.band is not None:
-            b = settings.band
-            items.band = self._try(b.layer_id, "geology layer", lambda: self._band(
-                b, xy, box)) or []
+        for strip, b in enumerate(settings.shown_bands()):
+            items.band += self._try(b.layer_id, "strip layer", lambda: self._band(
+                b, xy, box, strip)) or []
         items.crossings.sort(key=lambda c: c.s)
         items.points.sort(key=lambda p: p.s)
         return items
@@ -220,8 +219,8 @@ class ContextGatherer:
             layer.willBeDeleted.connect(slot)
             self._drop_slots[layer.id()] = slot
             names = list(_SIGNALS)
-            band_id = settings.band.layer_id if settings.band is not None else None
-            if layer.id() in line_ids or layer.id() == band_id:     # colours come from styles
+            band_ids = {b.layer_id for b in settings.shown_bands()}
+            if layer.id() in line_ids or layer.id() in band_ids:     # colours come from styles
                 names += _STYLE_SIGNALS
             if layer.id() in selected:
                 names.append("selectionChanged")
@@ -506,7 +505,7 @@ class ContextGatherer:
             return []
         return sorted(rows, key=lambda r: (r.top, r.bottom))
 
-    def _band(self, setting, xy, box) -> list[BandSegment]:
+    def _band(self, setting, xy, box, strip: int = 0) -> list[BandSegment]:
         """Units along the profile. Colours come from the band layer's own style, so the band
         matches the map; a single-symbol style says nothing about units, so each label then
         gets its own colour. Only features near the profile are read (never the whole
@@ -516,7 +515,7 @@ class ContextGatherer:
         renderer = layer.renderer()
         styled = renderer is not None and renderer.type() != "singleSymbol"
         ctx = QgsRenderContext()
-        fields = [setting.label_field]
+        fields = [setting.label_field] if setting.label_field else []
         if styled:
             ctx.expressionContext().appendScopes(
                 QgsExpressionContextUtils.globalProjectLayerScopes(layer))
@@ -526,7 +525,7 @@ class ContextGatherer:
         polygons, labels, colours = [], [], {}
         try:
             for feature, geom in self._features(layer, box, tuple(fields)):
-                label = _text(feature[setting.label_field]) or layer.name()
+                label = (_text(feature[setting.label_field]) if setting.label_field else "") or layer.name()
                 if styled and label not in colours:     # first feature of a label decides
                     ctx.expressionContext().setFeature(feature)
                     symbols = renderer.symbolsForFeature(feature, ctx)
@@ -547,6 +546,7 @@ class ContextGatherer:
         segments = polygon_intervals(xy, polygons, labels)
         for seg in segments:
             seg.rgb = colours.get(seg.label) or label_colour(seg.label)
+            seg.strip, seg.title = strip, setting.title or layer.name()
         return segments
 
 
@@ -569,7 +569,6 @@ def _layer_ids(settings, line_ids=()) -> list[str]:
     ids = list(line_ids) + [s.layer_id for s in settings.point_layers]
     for b in settings.boreholes:
         ids += [b.layer_id, b.log_layer_id] + [c.layer_id for c in b.curve_tables]
-    if settings.band is not None:
-        ids.append(settings.band.layer_id)
+    ids += [b.layer_id for b in settings.shown_bands()]
     ids.append(settings.dem_layer_id)
     return [i for i in ids if i]

@@ -178,5 +178,5 @@ def add_context(project, context_dir: Path, powerline) -> None:
         point_layers=[PointLayerSetting(pylons.id(), "name")],
         boreholes=[BoreholeSetting(boreholes.id(), "id", "elevation", logs.id(),
                                    "borehole_id", "top", "bottom", "lithology")],
-        band=BandSetting(geology.id(), "unit"),
+        bands=[BandSetting(geology.id(), "unit")],
         dem_layer_id=dem.id(), buffer=25.0, near_miss=10.0, dem_tolerance=1.0))

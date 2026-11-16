@@ -20,12 +20,12 @@ def initial_size(available) -> QSize:
     return QSize(min(720, int(available.width() * 0.8)),
                  min(580, int(available.height() * 0.8)))
 
-from ..core.context_settings import (MAX_DISTANCE, BandSetting, ContextSettings,
-                                     PointLayerSetting)
+from ..core.context_settings import MAX_DISTANCE, ContextSettings, PointLayerSetting
 from .borehole_mapping import (MISSING, NONE, BoreholeEntries, field_of, fill_field_combo,
                                fill_layer_combo, keep_missing)
 from .crossing_rows import CrossingLinesGroup
 from .project_actions import SCOPE
+from .strip_rows import StripRows
 
 KEY = "context"
 
@@ -119,14 +119,7 @@ class ContextDialog(QDialog):
                                          current_boreholes, self.applied.emit)
         self._add_tab("Boreholes", [self.boreholes])
 
-        self.band_combo, self.band_label = QComboBox(), QComboBox()
-        fill_layer_combo(self.band_combo, by_geom["polygon"])
-        self.band_combo.currentIndexChanged.connect(lambda _i: self._band_layer_changed())
-        band_box = QGroupBox("Surface Geology Band")
-        form = QFormLayout(band_box)
-        form.addRow("Polygon layer", self.band_combo)
-        form.addRow("Label field", self.band_label)
-        self._band_layer_changed()
+        self.strips = StripRows(self.project, by_geom["polygon"])
         self.dem_combo = QComboBox()
         fill_layer_combo(self.dem_combo, rasters)
         dem_box = QGroupBox("DEM")
@@ -134,7 +127,7 @@ class ContextDialog(QDialog):
         dem_form.addRow("Raster layer", self.dem_combo)
         dem_form.addRow("Warn when station and DEM heights differ by more than (m)",
                         self.dem_tolerance_spin)
-        self._add_tab("Band and DEM", [band_box, dem_box])
+        self._add_tab("Band and DEM", [self.strips, dem_box])
 
         # applies to points and boreholes: below the tabs
         common = QFormLayout()
@@ -162,7 +155,7 @@ class ContextDialog(QDialog):
         self.note = QLabel()
         self.note.setStyleSheet("color: grey;")
         layout.insertWidget(1, self.note)
-        self.stale_points, self.loaded_band = [], None
+        self.stale_points = []
         self._load(read_settings(self.project))
 
     def _add_tab(self, title: str, widgets: list, form=None) -> None:
@@ -197,15 +190,6 @@ class ContextDialog(QDialog):
             grid.addWidget(QLabel("No point layers in this project."), 0, 0)
         return rows, box
 
-    def _band_layer_changed(self):
-        layer = self.project.mapLayer(self.band_combo.currentData() or "")
-        fill_field_combo(self.band_label, layer)
-
-    # -- selection (also used by tests) ----------------------------------------------------
-    def select_band(self, layer_id: str, label_field: str = "") -> None:
-        self.band_combo.setCurrentIndex(max(0, self.band_combo.findData(layer_id)))
-        self.band_label.setCurrentIndex(max(0, self.band_label.findData(label_field)))
-
     @property
     def borehole(self):
         """The borehole entry being edited."""
@@ -221,14 +205,11 @@ class ContextDialog(QDialog):
                 self.point_rows[item.layer_id].load(item.label_field, item.depth_field)
         self.stale_points = [i for i in s.point_layers if i.layer_id not in self.point_rows]
         self.boreholes.load(s.boreholes)
-        self.loaded_band = s.band
-        if s.band is not None:
-            keep_missing(self.band_combo, self.project, s.band.layer_id)
-            self.select_band(s.band.layer_id, s.band.label_field)
+        self.strips.load(s.bands)
         keep_missing(self.dem_combo, self.project, s.dem_layer_id)
         self.select_dem(s.dem_layer_id)
         missing = (self.lines.stale_count() + len(self.stale_points) + self.boreholes.missing_count()
-                   + sum(c.currentText() == MISSING for c in (self.band_combo, self.dem_combo)))
+                   + self.strips.missing_count() + (self.dem_combo.currentText() == MISSING))
         self.note.setText(f"{missing} saved layer(s) are not in this project; "
                           "their settings are kept." if missing else "")
         self.buffer_spin.setValue(s.buffer)
@@ -236,19 +217,13 @@ class ContextDialog(QDialog):
         self.dem_tolerance_spin.setValue(s.dem_tolerance)
 
     def settings(self) -> ContextSettings:
-        band_id = self.band_combo.currentData() or ""
-        band_label = field_of(self.band_label)
-        old = self.loaded_band
-        if (old is not None and old.layer_id == band_id
-                and self.project.mapLayer(band_id) is None):
-            band_label = old.label_field                # layer missing: keep its saved label
         return ContextSettings(
             line_layers=self.lines.settings(),
             point_layers=[PointLayerSetting(r.layer_id, field_of(r.label), field_of(r.depth))
                           for r in self.point_rows.values() if r.check.isChecked()]
             + list(self.stale_points),
             boreholes=self.boreholes.entries(),
-            band=BandSetting(band_id, band_label) if band_id else None,
+            bands=self.strips.settings(),
             dem_layer_id=self.dem_combo.currentData() or "",
             buffer=self.buffer_spin.value(), near_miss=self.near_miss_spin.value(),
             dem_tolerance=self.dem_tolerance_spin.value())

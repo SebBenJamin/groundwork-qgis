@@ -118,6 +118,18 @@ class BandSegment:
     #: fill colour: the band layer's own style for this unit, or a colour per label;
     #: None = derived from the label when drawn
     rgb: tuple | None = None
+    #: position of the strip among the shown strips, top first; its title (the row's title,
+    #: or the layer's name)
+    strip: int = 0
+    title: str = ""
+
+
+def strips_of(band: list[BandSegment]) -> list[tuple[str, list[BandSegment]]]:
+    """(title, segments by s0) per strip that has segments, top first."""
+    groups: dict[int, list[BandSegment]] = {}
+    for seg in band:
+        groups.setdefault(seg.strip, []).append(seg)
+    return [(groups[k][0].title, sorted(groups[k], key=lambda b: b.s0)) for k in sorted(groups)]
 
 
 @dataclass
@@ -148,7 +160,7 @@ class ContextItems:
             crossings=sorted((replace(c, s=length - c.s) for c in self.crossings),
                              key=lambda c: c.s),
             points=sorted((replace(p, s=length - p.s) for p in self.points), key=lambda p: p.s),
-            band=sorted((BandSegment(length - b.s1, length - b.s0, b.label, b.rgb) for b in self.band),
+            band=sorted((replace(b, s0=length - b.s1, s1=length - b.s0) for b in self.band),
                         key=lambda b: b.s0),
             ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
             dem=dem, dem_tolerance=self.dem_tolerance,
