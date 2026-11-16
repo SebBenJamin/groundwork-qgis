@@ -220,6 +220,7 @@ class AddDataDialog(QDialog):
         self.placement.set_current_profile(profile_id)
 
         self._preview_group = preview = QGroupBox("Preview")
+        preview.setObjectName("preview_group")
         self.preview_table = PreviewTable()
         self.preview_table.setObjectName("preview_table")
         self.preview_table.setMaximumHeight(170)

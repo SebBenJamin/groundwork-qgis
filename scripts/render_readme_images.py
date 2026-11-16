@@ -172,11 +172,11 @@ def render(demo: Path, out_dir: Path, profile_name: str) -> None:
         project.setDirty(False)
 
 
-def committed_store(target: Path) -> None:
-    """Put the demo's committed Groundwork file (git HEAD) at ``target``: local test edits
-    (drawings, notes) in the working copy must never reach the README pictures."""
+def committed_store(target: Path, repo_path: str = f"demo_guelpe/{STORE}") -> None:
+    """Put a demo's committed Groundwork file (``repo_path`` at git HEAD) at ``target``: local
+    test edits (drawings, notes) in the working copy must never reach the pictures."""
     import subprocess
-    data = subprocess.run([GIT, "show", f"HEAD:demo_guelpe/{STORE}"], cwd=REPO,
+    data = subprocess.run([GIT, "show", f"HEAD:{repo_path}"], cwd=REPO,
                           capture_output=True, check=True).stdout
     target.write_bytes(data)
 
