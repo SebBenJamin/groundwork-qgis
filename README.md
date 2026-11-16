@@ -1,70 +1,81 @@
 # Geophysics Workbench
 
-A QGIS plugin that brings geophysical profiles and sections into their map context: ERT
-models and measured data as sections under the map, boreholes, geology and crossing profiles
-on the section, your interpretation as QGIS layers, and report plates in the QGIS layout.
+**See your geophysical profiles where they are: on the map, next to the boreholes and the
+geology.** A plugin for QGIS that shows resistivity (ERT) sections as a panel under the map,
+puts your boreholes, geology and crossing lines on them, lets you draw your interpretation as
+ordinary QGIS layers and makes report plates in the QGIS layout.
 
-**Version 0.9.1. Experimental.** Shared privately for testing; please do not pass it on.
-What changed: [0.9.1 release note](docs/releases/0.9.1.md), earlier notes in
-[docs/releases](docs/releases/).
+[![Version 0.9.1](https://img.shields.io/badge/version-0.9.1-2b7bb9)](https://github.com/SebBenJamin/geophysics-workbench/releases/latest)
+[![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
+[![Licence GPL-2.0-or-later](https://img.shields.io/badge/licence-GPL--2.0--or--later-lightgrey)](LICENSE)
+![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
+
+![The Gülpe demo in the workbench: aerial image with the profile and its cores above, the resistivity section with cores and two geology strips below](docs/images/overview.jpg)
+
+*Lake Gülpe, Brandenburg: a resistivity profile on the map (top) and as a section under it,
+with sediment cores and two geology maps drawn as strips above the ground. Real open data,
+included as a demo.*
 
 ## What it does
 
-- **Profiles** from an electrode table, a line on the map or start and end points
-  (**New Profile…**; name, spacing and positions later in **Profile Properties…**).
-- **Add Data…**: any text table (distance or map coordinates, elevation, depth or local height)
-  can be added as a model by saying what its columns are; the plugin places it on the surveyed
-  electrodes when it knows them, and shows a fit report. See
-  [adding data](docs/user/import.md).
-- **Sections** in a panel under the map, linked to it by a cursor both ways:
-  - ERT models from R2/ResIPy, ZondRes2D, pyGIMLi/BERT and VTK, plus measured data and misfit;
-  - drawn as cells, a smooth field or contours (automatic, or major and minor levels you type),
-    with QGIS colour ramps, a coverage fade and automatic vertical exaggeration.
-- **Context on the section**: crossing lines, points, boreholes as lithology columns with log
-  curves, one or several surface strips (geology maps stacked above the ground, each with a
-  title), a DEM line, and ties to crossing profiles showing their model.
-- **Borehole viewer**: a profile's boreholes side by side; leave a borehole out of one section.
-- **Interpretation**: lines, polygons and points drawn per profile with type, name, confidence
-  and note; undo and redo; frozen versions; QGIS layers in 2D and 3D; DXF and CSV export.
-- **Field notes** along a profile, styled like any QGIS layer.
-- **Plates**: A4 and A3 report layouts with stacked sections, colour bars, legends, a mini-map
-  and a title block; your text edits survive updates; vector PDF export.
+| | |
+|---|---|
+| 🗺️ **Map and section, linked** | A section panel under the map. Move the mouse over the section and a cursor follows on the map, and the other way round. |
+| 📥 **Your files as they are** | ERT models from R2/ResIPy, ZondRes2D, pyGIMLi/BERT and VTK, plus measured data and misfit. Any other text table works too: say which column is what, as in QGIS's own text import. Files are read where they lie and never changed. |
+| 📍 **On the real electrodes** | Models are placed on the surveyed electrode positions, even when only some were measured, with a report of how well they fit. Sections in local heights get a reference height. |
+| 🪨 **Context on the section** | Boreholes as lithology columns with log curves, one or more geology (or soil, land use) maps as strips above the ground, a terrain line from a DEM, crossing lines and ties to crossing profiles. All styled through QGIS. |
+| ✏️ **Interpretation as QGIS layers** | Draw lines, polygons and points on the section per profile, with type, name, confidence and note. Undo, frozen versions, 2D and 3D layers, DXF and CSV export. |
+| 📄 **Report plates** | A4 and A3 layouts with stacked sections, colour bars, legends, a mini-map and a title block, exported as vector PDF. Your text edits survive updates. |
+
+![A resistivity section with sediment cores, station numbers and geology strips](docs/images/section.png)
+
+## Get started
+
+1. **Install** QGIS 4.2 or newer.
+2. **Download** `geophysics_workbench-0.9.1.zip` from the
+   [latest release](https://github.com/SebBenJamin/geophysics-workbench/releases/latest).
+3. In QGIS choose **Plugins → Manage and Install Plugins… → Install from ZIP**, pick the zip
+   and click **Install Plugin**. A **Geophysics Workbench** menu appears.
+   (German QGIS: **Erweiterungen → Erweiterungen verwalten und installieren… → Aus ZIP
+   installieren**.)
+4. **Try a demo:** download a demo zip from the same release, unzip it into a folder of its
+   own and open its project. Then choose **Geophysics Workbench → Show Section Panel** and
+   pick a profile.
+
+| Demo | Data | Open |
+|---|---|---|
+| Gülpe | Real: ERT, sediment cores and state survey data from Lake Gülpe (Havel, Brandenburg) | `guelpe_project.qgz` |
+| Erfurt | Real: seven ERT lines and 56 cores from Erfurt (Thuringia) | `erfurt_project.qgz` |
+| Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
+
+The background maps and the Gülpe state layers load from the internet. Opening a demo writes
+to its workbench file; keep a copy of the folder if you want to start over.
+
+<p align="center">
+  <img src="docs/images/plate.jpg" width="720"
+       alt="A report plate: the Transect 3 section with colour bar, borehole legend, mini-map and title block">
+</p>
+<p align="center"><em>A report plate made from the Gülpe demo, straight from the QGIS layout.</em></p>
+
+## Documentation
+
+- [Adding data and placing it on a profile](docs/user/import.md)
+- [Boreholes and logs](docs/user/boreholes.md)
+- [Field notes, dataset info and plates](docs/user/plates.md)
+- [What changed in each release](docs/releases/), latest: [0.9.1](docs/releases/0.9.1.md)
 
 Your work is kept in one GeoPackage next to the QGIS project (`<project>_workbench.gpkg`).
-Model files are read where they lie and never changed.
 
-## Install
+## Status and feedback
 
-Requires **QGIS 4.2** or newer.
+The plugin is **experimental**: it works on the demos and on real projects, but it is young
+and things still change between versions. Please report problems and wishes as
+[GitHub issues](https://github.com/SebBenJamin/geophysics-workbench/issues): what you did,
+what you expected, what happened, and a screenshot if it helps.
 
-1. Get `geophysics_workbench-0.9.1.zip` (from the person who shared this with you, or build
-   it, see *For developers*).
-2. In QGIS: **Plugins → Manage and Install Plugins… → Install from ZIP** (German QGIS:
-   **Erweiterungen → Erweiterungen verwalten und installieren… → Aus ZIP installieren**).
-3. Choose the zip and click **Install Plugin**. A **Geophysics Workbench** menu appears.
+If the workbench saves you time, you can buy me a coffee:
 
-## Try it with the demos
-
-| Folder | Data | Open |
-|---|---|---|
-| `demo_guelpe/` | Real: ERT, sediment cores and state survey data from Lake Gülpe (Havel, Brandenburg) | `guelpe_project.qgz` |
-| `demo_erfurt/` | Real: seven ERT lines and 56 cores from Erfurt (Thuringia) | `erfurt_project.qgz` |
-| `demo/` | Synthetic: three ERT formats, made-up boreholes and geology | `demo_project.qgz` |
-
-The background maps and the Gülpe state layers are loaded from the internet. Choose
-**Geophysics Workbench → Show Section Panel**, pick a profile, then try **Display…**, the
-borehole viewer and **Plates…**. The user guides explain more:
-[adding data and placement](docs/user/import.md),
-[boreholes and logs](docs/user/boreholes.md),
-[field notes, dataset info and plates](docs/user/plates.md).
-
-Opening a demo writes to its workbench file; keep a copy of the folder if you want to start
-over.
-
-## Feedback
-
-Please report problems and wishes as GitHub issues: what you did, what you expected, what
-happened, and a screenshot if it helps.
+<a href="https://www.buymeacoffee.com/Ben.jamin"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=Ben.jamin&button_colour=40DCA5&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" alt="Buy me a coffee" height="42"></a>
 
 ## For developers
 
@@ -73,6 +84,8 @@ happened, and a screenshot if it helps.
   once into `.testlibs`:
   `$env:PYTHONNOUSERSITE=1; & "<QGIS folder>\bin\python-qgis.bat" -m pip install --target .testlibs pytest`.
 - **Release zips** (`dist/`): `& "<QGIS folder>\bin\python-qgis.bat" scripts/package.py`.
+- **README pictures** (`docs/images/`): `scripts/render_readme_images.py`, from the Gülpe demo
+  (needs the internet for the live layers).
 - **Working copy in QGIS**: `scripts/dev_install.ps1` links `geophysics_workbench/` into the
   plugin folder of your QGIS 4 default profile.
 - The scripts expect QGIS 4.2.3 in its default install folder (`C:\Program Files\QGIS 4.2.3`).
@@ -116,6 +129,9 @@ details.
 
 **All demos:** background map © OpenStreetMap contributors, ODbL,
 https://www.openstreetmap.org/copyright.
+
+**README pictures** (`docs/images/`): made from the Gülpe demo with the sources above;
+aerial images © GeoBasis-DE/LGB, dl-de/by-2-0.
 
 Licences: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/ ·
 Datenlizenz Deutschland Namensnennung 2.0 (dl-de/by-2-0), https://www.govdata.de/dl-de/by-2-0 ·
