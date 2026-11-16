@@ -10,6 +10,7 @@ per part, level with the top of that part. The parts are found by their object n
 picture never disagrees with the dialog; a part that is missing or hidden stops the script.
 The page's legend uses the same numbers (docs/user/howto/<name>.md).
 """
+import gc
 import os
 import shutil
 import sys
@@ -349,7 +350,10 @@ def render(demo: Path, out_dir: Path, private: list[str]) -> list[Path]:
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
         project.clear()
         iface.mainWindow().close()
-        app.processEvents()
+        for _ in range(3):                      # the dialogs and layers go only now
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+            app.processEvents()
+        gc.collect()
     return written
 
 
