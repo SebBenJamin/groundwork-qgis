@@ -27,6 +27,7 @@ from qgis.PyQt.QtXml import QDomDocument
 from ..core.dataset_info import provenance_line
 from ..core.plates import frame_fits, stack_fit
 from .items import ColourBarItem, register_items
+from .stamp import build_stamp, stamp_texts
 from .sources import (FRAME_PROPERTY, attach_frame_sources, detach_frame_items, read_plates,
                       register_frame_sources, write_plates)
 
@@ -557,6 +558,15 @@ def _update_title(layout, plate, crs_authid: str) -> None:
         _write_text(label, f"Coordinate system: {crs.authid()} {crs.description()}".strip())
 
 
+def _update_stamp(layout, texts: dict[str, str]) -> None:
+    """The stamp's values: the typed-once details as expressions (Plate details update every
+    plate), the plate's own texts as they are; user edits and deleted cells are left alone."""
+    for key, _ in DETAILS:
+        _write_text(layout.itemById(f"wb_stamp_{key}"), f"[% @wb_{key} %]")
+    for key, text in texts.items():
+        _write_text(layout.itemById(f"wb_stamp_{key}"), text)
+
+
 # -- the builder -------------------------------------------------------------------------------
 def _concrete_scales(frame, snap) -> None:
     """A model shown with the panel's automatic scale gets that scale written into the
@@ -589,6 +599,9 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     elif layout.name() != plate_name(plate):
         layout.setName(plate_name(plate))
     layout.setCustomProperty(PLATE_PROPERTY, plate.plate_id)
+    stamp_area = layout.itemById("wb_stamp_area")
+    if stamp_area is not None:                      # new templates: the ruled title block
+        build_stamp(layout, stamp_area)
 
     # data per frame: snapshot (scales made concrete), extent, the models with a colour bar
     snaps, extents, shown = {}, {}, []
@@ -664,12 +677,14 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
              in zip(plate.frames, (_interior_mm(item) for item in frame_items))]
     fits = stack_fit(plate.frames, extents, sizes)
     not_fitting: list[str] = []
+    stamp_fits: list[tuple[int, float]] = []
     for n, (f, item, fit, models) in enumerate(zip(plate.frames, frame_items, fits, shown),
                                                start=1):
         profile = profiles.get(f.profile_id)
         if profile is None:
             continue
         scale, ve, s0, s1 = fit
+        stamp_fits.append((scale, ve))
         ext = extents[f.frame_id]
         group = [extents[g.frame_id] for g in plate.frames
                  if g.profile_id == f.profile_id and g.frame_id in extents]
@@ -708,6 +723,11 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
     layout.setCustomProperty(STALE_PROPERTY, stale)
     _update_minimap(layout, store, project, on_plate)
     _update_title(layout, plate, store.crs_authid)
+    models = list({d.id: d for f, ms in zip(plate.frames, shown)
+                   if f.profile_id in profiles for d in ms}.values())
+    crs = QgsCoordinateReferenceSystem(store.crs_authid)
+    _update_stamp(layout, stamp_texts(plate, [p.name for p in on_plate], models, stamp_fits,
+                                      crs.authid() or store.crs_authid, crs.description()))
 
     layout.setCustomProperty(FIT_PROPERTY, "; ".join(not_fitting))
     layout.refresh()
