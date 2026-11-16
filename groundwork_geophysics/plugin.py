@@ -129,6 +129,9 @@ class WorkbenchPlugin:
             self._warn("Plates: this project was opened before the plugin was loaded, so its "
                        "plate colour bars and borehole legends were not read. Please reopen "
                        "the project before saving it (saving now would lose them).")
+        from .ui.old_plugin import OLD_PLUGIN_WARNING, old_plugin_present
+        if old_plugin_present():
+            self._warn(OLD_PLUGIN_WARNING)
 
     def unload(self):
         for signal, slot in self._project_signals:
