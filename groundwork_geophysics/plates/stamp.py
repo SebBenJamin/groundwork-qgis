@@ -78,10 +78,12 @@ def stamp_texts(plate, profile_names: list[str], datasets: list, fits: list[tupl
                 crs_authid: str, crs_description: str) -> dict[str, str]:
     """The texts of the plate-filled cells. ``profile_names``: the plate's existing profiles in
     plate order; ``datasets``: the visible models of all frames; ``fits``: (scale, VE) per
-    frame with an existing profile."""
+    frame with an existing profile. Method and survey details come from the models when the
+    plate shows any (a misfit or measured data beside its model is not another survey)."""
+    surveys = [d for d in datasets if d.kind.endswith("_model")] or datasets
     return {"profile": ", ".join(_distinct(profile_names)),
-            "method": ", ".join(_distinct(_method(d) for d in datasets)),
-            "survey": _survey(datasets, fits, crs_authid, crs_description),
+            "method": ", ".join(_distinct(_method(d) for d in surveys)),
+            "survey": _survey(surveys, fits, crs_authid, crs_description),
             "title": plate.title,
             "plate": f"Plate {plate.number}"}
 
@@ -158,7 +160,7 @@ def _outline(symbol, width: float):
     return symbol
 
 
-def _label(layout, item_id: str, size: float, bold: bool = False):
+def _label(layout, item_id: str, size: float, bold: bool = False, family: str = ""):
     from qgis.core import QgsLayoutItemLabel
 
     from .build import WRITTEN
@@ -169,6 +171,10 @@ def _label(layout, item_id: str, size: float, bold: bool = False):
     item.setMarginX(0.0)
     item.setMarginY(0.0)
     fmt = item.textFormat()
+    if family:
+        font = fmt.font()
+        font.setFamily(family)
+        fmt.setFont(font)
     fmt.setSize(size)
     if bold:
         fmt.setForcedBold(True)
@@ -190,6 +196,9 @@ def build_stamp(layout, area_item) -> None:
         fx, fy, fw, fh = rect
         return ax + fx * aw, ay + fy * ah, fw * aw, fh * ah
 
+    from qgis.core import QgsLayoutItemLabel
+    notes = layout.itemById("wb_field_notes")         # the template's own text font
+    family = notes.textFormat().font().family() if isinstance(notes, QgsLayoutItemLabel) else ""
     has_symbol = hasattr(area_item, "symbol") and area_item.symbol() is not None
     if has_symbol:
         area_item.setSymbol(_outline(area_item.symbol(), OUTER_RULE_MM))
@@ -217,9 +226,9 @@ def build_stamp(layout, area_item) -> None:
             pic.refreshDataDefinedProperty(QgsLayoutObject.DataDefinedProperty.PictureSource)
             continue
         if cell.caption:
-            cap = _label(layout, f"wb_stamp_{cell.key}_caption", CAPTION_PT)
+            cap = _label(layout, f"wb_stamp_{cell.key}_caption", CAPTION_PT, family=family)
             cap.setText(cell.caption)
             _place(cap, x, y, w, min(CAPTION_MM, h))
             y, h = y + CAPTION_MM, max(h - CAPTION_MM, 1.0)
-        _place(_label(layout, f"wb_stamp_{cell.key}", cell.size, cell.bold), x, y, w, h)
+        _place(_label(layout, f"wb_stamp_{cell.key}", cell.size, cell.bold, family), x, y, w, h)
     layout.setCustomProperty(BUILT_PROPERTY, True)

@@ -58,3 +58,19 @@ def test_two_profiles_differing_scale():
 def test_missing_profile_ignored():
     t = stamp_texts(_plate(), [], [], [], "EPSG:25833", "")
     assert t["profile"] == "" and t["method"] == "" and t["survey"] == ""
+
+
+def test_misfit_without_info_does_not_hide_the_models():
+    model = with_info(_dataset(provenance={"rms_percent": 3.0}),
+                      {"method": "ERT", "array": "dipole-dipole", "date": "2024-06-12"})
+    misfit = _dataset("ert_misfit")
+    t = stamp_texts(_plate(), ["T1"], [model, misfit], [(500, 2.0)], "EPSG:25833", "")
+    assert t["method"] == "ERT · dipole-dipole"
+    assert t["survey"].splitlines()[:2] == ["Acquired 2024-06-12", "RMS 3.0 %"]
+
+
+def test_two_models_one_without_info_shows_only_what_both_share():
+    a = with_info(_dataset(), {"date": "2024-06-12"})
+    t = stamp_texts(_plate(), ["T1", "T2"], [a, _dataset()], [(500, 2.0), (500, 2.0)],
+                    "EPSG:25833", "")
+    assert "Acquired" not in t["survey"]

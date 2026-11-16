@@ -129,3 +129,21 @@ def test_stamp_logo_shows_existing_file(layout, tmp_path):
     picture = layout.itemById("wb_stamp_logo")
     picture.refresh()
     assert Path(picture.evaluatedPath()) == tmp_path / "logo.png"
+
+
+def test_stamp_uses_the_template_font(layout):
+    from qgis.core import QgsLayoutItemLabel
+
+    from groundwork_geophysics.plates.stamp import build_stamp
+    notes = QgsLayoutItemLabel(layout)
+    notes.setId("wb_field_notes")
+    fmt = notes.textFormat()
+    font = fmt.font()
+    font.setFamily("Courier New")
+    fmt.setFont(font)
+    notes.setTextFormat(fmt)
+    layout.addLayoutItem(notes)
+    build_stamp(layout, layout.itemById("wb_stamp_area"))
+    for item_id in ("wb_stamp_project", "wb_stamp_project_caption", "wb_stamp_plate"):
+        assert layout.itemById(item_id).textFormat().font().family() == "Courier New", item_id
+    assert layout.itemById("wb_stamp_project_caption").textFormat().size() == 5.5
