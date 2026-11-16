@@ -55,7 +55,9 @@ BAR_MAX_MM = 20.0       # a new vertical colour bar's width (the bar is 30 % of 
 BAR_MAX_LEN_MM = 80.0   # ... and its greatest length (horizontal bars: their width)
 TOP_PAD = 0.02          # share of the depth range added above the data (labels: label_room_mm)
 DETAILS = (("project", "Project"), ("client", "Client"), ("job", "Job no."),
-           ("date", "Date"), ("author", "Drawn"), ("revision", "Revision"))
+           ("date", "Date"), ("author", "Drawn"), ("checked", "Checked"),
+           ("revision", "Revision"))
+LOGO_VARIABLE = "wb_logo"
 INTERP_LEGEND_LAYERS = ("interp_polygons_3d", "interp_lines_3d", "interp_points_3d")
 
 
@@ -74,6 +76,29 @@ def set_plate_details(project, /, **values) -> None:
 def plate_details(project) -> dict:
     scope = QgsExpressionContextUtils.projectScope(project)
     return {key: str(scope.variable(f"wb_{key}") or "") for key, _ in DETAILS}
+
+
+def plate_logo(project) -> str:
+    """The plates' logo file as stored: relative to the project folder when it lies inside
+    it, else absolute; "" when there is none."""
+    scope = QgsExpressionContextUtils.projectScope(project)
+    return str(scope.variable(LOGO_VARIABLE) or "")
+
+
+def set_plate_logo(project, path: str) -> None:
+    """Keep ``path`` as the plates' logo ("" clears it); a file inside the project's folder
+    is stored relative to it, so the project can move with its logo."""
+    import os
+    path = (path or "").strip()
+    folder = project.absolutePath()
+    if path and os.path.isabs(path) and folder:
+        try:
+            rel = os.path.relpath(path, folder)
+        except ValueError:                      # another drive
+            rel = ""
+        if rel and not rel.startswith(".."):
+            path = rel
+    QgsExpressionContextUtils.setProjectVariable(project, LOGO_VARIABLE, path.replace("\\", "/"))
 
 
 # -- the layout ------------------------------------------------------------------------------

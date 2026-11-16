@@ -6,6 +6,14 @@ from __future__ import annotations
 
 from ..core.dataset_info import KIND_LABELS, dataset_info
 
+#: the logo picture's source: @wb_logo made absolute (relative to the project folder), or ''
+#: when it is unset or the file is missing, so the cell stays empty instead of a broken image
+LOGO_EXPRESSION = (
+    "with_variable('p', coalesce(@wb_logo, ''), "
+    "with_variable('a', if(@p = '', '', "
+    r"if(regexp_match(@p, '^([A-Za-z]:[\\\\/]|[\\\\/])') > 0, @p, @project_folder || '/' || @p)), "
+    "if(@a <> '' and file_exists(@a), @a, '')))")
+
 
 def _shared(values: list[str]) -> str:
     """The value when every entry has the same non-empty one, else ""."""

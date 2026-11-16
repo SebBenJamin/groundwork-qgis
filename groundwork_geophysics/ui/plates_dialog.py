@@ -21,8 +21,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialo
 
 from ..core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
 from ..plates.build import DETAILS, STALE_PROPERTY, TEMPLATES, create_or_update_plate, \
-    plate_details, \
-    plate_name, set_plate_details
+    plate_details, plate_logo, plate_name, set_plate_details, set_plate_logo
 from ..plates.sources import read_plates, write_plates
 
 OWN_TEMPLATE = "__own__"
@@ -106,6 +105,7 @@ class PlateDetailsDialog(QDialog):
     def __init__(self, project, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Plate details")
+        self.setMinimumWidth(440)                   # room for the logo's path
         self.project = project
         values = plate_details(project)
         if not values.get("date"):
@@ -116,6 +116,19 @@ class PlateDetailsDialog(QDialog):
             edit = QLineEdit(values.get(key, ""))
             self.fields[key] = edit
             form.addRow(caption, edit)
+        self.logo = QLineEdit(plate_logo(project))
+        self.logo.setReadOnly(True)
+        self.logo.setPlaceholderText("No logo")
+        self.logo.setToolTip("An image shown in the logo cell of the title block")
+        choose = QPushButton("Choose…")
+        choose.clicked.connect(self._choose_logo)
+        self.logo_clear = QPushButton("Clear")
+        self.logo_clear.clicked.connect(self.logo.clear)
+        row = QHBoxLayout()
+        row.addWidget(self.logo, 1)
+        row.addWidget(choose)
+        row.addWidget(self.logo_clear)
+        form.addRow("Logo", row)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
                                    QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -127,7 +140,15 @@ class PlateDetailsDialog(QDialog):
 
     def accept(self):
         set_plate_details(self.project, **{k: e.text().strip() for k, e in self.fields.items()})
+        set_plate_logo(self.project, self.logo.text())
         super().accept()
+
+    def _choose_logo(self):
+        start = self.project.absolutePath() or str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a Logo", start,
+                                              "Images (*.png *.jpg *.jpeg *.svg)")
+        if path:
+            self.logo.setText(path)
 
 
 class PlatesDialog(QDialog):
