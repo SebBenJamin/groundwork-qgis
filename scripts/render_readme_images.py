@@ -2,7 +2,8 @@
 
     python-qgis.bat scripts/render_readme_images.py [out_dir] [profile]
 
-Opens a temporary copy of demo_guelpe/ offscreen (the committed demo is never written), starts
+Opens a temporary copy of demo_guelpe/ offscreen, with its committed Groundwork file (the
+demo folder is never written, and local edits to it never show), starts
 the plugin with a minimal QGIS window (map canvas above, section panel docked below) and
 writes to ``out_dir`` (default docs/images):
 
@@ -33,6 +34,8 @@ from qgis.PyQt.QtGui import QFont  # noqa: E402
 
 from render_demo_section import UI_FONT, FakeIface, wait_idle, zoom_to  # noqa: E402
 
+#: QGIS's Python launcher sets its own PATH, so git may not be found by name
+GIT = shutil.which("git") or r"C:\Program Files\Git\cmd\git.exe"
 PROFILE = "Transect 3"
 WINDOW = (1500, 980)
 SECTION_HEIGHT = 430
@@ -42,6 +45,7 @@ PLATE_DPI = 110
 MAP_MARGIN = 0.25           # of the profile's extent, on each side
 NETWORK_WAIT_S = 25.0
 AERIAL = "Aerial images"
+STORE = "guelpe_groundwork.gpkg"
 HIDE = "misfit"       # live tiles keep arriving after the first render
 
 
@@ -157,6 +161,15 @@ def render(demo: Path, out_dir: Path, profile_name: str) -> None:
         project.setDirty(False)
 
 
+def committed_store(target: Path) -> None:
+    """Put the demo's committed Groundwork file (git HEAD) at ``target``: local test edits
+    (drawings, notes) in the working copy must never reach the README pictures."""
+    import subprocess
+    data = subprocess.run([GIT, "show", f"HEAD:demo_guelpe/{STORE}"], cwd=REPO,
+                          capture_output=True, check=True).stdout
+    target.write_bytes(data)
+
+
 def main() -> int:
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "docs" / "images"
     profile = sys.argv[2] if len(sys.argv) > 2 else PROFILE
@@ -172,6 +185,7 @@ def main() -> int:
         demo = tmp / "demo_guelpe"
         shutil.copytree(REPO / "demo_guelpe", demo,
                         ignore=shutil.ignore_patterns("*.gpkg-wal", "*.gpkg-shm"))
+        committed_store(demo / STORE)
         render(demo, out_dir, profile)
         return 0
     except Exception as exc:
