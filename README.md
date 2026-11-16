@@ -1,9 +1,12 @@
 # Geophysics Workbench
 
 **See your geophysical profiles where they are: on the map, next to the boreholes and the
-geology.** A plugin for QGIS that shows resistivity (ERT) sections as a panel under the map,
-puts your boreholes, geology and crossing lines on them, lets you draw your interpretation as
-ordinary QGIS layers and makes report plates in the QGIS layout.
+geology.** A workbench for profile-based geophysics in QGIS: sections as a panel under the
+map, with your boreholes, geology and crossing lines on them, your interpretation as ordinary
+QGIS layers and report plates in the QGIS layout.
+
+Today it works with **resistivity (ERT)**. **Ground-penetrating radar (GPR) and seismics**
+are planned next, on the same profiles, next to the same context.
 
 [![Version 0.9.1](https://img.shields.io/badge/version-0.9.1-2b7bb9)](https://github.com/SebBenJamin/geophysics-workbench/releases/latest)
 [![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
@@ -56,6 +59,19 @@ to its workbench file; keep a copy of the folder if you want to start over.
        alt="A report plate: the Transect 3 section with colour bar, borehole legend, mini-map and title block">
 </p>
 <p align="center"><em>A report plate made from the Gülpe demo, straight from the QGIS layout.</em></p>
+
+## Where it is going
+
+The workbench is built around the profile, not around one method. A profile is a line on the
+map with its surveyed positions; any data measured along it can be placed on it and shown
+with the same boreholes, geology and interpretation. Planned:
+
+- 📡 **GPR**: radargrams on the profile.
+- 🔊 **Seismics**: seismic sections on the profile.
+- 🔀 **Several methods on one profile**: ERT, GPR and seismics side by side, interpreted
+  together.
+
+Ideas and wishes are welcome as [GitHub issues](https://github.com/SebBenJamin/geophysics-workbench/issues).
 
 ## Documentation
 
