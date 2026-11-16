@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-DEMOS = {"Erfurt": (REPO / "demo_erfurt", "erfurt_workbench.gpkg"),
-         "Gülpe": (REPO / "demo_guelpe", "guelpe_workbench.gpkg")}
+DEMOS = {"Erfurt": (REPO / "demo_erfurt", "erfurt_groundwork.gpkg"),
+         "Gülpe": (REPO / "demo_guelpe", "guelpe_groundwork.gpkg")}
 SMALL_DEMO = REPO / "demo" / "data"
 #: metres of chainage the thinned placement may differ from the fully surveyed one
 TOLERANCE = 0.5

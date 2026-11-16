@@ -13,7 +13,7 @@ from the powerline crossing on, at a higher vertical exaggeration, with Topograp
 the surface follows the 2 m road embankment near s = 250, while the stations stay at
 their measured heights (red) on a thin line of their own. The ties panel is shown with
 the P1 x P3 row selected. The demo is copied to a temporary folder first, so switching
-the topography never writes to the committed demo/demo_workbench.gpkg.
+the topography never writes to the committed demo/demo_groundwork.gpkg.
 """
 import os
 import shutil

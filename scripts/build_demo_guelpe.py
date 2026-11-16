@@ -12,7 +12,7 @@ Writes under demo_guelpe/:
   context/synthetic_logs.gpkg         SYNTHETIC log curves for the cores (NOT measured;
                                       scripts/make_synthetic_curves.py)
   context/dgm1.tif                    DGM1 cropped to the transects + 100 m
-  guelpe_workbench.gpkg               workbench store: Transect 1-4, one model each
+  guelpe_groundwork.gpkg               workbench store: Transect 1-4, one model each
   guelpe_project.qgz                  QGIS project (EPSG:25833), every path relative
   ATTRIBUTION.md                      sources and licences
 """
@@ -37,7 +37,7 @@ DEMO_GUELPE = ROOT / "demo_guelpe"
 #: our pyGIMLi response for transect 3 (not in the raw cache: made once by invert_guelpe.py)
 MISFIT_INPUTS = ROOT / "scripts" / "data" / "guelpe"
 CRS = "EPSG:25833"
-STORE_NAME, PROJECT_NAME = "guelpe_workbench.gpkg", "guelpe_project.qgz"
+STORE_NAME, PROJECT_NAME = "guelpe_groundwork.gpkg", "guelpe_project.qgz"
 SPACING = {1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0}
 MAX_CHAINAGE_MISFIT = 0.5             # m, station chainage against the model's electrode x
 OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
@@ -48,7 +48,7 @@ GK_WFS = "https://inspire.brandenburg.de/services/gk_wfs"      # GK 25, GÜK 100
 GK_WMS = "https://inspire.brandenburg.de/services/gk_wms"
 GEOLOGY_MARGIN = 1500.0      # m around the transects: the GK 25 units the legend lists
 DOP_WMS = "https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms"
-TITLE = "Geophysics Workbench real-data demo: Gülpe (Havel)"
+TITLE = "Groundwork real-data demo: Gülpe (Havel)"
 ATTRIBUTION = """# Sources and licences
 
 This demo uses only open data. Files marked *derived* were converted from the source

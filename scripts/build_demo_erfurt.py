@@ -12,7 +12,7 @@ Writes under demo_erfurt/ (or --out):
   context/cores.gpkg                  56 cores of Hein et al. (2026) (layer cores, table
                                       core_logs); EN-RK 40 and 46 have no published position
   context/core_logs_style.qml         the cores' style by stratigraphic unit
-  erfurt_workbench.gpkg               workbench store: ERT02-ERT12, model + measured data each
+  erfurt_groundwork.gpkg               workbench store: ERT02-ERT12, model + measured data each
   erfurt_project.qgz                  QGIS project (EPSG:32632), every path relative
   ATTRIBUTION.md                      sources and licences
 """
@@ -34,7 +34,7 @@ DEMO_ERFURT = ROOT / "demo_erfurt"
 CACHE = ROOT / ".cache" / "erfurt"
 SUPPLEMENT = "pone.0337410.s001.docx"
 CRS = f"EPSG:{erfurt_data.EPSG}"
-STORE_NAME = "erfurt_workbench.gpkg"
+STORE_NAME = "erfurt_groundwork.gpkg"
 PROJECT_NAME = "erfurt_project.qgz"
 #: station chainage against the model's electrode x (m). The total-station positions in the
 #: forest scatter (neighbours 0.26-0.67 m apart for 0.5 m spacing; up to 0.62 m off on ERT04);
@@ -42,7 +42,7 @@ PROJECT_NAME = "erfurt_project.qgz"
 MAX_CHAINAGE_MISFIT = 1.0
 MEDIAN_CHAINAGE_MISFIT = 0.25
 OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
-TITLE = "Geophysics Workbench real-data demo: Erfurt (Am Zoopark)"
+TITLE = "Groundwork real-data demo: Erfurt (Am Zoopark)"
 REFERENCE = "Silbermann et al. 2025"
 #: how the electrodes were positioned (PANGAEA abstract)
 POSITIONING = {**{t: "electrode positions: total station (Leica TPS1200+)"

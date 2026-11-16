@@ -28,7 +28,7 @@ def test_guelpe_demo_opens_offline(qgis_app, tmp_path):
     from groundwork_geophysics.section.data import SectionDataProvider
     from groundwork_geophysics.ui.project_actions import attach_store
 
-    store_file = GUELPE / "guelpe_workbench.gpkg"
+    store_file = GUELPE / "guelpe_groundwork.gpkg"
     before = hashlib.sha1(store_file.read_bytes()).hexdigest()
     copy = tmp_path / "demo_guelpe"
     shutil.copytree(GUELPE, copy, ignore=shutil.ignore_patterns("*-wal", "*-shm"))

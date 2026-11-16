@@ -16,12 +16,12 @@ def test_demo_project_opens_and_resolves_sources(qgis_app, tmp_path):
     from qgis.core import QgsProject
     from groundwork_geophysics.ui.project_actions import attach_store
     from groundwork_geophysics.section.data import SectionDataProvider
-    before = _sha1(DEMO / "demo_workbench.gpkg")
+    before = _sha1(DEMO / "demo_groundwork.gpkg")
     copy = tmp_path / "demo"
     shutil.copytree(DEMO, copy)
     prj = QgsProject(); assert prj.read(str(copy / "demo_project.qgz"))
     st = attach_store(prj)
-    assert _sha1(DEMO / "demo_workbench.gpkg") == before
+    assert _sha1(DEMO / "demo_groundwork.gpkg") == before
     prov = SectionDataProvider(st)
     profs = st.profiles()
     assert len(profs) == 3
@@ -42,7 +42,7 @@ def test_demo_works_from_another_folder(qgis_app, tmp_path):
     prj = QgsProject()
     assert prj.read(str(copy / "demo_project.qgz"))
     st = attach_store(prj)
-    assert st.path.resolve() == (copy / "demo_workbench.gpkg").resolve()
+    assert st.path.resolve() == (copy / "demo_groundwork.gpkg").resolve()
     prov = SectionDataProvider(st)
     layers = [la for p in st.profiles() for la in prov.layers(p.id)]
     assert len(layers) == 3 and all(la.error is None for la in layers)
@@ -56,17 +56,17 @@ def test_demo_works_from_another_folder(qgis_app, tmp_path):
 def test_demo_project_content(qgis_app):
     from qgis.core import QgsProject
 
-    from groundwork_geophysics.ui.project_actions import LEGACY_GROUP_NAME, SCOPE, STORE_KEY
+    from groundwork_geophysics.ui.project_actions import GROUP_NAME, SCOPE, STORE_KEY
 
     prj = QgsProject()
     assert prj.read(str(DEMO / "demo_project.qgz"))
     assert prj.crs().authid() == "EPSG:25832"
-    assert prj.readEntry(SCOPE, STORE_KEY, "")[0] == "demo_workbench.gpkg"
+    assert prj.readEntry(SCOPE, STORE_KEY, "")[0] == "demo_groundwork.gpkg"
     names = {l.name(): l for l in prj.mapLayers().values()}
     assert "OpenStreetMap" in names and names["OpenStreetMap"].providerType() == "wms"
     powerline = [l for n, l in names.items() if n.lower().startswith("powerline")]
     assert powerline and powerline[0].labelsEnabled()
-    group = prj.layerTreeRoot().findGroup(LEGACY_GROUP_NAME)    # demo is rebuilt in Task 5
+    group = prj.layerTreeRoot().findGroup(GROUP_NAME)
     assert sorted(l.name() for l in group.findLayers()) == ["profiles", "stations"]
     extent = prj.viewSettings().defaultViewExtent()
     assert not extent.isNull() and extent.crs().authid() == "EPSG:25832"
@@ -75,8 +75,8 @@ def test_demo_project_content(qgis_app):
 def test_demo_store_datasets_use_relative_paths(qgis_app, tmp_path):
     from groundwork_geophysics.store.gpkg_store import ProjectStore
 
-    copy = tmp_path / "demo_workbench.gpkg"                    # never the committed file
-    shutil.copy(DEMO / "demo_workbench.gpkg", copy)
+    copy = tmp_path / "demo_groundwork.gpkg"                    # never the committed file
+    shutil.copy(DEMO / "demo_groundwork.gpkg", copy)
     st = ProjectStore.open(copy)
     by_name = {p.name: p for p in st.profiles()}
     assert sorted(by_name) == ["P1", "P2", "P3"]
@@ -115,7 +115,7 @@ def test_demo_profiles_open_without_a_placement_note(qgis_app, tmp_path):
 
     copy = tmp_path / "demo"
     shutil.copytree(DEMO, copy)
-    st = ProjectStore.open(copy / "demo_workbench.gpkg")
+    st = ProjectStore.open(copy / "demo_groundwork.gpkg")
     prov = SectionDataProvider(st)
     by_name = {p.name: p for p in st.profiles()}
     for name in ("P1", "P2"):

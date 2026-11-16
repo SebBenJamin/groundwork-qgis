@@ -57,7 +57,7 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     erfurt = zips[3]
     assert erfurt.name.startswith("groundwork_geophysics-demo-erfurt-")
     erfurt_names = zipfile.ZipFile(erfurt).namelist()
-    for need in ("erfurt_project.qgz", "erfurt_workbench.gpkg", "ATTRIBUTION.md",
+    for need in ("erfurt_project.qgz", "erfurt_groundwork.gpkg", "ATTRIBUTION.md",
                  "context/cores.gpkg", "data/ert/ERT02/dcinv.result.vtk",
                  "data/stations/ERT02_electrodes.csv"):
         assert need in erfurt_names
@@ -65,7 +65,7 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     guelpe = zips[2]
     assert guelpe.name.startswith("groundwork_geophysics-demo-guelpe-")
     names = zipfile.ZipFile(guelpe).namelist()
-    for need in ("guelpe_project.qgz", "guelpe_workbench.gpkg", "ATTRIBUTION.md",
+    for need in ("guelpe_project.qgz", "guelpe_groundwork.gpkg", "ATTRIBUTION.md",
                  "context/cores.gpkg", "data/ert/T1/dcinv.result.vtk"):
         assert need in names
     assert not any(".cache" in n for n in names)
