@@ -1,5 +1,5 @@
 """Round 2, B6: Create / Update keeps the user's edits of every plugin-written plate label
-(title, coordinate-system line, title-block captions, field notes), also labels edited in
+(stamp texts, field notes), also labels edited in
 0.7; untouched labels follow the data."""
 from dataclasses import replace
 
@@ -16,9 +16,9 @@ def test_edited_title_kept(env):
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = _build(prj, st, prov, plate)
-    layout.itemById("wb_title_plate").setText("My title")
+    layout.itemById("wb_stamp_title").setText("My title")
     layout = _build(prj, st, prov, replace(plate, title="Renamed"))
-    assert layout.itemById("wb_title_plate").text() == "My title"
+    assert layout.itemById("wb_stamp_title").text() == "My title"
 
 
 def test_unedited_title_follows(env):
@@ -26,18 +26,18 @@ def test_unedited_title_follows(env):
     plate = _plate(st, p)
     _build(prj, st, prov, plate)
     layout = _build(prj, st, prov, replace(plate, title="Renamed"))
-    assert layout.itemById("wb_title_plate").text() == "Plate 3 – Renamed"
+    assert layout.itemById("wb_stamp_title").text() == "Renamed"
 
 
-def test_crs_and_caption_kept(env):
+def test_survey_and_caption_kept(env):
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = _build(prj, st, prov, plate)
-    layout.itemById("wb_crs").setText("CRS: ETRS89 / UTM 32N")
-    layout.itemById("wb_title_client").setText("Auftraggeber: LfU")
+    layout.itemById("wb_stamp_survey").setText("CRS: ETRS89 / UTM 32N")
+    layout.itemById("wb_stamp_client_caption").setText("AUFTRAGGEBER")
     layout = _build(prj, st, prov, plate)
-    assert layout.itemById("wb_crs").text() == "CRS: ETRS89 / UTM 32N"
-    assert layout.itemById("wb_title_client").text() == "Auftraggeber: LfU"
+    assert layout.itemById("wb_stamp_survey").text() == "CRS: ETRS89 / UTM 32N"
+    assert layout.itemById("wb_stamp_client_caption").text() == "AUFTRAGGEBER"
 
 
 def test_legacy_label_edit_survives(env):
@@ -46,23 +46,23 @@ def test_legacy_label_edit_survives(env):
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = _build(prj, st, prov, plate)
-    title = layout.itemById("wb_title_plate")
+    title = layout.itemById("wb_stamp_title")
     title.removeCustomProperty(WRITTEN)
     title.setText("Edited in 0.7")
     layout = _build(prj, st, prov, plate)
-    assert layout.itemById("wb_title_plate").text() == "Edited in 0.7"
+    assert layout.itemById("wb_stamp_title").text() == "Edited in 0.7"
 
 
 def test_new_plate_labels_written(env):
     """Review Focus 4: a fresh plate from each template gets its texts."""
-    from groundwork_geophysics.plates.build import plate_name
     st, p, prov, prj = env
     for i, template in enumerate(("A4_landscape", "A4_portrait", "A3_landscape",
                                   "A3_portrait")):
         plate = replace(_plate(st, p, template=template), plate_id=f"pl{i}", number=str(i))
         layout = _build(prj, st, prov, plate)
-        assert layout.itemById("wb_title_plate").text() == plate_name(plate), template
-        assert layout.itemById("wb_crs").text().startswith("Coordinate system:"), template
+        assert layout.itemById("wb_stamp_title").text() == plate.title, template
+        assert layout.itemById("wb_stamp_plate").text() == f"Plate {i}", template
+        assert "Scale 1:" in layout.itemById("wb_stamp_survey").text(), template
 
 
 def test_edited_notes_kept_and_stale_flagged(env):

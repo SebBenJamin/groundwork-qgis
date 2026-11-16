@@ -3,9 +3,10 @@ the user's own edits."""
 import pytest
 
 TEMPLATE_IDS = ("wb_section_area", "wb_minimap", "wb_north", "wb_map_scalebar",
-                "wb_legend_interp", "wb_legend_boreholes", "wb_field_notes", "wb_title_project",
-                "wb_title_client", "wb_title_job", "wb_title_plate", "wb_title_date",
-                "wb_title_author", "wb_title_revision", "wb_crs")
+                "wb_legend_interp", "wb_legend_boreholes", "wb_field_notes", "wb_stamp_area",
+                "wb_stamp_project", "wb_stamp_client", "wb_stamp_job", "wb_stamp_plate",
+                "wb_stamp_title", "wb_stamp_date", "wb_stamp_author", "wb_stamp_checked",
+                "wb_stamp_revision", "wb_stamp_survey", "wb_stamp_logo")
 
 
 @pytest.fixture
@@ -133,9 +134,10 @@ def test_title_reads_project_variables(env):
                       date="2026-11-09", revision="A")
     assert QgsExpressionContextUtils.projectScope(prj).variable("wb_client") == "LfU"
     layout = create_or_update_plate(prj, st, prov, _plate(st, p))
-    label = layout.itemById("wb_title_client")
+    label = layout.itemById("wb_stamp_client")
     assert "@wb_client" in label.text() and label.currentText().endswith("LfU")
-    assert layout.itemById("wb_title_plate").text() == "Plate 3 – Transect"
+    assert layout.itemById("wb_stamp_plate").text() == "Plate 3"
+    assert layout.itemById("wb_stamp_title").text() == "Transect"
 
 
 def test_colour_bars_survive_python_garbage_collection(env):
@@ -214,7 +216,7 @@ def test_update_keeps_user_edits_to_minimap_provenance_and_legend(env):
     assert m.extent() == panned
     assert prov_label.text() == "Our own wording"
     assert [n.name() for n in legend.model().rootGroup().children()] == ["profiles"]
-    assert layout.itemById("wb_title_plate").text() == "Plate 3 – Renamed"
+    assert layout.itemById("wb_stamp_title").text() == "Renamed"
 
 
 def test_untouched_provenance_is_refreshed(env):

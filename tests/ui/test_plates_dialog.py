@@ -82,6 +82,28 @@ def test_create_writes_specs_and_layouts(env):
     assert again.plate_list.count() == 1 and again.current_plate().title == "Line A"
 
 
+def test_plate_details_checked_and_logo(env, tmp_path):
+    from qgis.core import QgsExpressionContextUtils
+
+    from groundwork_geophysics.plates.build import plate_logo
+    from groundwork_geophysics.ui.plates_dialog import PlateDetailsDialog
+    st, p, prov, prj = env
+    prj.setFileName(str(tmp_path / "p.qgz"))
+    dlg = PlateDetailsDialog(prj)
+    assert "checked" in dlg.fields
+    dlg.fields["checked"].setText("KM")
+    assert dlg.logo.isReadOnly()
+    dlg.logo.setText(str(tmp_path / "logo.png"))
+    dlg.accept()
+    assert QgsExpressionContextUtils.projectScope(prj).variable("wb_checked") == "KM"
+    assert plate_logo(prj) == "logo.png"
+    again = PlateDetailsDialog(prj)
+    assert again.logo.text() == "logo.png"
+    again.logo_clear.click()
+    again.accept()
+    assert plate_logo(prj) == ""
+
+
 def test_plate_details_set_project_variables(env):
     import datetime
 

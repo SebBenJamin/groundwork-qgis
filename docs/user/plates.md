@@ -62,7 +62,7 @@ Open **Groundwork → Plates…**.
    - **Take from Section Panel** copies the panel's profile and look into the selected frame. The look covers which models are shown, their colour scale, display mode and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
    - **From / To** limit the chainage range. Leave them empty for the full data range.
    - **Scale / VE** fix the scale (e.g. 2500 for 1:2500) or the vertical exaggeration. Leave them empty to fit the page.
-4. **Plate Details…** sets project, client, job number, date, author and revision. They are entered once per project and shown on every plate.
+4. **Plate Details…** sets project, client, job number, date, drawn (author), checked and revision, and a **logo** (an image file; **Clear** removes it). They are entered once per project and shown on every plate. A logo inside the project's folder is stored relative to it, so the folder can move; a logo that cannot be found leaves its cell empty.
 5. **Create / Update Plates** makes the layouts. They are ordinary QGIS print layouts, named e.g. "Plate 1 – Transect 3", and you open them from QGIS's Layout Manager.
 6. **Export Plates…** updates every plate and writes one vector PDF per plate (`Plate_1_Transect_3.pdf`) into a folder you choose. Tick **One combined PDF** to get all pages in one file instead.
 
@@ -81,11 +81,11 @@ Running **Create / Update Plates** or **Export Plates…** again refreshes only 
 - the colour bars;
 - the contents of the legends;
 - the field-notes list;
-- the title fields;
+- the title block;
 - the section titles;
 - the provenance lines.
 
-Texts you edited in the layout designer stay as you wrote them: plate title, coordinate system line, title-block captions, field-notes list, section titles and provenance lines. If you edited the field-notes list and the notes change later, the message after Update says so; delete the label's text and update again to get the new list.
+Texts you edited in the layout designer stay as you wrote them: every text of the title block (values and captions), the field-notes list, section titles and provenance lines. A title-block cell you deleted stays deleted. If you edited the field-notes list and the notes change later, the message after Update says so; delete the label's text and update again to get the new list.
 
 Anything you moved, resized, restyled or added in the layout designer stays as it is. One exception: when a plate gets more or fewer frames, the frames and their colour bars are laid out in the section area again.
 
@@ -107,7 +107,26 @@ If a plate's profile was removed from the project, its frame says "Profile not f
 - **Borehole legend**: the classes of each borehole style that occur on the plate (colour, pattern, label), plus the log curves shown (name, unit, line). Select it to change its font.
 - **Field-notes list**: the shown notes of the plate's profiles, in chainage order.
 - **Mini-map**: the plate's profiles are highlighted, with a dot at the start and an arrow at the end; other profiles are faint. It has a north arrow (grid north), a bar scale and the coordinate system. It shows the project's visible map layers.
-- **Title block**: project, client, job number, plate number and title, date, author and revision.
+- **Title block**: a stamp ruled into cells, as on an engineering drawing. Each cell has a small caption and its value:
+
+  ```
+  ┌──────────────────────────────┬─────────┐
+  │ PROJECT / CLIENT             │  LOGO   │
+  ├───────────────┬──────────────┴─────────┤
+  │ PROFILE       │ METHOD                 │
+  ├───────────────┴────────────────────────┤
+  │ SURVEY DETAILS                         │
+  ├───────┬───────┬─────────┬──────┬───────┤
+  │ DATE  │ DRAWN │ CHECKED │ REV. │JOB NO.│
+  ├───────┴───────┴─────────┴──────┼───────┤
+  │ plate title                    │Plate n│
+  └────────────────────────────────┴───────┘
+  ```
+
+  - From **Plate Details…**: project, client, logo, date, drawn, checked, revision and job number.
+  - From the plate: the profiles, the method, the survey details, the plate's title and number. Method and survey details come from each model's **Dataset info**: method and array; acquisition date and electrode spacing; inversion software, reference and RMS. Scale, VE and the coordinate system come from the plate. A value that differs between the sections of one plate is left out of the stamp (scale and VE read "per section"); the provenance line under each section has the details. Nothing unknown is filled in.
+  - Every part is an ordinary layout item: restyle, move or delete it in the layout designer.
+  - Plates made before 0.11 keep their old title block (a list of "Label: value" lines) and keep updating it.
 
 ---
 
@@ -126,19 +145,15 @@ The plugin recognises a template's items by their **item ID** (in the layout des
 | `wb_legend_interp` | legend | the interpretation layers, filtered to the plate |
 | `wb_legend_boreholes` | Borehole legend (plugin item) | the plate's boreholes and curves |
 | `wb_field_notes` | label | the field-notes list |
-| `wb_title_plate` | label | "Plate <number> – <title>" |
-| `wb_title_project` | label | `[% @wb_project %]` |
-| `wb_title_client` | label | `[% @wb_client %]` |
-| `wb_title_job` | label | `[% @wb_job %]` |
-| `wb_title_date` | label | `[% @wb_date %]` |
-| `wb_title_author` | label | `[% @wb_author %]` |
-| `wb_title_revision` | label | `[% @wb_revision %]` |
-| `wb_crs` | label | "Coordinate system: <code> <name>" |
+| `wb_stamp_area` | rectangle | the area the plugin rules into the title block (stamp) when the plate is made |
 
 The plugin makes these items itself; don't put them in templates:
 - `wb_frame_<n>`: the sections;
 - `wb_colourbar_<n>_<k>`: the colour bars;
 - `wb_provenance_<n>`: the provenance lines;
-- `wb_placeholder_<n>`: the "profile not found" notice.
+- `wb_placeholder_<n>`: the "profile not found" notice;
+- `wb_stamp_<cell>`, `wb_stamp_<cell>_caption`, `wb_stamp_<cell>_box`, `wb_stamp_logo`: the title block's values, captions, boxes and logo.
 
-Title labels whose text already mentions their variable (e.g. "Auftraggeber: `[% @wb_client %]`") keep your wording. The project variables `wb_project`, `wb_client` and so on are ordinary QGIS project variables. You can use them in any label, also outside plates.
+Templates from before 0.11 may still carry the old title items (`wb_title_plate`, `wb_title_project`, `wb_title_client`, `wb_title_job`, `wb_title_date`, `wb_title_author`, `wb_title_revision`, `wb_crs`); they are filled as before.
+
+Old title labels whose text already mentions their variable (e.g. "Auftraggeber: `[% @wb_client %]`") keep your wording. The project variables `wb_project`, `wb_client`, `wb_checked`, `wb_logo` and so on are ordinary QGIS project variables. You can use them in any label, also outside plates.

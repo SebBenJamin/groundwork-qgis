@@ -5,7 +5,7 @@
 
 Every template carries the fixed item IDs the plate builder fills (see docs/user/plates.md):
 the section area the builder divides among the frames, the mini-map with north arrow and
-bar scale, the interpretation and borehole legends, the field-notes list and the title block.
+bar scale, the interpretation and borehole legends, the field-notes list and the stamp area (the builder rules it into the title block).
 Positions and fonts are a starting point; users restyle them in QGIS's layout designer."""
 import os
 import sys
@@ -27,14 +27,8 @@ PAGES = {"A4_landscape": (297.0, 210.0), "A4_portrait": (210.0, 297.0),
          "A3_landscape": (420.0, 297.0), "A3_portrait": (297.0, 420.0)}
 MARGIN = 10.0
 GAP = 4.0
-TITLE_ROWS = (("wb_title_plate", "Plate [number] – [title]"),
-              ("wb_title_project", "Project: [% @wb_project %]"),
-              ("wb_title_client", "Client: [% @wb_client %]"),
-              ("wb_title_job", "Job no.: [% @wb_job %]"),
-              ("wb_title_date", "Date: [% @wb_date %]"),
-              ("wb_title_author", "Drawn: [% @wb_author %]"),
-              ("wb_title_revision", "Revision: [% @wb_revision %]"),
-              ("wb_crs", "Coordinate system:"))
+STAMP_MIN_W = 80.0   # mm: the stamp's cells stay readable (captions 5.5 pt, five date-row cells)
+STAMP_MIN_H = 60.0
 
 
 def _place(item, x, y, w, h):
@@ -128,15 +122,9 @@ def _borehole_legend(layout, x, y, w, h):
     _place(item, x, y + 6, w, h - 6)
 
 
-def _title_block(layout, x, y, w, h):
-    _box(layout, "wb_title_frame", x, y, w, h)
-    row = (h - 4) / (len(TITLE_ROWS) + 1)
-    yy = y + 2
-    for item_id, text in TITLE_ROWS:
-        big = item_id == "wb_title_plate"
-        _label(layout, item_id, text, x + 2, yy, w - 4, row * (2 if big else 1),
-               11.0 if big else 7.5, big)
-        yy += row * (2 if big else 1)
+def _stamp_area(layout, x, y, w, h):
+    """The stamp's area: the builder rules it into cells when a plate is made."""
+    _box(layout, "wb_stamp_area", x, y, w, h)
 
 
 def build(name):
@@ -153,7 +141,8 @@ def build(name):
     y0 = MARGIN + area_h + GAP
     strip_h = page_h - MARGIN - y0
     if portrait:
-        top_h = strip_h * 0.55
+        bottom_h = max(strip_h * 0.45 - GAP, STAMP_MIN_H)
+        top_h = strip_h - GAP - bottom_h
         cols = (inner_w - 2 * GAP) * 0.42, (inner_w - 2 * GAP) * 0.30, (inner_w - 2 * GAP) * 0.28
         x = MARGIN
         _minimap(layout, x, y0, cols[0], top_h)
@@ -162,13 +151,14 @@ def build(name):
         x += cols[1] + GAP
         _borehole_legend(layout, x, y0, cols[2], top_h)
         y1 = y0 + top_h + GAP
-        bottom_h = page_h - MARGIN - y1
         notes_w = (inner_w - GAP) * 0.52
         _label(layout, "wb_field_notes", "Field notes", MARGIN, y1, notes_w, bottom_h, 7.0)
-        _title_block(layout, MARGIN + notes_w + GAP, y1, inner_w - notes_w - GAP, bottom_h)
+        _stamp_area(layout, MARGIN + notes_w + GAP, y1, inner_w - notes_w - GAP, bottom_h)
     else:
-        parts = (0.25, 0.19, 0.17, 0.19, 0.20)
-        widths = [(inner_w - 4 * GAP) * p for p in parts]
+        parts = (0.25, 0.19, 0.17, 0.19)          # mini-map, legends, field notes
+        free = inner_w - 4 * GAP
+        stamp_w = max(free * 0.20, STAMP_MIN_W)
+        widths = [(free - stamp_w) * p / sum(parts) for p in parts] + [stamp_w]
         x = MARGIN
         _minimap(layout, x, y0, widths[0], strip_h)
         x += widths[0] + GAP
@@ -178,7 +168,7 @@ def build(name):
         x += widths[2] + GAP
         _label(layout, "wb_field_notes", "Field notes", x, y0, widths[3], strip_h, 7.0)
         x += widths[3] + GAP
-        _title_block(layout, x, y0, widths[4], strip_h)
+        _stamp_area(layout, x, y0, widths[4], strip_h)
     return layout
 
 
