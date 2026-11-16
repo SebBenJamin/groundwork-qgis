@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDial
                                  QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                  QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget)
 
+from .help import add_help_button
 from .. import readers
 from ..core.coverage import overhang_message
 from ..core.layout import guess_electrodes
@@ -253,6 +254,7 @@ class AddDataDialog(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Add")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        add_help_button(buttons, "add_data")
         layout = QVBoxLayout(self)
         layout.addWidget(scroll, 1)
         layout.addWidget(self.status_block)

@@ -19,6 +19,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton,
                                  QScrollArea, QVBoxLayout, QWidget)
 
+from .help import add_help_button
 from ..core.model import Profile, attach_positions, profile_from_positions
 from ..core.numbers import fmt_trim, parse
 from ..core.placement import fit_report
@@ -124,6 +125,7 @@ class ProfilePropertiesDialog(QDialog):
                                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        add_help_button(buttons, "profile_properties")
         layout = QVBoxLayout(self)
         layout.addWidget(scroll)
         layout.addWidget(buttons)

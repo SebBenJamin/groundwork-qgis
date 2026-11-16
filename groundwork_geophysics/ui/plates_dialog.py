@@ -19,6 +19,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialo
                                  QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                  QWidget)
 
+from .help import add_help_button
 from ..core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
 from ..plates.build import DETAILS, STALE_PROPERTY, TEMPLATES, create_or_update_plate, \
     plate_details, plate_logo, plate_name, set_plate_details, set_plate_logo
@@ -133,6 +134,7 @@ class PlateDetailsDialog(QDialog):
                                    QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        add_help_button(buttons, "plate_details")
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Shown in the title block of every plate of this project."))
         layout.addLayout(form)
@@ -239,6 +241,9 @@ class PlatesDialog(QDialog):
         for w in (details, create, export, self.combined):
             bottom.addWidget(w)
         bottom.addStretch(1)
+        help_box = QDialogButtonBox()
+        add_help_button(help_box, "plates")
+        bottom.addWidget(help_box)
         bottom.addWidget(close)
         self.message = QLabel("")
         self.message.setWordWrap(True)

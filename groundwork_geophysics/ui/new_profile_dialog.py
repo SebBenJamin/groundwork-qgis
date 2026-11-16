@@ -17,6 +17,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QLabel, QLineEdit, QMessageBox, QScrollArea, QSizePolicy,
                                  QVBoxLayout, QWidget)
 
+from .help import add_help_button
 from ..section.data import matching_profiles
 from ..section.profile_source import CURVE_TOLERANCE
 from .dialog_size import fit_to_content
@@ -73,6 +74,7 @@ class NewProfileDialog(QDialog):
                                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        add_help_button(buttons, "new_profile")
         layout = QVBoxLayout(self)
         layout.addWidget(scroll)
         layout.addWidget(buttons)
