@@ -60,7 +60,7 @@ def test_marker_tops_names_the_widget_it_cannot_mark(qgis_app, state):
         from qgis.PyQt.QtWidgets import QLabel
         dialog.findChild(QLabel, "b").hide()
         qgis_app.processEvents()
-    with pytest.raises(RuntimeError, match="b" if state == "hidden" else "nope"):
+    with pytest.raises(RuntimeError, match="'b' is hidden" if state == "hidden" else "'nope'"):
         r.marker_tops(dialog, ("a", "b" if state == "hidden" else "nope"))
 
 
@@ -102,3 +102,20 @@ def test_no_private_path_passes_and_fails(qgis_app, tmp_path):
     edit.show()
     with pytest.raises(RuntimeError, match="path"):
         r.check_no_private_path(dialog, [str(tmp_path)])
+
+
+def test_committed_demo_is_the_demo_at_git_head(tmp_path):
+    """Every file of the picture's demo comes from git HEAD, so no local edit can show."""
+    import subprocess
+
+    import render_doc_images as r
+    from render_readme_images import GIT
+    demo = r.committed_demo(tmp_path)
+    assert demo == tmp_path / "demo"
+    tracked = subprocess.run([GIT, "ls-files", "demo"], cwd=REPO, capture_output=True,
+                             check=True, text=True).stdout.split("\n")
+    have = {p.relative_to(tmp_path).as_posix() for p in demo.rglob("*") if p.is_file()}
+    assert have == {t for t in tracked if t}
+    head = subprocess.run([GIT, "show", "HEAD:demo/demo_groundwork.gpkg"], cwd=REPO,
+                          capture_output=True, check=True).stdout
+    assert (demo / "demo_groundwork.gpkg").read_bytes() == head

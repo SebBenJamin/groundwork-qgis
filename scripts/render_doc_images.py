@@ -2,8 +2,8 @@
 
     python-qgis.bat scripts/render_doc_images.py [out_dir]
 
-Opens a temporary copy of demo/ offscreen, with its committed Groundwork file (the demo
-folder is never written, and local edits to it never show), brings each dialog of
+Unpacks demo/ as committed (git HEAD) into a temporary folder (the demo folder is never
+written, and local edits to it never show), opens it offscreen, brings each dialog of
 ``PICTURES`` into the state to show, and writes ``<out_dir>/<name>.png`` (default
 docs/images/howto): the dialog with a gutter on its left that carries one numbered marker
 per part, level with the top of that part. The parts are found by their object names, so a
@@ -27,7 +27,6 @@ MARK_D = 24                 # marker diameter
 MARK_GAP = 2                # least distance between two markers
 MARK_COLOR = "#009485"      # the site's teal (mkdocs.yml: primary)
 DIALOG_WIDTH = 760
-DEMO_STORE = "demo_groundwork.gpkg"
 TABLE_SOURCE = "data/ert/P1/f001_res.dat"       # distance, elevation, resistivity, log10
 TABLE = "data/ert/P1/P1_table.csv"
 TABLE_HEADER = "Distance [m],Elevation [m],Rho [ohm.m]"
@@ -109,6 +108,21 @@ def check_no_private_path(dialog, private: list[str]) -> None:
             raise RuntimeError(f"a private path shows in the dialog: {text!r}")
 
 
+def committed_demo(target: Path) -> Path:
+    """Unpack demo/ as committed (git HEAD) into ``target`` and return ``target/demo``: no
+    local edit of the demo (store, project, data files) can reach a picture."""
+    import io
+    import subprocess
+    import tarfile
+
+    from render_readme_images import GIT
+    data = subprocess.run([GIT, "archive", "--format=tar", "HEAD", "demo"], cwd=REPO,
+                          capture_output=True, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(data)) as archive:
+        archive.extractall(target, filter="data")
+    return target / "demo"
+
+
 def write_table(demo: Path) -> Path:
     """A plain text table of the demo's P1 model (distance, elevation, resistivity), so the
     dialog shows the parts it has for a file it does not know. Returns it relative to
@@ -178,6 +192,7 @@ def full_height(dialog, app) -> None:
 
 def render(demo: Path, out_dir: Path, private: list[str]) -> list[Path]:
     from qgis.core import QgsApplication, QgsProject
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
     from render_demo_section import FakeIface
     from render_readme_images import save
 
@@ -193,18 +208,29 @@ def render(demo: Path, out_dir: Path, private: list[str]) -> list[Path]:
     if plugin.store is None:
         raise RuntimeError("the demo project has no workbench store")
     written = []
-    for picture in PICTURES:
-        dialog = picture.setup(plugin, demo)
-        try:
-            full_height(dialog, app)
-            tops = marker_tops(dialog, picture.targets)
-            check_no_private_path(dialog, private)
-            image = annotate(dialog.grab().toImage(), tops)
-            written.append(save(image, out_dir / f"{picture.name}.png"))
-            print(f"  {image.width()} x {image.height()} px, markers at {tops}")
-        finally:
-            dialog.reject()
-    project.setDirty(False)
+    try:
+        for picture in PICTURES:
+            dialog = picture.setup(plugin, demo)
+            try:
+                full_height(dialog, app)
+                tops = marker_tops(dialog, picture.targets)
+                check_no_private_path(dialog, private)
+                image = annotate(dialog.grab().toImage(), tops)
+                written.append(save(image, out_dir / f"{picture.name}.png"))
+                print(f"  {image.width()} x {image.height()} px, markers at {tops}")
+            finally:
+                dialog.reject()
+                dialog.deleteLater()
+    finally:
+        # let go of the demo's files, or Windows keeps the temporary folder (the synthetic
+        # demo has no live web layers, so this cannot hang as it can for Gülpe)
+        os.chdir(REPO)
+        project.setDirty(False)
+        plugin.unload()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+        project.clear()
+        iface.mainWindow().close()
+        app.processEvents()
     return written
 
 
@@ -215,7 +241,6 @@ def main() -> int:
     from qgis.PyQt.QtCore import QLocale
     from qgis.PyQt.QtGui import QFont
     from render_demo_section import UI_FONT
-    from render_readme_images import committed_store
 
     from groundwork_geophysics.ui.add_data_dialog import SETTINGS_KEY
 
@@ -227,14 +252,11 @@ def main() -> int:
     app.setFont(QFont(UI_FONT, 9))
     QLocale.setDefault(QLocale(QLocale.Language.English, QLocale.Country.UnitedKingdom))
     settings = QgsSettings()
-    remembered = settings.value(SETTINGS_KEY, None)     # the developer's last table must not
-    settings.remove(SETTINGS_KEY)                       # shape the picture; put back below
+    remembered = settings.value(SETTINGS_KEY, None)
     tmp = Path(tempfile.mkdtemp(prefix="wb_docs_"))
     try:
-        demo = tmp / "demo"
-        shutil.copytree(REPO / "demo", demo,
-                        ignore=shutil.ignore_patterns("*.gpkg-wal", "*.gpkg-shm"))
-        committed_store(demo / DEMO_STORE, f"demo/{DEMO_STORE}")
+        settings.remove(SETTINGS_KEY)       # the developer's last table must not shape
+        demo = committed_demo(tmp)          # the picture; put back below
         render(demo, out_dir, [str(tmp), str(Path.home())])
         return 0
     except Exception as exc:
@@ -245,8 +267,11 @@ def main() -> int:
     finally:
         if remembered is not None:
             settings.setValue(SETTINGS_KEY, remembered)
+            settings.sync()
         os.chdir(REPO)
         shutil.rmtree(tmp, ignore_errors=True)
+        if tmp.exists():
+            print(f"warning: could not remove the temporary folder {tmp}", file=sys.stderr)
 
 
 if __name__ == "__main__":
