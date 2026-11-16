@@ -1,4 +1,4 @@
-# Borehole data in the Groundwork
+# Borehole data in Groundwork
 
 This guide shows how to get borehole data, as clients usually deliver it, onto your sections and into the borehole viewer.
 

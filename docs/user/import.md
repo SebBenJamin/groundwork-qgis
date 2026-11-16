@@ -1,6 +1,6 @@
 # Adding data and placing it on a profile
 
-This guide shows how to bring a model into the Groundwork from an ordinary text file, and how the plugin decides where along the line it sits.
+This guide shows how to bring a model into Groundwork from an ordinary text file, and how the plugin decides where along the line it sits.
 
 **Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data) are recognised as before. For any other text table you say what the columns are. The menu entry is available as soon as a Groundwork project is open; no profile has to be open.
 

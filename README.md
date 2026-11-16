@@ -1,11 +1,11 @@
 # Groundwork
 
-*Geophysical profiles in QGIS.* Formerly “Groundwork”.
+*Geophysical profiles in QGIS.* Formerly “Geophysics Workbench”.
 
 **See your geophysical profiles where they are: on the map, next to the boreholes and the
-geology.** Groundwork is a plugin for profile-based geophysics in QGIS: sections as a panel under the
-map, with your boreholes, geology and crossing lines on them, your interpretation as ordinary
-QGIS layers and report plates in the QGIS layout.
+geology.** Groundwork is a plugin for profile-based geophysics in QGIS: sections as a
+panel under the map, with your boreholes, geology and crossing lines on them, your
+interpretation as ordinary QGIS layers and report plates in the QGIS layout.
 
 Today it works with **resistivity (ERT)**. **Ground-penetrating radar (GPR) and seismics**
 are planned next, on the same profiles, next to the same context.

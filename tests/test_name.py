@@ -62,3 +62,4 @@ def test_docs_use_new_name():
             if "Geophysics Workbench" in line and "ormerly" not in line:
                 offenders.append(f"{path.name}:{n}")
     assert not offenders, offenders
+    assert "Formerly “Geophysics Workbench”" in (REPO / "README.md").read_text(encoding="utf-8")
