@@ -58,6 +58,7 @@ class ProfilePropertiesDialog(QDialog):
         profile = store.profile(profile_id)
 
         self.name_edit = QLineEdit(profile.name)
+        self.name_edit.setObjectName("name_edit")
         self.name_edit.setToolTip("Name of the profile")
         self.spacing_edit = QLineEdit()
         self.spacing_edit.setObjectName("spacing_edit")
@@ -72,6 +73,7 @@ class ProfilePropertiesDialog(QDialog):
         self.fit_label.setObjectName("fit_label")
         self.fit_label.setWordWrap(True)
         self.reference_button = QPushButton(REFERENCE_TEXT)
+        self.reference_button.setObjectName("reference_button")
         self.reference_button.clicked.connect(self._ask_reference)
         form = QFormLayout()
         form.addRow("Name", self.name_edit)
@@ -85,9 +87,11 @@ class ProfilePropertiesDialog(QDialog):
         self.placement.setObjectName("placement")
         self.placement.setTitle("Surveyed Positions")
         self.set_positions = QCheckBox("Set surveyed positions")
+        self.set_positions.setObjectName("set_positions")
         self.set_positions.setToolTip("Read the stations' coordinates from a file or a point "
                                       "layer; nothing changes while this is off")
         self.set_combo = QComboBox()
+        self.set_combo.setObjectName("set_combo")
         self.set_combo.setToolTip("The station set the positions replace; datasets on it keep "
                                   "their link")
         sets = store.station_sets(profile_id)

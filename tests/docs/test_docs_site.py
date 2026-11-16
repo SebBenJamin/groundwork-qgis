@@ -96,3 +96,19 @@ def test_lists_have_a_blank_line_before():
                     k -= 1
                 ok = bool(lines[k].strip())
             assert ok, f"{page.relative_to(DOCS)}:{i + 1}"
+
+
+def test_add_data_page_is_built_around_its_picture():
+    """The pattern for dialog pages: the annotated picture, a legend with its numbers that
+    links to the parts, then the text."""
+    text = (DOCS / "user/howto/add-data.md").read_text(encoding="utf-8")
+    picture = "../../images/howto/add-data.png"
+    assert f"]({picture})" in text
+    legend = text.index("①")
+    assert text.index(picture) < legend < text.index("## ")      # picture, legend, then sections
+    for mark, anchor in zip("①②③④⑤", ("file-format-text-tables-only", "what-the-columns-are",
+                                        "where-the-line-runs", "preview", "the-check-result")):
+        row = next(line for line in text.splitlines() if line.startswith(f"| {mark} "))
+        assert f"(#{anchor})" in row, mark
+        assert anchor in headings("user/howto/add-data.md"), anchor
+    assert len(text[:legend].split()) < 90                      # short lead: the picture is on top

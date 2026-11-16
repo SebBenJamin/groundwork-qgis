@@ -4,14 +4,33 @@ How Groundwork decides where along the line a model sits: surveyed positions, kn
 
 ## Adding surveyed positions later
 
-1. Open the profile in the section panel and choose **Profile Properties…**.
-2. Under **Set surveyed positions** choose a positions file or a point layer, and the station set they replace (or a new set).
-3. Choose **Keep the line** (the points are projected onto it; points more than 5 m off are listed first) or **Move the line to the points**. Moving asks first and names what moves.
-4. **OK**. Everything is saved together, or not at all.
+Open the profile in the section panel and choose **Profile Properties…**.
 
-When the line moves, field notes and the current interpretation follow by map position, frozen interpretation versions keep their stored positions, and the models keep their place on the map. What lies past the ends of the old line (interpretation drawn over a model's padding, a note range) keeps its distance beyond the ends of the new one.
+![The Profile Properties dialog with Set surveyed positions ticked and a positions file chosen; its parts are numbered 1 to 5](../../images/howto/profile-properties.png)
 
-**Profile Properties…** also holds the **name**, the **station spacing** (empty clears it) and **Reference Height…**. It replaces Rename Profile…. Under the spacing it shows the fit report (see [below](#known-points-and-the-fit-report)) for the spacing and positions as you edit them, before anything is saved.
+| | Part | What it is for |
+|---|---|---|
+| ① | Name and Station spacing | The profile's name, and the stated distance between stations (empty clears it) |
+| ② | Fit report | How the model sits on the known points with the spacing and positions as you edit them, before anything is saved (see [below](#known-points-and-the-fit-report)) |
+| ③ | Reference Height… | Real heights for a local section; greyed for a profile that has real heights (see [Reference height](reference-height.md)) |
+| ④ | Set surveyed positions | Tick it, then choose a positions file or a point layer; nothing changes while it is off |
+| ⑤ | Station set, and the line | The station set the positions replace (or **New set**), and whether the line stays or moves |
+
+1. Tick ④ **Set surveyed positions** and choose a positions file or a point layer.
+2. Under ⑤ choose the station set they replace (or a new set).
+3. Choose **Keep the line** or **Move the line to the points**.
+   - Keep: the points are projected onto the line; points more than 5 m off are listed first.
+   - Move: the dialog asks first and names what moves.
+4. Read ② the fit report, then **OK**. Everything is saved together, or not at all.
+
+When the line moves:
+
+- field notes and the current interpretation follow by map position;
+- frozen interpretation versions keep their stored positions;
+- the models keep their place on the map;
+- what lies past the ends of the old line (interpretation drawn over a model's padding, a note range) keeps its distance beyond the ends of the new one.
+
+Profile Properties… replaces Rename Profile….
 
 ## Known points and the fit report
 

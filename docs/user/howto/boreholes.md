@@ -27,18 +27,21 @@ The plugin reads boreholes from ordinary QGIS layers. You set those up once per 
 
 ## Context Layers…: field by field
 
-**Groundwork** menu → **Context Layers…** → **Boreholes**. Each borehole entry is one set of collars with its tables. Use **Add** for a second set, e.g. state boreholes next to your own.
+**Groundwork** menu → **Context Layers…** → **Boreholes**. Each borehole entry is one set of collars with its tables. Use **Add** under the list on the left for a second set, e.g. state boreholes next to your own.
 
-| Field in the dialog | What to choose |
-|---|---|
-| Borehole layer | your collar points |
-| Borehole id field | `id` |
-| Ground elevation field | `elevation` (or None: then the DEM or the surface line gives the height) |
-| Total depth field | `total_depth` (optional) |
-| Interval table | your layer table |
-| Intervals: borehole id / top / bottom field | `id`, `top`, `bottom` |
-| Intervals: text field | `lithology` |
-| Add Curve Table | the curve table, its id and depth fields; tick each curve and give its unit |
+![The Context Layers dialog on its Boreholes tab with one borehole entry; its fields are numbered 1 to 9](../../images/howto/context-layers-boreholes.png)
+
+| | Field in the dialog | What to choose |
+|---|---|---|
+| ① | Borehole layer, Borehole id field | your collar points, and `id` |
+| ② | Ground elevation field | `elevation` (or None: then the DEM or the surface line gives the height) |
+| ③ | Total depth field | `total_depth` (optional) |
+| ④ | Interval table | your layer table |
+| ⑤ | Intervals: borehole id / top / bottom field | `id`, `top`, `bottom` |
+| ⑥ | Intervals: text field | `lithology` |
+| ⑦ | Borehole Style… | how the intervals look (see [Styling](#styling)) |
+| ⑧ | Add Curve Table | the curve table, its id and depth fields; tick each curve and give its unit |
+| ⑨ | Search distance from the line | points and boreholes this close to the profile line are drawn on the section |
 
 Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
