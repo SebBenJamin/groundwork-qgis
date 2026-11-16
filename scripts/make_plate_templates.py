@@ -3,7 +3,7 @@
 
     python-qgis.bat scripts/make_plate_templates.py
 
-Every template carries the fixed item IDs the plate builder fills (see docs/user/plates.md):
+Every template carries the fixed item IDs the plate builder fills (see docs/user/formats/plate-templates.md):
 the section area the builder divides among the frames, the mini-map with north arrow and
 bar scale, the interpretation and borehole legends, the field-notes list and the stamp area (the builder rules it into the title block).
 Positions and fonts are a starting point; users restyle them in QGIS's layout designer."""

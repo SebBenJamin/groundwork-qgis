@@ -1,4 +1,4 @@
-"""The borehole guide's steps work on its templates (docs/user/boreholes.md): the Excel sheets
+"""The borehole guide's steps work on its templates (docs/user/howto/boreholes.md, docs/user/formats/borehole-tables.md): the Excel sheets
 open in QGIS with typed columns, QGIS's "Create points layer from table" makes the collars,
 and Context Layers… with the guide's field names gives boreholes with layers and curves."""
 import sys

@@ -77,9 +77,19 @@ Ideas and wishes are welcome as [GitHub issues](https://github.com/SebBenJamin/g
 
 ## Documentation
 
-- [Adding data and placing it on a profile](docs/user/import.md)
-- [Boreholes and logs](docs/user/boreholes.md)
-- [Field notes, dataset info and plates](docs/user/plates.md)
+The documentation is on its own site, with search:
+**https://sebbenjamin.github.io/groundwork-qgis/**
+
+The same pages, in the repository:
+- How-tos: [Add data](docs/user/howto/add-data.md) ·
+  [Placement on the electrodes](docs/user/howto/placement.md) ·
+  [Reference height](docs/user/howto/reference-height.md) ·
+  [Boreholes and logs](docs/user/howto/boreholes.md) ·
+  [Field notes](docs/user/howto/field-notes.md) · [Dataset info](docs/user/howto/dataset-info.md) ·
+  [Report plates](docs/user/howto/plates.md)
+- Data formats: [Borehole tables](docs/user/formats/borehole-tables.md) ·
+  [Plate templates](docs/user/formats/plate-templates.md)
+- [Troubleshooting](docs/user/troubleshooting.md)
 - [What changed in each release](docs/releases/), latest: [0.10.0](docs/releases/0.10.0.md)
 
 Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundwork.gpkg`).

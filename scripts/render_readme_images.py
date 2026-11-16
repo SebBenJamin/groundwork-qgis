@@ -9,7 +9,8 @@ writes to ``out_dir`` (default docs/images):
 
 - ``overview.jpg``: the window: map around the profile, its section below;
 - ``section.png``: the section panel alone, zoomed to the first cores;
-- ``plate.jpg``: the demo's report plate exported from its layout.
+- ``plate.jpg``: the demo's report plate exported from its layout;
+- ``stamp.png``: that plate's title block alone (for the plates guide).
 
 The live layers (aerial images, OpenStreetMap, state geology and boreholes) need the internet;
 without it they are missing from the pictures.
@@ -42,6 +43,7 @@ SECTION_HEIGHT = 430
 SECTION_ALONE = (1500, 520)
 SECTION_ZOOM = (4.0, -2.0, 105.0, 28.6)    # exaggeration, from s, to s, top of the view
 PLATE_DPI = 110
+STAMP_MARGIN_MM = 1.5
 MAP_MARGIN = 0.25           # of the profile's extent, on each side
 NETWORK_WAIT_S = 25.0
 AERIAL = "Aerial images"
@@ -153,8 +155,17 @@ def render(demo: Path, out_dir: Path, profile_name: str) -> None:
         if result != QgsLayoutExporter.ExportResult.Success:
             raise RuntimeError(f"plate export failed: {exporter.errorMessage()}")
         from qgis.PyQt.QtGui import QImage
-        save(QImage(str(out)), out_dir / "plate.jpg", 88)
+        image = QImage(str(out))
+        save(image, out_dir / "plate.jpg", 88)
         out.unlink()
+        area = layouts[0].itemById("wb_stamp_area")
+        if area is not None:                    # the title block alone, for the plates guide
+            from groundwork_geophysics.plates.stamp import item_rect
+            x, y, w, h = item_rect(area)
+            px = PLATE_DPI / 25.4
+            m = STAMP_MARGIN_MM
+            save(image.copy(round((x - m) * px), round((y - m) * px), round((w + 2 * m) * px),
+                            round((h + 2 * m) * px)), out_dir / "stamp.png")
     finally:
         # no plugin.unload() / project.clear(): with live web requests still open they can
         # hang; the process ends with os._exit right after this
