@@ -32,6 +32,22 @@ LEGACY_GROUP_NAME = LEGACY_NAME
 LAYER_NAMES = ("profiles", "stations")
 
 
+def plugin_group(root):
+    """The plugin's layer group: "Groundwork", else the group an old (0.9) project already has
+    (never renamed), else a new "Groundwork" group on top. Searched like ``findGroup`` does."""
+    return (root.findGroup(GROUP_NAME) or root.findGroup(LEGACY_GROUP_NAME)
+            or root.insertGroup(0, GROUP_NAME))
+
+
+def default_store_name(project: QgsProject) -> str:
+    """Suggested store path ``<project>_groundwork.gpkg`` beside the project file, or ``""``."""
+    name = project.fileName()
+    if not name:
+        return ""
+    path = Path(name)
+    return str(path.with_name(f"{path.stem}_groundwork.gpkg"))
+
+
 # -- store path entry ----------------------------------------------------------------------
 def _project_dir(project: QgsProject) -> Path | None:
     name = project.fileName()
@@ -155,7 +171,7 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
     """Add the store's layers to the "Groundwork" group unless already there."""
     have = store_layers(store, project)
     root = project.layerTreeRoot()
-    group = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)
+    group = plugin_group(root)
     for name in LAYER_NAMES:                    # profiles drawn above stations
         if name in have:
             continue

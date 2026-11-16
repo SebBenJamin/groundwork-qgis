@@ -383,7 +383,9 @@ class WorkbenchPlugin:
     # -- workbench projects ----------------------------------------------------------------------
     def new_workbench_project(self):
         window = self.iface.mainWindow()
-        path, _ = QFileDialog.getSaveFileName(window, "New Groundwork project", "",
+        path, _ = QFileDialog.getSaveFileName(window, "New Groundwork project",
+                                              project_actions.default_store_name(
+                                                  QgsProject.instance()),
                                               "GeoPackage (*.gpkg)",
                                               options=QFileDialog.Option.DontConfirmOverwrite)
         if not path:

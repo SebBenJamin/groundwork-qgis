@@ -14,7 +14,7 @@ from qgis.core import (QgsCategorizedSymbolRenderer, QgsFeature, QgsGeometry, Qg
 from qgis.PyQt.QtXml import QDomDocument
 
 from ..ids import LEGACY_ID
-from .project_actions import GROUP_NAME, SCOPE, store_layers
+from .project_actions import SCOPE, plugin_group, store_layers
 
 DERIVED_NAME = "electrodes (derived)"
 STYLE_KEY = "derived_style"
@@ -100,7 +100,7 @@ def _create(store, project: QgsProject) -> QgsVectorLayer:
     layer.setRenderer(_default_renderer(project, store))
     project.addMapLayer(layer, False)
     root = project.layerTreeRoot()
-    group = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)
+    group = plugin_group(root)
     stations = store_layers(store, project).get("stations")
     node = None if stations is None else group.findLayer(stations.id())
     index = group.children().index(node) + 1 if node is not None else len(group.children())

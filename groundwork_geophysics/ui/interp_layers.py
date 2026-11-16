@@ -16,7 +16,7 @@ from qgis.core import (QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsLineSymbo
 from qgis.PyQt.QtGui import QColor
 
 from ..store.gpkg_store import ProjectStore
-from .project_actions import GROUP_NAME, find_store_layers
+from .project_actions import find_store_layers, plugin_group
 
 INTERP_GROUP = "Interpretation"
 INTERP_NAMES = ("interp_features", "interp_polygons_3d", "interp_lines_3d", "interp_points_3d",
@@ -140,7 +140,7 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
     """Add the interpretation layers in an "Interpretation" subgroup unless already there."""
     have = interp_layers(store, project)
     root = project.layerTreeRoot()
-    top = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)
+    top = plugin_group(root)
     group = top.findGroup(INTERP_GROUP) or top.insertGroup(0, INTERP_GROUP)
     for name in INTERP_NAMES:
         if name in have:

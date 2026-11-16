@@ -11,7 +11,7 @@ from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsP
 from qgis.PyQt.QtGui import QColor
 
 from ..store.gpkg_store import ProjectStore
-from .project_actions import GROUP_NAME, find_store_layers
+from .project_actions import find_store_layers, plugin_group
 
 NOTE_NAMES = ("field_notes_points", "field_notes_lines")
 TITLES = {"field_notes_points": "Field notes",
@@ -43,7 +43,7 @@ def add_field_note_layers(store: ProjectStore, project: QgsProject) -> dict[str,
     store.ensure_field_notes()
     have = field_note_layers(store, project)
     root = project.layerTreeRoot()
-    group = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)
+    group = plugin_group(root)
     for name in NOTE_NAMES:
         if name in have:
             continue
