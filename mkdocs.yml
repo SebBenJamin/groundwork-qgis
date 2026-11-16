@@ -1,0 +1,85 @@
+site_name: Groundwork
+site_description: Geophysical profiles in QGIS
+site_url: https://sebbenjamin.github.io/groundwork-qgis/
+repo_url: https://github.com/SebBenJamin/groundwork-qgis
+repo_name: groundwork-qgis
+edit_uri: edit/master/docs/
+docs_dir: docs
+exclude_docs: |
+  superpowers/
+  decisions/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - mdx_truly_sane_lists:     # lists nested by two spaces, as on GitHub
+      nested_indent: 2
+      truly_sane: true
+  - tables
+  - admonition
+  - toc:
+      permalink: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - How-tos:
+      - Add data: user/howto/add-data.md
+      - Placement on the electrodes: user/howto/placement.md
+      - Reference height: user/howto/reference-height.md
+      - Boreholes and logs: user/howto/boreholes.md
+      - Field notes: user/howto/field-notes.md
+      - Dataset info: user/howto/dataset-info.md
+      - Report plates: user/howto/plates.md
+  - Data formats:
+      - Borehole tables: user/formats/borehole-tables.md
+      - Plate templates: user/formats/plate-templates.md
+  - Troubleshooting: user/troubleshooting.md
+  - What's new:
+      - Overview: releases/index.md
+      - 0.10.0: releases/0.10.0.md
+      - 0.9.1: releases/0.9.1.md
+      - 0.9.0: releases/0.9.0.md
+      - 0.8.0: releases/0.8.0.md
+      - 0.7.0: releases/0.7.0.md
+      - 0.6.0: releases/0.6.0.md
+      - 0.5.1: releases/0.5.1.md
+      - 0.5.0: releases/0.5.0.md
+      - 0.4.5: releases/0.4.5.md
+      - 0.4.0: releases/0.4.0.md
+      - 0.3.5: releases/0.3.5.md
+      - 0.3.0: releases/0.3.0.md
+      - 0.2.2: releases/0.2.2.md
+      - 0.2.1: releases/0.2.1.md
+      - 0.2.0: releases/0.2.0.md
+      - 0.1.1: releases/0.1.1.md
+      - 0.1.0: releases/0.1.0.md

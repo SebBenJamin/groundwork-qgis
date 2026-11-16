@@ -18,6 +18,7 @@ def initial_size(available) -> QSize:
     return QSize(min(720, int(available.width() * 0.8)),
                  min(580, int(available.height() * 0.8)))
 
+from .help import add_help_button
 from ..core.context_settings import MAX_DISTANCE, ContextSettings, PointLayerSetting
 from ..ids import LEGACY_ID
 from .borehole_mapping import (MISSING, NONE, BoreholeEntries, field_of, fill_field_combo,
@@ -142,6 +143,7 @@ class ContextDialog(QDialog):
         self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
         self.apply_button.clicked.connect(lambda _checked=False: self.apply())
         buttons.rejected.connect(self.reject)
+        add_help_button(buttons, "context_layers")
         layout = QVBoxLayout(self)
         layout.addWidget(self.tabs, 1)
         layout.addLayout(common)
