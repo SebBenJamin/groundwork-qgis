@@ -165,7 +165,7 @@ def main() -> int:
     app.initQgis()
     app.setFont(QFont(UI_FONT, 9))
     app.messageLog().messageReceived.connect(
-        lambda msg, tag, level: print(f"log [{tag}] {msg}") if "Workbench" in tag or
+        lambda msg, tag, level: print(f"log [{tag}] {msg}") if "Groundwork" in tag or
         "WFS" in tag else None)
     tmp = Path(tempfile.mkdtemp(prefix="wb_readme_"))
     try:

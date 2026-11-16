@@ -13,6 +13,7 @@ def old_state(monkeypatch):
     from qgis.core import QgsSettings
 
     monkeypatch.setattr(qgis.utils, "active_plugins", [], raising=False)
+    monkeypatch.setattr(qgis.utils, "available_plugins", [LEGACY_ID], raising=False)
     settings = QgsSettings()
     before = settings.value(SETTING, None)
     settings.remove(SETTING)
@@ -56,6 +57,18 @@ def test_old_plugin_loaded_warns(fake_iface, old_state, monkeypatch):
         plugin.unload()
 
 
+def test_enabled_setting_without_installed_plugin_does_not_warn(fake_iface, old_state,
+                                                                 monkeypatch):
+    import qgis.utils
+    monkeypatch.setattr(qgis.utils, "available_plugins", [], raising=False)
+    old_state.setValue(SETTING, True)
+    plugin = _start(fake_iface)
+    try:
+        assert not [t for t in _warnings(fake_iface) if LEGACY_NAME in t]
+    finally:
+        plugin.unload()
+
+
 def test_old_plugin_enabled_later_warns(fake_iface, old_state):
     from groundwork_geophysics.ui.old_plugin import OLD_PLUGIN_WARNING
     old_state.setValue(SETTING, True)
@@ -71,7 +84,7 @@ def test_warning_text():
     assert OLD_PLUGIN_WARNING == (
         "The old plugin “Geophysics Workbench” is still installed. Groundwork replaces "
         "it, and both add the same menus and section tools: uninstall it in Plugins → "
-        "Manage and Install Plugins.")
+        "Manage and Install Plugins, then restart QGIS.")
 
 
 def test_starts_after_old_source_registered(fake_iface, old_state, project_store):

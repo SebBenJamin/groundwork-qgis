@@ -8,11 +8,11 @@ Reads demo/context/powerline.geojson (fetch_demo_context.py) and writes, under d
   stations/P{1,2,3,4}_electrodes.csv number,x,y,z (P4: station file only, see demo_extra.py)
 under demo/context/ the synthetic context (pylons, boreholes, geology, DEM: demo_context.py),
 and, under demo/ (with the plugin's own code, so it needs QGIS's Python):
-  demo_groundwork.gpkg       workbench store: P1-P3, station sets, one model each (P1, P2 with
+  demo_groundwork.gpkg      store: P1-P3, station sets, one model each (P1, P2 with
                             a typed station spacing of 5 m); model source paths are relative
                             to the store's folder
   demo_project.qgz          QGIS project (EPSG:25832): OSM tiles, powerline, context layers and
-                            settings, workbench group; every path relative, so the demo works
+                            settings, Groundwork group; every path relative, so the demo works
                             wherever it is unpacked
 The clay bodies and the earthing artefact are defined in map coordinates (demo_context.py).
 

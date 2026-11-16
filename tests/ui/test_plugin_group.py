@@ -1,7 +1,7 @@
 """The plugin's layer group: old projects keep theirs, new ones get "Groundwork"."""
 from qgis.core import QgsProject
 
-from groundwork_geophysics.ui import field_note_layers, project_actions
+from groundwork_geophysics.ui import field_note_layers, interp_layers, project_actions
 from groundwork_geophysics.ui.project_actions import (default_store_name, new_store,
                                                       plugin_group)
 
@@ -56,8 +56,10 @@ def test_old_project_opens_with_its_store(qgis_app, tmp_path):
     root = reopened.layerTreeRoot()
     assert NEW not in _names(root)
     old = root.findGroup(OLD)
-    assert {"profiles", "stations"} <= {n.name() for n in old.findLayers()[0:0]} | \
-        {n.layer().name() for n in old.findLayers()}
+    assert {"profiles", "stations"} <= {n.layer().name() for n in old.findLayers()}
+    again.ensure_interpretation()
+    interp_layers.add_interp_layers(again, reopened)
+    assert NEW not in _names(root)
 
 
 def test_default_store_name(qgis_app, tmp_path):

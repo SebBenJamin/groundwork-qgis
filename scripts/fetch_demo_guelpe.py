@@ -34,7 +34,7 @@ DGM_URL = "https://data.geobasis-bb.de/geobasis/daten/dgm/tif/"
 TRANSECTS_BBOX = (311673.0, 5845638.0, 312216.0, 5846564.0)     # EPSG:25833
 WATERWAYS_BBOX = (12.200, 52.722, 12.230, 52.742)                # lon/lat: west, south, east, north
 ENDPOINT = "https://overpass-api.de/api/interpreter"
-USER_AGENT = "geophysics-workbench-demo-builder/0.2 (QGIS plugin demo data; one-off fetch)"
+USER_AGENT = "groundwork-qgis-demo-builder/0.2 (QGIS plugin demo data; one-off fetch)"
 RETRIES, WAIT = 15, 30.0
 
 

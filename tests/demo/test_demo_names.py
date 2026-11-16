@@ -1,3 +1,4 @@
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -27,7 +28,7 @@ def test_project_text_uses_the_new_names(folder, project, store, old):
     text = _qgs_text(REPO / folder / project)
     assert "_workbench.gpkg" not in text
     assert "Geophysics Workbench" not in text
-    assert 'name="Groundwork"' in text
+    assert re.search(r'<layer-tree-group[^>]*name="Groundwork"', text)
     assert "geophysics_workbench" in text            # hidden properties scope stays
 
 

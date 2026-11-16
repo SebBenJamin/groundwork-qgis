@@ -12,7 +12,7 @@ Writes under demo_guelpe/:
   context/synthetic_logs.gpkg         SYNTHETIC log curves for the cores (NOT measured;
                                       scripts/make_synthetic_curves.py)
   context/dgm1.tif                    DGM1 cropped to the transects + 100 m
-  guelpe_groundwork.gpkg               workbench store: Transect 1-4, one model each
+  guelpe_groundwork.gpkg              store: Transect 1-4, one model each
   guelpe_project.qgz                  QGIS project (EPSG:25833), every path relative
   ATTRIBUTION.md                      sources and licences
 """

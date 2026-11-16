@@ -12,7 +12,7 @@ Writes under demo_erfurt/ (or --out):
   context/cores.gpkg                  56 cores of Hein et al. (2026) (layer cores, table
                                       core_logs); EN-RK 40 and 46 have no published position
   context/core_logs_style.qml         the cores' style by stratigraphic unit
-  erfurt_groundwork.gpkg               workbench store: ERT02-ERT12, model + measured data each
+  erfurt_groundwork.gpkg              store: ERT02-ERT12, model + measured data each
   erfurt_project.qgz                  QGIS project (EPSG:32632), every path relative
   ATTRIBUTION.md                      sources and licences
 """
