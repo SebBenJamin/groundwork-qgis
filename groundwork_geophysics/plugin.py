@@ -54,6 +54,8 @@ class WorkbenchPlugin:
         self.add_data_action = None
         self.context_action = None
         self.ties_action = None
+        self.help_action = None
+        self.about_action = None
         self.ties_panel = None
         self._profile_dialog = None
         self._data_dialog = None
@@ -108,6 +110,11 @@ class WorkbenchPlugin:
         self.pick_action.setIcon(QgsApplication.getThemeIcon("/mActionSelect.svg"))
         self.pick_action.setProperty("enabled_tip", "Pick a profile on the map")
         self.dock.set_pick_action(self.pick_action)
+        self.menu.addSeparator()
+        from .ui import help as help_links
+        self.help_action = self.add_action("Help", lambda: help_links.open_help())
+        self.help_action.setToolTip("The Groundwork documentation, in your browser")
+        self.about_action = self.add_action("About Groundwork…", self.show_about)
         self.dock.profile_changed.connect(self._update_actions)
         self.dock.borehole_clicked.connect(self.open_borehole_viewer)
         self.dock.rename_requested.connect(self.rename_profile)
@@ -166,8 +173,13 @@ class WorkbenchPlugin:
         self.pick_action = self.new_profile_action = self.add_data_action = None
         self.rename_action = self.delete_action = None
         self.context_action = self.ties_action = self.plates_action = None
+        self.help_action = self.about_action = None
         from .patterns import unregister_svg_path
         unregister_svg_path()
+
+    def show_about(self):
+        from .ui.about_dialog import AboutDialog
+        AboutDialog(self.iface.mainWindow()).exec()
 
     def add_action(self, text, callback, icon=None, checkable=False):
         """Add a menu action. `icon` is a file name inside the icons folder or an absolute path."""
