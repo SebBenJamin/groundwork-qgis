@@ -48,3 +48,19 @@ def test_metadata_homepage_is_site():
     meta.read(REPO / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
     assert meta["general"]["homepage"] == SITE
     assert meta["general"]["repository"].startswith("https://github.com/")
+
+
+def test_help_and_about_keep_their_menu_place_on_macos(qgis_app, fake_iface):
+    """Qt moves actions named "About…" into the macOS application menu, next to QGIS's own."""
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtGui import QAction
+
+    from groundwork_geophysics import classFactory
+    QgsProject.instance().clear()
+    plug = classFactory(fake_iface)
+    plug.initGui()
+    try:
+        for action in (plug.help_action, plug.about_action):
+            assert action.menuRole() == QAction.MenuRole.NoRole, action.text()
+    finally:
+        plug.unload()

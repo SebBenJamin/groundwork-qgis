@@ -85,6 +85,14 @@ def test_lists_have_a_blank_line_before():
             if fence or i == 0 or not item.match(line):
                 continue
             prev = lines[i - 1]
+            # a list line or a heading/table/quote may come right before; an item's indented
+            # continuation paragraph may not (the next item would run into it)
             ok = not prev.strip() or re.match(r"\s*(- |\* |\d+\. )", prev) or \
-                prev.startswith(("#", "|", "  ", ">"))
+                prev.startswith(("#", "|", ">"))
+            if not ok and prev.startswith("  "):        # wrapped text of the item above is
+                k = i - 1                               # fine; a paragraph of its own is not
+                while k > 0 and lines[k].startswith("  ") and \
+                        not re.match(r"\s*(- |\* |\d+\. )", lines[k]):
+                    k -= 1
+                ok = bool(lines[k].strip())
             assert ok, f"{page.relative_to(DOCS)}:{i + 1}"

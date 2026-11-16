@@ -115,6 +115,8 @@ class WorkbenchPlugin:
         self.help_action = self.add_action("Help", lambda: help_links.open_help())
         self.help_action.setToolTip("The Groundwork documentation, in your browser")
         self.about_action = self.add_action("About Groundwork…", self.show_about)
+        for action in (self.help_action, self.about_action):      # macOS would move them
+            action.setMenuRole(QAction.MenuRole.NoRole)            # into its app menu
         self.dock.profile_changed.connect(self._update_actions)
         self.dock.borehole_clicked.connect(self.open_borehole_viewer)
         self.dock.rename_requested.connect(self.rename_profile)

@@ -53,6 +53,7 @@ Three tables, linked by a **borehole ID**. Column names are free: you pick them 
   3. if there is no DEM either, the section's surface line.
 
   The readout says which one was used.
+
 - **Height check:** when the elevation column and the DEM differ by more than the tolerance in Context Layers…, the borehole gets a **red triangle**, and hovering shows both numbers. Nothing is corrected for you.
 - **Which boreholes appear on a section:** collar points within the **buffer** (Context Layers…, distance from the profile line) are projected onto it.
 - **Coordinates:** the collar points can be in any coordinate system QGIS knows. They are transformed to the project's system.

@@ -64,6 +64,7 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
     - `iso_14688.qml`: EN ISO 14688-1 symbols Gr, Sa, Si, Cl, Or …
 
     Both are Categorized on a column `lithology`; switch to your column after importing. Their colours and patterns are the plugin's choice, not a standard's drawing rules.
+
   - **A class only applies to values that are exactly that code** ("fS, ms, u'" is not "fS"). To style by the main component, add a column in QGIS's field calculator with `trim(regexp_substr("lithology", '^[^,;]+'))` and style by that column.
 - **Curve style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
 - **Leaving a borehole out of one section**: right-click its column in the section → **Hide in Section**. It leaves that profile's section and plates only; the map, other profiles and your layer are not changed. The borehole viewer still shows it, faded and marked "hidden in section". There, click a column to select it (Ctrl+click for several) and right-click → **Hide in Section** or **Show in Section**. **Show › Hidden boreholes** switches the hidden ones off in the viewer. A borehole whose id field is empty cannot be hidden on its own.
