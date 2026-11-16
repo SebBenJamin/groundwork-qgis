@@ -28,7 +28,7 @@ def _answer(text="fence", category="obstacle"):
 
 
 def test_click_gives_point_note(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     dock.interp.note_form_factory = _answer()
     dock.interp.start("note")
     pos = plot_to_canvas(dock.canvas, 20.0, -2.0)
@@ -39,7 +39,7 @@ def test_click_gives_point_note(qgis_app, dock):
 
 
 def test_drag_gives_stretch_in_order(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     dock.interp.note_form_factory = _answer("wet ground", "")
     dock.interp.start("note")
     _press_release(dock.canvas, plot_to_canvas(dock.canvas, 30.0, -2.0),
@@ -49,7 +49,7 @@ def test_drag_gives_stretch_in_order(qgis_app, dock):
 
 
 def test_cancelled_form_saves_nothing(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     dock.interp.note_form_factory = lambda note, categories: None
     dock.interp.start("note")
     pos = plot_to_canvas(dock.canvas, 20.0, -2.0)

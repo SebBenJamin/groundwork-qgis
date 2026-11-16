@@ -12,10 +12,10 @@ TEMPLATE_IDS = ("wb_section_area", "wb_minimap", "wb_north", "wb_map_scalebar",
 def env(qgis_app, store_with_model):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.plates.items import register_items, set_context_provider
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.plates.items import register_items, set_context_provider
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import use_store
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -25,7 +25,7 @@ def env(qgis_app, store_with_model):
     register_items()
     set_context_provider(prov)
     yield st, p, prov, prj
-    from geophysics_workbench.plates.sources import detach_frame_items, unregister_frame_sources
+    from groundwork_geophysics.plates.sources import detach_frame_items, unregister_frame_sources
     detach_frame_items(prj)
     unregister_frame_sources()
     set_context_provider(None)
@@ -34,7 +34,7 @@ def env(qgis_app, store_with_model):
 
 
 def _plate(st, p, frames=1, template="A3_landscape", same_profile=True):
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
     ds = st.datasets(p.id)[0]
     look = FrameLook([ModelLook(ds.id, scale={"cmap": "viridis", "vmin": 10.0,
                                                "vmax": 1000.0, "log": True})])
@@ -45,7 +45,7 @@ def _plate(st, p, frames=1, template="A3_landscape", same_profile=True):
 @pytest.mark.parametrize("template", ["A4_landscape", "A4_portrait", "A3_landscape",
                                       "A3_portrait"])
 def test_create_from_each_template_has_all_ids(env, template):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     layout = create_or_update_plate(prj, st, prov, _plate(st, p, template=template))
     ids = {i.id() for i in layout.items() if hasattr(i, "id")}
@@ -57,7 +57,7 @@ def test_create_from_each_template_has_all_ids(env, template):
 
 
 def test_two_frames_same_profile_share_scale_and_ve(env):
-    from geophysics_workbench.plates.build import create_or_update_plate, frame_scale_and_ve
+    from groundwork_geophysics.plates.build import create_or_update_plate, frame_scale_and_ve
     st, p, prov, prj = env
     layout = create_or_update_plate(prj, st, prov, _plate(st, p, frames=2))
     a, b = layout.itemById("wb_frame_1"), layout.itemById("wb_frame_2")
@@ -73,7 +73,7 @@ def test_update_keeps_user_edits(env):
     """Review Focus 4: moved legend, added label, changed colour-bar title font survive."""
     from qgis.core import QgsLayoutItemLabel, QgsLayoutPoint, QgsUnitTypes
 
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = create_or_update_plate(prj, st, prov, plate)
@@ -100,8 +100,8 @@ def test_missing_profile_shows_placeholder_and_exports(env, tmp_path):
     """Review Focus 2."""
     from qgis.core import QgsLayoutExporter
 
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, PlateSpec
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     plate = PlateSpec("pl2", "4", "Gone", "A4_landscape",
                       [FrameSpec("fx", "no-such-profile", FrameLook())])
@@ -113,8 +113,8 @@ def test_missing_profile_shows_placeholder_and_exports(env, tmp_path):
 
 
 def test_field_notes_list_excludes_hidden(env):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence"))
     st.save_field_note(FieldNote("b", p.id, 10.0, 20.0, "wet ground"))
@@ -127,7 +127,7 @@ def test_field_notes_list_excludes_hidden(env):
 def test_title_reads_project_variables(env):
     from qgis.core import QgsExpressionContextUtils
 
-    from geophysics_workbench.plates.build import create_or_update_plate, set_plate_details
+    from groundwork_geophysics.plates.build import create_or_update_plate, set_plate_details
     st, p, prov, prj = env
     set_plate_details(prj, project="Gülpe", client="LfU", job="2026-041", author="SB",
                       date="2026-11-09", revision="A")
@@ -143,8 +143,8 @@ def test_colour_bars_survive_python_garbage_collection(env):
     (it was saved as a plain item, and lost, in the demo build)."""
     import gc
 
-    from geophysics_workbench.plates.build import create_or_update_plate
-    from geophysics_workbench.plates.items import COLOUR_BAR_TYPE, ColourBarItem
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.items import COLOUR_BAR_TYPE, ColourBarItem
     st, p, prov, prj = env
     create_or_update_plate(prj, st, prov, _plate(st, p))
     gc.collect()
@@ -157,9 +157,9 @@ def test_colour_bars_survive_python_garbage_collection(env):
 def test_plate_items_survive_project_reload(env, tmp_path):
     import gc
 
-    from geophysics_workbench.plates.build import create_or_update_plate
-    from geophysics_workbench.plates.items import BoreholeLegendItem, ColourBarItem
-    from geophysics_workbench.plates.sources import detach_frame_items
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.items import BoreholeLegendItem, ColourBarItem
+    from groundwork_geophysics.plates.sources import detach_frame_items
     st, p, prov, prj = env
     create_or_update_plate(prj, st, prov, _plate(st, p))
     path = tmp_path / "plates.qgz"
@@ -177,8 +177,8 @@ def test_plate_items_survive_project_reload(env, tmp_path):
 def test_colour_bars_follow_their_model_not_their_position(env):
     """Review I4: removing frame 1 must not hand frame 2's tuned bar to another model or
     reset it."""
-    from geophysics_workbench.plates.build import create_or_update_plate
-    from geophysics_workbench.plates.items import ColourBarItem
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.items import ColourBarItem
     st, p, prov, prj = env
     plate = _plate(st, p, frames=2)
     layout = create_or_update_plate(prj, st, prov, plate)
@@ -196,8 +196,8 @@ def test_update_keeps_user_edits_to_minimap_provenance_and_legend(env):
     changed survive Create; untouched ones are still refreshed."""
     from qgis.core import QgsRectangle
 
-    from geophysics_workbench.plates.build import create_or_update_plate
-    from geophysics_workbench.ui.project_actions import store_layers
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    from groundwork_geophysics.ui.project_actions import store_layers
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = create_or_update_plate(prj, st, prov, plate)
@@ -218,7 +218,7 @@ def test_update_keeps_user_edits_to_minimap_provenance_and_legend(env):
 
 
 def test_untouched_provenance_is_refreshed(env):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = create_or_update_plate(prj, st, prov, plate)
@@ -230,8 +230,8 @@ def test_untouched_provenance_is_refreshed(env):
 def test_frame_leaves_room_for_labels_above_the_data(env):
     """Labels of notes, cores and crossings sit in rows above the ground; the plate keeps
     room for them (they were cut off at the top of the frame)."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.plates.build import (create_or_update_plate, frame_scale_and_ve,
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.plates.build import (create_or_update_plate, frame_scale_and_ve,
                                                    label_room_mm, snapshot_extent)
     st, p, prov, prj = env
     st.save_field_note(FieldNote("a", p.id, 1.0, 8.0, "wet ground"))
@@ -253,7 +253,7 @@ def test_local_frame_labels_its_vertical_axis_with_depths(env):
     import numpy as np
     from qgis.core import QgsNumericFormatContext
 
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     [s] = st.station_sets(p.id)
     [d] = st.datasets(p.id)
@@ -291,7 +291,7 @@ def _make_local(st, p):
 def test_user_tuned_basic_format_is_kept_on_a_local_frame(env):
     from qgis.core import QgsBasicNumericFormat, QgsNumericFormatContext
 
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = create_or_update_plate(prj, st, prov, plate)
@@ -315,9 +315,9 @@ def test_user_tuned_basic_format_is_kept_on_a_local_frame(env):
 def test_plate_legend_skips_boreholes_of_a_local_frame(env):
     import numpy as np
 
-    from geophysics_workbench.core.context import (BoreholeView, ContextItems, Curve,
+    from groundwork_geophysics.core.context import (BoreholeView, ContextItems, Curve,
                                                    LogInterval, ProjectedPoint)
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     bh = ProjectedPoint(25.0, 0.0, "BH1", "borehole", None, [LogInterval(0.0, 3.0, "sand")],
                         entry=0, curves=[Curve("k:gr", "GR", "API", np.array([0.0, 3.0]),
@@ -336,8 +336,8 @@ def test_plate_legend_skips_boreholes_of_a_local_frame(env):
 def test_plate_headroom_counts_strips(env):
     from dataclasses import replace
 
-    from geophysics_workbench.core.context import BandSegment, ContextItems
-    from geophysics_workbench.plates.build import label_room_mm
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.plates.build import label_room_mm
     st, p, prov, prj = env
     snap = prov.snapshot(p.id)
     one = replace(snap, context=ContextItems(band=[BandSegment(0, 5, "a", strip=0)]))

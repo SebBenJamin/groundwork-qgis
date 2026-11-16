@@ -23,7 +23,7 @@ def test_smooth_field_edge_is_soft(qgis_app):
 
 
 def test_cells_unchanged(qgis_app):
-    from geophysics_workbench.core.gridding import FADE_ALPHA
+    from groundwork_geophysics.core.gridding import FADE_ALPHA
     res = _results(_layer("cells", coverage=_gradient, fade_coverage=True,
                           coverage_threshold=0.0, fade_mode="fade"))
     [drawing] = res._layers

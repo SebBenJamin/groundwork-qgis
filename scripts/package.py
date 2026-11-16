@@ -2,14 +2,14 @@
 
     python-qgis.bat scripts/package.py [--guelpe <fresh Gülpe demo folder>] [--erfurt <fresh Erfurt demo folder>]
 
-dist/geophysics_workbench-<version>.zip       the plugin, top folder geophysics_workbench/
+dist/groundwork_geophysics-<version>.zip       the plugin, top folder groundwork_geophysics/
                                               (what Plugins > Install from ZIP expects)
-dist/geophysics_workbench-demo-<version>.zip  the contents of demo/: unzip anywhere and open
+dist/groundwork_geophysics-demo-<version>.zip  the contents of demo/: unzip anywhere and open
                                               demo_project.qgz
-dist/geophysics_workbench-demo-guelpe-<version>.zip  the real-data demo (demo_guelpe/); open guelpe_project.qgz
-dist/geophysics_workbench-demo-erfurt-<version>.zip  the real-data demo (demo_erfurt/); open erfurt_project.qgz
+dist/groundwork_geophysics-demo-guelpe-<version>.zip  the real-data demo (demo_guelpe/); open guelpe_project.qgz
+dist/groundwork_geophysics-demo-erfurt-<version>.zip  the real-data demo (demo_erfurt/); open erfurt_project.qgz
 
-The version comes from geophysics_workbench/metadata.txt. Byte caches, editor or SQLite
+The version comes from groundwork_geophysics/metadata.txt. Byte caches, editor or SQLite
 side files and GDAL .aux.xml statistics are left out; so are tests, spikes and the demo
 (they live outside the plugin folder).
 """
@@ -22,7 +22,7 @@ from configparser import ConfigParser
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-PLUGIN = REPO / "geophysics_workbench"
+PLUGIN = REPO / "groundwork_geophysics"
 DEMO = REPO / "demo"
 DEMO_GUELPE = REPO / "demo_guelpe"
 DEMO_ERFURT = REPO / "demo_erfurt"

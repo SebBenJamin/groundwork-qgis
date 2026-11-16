@@ -1,6 +1,6 @@
 from pathlib import Path
 import numpy as np, pytest
-from geophysics_workbench import readers
+from groundwork_geophysics import readers
 F = Path("tests/fixtures/ert")
 
 
@@ -195,7 +195,7 @@ def test_guelpe_bert_coverage():
 
 
 def test_coverage_alpha_and_threshold():
-    from geophysics_workbench.core.gridding import coverage_alpha, default_threshold
+    from groundwork_geophysics.core.gridding import coverage_alpha, default_threshold
     cov = np.array([-3.0, -1.0, np.nan, 0.5])
     assert coverage_alpha(cov, -2.0, "fade").tolist() == [0.25, 1.0, 1.0, 1.0]
     assert coverage_alpha(cov, -2.0, "blank").tolist() == [0.0, 1.0, 1.0, 1.0]

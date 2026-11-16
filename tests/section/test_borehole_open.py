@@ -11,7 +11,7 @@ def _release():
 
 
 def _bh(s=5.0, offset=1.5, label="RK1", entry=0):
-    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
     return ProjectedPoint(s, offset, label, "borehole", 0.0,
                           [LogInterval(0.0, 1.0, "peat"), LogInterval(1.0, 3.0, "sand")],
                           entry=entry)
@@ -33,7 +33,7 @@ def _visible(qgis_app, dock):
 
 
 def test_pan_click_on_column_emits_borehole_clicked(qgis_app, dock):
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
     _visible(qgis_app, dock)
     dock._ctx = (ContextItems(points=[_bh()]), None)
     got = []
@@ -46,8 +46,8 @@ def test_pan_click_on_column_emits_borehole_clicked(qgis_app, dock):
 
 
 def test_click_on_column_and_piece_keeps_details_with_open_line(qgis_app, dock):
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
     _visible(qgis_app, dock)
     dock._ctx = (ContextItems(points=[_bh()]), None)
     store = dock.provider.store
@@ -70,7 +70,7 @@ def test_click_on_column_and_piece_keeps_details_with_open_line(qgis_app, dock):
 
 def test_map_click_near_current_profile_borehole_opens_viewer(qgis_app, flushed, store_with_model,
                                                              make_dock_and_link):
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
     st, p, _ = store_with_model
     dock, link = make_dock_and_link(st)
     dock.open_profile(p.id)
@@ -99,7 +99,7 @@ def test_map_click_without_open_profile_picks_profile_as_today(qgis_app, flushed
 
 def test_plugin_opens_one_viewer_and_closes_it_on_unload(qgis_app, flushed, fake_iface,
                                                          store_with_model):
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     st, p, _ = store_with_model
     plugin = classFactory(fake_iface)
     plugin.initGui()
@@ -124,8 +124,8 @@ def test_plugin_opens_one_viewer_and_closes_it_on_unload(qgis_app, flushed, fake
 
 def test_new_store_closes_the_viewer(qgis_app, flushed, fake_iface, store_with_model, tmp_path):
     """I5: switching the workbench store (New/Open workbench project) closes the viewer."""
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st, p, _ = store_with_model
     plugin = classFactory(fake_iface)
     plugin.initGui()
@@ -146,8 +146,8 @@ def test_new_store_closes_the_viewer(qgis_app, flushed, fake_iface, store_with_m
 def test_details_popup_goes_away(qgis_app, dock):
     """M7: the "Open in borehole viewer" popup hides on the next click and when the
     profile closes."""
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
     _visible(qgis_app, dock)
     dock._ctx = (ContextItems(points=[_bh()]), None)
     store = dock.provider.store

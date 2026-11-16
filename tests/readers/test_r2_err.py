@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench import readers
+from groundwork_geophysics import readers
 
 HEADER = ("   C+  C-  P+  P-  Normalised_Error  Observed_Rho  Calculated_Rho  "
           "Original_Data_Weight  Final_Data_Weight  Flag\n")

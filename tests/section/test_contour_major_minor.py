@@ -4,7 +4,7 @@ from test_display_render import _layer, _results
 
 
 def test_minor_drawn_thin_without_label(qgis_app):
-    from geophysics_workbench.section.display_render import (CONTOUR_MINOR_PEN_MM,
+    from groundwork_geophysics.section.display_render import (CONTOUR_MINOR_PEN_MM,
                                                              CONTOUR_PEN_MM, contour_pen_mm)
     res = _results(_layer("contours", contour_major=(60.0,), contour_minor=(50.0,)))
     [drawing] = res._layers
@@ -21,8 +21,8 @@ def test_auto_contours_all_major(qgis_app):
 
 
 def test_plate_follows_levels(qgis_app, store_with_model):
-    from geophysics_workbench.core.plates import FrameLook, ModelLook
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.plates import FrameLook, ModelLook
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     [d] = [d for d in st.datasets(p.id)][:1]
     look = FrameLook([ModelLook(d.id, mode="contours", contour_major=[100.0],

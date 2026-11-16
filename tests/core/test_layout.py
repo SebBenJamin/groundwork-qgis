@@ -3,12 +3,12 @@ from pathlib import Path
 import numpy as np
 from pytest import approx
 
-from geophysics_workbench import readers
-from geophysics_workbench.core.layout import (derived_electrodes, guess_electrodes,
+from groundwork_geophysics import readers
+from groundwork_geophysics.core.layout import (derived_electrodes, guess_electrodes,
                                               guessed_spacing, inline_distances)
-from geophysics_workbench.core.placement import rigid_map
-from geophysics_workbench.core.section_mesh import SectionMesh
-from geophysics_workbench.readers.base import mesh_from_points
+from groundwork_geophysics.core.placement import rigid_map
+from groundwork_geophysics.core.section_mesh import SectionMesh
+from groundwork_geophysics.readers.base import mesh_from_points
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 

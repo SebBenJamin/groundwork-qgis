@@ -10,7 +10,7 @@ WILD = Path(__file__).resolve().parent.parent / "fixtures" / "wild"
 
 @pytest.fixture
 def make_widget(qgis_app, fake_iface, project_store):
-    from geophysics_workbench.ui.placement_widget import PlacementWidget
+    from groundwork_geophysics.ui.placement_widget import PlacementWidget
 
     st, prj = project_store
     made = []
@@ -43,7 +43,7 @@ def test_existing_profile_is_preselected_and_collapsed(qgis_app, fake_iface, pro
                                                        make_widget):
     from qgis.PyQt.QtWidgets import QPushButton
 
-    from geophysics_workbench.core.model import profile_from_polyline
+    from groundwork_geophysics.core.model import profile_from_polyline
 
     st, _prj = project_store
     p = profile_from_polyline("L1", st.crs_authid, np.array([[0.0, 0.0], [50.0, 0.0]]))
@@ -264,8 +264,8 @@ def test_distance_zero_and_offset(qgis_app, fake_iface, project_store, make_widg
 
 
 def test_table_options_box_and_preview(qgis_app):
-    from geophysics_workbench.readers.texttable import TableOptions, read_table
-    from geophysics_workbench.ui.table_widgets import PreviewTable, TableOptionsBox
+    from groundwork_geophysics.readers.texttable import TableOptions, read_table
+    from groundwork_geophysics.ui.table_widgets import PreviewTable, TableOptionsBox
 
     box = TableOptionsBox()
     seen = []
@@ -291,7 +291,7 @@ def test_table_options_box_and_preview(qgis_app):
 
 def test_workbench_layers_are_not_offered_as_point_layers(qgis_app, fake_iface, project_store,
                                                           make_widget):
-    from geophysics_workbench.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
 
     st, prj = project_store
     own = own_layer_ids(st, prj)
@@ -306,9 +306,9 @@ def test_rows_without_coordinates_are_skipped(qgis_app, fake_iface, project_stor
                                               make_widget):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.roles import PositionColumns
-    from geophysics_workbench.readers.texttable import read_table
-    from geophysics_workbench.ui.positions_source import positions_from_table
+    from groundwork_geophysics.core.roles import PositionColumns
+    from groundwork_geophysics.readers.texttable import read_table
+    from groundwork_geophysics.ui.positions_source import positions_from_table
 
     csv = tmp_path / "gaps.csv"
     csv.write_text("nr,east,north\n1,1000,2000\n2,1010,\n3,1020,2000\n4,1030,2000\n",
@@ -424,7 +424,7 @@ def test_pick_cancelled_by_another_tool_restores_the_dialog(qgis_app, fake_iface
 def test_pick_tool_released_when_the_widget_is_destroyed(qgis_app, fake_iface, project_store):
     from qgis.PyQt import sip
 
-    from geophysics_workbench.ui.placement_widget import PlacementWidget
+    from groundwork_geophysics.ui.placement_widget import PlacementWidget
 
     st, prj = project_store
     canvas, pan = _canvas_in_store_crs(fake_iface)
@@ -441,7 +441,7 @@ def test_unknown_profile_is_not_replaced_by_another(qgis_app, fake_iface, projec
                                                     make_widget):
     from qgis.PyQt.QtWidgets import QPushButton
 
-    from geophysics_workbench.core.model import profile_from_polyline
+    from groundwork_geophysics.core.model import profile_from_polyline
 
     st, _prj = project_store
     for name in ("L1", "L2"):

@@ -7,9 +7,9 @@ def test_layer_rows_fit_without_horizontal_scrolling(qgis_app, store_with_model)
     from qgis.PyQt.QtGui import QFont
     from qgis.PyQt.QtWidgets import QScrollArea
 
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.layer_list import LayerList
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.layer_list import LayerList
 
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
@@ -44,8 +44,8 @@ def test_layer_list_widens_in_its_splitter_for_full_names(qgis_app, store_with_m
     from qgis.PyQt.QtGui import QFont
     from qgis.PyQt.QtWidgets import QSplitter, QWidget
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.layer_list import LayerList
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.layer_list import LayerList
 
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
@@ -64,7 +64,7 @@ def test_layer_list_widens_in_its_splitter_for_full_names(qgis_app, store_with_m
         ll.set_layers(prov, layers)
         qgis_app.processEvents()
         [row] = ll._rows.values()
-        from geophysics_workbench.section.layer_list import MAX_HINT_WIDTH, MIN_NAME_WIDTH
+        from groundwork_geophysics.section.layer_list import MAX_HINT_WIDTH, MIN_NAME_WIDTH
         # usability round 1: the list stays at most 300 px wide; a longer name is cut and the
         # tooltip has it all
         assert splitter.sizes()[1] <= MAX_HINT_WIDTH

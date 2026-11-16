@@ -3,7 +3,7 @@ by default."""
 
 
 def test_measured_starts_hidden_when_model_exists():
-    from geophysics_workbench.section.data import starts_hidden
+    from groundwork_geophysics.section.data import starts_hidden
 
     class D:
         def __init__(self, kind):
@@ -28,7 +28,7 @@ def test_layer_list_default_width_at_most_300px(qgis_app, store_with_model, make
 def test_splitter_width_is_remembered(qgis_app, store_with_model, make_dock):
     from qgis.core import QgsSettings
 
-    from geophysics_workbench.section.dock import SPLITTER_KEY
+    from groundwork_geophysics.section.dock import SPLITTER_KEY
     st, p, _ = store_with_model
     dock = make_dock(st)
     dock.resize(1366, 330)

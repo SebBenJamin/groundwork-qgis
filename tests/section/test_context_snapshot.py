@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from pytest import approx
 
-from geophysics_workbench.core.context import BandSegment, ContextItems, Crossing, ProjectedPoint
-from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-from geophysics_workbench.section.data import LayerStyle, SectionDataProvider
+from groundwork_geophysics.core.context import BandSegment, ContextItems, Crossing, ProjectedPoint
+from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+from groundwork_geophysics.section.data import LayerStyle, SectionDataProvider
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "..", "fixtures", "ert")
 
@@ -249,8 +249,8 @@ def test_plugin_logs_context_errors_once(qgis_app, fake_iface, store_with_model,
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import plugin as plugin_module
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics import plugin as plugin_module
+    from groundwork_geophysics.plugin import WorkbenchPlugin
 
     QgsProject.instance().clear()
     logged = []
@@ -287,8 +287,8 @@ def test_plugin_closes_gatherer_on_store_change(qgis_app, fake_iface, store_with
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.section.context_layers import ContextGatherer
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.section.context_layers import ContextGatherer
 
     QgsProject.instance().clear()                    # default context settings
     closed = []
@@ -326,9 +326,9 @@ def test_snapshot_copies_styled_intervals_and_curves(store_with_model, qgis_app)
     from qgis.core import QgsFeature, QgsFillSymbol
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.core.context import (ContextItems, Curve, LogInterval,
+    from groundwork_geophysics.core.context import (ContextItems, Curve, LogInterval,
                                                    ProjectedPoint)
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     sym = QgsFillSymbol.createSimple({})
     sym.setColor(QColor(10, 200, 30))
@@ -349,8 +349,8 @@ def test_snapshot_copies_styled_intervals_and_curves(store_with_model, qgis_app)
 def test_new_borehole_look_patches_the_cached_context(store_with_model, qgis_app):
     """I4: a look-only change (from the viewer) updates the cached items and redraws,
     without gathering the profile again."""
-    from geophysics_workbench.core.context import BoreholeView, ContextItems
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.context import BoreholeView, ContextItems
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     calls, redraws = [], []
     prov = SectionDataProvider(st)

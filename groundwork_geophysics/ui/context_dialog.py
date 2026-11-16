@@ -1,7 +1,7 @@
 """'Context layers' dialog: which ordinary QGIS layers supply crossing lines,
 points, boreholes with a log table, the surface geology band and the DEM on a section.
 
-The choice is kept in the QGIS project as JSON (entry ``geophysics_workbench/context``)
+The choice is kept in the QGIS project as JSON (project entry ``context`` in the legacy scope, ids.LEGACY_ID)
 because it refers to QGIS layer ids. ``read_settings`` / ``write_settings`` need no widgets."""
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from qgis.PyQt.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                                  QGroupBox, QLabel, QScrollArea, QTabWidget, QVBoxLayout,
                                  QWidget)
 
-SIZE_KEY = "geophysics_workbench/context_dialog/size"
-
 
 def initial_size(available) -> QSize:
     """The dialog's first size: at most 580 px tall (QGIS HIG) and 80 % of the screen."""
@@ -21,12 +19,14 @@ def initial_size(available) -> QSize:
                  min(580, int(available.height() * 0.8)))
 
 from ..core.context_settings import MAX_DISTANCE, ContextSettings, PointLayerSetting
+from ..ids import LEGACY_ID
 from .borehole_mapping import (MISSING, NONE, BoreholeEntries, field_of, fill_field_combo,
                                fill_layer_combo, keep_missing)
 from .crossing_rows import CrossingLinesGroup
 from .project_actions import SCOPE
 from .strip_rows import StripRows
 
+SIZE_KEY = f"{LEGACY_ID}/context_dialog/size"
 KEY = "context"
 
 

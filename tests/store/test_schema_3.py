@@ -7,7 +7,7 @@ import stat
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import Dataset, Profile, attach_station_set
+from groundwork_geophysics.core.model import Dataset, Profile, attach_station_set
 
 
 def _meta(path):
@@ -41,7 +41,7 @@ def _dataset(profile_id="p1", station_set_id="s1"):
 
 def _make_schema_2(path, monkeypatch):
     """A store as 0.8 wrote it: no ``inline`` column on stations, schema_version 2."""
-    from geophysics_workbench.store import gpkg_store
+    from groundwork_geophysics.store import gpkg_store
     old_fields = [f for f in gpkg_store._STATION_FIELDS if f[0] != "inline"]
     with monkeypatch.context() as m:
         m.setattr(gpkg_store, "SCHEMA_VERSION", 2)
@@ -60,14 +60,14 @@ def _make_schema_2(path, monkeypatch):
 
 
 def test_new_store_is_schema_3(tmp_path):
-    from geophysics_workbench.store.gpkg_store import SCHEMA_VERSION, ProjectStore
+    from groundwork_geophysics.store.gpkg_store import SCHEMA_VERSION, ProjectStore
     ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     assert SCHEMA_VERSION == 3 and _meta(tmp_path / "wb.gpkg")["schema_version"] == "3"
     assert "inline" in _columns(tmp_path / "wb.gpkg", "stations")
 
 
 def test_inline_round_trip(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     p = _profile()
     st.save_profile(p)
@@ -88,7 +88,7 @@ def test_station_set_inline_defaults_to_nan():
 
 
 def test_schema_2_store_is_migrated(tmp_path, monkeypatch):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "old.gpkg"
     s = _make_schema_2(path, monkeypatch)
     st = ProjectStore.open(path)
@@ -109,7 +109,7 @@ def test_schema_2_store_is_migrated(tmp_path, monkeypatch):
 
 
 def test_schema_1_store_opens_through_both_updates(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     from tests.store.test_schema_2 import _make_schema_1
     path = tmp_path / "old.gpkg"
     _make_schema_1(path)
@@ -120,7 +120,7 @@ def test_schema_1_store_opens_through_both_updates(tmp_path):
 
 
 def test_read_only_schema_2_store_says_why(tmp_path, monkeypatch):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "old.gpkg"
     _make_schema_2(path, monkeypatch)
     os.chmod(path, stat.S_IREAD)
@@ -137,7 +137,7 @@ def test_a_migration_failing_part_way_leaves_the_file_as_it_was(tmp_path, monkey
     transaction rolls the column back, and the file stays a schema 2 store."""
     from osgeo import ogr
 
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "old.gpkg"
     s = _make_schema_2(path, monkeypatch)
     real = ogr.DataSource.ExecuteSQL
@@ -166,7 +166,7 @@ def test_a_migration_failing_part_way_leaves_the_file_as_it_was(tmp_path, monkey
 def test_newer_store_is_refused(tmp_path):
     from osgeo import ogr
 
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "new.gpkg"
     ProjectStore.create(path, "EPSG:25832")
     ds = ogr.Open(str(path), 1)
@@ -177,7 +177,7 @@ def test_newer_store_is_refused(tmp_path):
 
 
 def test_dataset_without_a_station_set(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     p = _profile()
     st.save_profile(p)
@@ -201,9 +201,9 @@ def test_open_project_layers_survive_migration(qgis_app, tmp_path, monkeypatch, 
     """The stations layer is loaded from the 0.8 file before the plugin updates it."""
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.project_actions import add_store_layers
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import add_store_layers
     path = tmp_path / "old.gpkg"
     _make_schema_2(path, monkeypatch)
     old = ProjectStore(path, "EPSG:25832")                 # as 0.8 saw it, not opened

@@ -1,7 +1,7 @@
 """Cheap redraws keep the gathered context; profiles without station heights use the DEM."""
 import numpy as np
 
-from geophysics_workbench.core.context import ContextItems
+from groundwork_geophysics.core.context import ContextItems
 
 
 def _dem_items():
@@ -10,7 +10,7 @@ def _dem_items():
 
 
 def _provider(store, calls, items=_dem_items):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     prov = SectionDataProvider(store)
     prov.context_source = lambda profile: (calls.append(profile.id), items())[1]
     return prov
@@ -43,8 +43,8 @@ def test_notify_redraw_tells_listeners(store_with_model):
 
 
 def _store_without_heights(tmp_path):
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "n.gpkg", "EPSG:25832")
     p, s = profile_from_stations("P1", "EPSG:25832",
                                  np.array([[0, 0, np.nan], [50, 0, np.nan]]))

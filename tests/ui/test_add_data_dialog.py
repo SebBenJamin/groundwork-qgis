@@ -15,7 +15,7 @@ def no_remembered_import(qgis_app):
     """Each test starts and ends without a remembered table assignment."""
     from qgis.core import QgsSettings
 
-    from geophysics_workbench.ui.add_data_dialog import SETTINGS_KEY
+    from groundwork_geophysics.ui.add_data_dialog import SETTINGS_KEY
     QgsSettings().remove(SETTINGS_KEY)
     yield
     QgsSettings().remove(SETTINGS_KEY)
@@ -23,7 +23,7 @@ def no_remembered_import(qgis_app):
 
 @pytest.fixture
 def make_dialog(qgis_app, fake_iface):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     made = []
 
@@ -119,7 +119,7 @@ def test_map_file_creates_its_own_profile(qgis_app, make_dialog, project_store,
     st, prj = project_store
     dlg = make_dialog(st, project=prj)
     dlg.set_file(WILD / "east_north_depth_rho.csv")
-    from geophysics_workbench.core.numbers import fmt
+    from groundwork_geophysics.core.numbers import fmt
 
     cols = dlg.columns_group.columns()
     assert cols.position == "map"
@@ -150,7 +150,7 @@ def test_map_file_waits_for_the_line(qgis_app, make_dialog, project_store):
 
 def test_map_file_on_an_existing_profile_reports_the_distance_from_the_line(
         qgis_app, make_dialog, project_store):
-    from geophysics_workbench.core.model import profile_from_polyline
+    from groundwork_geophysics.core.model import profile_from_polyline
 
     st, prj = project_store
     # 20 m north of the file's own line, parallel to it
@@ -237,9 +237,9 @@ def test_preview_reads_only_the_first_rows(qgis_app, make_dialog, project_store,
                                            tmp_path, selected_line, warnings_shown):
     # a 200 000-row file: until Add, every read (the preview's, the reader's and its own
     # table read) stops after the sample; Add reads the whole file
-    from geophysics_workbench import readers
-    from geophysics_workbench.readers import text_columns
-    from geophysics_workbench.ui import add_data_dialog
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.readers import text_columns
+    from groundwork_geophysics.ui import add_data_dialog
 
     st, prj = project_store
     big = tmp_path / "big.txt"
@@ -304,7 +304,7 @@ def test_remembered_settings_that_no_longer_load_are_ignored(qgis_app, make_dial
 
     from qgis.core import QgsSettings
 
-    from geophysics_workbench.ui.add_data_dialog import SETTINGS_KEY
+    from groundwork_geophysics.ui.add_data_dialog import SETTINGS_KEY
     st, prj = project_store
     QgsSettings().setValue(SETTINGS_KEY, json.dumps(
         {"names": ["X", "Y", "Rho", "Comment"], "table": {"delimiter": "pipe"},
@@ -326,9 +326,9 @@ def test_opened_with_a_profile_it_is_preselected(qgis_app, make_dialog, store_wi
 
 
 def test_add_data_attaches_positions_to_an_existing_profile(qgis_app, project_store, tmp_path):
-    from geophysics_workbench.core.model import profile_from_polyline
-    from geophysics_workbench.core.placement import Placement, Positions
-    from geophysics_workbench.ui.project_actions import add_data
+    from groundwork_geophysics.core.model import profile_from_polyline
+    from groundwork_geophysics.core.placement import Placement, Positions
+    from groundwork_geophysics.ui.project_actions import add_data
 
     st, prj = project_store
     p = profile_from_polyline("L", st.crs_authid, np.array([[0.0, 0.0], [100.0, 0.0]]))
@@ -348,8 +348,8 @@ def test_add_data_attaches_positions_to_an_existing_profile(qgis_app, project_st
 
 
 def test_failed_read_creates_no_profile(qgis_app, project_store, tmp_path):
-    from geophysics_workbench.core.placement import Placement
-    from geophysics_workbench.ui.project_actions import add_data
+    from groundwork_geophysics.core.placement import Placement
+    from groundwork_geophysics.ui.project_actions import add_data
 
     st, prj = project_store
     bad = tmp_path / "f009_res.dat"
@@ -392,8 +392,8 @@ def test_menu_entry_is_add_data_and_needs_only_a_project(qgis_app, fake_iface, t
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.ui.project_actions import new_store
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui.project_actions import new_store
 
     prj = QgsProject.instance()
     prj.clear()
@@ -430,8 +430,8 @@ def test_unexpected_errors_on_add_keep_the_dialog_open(qgis_app, make_dialog, pr
                                                        selected_line, warnings_shown,
                                                        monkeypatch):
     # under PyQt6 an exception leaving the Add slot aborts QGIS
-    from geophysics_workbench import readers
-    from geophysics_workbench.ui import add_data_dialog
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.ui import add_data_dialog
 
     st, prj = project_store
     dlg = make_dialog(st, project=prj)
@@ -455,7 +455,7 @@ def test_unexpected_errors_on_add_keep_the_dialog_open(qgis_app, make_dialog, pr
 
 
 def test_station_set_can_be_chosen(qgis_app, make_dialog, store_with_model, warnings_shown):
-    from geophysics_workbench.core.model import attach_station_set
+    from groundwork_geophysics.core.model import attach_station_set
 
     st, p, src = store_with_model
     second = attach_station_set(p, "Second survey", "ert",
@@ -488,8 +488,8 @@ def test_one_station_set_is_used_without_asking(qgis_app, make_dialog, store_wit
 
 def test_failed_station_set_write_saves_nothing(qgis_app, project_store, tmp_path,
                                                 monkeypatch):
-    from geophysics_workbench.core.placement import Placement, Positions
-    from geophysics_workbench.ui.project_actions import add_data
+    from groundwork_geophysics.core.placement import Placement, Positions
+    from groundwork_geophysics.ui.project_actions import add_data
 
     st, prj = project_store
     src = tmp_path / "f001_res.dat"
@@ -509,8 +509,8 @@ def test_failed_station_set_write_saves_nothing(qgis_app, project_store, tmp_pat
 def test_summary_numbers_follow_the_locale(qgis_app):
     from qgis.PyQt.QtCore import QLocale
 
-    from geophysics_workbench import readers
-    from geophysics_workbench.ui.add_data_dialog import describe
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.ui.add_data_dialog import describe
 
     result = readers.read(WILD / "dist_y_rho_junk.txt", reader="text_columns", table={},
                           columns={"distance": 0, "vertical": 1, "vertical_kind": "depth",
@@ -560,8 +560,8 @@ def test_preview_and_section_take_the_guess_from_the_same_model(qgis_app, make_d
                                                                 tmp_path, warnings_shown):
     """A triangulated model is already on the profile; the row model added now gives the
     guess, in the preview and in the section after Add."""
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.placement_resolve import resolve_map
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.placement_resolve import resolve_map
     from tests.section.test_placement_resolve import _surveyed_with_a_triangulated_model
 
     st, p, s, s_true = _surveyed_with_a_triangulated_model(tmp_path)
@@ -583,7 +583,7 @@ def test_a_refresh_failing_after_the_save_is_a_warning_not_a_failed_import(
         qgis_app, fake_iface, make_dialog, store_with_model, warnings_shown):
     """The data are committed; a listener that raises afterwards must not make the dialog
     report a failed import (a second Add would duplicate the dataset)."""
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     st, p, src = store_with_model
     provider = SectionDataProvider(st)
@@ -615,7 +615,7 @@ def test_the_verdict_stays_above_the_buttons(qgis_app, make_dialog, project_stor
 
 
 def test_a_fit_that_warns_is_shown_in_the_warning_style(qgis_app, make_dialog, project_store):
-    from geophysics_workbench.ui.fit_line import FIT_WARNING, WARNING_STYLE
+    from groundwork_geophysics.ui.fit_line import FIT_WARNING, WARNING_STYLE
 
     st, prj = project_store
     dlg = make_dialog(st, project=prj)

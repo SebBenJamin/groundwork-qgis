@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from qgis.PyQt.QtCore import QEvent
 
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def test_regroup_refused_on_frozen_version(two):
 
 
 def test_edit_tool_menu_lists_other_features(two):
-    from geophysics_workbench.section.interp_tools import EditTool
+    from groundwork_geophysics.section.interp_tools import EditTool
     ctl, _store, _v, _a, _b, pa1, *_ = two
     tool = EditTool(ctl.dock.canvas, ctl)
     actions = tool.menu_actions(pa1)
@@ -163,7 +163,7 @@ def test_undo_split_keeps_a_piece_drawn_into_the_new_feature(two):
 
 
 def test_snap_targets_hang_boreholes_without_collar_from_ground(two):
-    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
     ctl = two[0]
     bh = ProjectedPoint(10.0, 1.0, "B2", "borehole", z_top=None,
                         log=[LogInterval(0.0, 2.0, "sand")])
@@ -174,8 +174,8 @@ def test_snap_targets_hang_boreholes_without_collar_from_ground(two):
 
 
 def test_menu_offers_only_features_on_this_profile(two):
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.section.interp_tools import EditTool
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.section.interp_tools import EditTool
     ctl, store, v, _a, _b, pa1, *_ = two
     p2, s2 = profile_from_stations("P2", "EPSG:25832", np.array([[0, 10, 100], [50, 10, 100.0]]))
     store.save_profile(p2)

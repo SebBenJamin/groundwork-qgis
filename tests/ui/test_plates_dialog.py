@@ -6,10 +6,10 @@ import pytest
 def env(qgis_app, store_with_model):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.plates.items import register_items, set_context_provider
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.plates.items import register_items, set_context_provider
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import use_store
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -19,7 +19,7 @@ def env(qgis_app, store_with_model):
     register_items()
     set_context_provider(prov)
     yield st, p, prov, prj
-    from geophysics_workbench.plates.sources import detach_frame_items, unregister_frame_sources
+    from groundwork_geophysics.plates.sources import detach_frame_items, unregister_frame_sources
     detach_frame_items(prj)
     unregister_frame_sources()
     set_context_provider(None)
@@ -28,14 +28,14 @@ def env(qgis_app, store_with_model):
 
 
 def _dialog(st, prov, prj, panel_profile=None):
-    from geophysics_workbench.ui.plates_dialog import PlatesDialog
+    from groundwork_geophysics.ui.plates_dialog import PlatesDialog
     return PlatesDialog(prj, st, prov, panel_profile=lambda: panel_profile)
 
 
 def test_take_from_panel_copies_current_look(env):
     from dataclasses import replace
 
-    from geophysics_workbench.core.colors import ColorScale
+    from groundwork_geophysics.core.colors import ColorScale
     st, p, prov, prj = env
     ds = st.datasets(p.id)[0]
     prov.set_style(ds.id, replace(prov.style(ds.id), opacity=0.6, mode="smooth",
@@ -59,7 +59,7 @@ def test_take_from_panel_copies_current_look(env):
 
 
 def test_create_writes_specs_and_layouts(env):
-    from geophysics_workbench.plates.sources import read_plates
+    from groundwork_geophysics.plates.sources import read_plates
     st, p, prov, prj = env
     dlg = _dialog(st, prov, prj, panel_profile=p.id)
     dlg.add_plate()
@@ -87,7 +87,7 @@ def test_plate_details_set_project_variables(env):
 
     from qgis.core import QgsExpressionContextUtils
 
-    from geophysics_workbench.ui.plates_dialog import PlateDetailsDialog
+    from groundwork_geophysics.ui.plates_dialog import PlateDetailsDialog
     st, p, prov, prj = env
     dlg = PlateDetailsDialog(prj)
     assert dlg.fields["date"].text() == datetime.date.today().isoformat()
@@ -103,7 +103,7 @@ def test_plate_details_set_project_variables(env):
 
 def test_frame_cells_read_like_a_user_types_them():
     """Usability review 2: "1.000" (German) became scale 1:1; "1:250" was refused."""
-    from geophysics_workbench.ui.plates_dialog import parse_cell
+    from groundwork_geophysics.ui.plates_dialog import parse_cell
     assert parse_cell("scale", "1.000") == 1000
     assert parse_cell("scale", "1:2500") == 2500 and parse_cell("scale", "1:1.000") == 1000
     assert parse_cell("ve", "1,5") == 1.5 and parse_cell("s_from", "12,5") == 12.5

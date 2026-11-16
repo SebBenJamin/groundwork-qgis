@@ -6,8 +6,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
-from geophysics_workbench.section.data import SectionDataProvider
+from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
+from groundwork_geophysics.section.data import SectionDataProvider
 from test_borehole_open import _release, flushed  # noqa: F401
 from test_context_snapshot import _add_b
 from test_dock import _map_event
@@ -76,7 +76,7 @@ def test_drawn_context_is_unchanged_with_real_heights(store_with_model):
 
 
 def test_readout_reports_no_borehole_in_a_local_section(qgis_app, store_with_model, make_dock):
-    from geophysics_workbench.section.dock_context import borehole_point, context_lines
+    from groundwork_geophysics.section.dock_context import borehole_point, context_lines
     st, p, _ = store_with_model
     _local(st, p)
     dock = make_dock(st)
@@ -121,7 +121,7 @@ def test_borehole_viewer_takes_no_surface_from_a_local_profile(qgis_app, store_w
                                                                make_dock):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.section.borehole_viewer import BoreholeViewer
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
     st, p, _ = store_with_model
     stations = _local(st, p)
     dock = make_dock(st)

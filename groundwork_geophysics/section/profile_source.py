@@ -20,13 +20,14 @@ from qgis.PyQt.QtCore import QByteArray, QDataStream, QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPainterPath, QPen,
                              QPolygonF)
 
+from ..ids import LEGACY_ID
 from .context_render import context_z_values, draw_band, draw_over_stations
 from .data import SectionDataProvider, SectionSnapshot, identify_layers, matching_profiles
 from .topography import measured_line
 
-SOURCE_ID = "geophysics_workbench"
+SOURCE_ID = LEGACY_ID
 SOURCE_NAME = "Geophysics Workbench"
-RESULTS_TYPE = "geophysics_workbench_section"
+RESULTS_TYPE = f"{LEGACY_ID}_section"
 CURVE_TOLERANCE = 1.0          # metres: end points and length of canvas curve vs profile
 _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z ranges
 _MM = Qgis.RenderUnit.Millimeters

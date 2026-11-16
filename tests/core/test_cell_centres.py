@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.section_mesh import SectionMesh
+from groundwork_geophysics.core.section_mesh import SectionMesh
 
 
 def _cell_box(mesh, i):

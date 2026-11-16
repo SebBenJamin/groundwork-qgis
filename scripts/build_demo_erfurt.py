@@ -123,11 +123,11 @@ def dataset_infos(name: str, cache: Path = CACHE) -> dict[str, str]:
 
 def build_workbench(out: Path = DEMO_ERFURT, cache: Path = CACHE) -> Path:
     sys.path.insert(0, str(ROOT))
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.dataset_info import with_info
-    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.dataset_info import with_info
+    from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                                  profile_from_stations, x_to_chainage)
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     path = out / STORE_NAME
     path.unlink(missing_ok=True)
@@ -178,7 +178,7 @@ def core_renderer(units: list[str]):
 
 
 def demo_context_settings(cores: str, logs: str):
-    from geophysics_workbench.core.context_settings import BoreholeSetting, ContextSettings
+    from groundwork_geophysics.core.context_settings import BoreholeSetting, ContextSettings
     return ContextSettings(
         line_layers=[], point_layers=[],
         boreholes=[BoreholeSetting(cores, "id", "", logs, "core_id", "top", "bottom", "unit",
@@ -205,7 +205,7 @@ def plate_profile(store, cores_gpkg: Path) -> str:
 
 def demo_plate(profile_id: str, name: str):
     """A3 landscape: the transect's model, the cores and the interpretation."""
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
     look = FrameLook([ModelLook(f"{name}_model")], None, boreholes=True, field_notes=True,
                      context=False)
     return PlateSpec("demo_plate_erfurt", "1", name, "A3_landscape",
@@ -213,9 +213,9 @@ def demo_plate(profile_id: str, name: str):
 
 
 def add_demo_plate(project, store, cores_gpkg: Path) -> None:
-    from geophysics_workbench.plates.build import create_or_update_plate, set_plate_details
-    from geophysics_workbench.plates.sources import detach_frame_items, unregister_frame_sources
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.plates.build import create_or_update_plate, set_plate_details
+    from groundwork_geophysics.plates.sources import detach_frame_items, unregister_frame_sources
+    from groundwork_geophysics.section.data import SectionDataProvider
     pid = plate_profile(store, cores_gpkg)
     set_plate_details(project, **DEMO_DETAILS)
     try:
@@ -237,10 +237,10 @@ def build_qgis_project(out: Path = DEMO_ERFURT) -> Path:
         app = QgsApplication([], False)
         app.initQgis()
     from build_demo_guelpe import _symbol
-    from geophysics_workbench.section.borehole_style import save_renderer
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.context_dialog import write_settings
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.section.borehole_style import save_renderer
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.project_actions import use_store
 
     path = out / PROJECT_NAME
     path.unlink(missing_ok=True)

@@ -10,7 +10,7 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "ert"
 # -- brief tests ---------------------------------------------------------------------------
 def test_new_store_adds_layers_and_property(qgis_app, tmp_path):
     from qgis.core import QgsProject
-    from geophysics_workbench.ui.project_actions import new_store, attach_store
+    from groundwork_geophysics.ui.project_actions import new_store, attach_store
     prj = QgsProject()
     st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
     names = sorted(l.name() for l in prj.mapLayers().values())
@@ -20,7 +20,7 @@ def test_new_store_adds_layers_and_property(qgis_app, tmp_path):
 
 def test_add_model_rejects_unreadable_file(qgis_app, tmp_path, store_with_model):
     import pytest
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.ui.project_actions import add_model
     st, p, _ = store_with_model
     bad = tmp_path / "f002_res.dat"; bad.write_text("not numbers\n")
     with pytest.raises(ValueError):
@@ -32,7 +32,7 @@ def test_add_model_rejects_unreadable_file(qgis_app, tmp_path, store_with_model)
 def test_layers_are_grouped_and_valid(qgis_app, tmp_path):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import GROUP_NAME, new_store
+    from groundwork_geophysics.ui.project_actions import GROUP_NAME, new_store
 
     prj = QgsProject()
     new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
@@ -48,7 +48,7 @@ def test_layers_are_grouped_and_valid(qgis_app, tmp_path):
 def test_store_path_relative_to_project_and_survives_move(qgis_app, tmp_path):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import (SCOPE, STORE_KEY, attach_store,
+    from groundwork_geophysics.ui.project_actions import (SCOPE, STORE_KEY, attach_store,
                                                          new_store)
 
     folder = tmp_path / "a"
@@ -71,7 +71,7 @@ def test_store_path_relative_to_project_and_survives_move(qgis_app, tmp_path):
 def test_store_path_absolute_without_project_file(qgis_app, tmp_path):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import SCOPE, STORE_KEY, new_store
+    from groundwork_geophysics.ui.project_actions import SCOPE, STORE_KEY, new_store
 
     prj = QgsProject()
     st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
@@ -82,7 +82,7 @@ def test_store_path_absolute_without_project_file(qgis_app, tmp_path):
 def test_attach_store_none_without_entry_and_error_for_missing_file(qgis_app, tmp_path):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import (SCOPE, STORE_KEY, attach_store)
+    from groundwork_geophysics.ui.project_actions import (SCOPE, STORE_KEY, attach_store)
 
     prj = QgsProject()
     assert attach_store(prj) is None
@@ -94,7 +94,7 @@ def test_attach_store_none_without_entry_and_error_for_missing_file(qgis_app, tm
 def test_open_store_reuses_existing_layers(qgis_app, tmp_path):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import new_store, open_store
+    from groundwork_geophysics.ui.project_actions import new_store, open_store
 
     prj = QgsProject()
     st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
@@ -107,8 +107,8 @@ def test_open_store_reuses_existing_layers(qgis_app, tmp_path):
 def test_add_profile_saves_and_refreshes_layers(qgis_app, tmp_path):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.model import profile_from_line
-    from geophysics_workbench.ui.project_actions import add_profile, new_store
+    from groundwork_geophysics.core.model import profile_from_line
+    from groundwork_geophysics.ui.project_actions import add_profile, new_store
 
     prj = QgsProject()
     st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
@@ -132,8 +132,8 @@ class _Provider:
 
 
 def test_create_profile_from_a_line_has_no_stations(qgis_app, project_store):
-    from geophysics_workbench.core.placement import Placement
-    from geophysics_workbench.ui.project_actions import create_profile
+    from groundwork_geophysics.core.placement import Placement
+    from groundwork_geophysics.ui.project_actions import create_profile
 
     st, prj = project_store
     prov = _Provider()
@@ -147,8 +147,8 @@ def test_create_profile_from_a_line_has_no_stations(qgis_app, project_store):
 
 
 def test_create_profile_from_positions_keeps_them_and_the_spacing(qgis_app, project_store):
-    from geophysics_workbench.core.placement import Placement, Positions
-    from geophysics_workbench.ui.project_actions import create_profile
+    from groundwork_geophysics.core.placement import Placement, Positions
+    from groundwork_geophysics.ui.project_actions import create_profile
 
     st, prj = project_store
     xyz = np.array([[0.0, 0.0, 50.0], [50.0, 0.0, 51.0], [100.0, 0.0, 52.0]])
@@ -162,8 +162,8 @@ def test_create_profile_from_positions_keeps_them_and_the_spacing(qgis_app, proj
 
 def test_create_profile_failure_saves_nothing_and_does_not_notify(qgis_app, project_store,
                                                                   monkeypatch):
-    from geophysics_workbench.core.placement import Placement, Positions
-    from geophysics_workbench.ui.project_actions import create_profile
+    from groundwork_geophysics.core.placement import Placement, Positions
+    from groundwork_geophysics.ui.project_actions import create_profile
 
     st, prj = project_store
 
@@ -180,8 +180,8 @@ def test_create_profile_failure_saves_nothing_and_does_not_notify(qgis_app, proj
 
 
 def test_add_model_fills_defaults_and_notifies(qgis_app, tmp_path, store_with_model):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import add_model
 
     st, p, _ = store_with_model
     src = tmp_path / "models" / "f002_res.dat"
@@ -201,7 +201,7 @@ def test_add_model_fills_defaults_and_notifies(qgis_app, tmp_path, store_with_mo
 
 
 def test_add_model_requires_z_kind_when_unknown(qgis_app, tmp_path, store_with_model):
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.ui.project_actions import add_model
 
     st, p, _ = store_with_model
     sid = st.station_sets(p.id)[0].id
@@ -216,8 +216,8 @@ def test_add_model_requires_z_kind_when_unknown(qgis_app, tmp_path, store_with_m
 
 def test_add_model_outside_store_folder_saves_absolute_path(qgis_app, tmp_path_factory,
                                                            store_with_model):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.project_actions import add_model
 
     st, p, _ = store_with_model
     src = tmp_path_factory.mktemp("elsewhere") / "f003_res.dat"
@@ -234,7 +234,7 @@ def test_store_layers_are_read_only(qgis_app, tmp_path):
     sets, chainage), also after the QGIS project is saved and read again."""
     from qgis.core import QgsProject
 
-    from geophysics_workbench.ui.project_actions import attach_store, new_store, store_layers
+    from groundwork_geophysics.ui.project_actions import attach_store, new_store, store_layers
 
     prj = QgsProject()
     st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
@@ -254,10 +254,10 @@ def test_store_layers_are_read_only(qgis_app, tmp_path):
 
 # -- add_model checks ----------------------------------------------------------------------
 def test_add_model_accepts_depth_model_without_station_elevations(qgis_app, tmp_path):
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import add_model
 
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     p, s = profile_from_stations("Flat", "EPSG:25832", np.array([[0, 0], [50, 0.0]]))  # no z
@@ -273,7 +273,7 @@ def test_add_model_accepts_depth_model_without_station_elevations(qgis_app, tmp_
 
 
 def test_add_model_keeps_the_readers_quantity_and_unit(qgis_app, tmp_path, store_with_model):
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.ui.project_actions import add_model
 
     st, p, _ = store_with_model
     src = tmp_path / "f001_res.vtk"
@@ -286,8 +286,8 @@ def test_add_model_keeps_the_readers_quantity_and_unit(qgis_app, tmp_path, store
 
 
 def test_build_profile_refuses_a_placement_on_an_existing_profile(store_with_model):
-    from geophysics_workbench.core.placement import Placement
-    from geophysics_workbench.ui.project_actions import build_profile
+    from groundwork_geophysics.core.placement import Placement
+    from groundwork_geophysics.ui.project_actions import build_profile
     st, p, _ = store_with_model
     with pytest.raises(ValueError, match="existing profile"):
         build_profile(st, Placement(profile_id=p.id), "X", "ert")

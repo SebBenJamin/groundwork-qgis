@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.context import BandSegment, ContextItems
+from groundwork_geophysics.core.context import BandSegment, ContextItems
 
 
 def _items(with_dem=True):

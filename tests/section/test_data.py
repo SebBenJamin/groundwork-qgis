@@ -4,11 +4,11 @@ import shutil
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.colors import ColorScale
-from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-from geophysics_workbench.section.data import (LayerStyle, SectionDataProvider,
+from groundwork_geophysics.core.colors import ColorScale
+from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+from groundwork_geophysics.section.data import (LayerStyle, SectionDataProvider,
                                                 cell_path_groups)
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "..", "fixtures", "ert")
 
@@ -190,7 +190,7 @@ def test_station_labels_every_tenth(tmp_path):
 
 
 def test_cell_path_groups_vectorised():
-    from geophysics_workbench.core.section_mesh import SectionMesh
+    from groundwork_geophysics.core.section_mesh import SectionMesh
     verts = np.array([[0, 0], [1, 0], [1, 1], [0, 1], [2, 0]], dtype=float)
     cells = np.array([[0, 1, 2, 3], [1, 4, 2, -1], [0, 1, 2, -1]])
     mesh = SectionMesh(verts, cells, np.array([10.0, 1000.0, np.nan]))
@@ -230,8 +230,8 @@ def test_user_style_survives_file_reload(store_with_model):
 
 
 def test_identify_skips_error_layers_and_nan_cells(store_with_model, tmp_path):
-    from geophysics_workbench.core.section_mesh import SectionMesh
-    from geophysics_workbench.section.data import SectionLayer, identify_layers
+    from groundwork_geophysics.core.section_mesh import SectionMesh
+    from groundwork_geophysics.section.data import SectionLayer, identify_layers
 
     st, p, _ = store_with_model
     s = st.station_sets(p.id)[0]
@@ -267,8 +267,8 @@ def test_relative_source_path_resolves_against_store_folder(store_with_model, tm
 
 def test_model_on_stations_numbered_against_profile(tmp_path):
     """Station 1 at the far end: data metres run against chainage (mesh mirrored)."""
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.model import attach_station_set, profile_from_line
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.model import attach_station_set, profile_from_line
 
     src = tmp_path / "f001_res.dat"
     shutil.copy(os.path.join(FIXTURES, "f001_res.dat"), src)
@@ -288,7 +288,7 @@ def test_model_on_stations_numbered_against_profile(tmp_path):
 
 def test_active_profile_wins_on_identical_geometry(store_with_model):
     """Two profiles on the same line: the curve resolves to the profile the dock opened."""
-    from geophysics_workbench.core.model import Profile
+    from groundwork_geophysics.core.model import Profile
 
     st, p, _ = store_with_model
     twin = Profile("twin", "A twin", p.xy.copy(), p.crs_authid)         # sorts before P1
@@ -347,8 +347,8 @@ def test_a_chained_read_error_leaves_no_reference_cycle(store_with_model, tmp_pa
 
 def test_imported_electrodes_use_the_set_the_section_ticks_use(store_with_model):
     import numpy as np
-    from geophysics_workbench.core.model import attach_station_set
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.model import attach_station_set
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     surveyed = st.station_sets(p.id)[0]                     # "P1", with elevations
     flat = np.column_stack([np.arange(3) * 10.0, np.zeros(3), np.full(3, np.nan)])

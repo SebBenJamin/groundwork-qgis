@@ -6,7 +6,7 @@ from tests.plates.test_build import _plate, env  # noqa: F401  (fixture)
 
 
 def test_minimap_scalebar_has_a_valid_scale(env):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     layout = create_or_update_plate(prj, st, prov, _plate(st, p))
     bar = layout.itemById("wb_map_scalebar")
@@ -17,7 +17,7 @@ def test_minimap_scalebar_has_a_valid_scale(env):
 
 
 def test_new_colour_bar_is_a_compact_bar(env):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     st, p, prov, prj = env
     layout = create_or_update_plate(prj, st, prov, _plate(st, p))
     bar = layout.itemById("wb_colourbar_1_1")
@@ -27,7 +27,7 @@ def test_new_colour_bar_is_a_compact_bar(env):
 @pytest.mark.parametrize("range_m, width_mm", [(34.0, 290.0), (67.0, 290.0), (500.0, 380.0),
                                                 (1234.0, 250.0)])
 def test_fit_fills_at_least_three_quarters_of_the_width(range_m, width_mm):
-    from geophysics_workbench.core.plates import nice_scale
+    from groundwork_geophysics.core.plates import nice_scale
     scale, fits = nice_scale(range_m, width_mm)
     used = range_m * 1000.0 / scale
     assert fits and used <= width_mm and used >= 0.75 * width_mm, (scale, used)
@@ -40,7 +40,7 @@ def test_items_find_the_provider_after_a_plugin_reinstall(qgis_app):
     import sys
     import types
 
-    import geophysics_workbench.plates.items as items
+    import groundwork_geophysics.plates.items as items
     name = items.__name__
     sentinel = object()
     reinstalled = types.SimpleNamespace(_provider=sentinel)

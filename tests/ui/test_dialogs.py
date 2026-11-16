@@ -17,7 +17,7 @@ def _close(dialog, qgis_app):
 # -- NewProfileDialog ----------------------------------------------------------------------
 def test_new_profile_from_positions_file(qgis_app, fake_iface, project_store, tmp_path,
                                          warnings_shown):
-    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
+    from groundwork_geophysics.ui.new_profile_dialog import NewProfileDialog
 
     st, prj = project_store
     csv = tmp_path / "el.txt"
@@ -49,8 +49,8 @@ def test_new_profile_from_positions_file(qgis_app, fake_iface, project_store, tm
 # -- AddDataDialog -------------------------------------------------------------------------
 def test_add_model_dialog_preview_and_save(qgis_app, fake_iface, store_with_model, tmp_path,
                                            warnings_shown):
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     st, p, _ = store_with_model
     src = tmp_path / "zz" / "zond_model.dat"
@@ -82,7 +82,7 @@ def test_add_model_dialog_preview_and_save(qgis_app, fake_iface, store_with_mode
 
 def test_add_model_dialog_reports_unreadable_file(qgis_app, fake_iface, store_with_model,
                                                   tmp_path, warnings_shown):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     st, p, _ = store_with_model
     bad = tmp_path / "f009_res.dat"
@@ -104,9 +104,9 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path,
                                                 warnings_shown):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.model import profile_from_line
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.ui.project_actions import add_profile, new_store
+    from groundwork_geophysics.core.model import profile_from_line
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui.project_actions import add_profile, new_store
 
     prj = QgsProject.instance()
     prj.clear()
@@ -168,7 +168,7 @@ def _gdal_write_error(*_a, **_k):
 
 
 def test_guess_columns_never_reuses_a_header_column():
-    from geophysics_workbench.ui.station_columns import NONE, guess_columns
+    from groundwork_geophysics.ui.station_columns import NONE, guess_columns
 
     assert guess_columns(["station", "x", "y"], 3) == {"number": 0, "x": 1, "y": 2, "z": NONE}
     assert guess_columns(["Nr", "X", "Y"], 3) == {"number": 0, "x": 1, "y": 2, "z": NONE}
@@ -177,7 +177,7 @@ def test_guess_columns_never_reuses_a_header_column():
 
 def test_new_profile_positions_without_z_and_rejects_z_equal_y(
         qgis_app, fake_iface, project_store, tmp_path, warnings_shown):
-    from geophysics_workbench.ui.new_profile_dialog import NewProfileDialog
+    from groundwork_geophysics.ui.new_profile_dialog import NewProfileDialog
 
     st, prj = project_store
     csv = tmp_path / "st.csv"
@@ -200,7 +200,7 @@ def test_new_profile_positions_without_z_and_rejects_z_equal_y(
 
 def test_add_model_store_write_error_is_shown(qgis_app, fake_iface, store_with_model, tmp_path,
                                               warnings_shown, monkeypatch):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     st, p, src = store_with_model
     monkeypatch.setattr(st, "save_dataset", _gdal_write_error)
@@ -215,7 +215,7 @@ def test_add_model_store_write_error_is_shown(qgis_app, fake_iface, store_with_m
 
 def test_add_model_preview_rereads_a_fixed_file(qgis_app, fake_iface, store_with_model,
                                                 tmp_path):
-    from geophysics_workbench.ui.add_data_dialog import AddDataDialog
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog
 
     st, p, _ = store_with_model
     f = tmp_path / "f004_res.dat"
@@ -236,9 +236,9 @@ def test_new_workbench_project_errors_are_shown(qgis_app, fake_iface, tmp_path, 
     from qgis.core import QgsCoordinateReferenceSystem
     from qgis.PyQt.QtWidgets import QDialog, QFileDialog
 
-    import geophysics_workbench.plugin as plugin_mod
-    from geophysics_workbench.plugin import WorkbenchPlugin
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    import groundwork_geophysics.plugin as plugin_mod
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     class FakeCrsDialog:
         def __init__(self, *_a):

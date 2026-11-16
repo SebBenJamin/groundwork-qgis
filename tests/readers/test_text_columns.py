@@ -4,10 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geophysics_workbench import readers
-from geophysics_workbench.core.roles import ModelColumns
-from geophysics_workbench.readers.text_columns import map_points
-from geophysics_workbench.readers.texttable import TableOptions
+from groundwork_geophysics import readers
+from groundwork_geophysics.core.roles import ModelColumns
+from groundwork_geophysics.readers.text_columns import map_points
+from groundwork_geophysics.readers.texttable import TableOptions
 
 WILD = Path(__file__).resolve().parent.parent / "fixtures" / "wild"
 NO_HEADER = TableOptions(header=False).to_dict()

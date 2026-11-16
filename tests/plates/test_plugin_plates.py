@@ -7,9 +7,9 @@ def test_plugin_attaches_frames_on_store_and_detaches_on_unload(qgis_app, fake_i
     from qgis.core import QgsLayoutItemElevationProfile, QgsPrintLayout, QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
-    from geophysics_workbench.plates.sources import write_plates
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, PlateSpec
+    from groundwork_geophysics.plates.sources import write_plates
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -39,7 +39,7 @@ def test_plates_menu_entry_opens_dialog_with_store(qgis_app, fake_iface, store_w
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -68,9 +68,9 @@ def test_plate_frames_never_reach_other_canvases(qgis_app, fake_iface, store_wit
     from qgis.core import QgsLayoutItemElevationProfile, QgsPrintLayout, QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
-    from geophysics_workbench.plates.sources import write_plates
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, PlateSpec
+    from groundwork_geophysics.plates.sources import write_plates
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -108,10 +108,10 @@ def test_plugin_started_after_plates_were_read_warns(qgis_app, fake_iface, monke
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, PlateSpec
-    from geophysics_workbench.plates import items
-    from geophysics_workbench.plates.sources import write_plates
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, PlateSpec
+    from groundwork_geophysics.plates import items
+    from groundwork_geophysics.plates.sources import write_plates
     prj = QgsProject.instance()
     prj.clear()
     write_plates(prj, [PlateSpec("pl", "1", "P1", "A4_landscape",
@@ -133,7 +133,7 @@ def test_no_warning_when_items_were_known(qgis_app, fake_iface):
     from qgis.core import QgsProject
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     prj = QgsProject.instance()
     prj.clear()
     plugin = classFactory(fake_iface)

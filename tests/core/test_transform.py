@@ -1,5 +1,5 @@
 import numpy as np, pytest
-from geophysics_workbench.core.transform import fit_control_points, Transform2D
+from groundwork_geophysics.core.transform import fit_control_points, Transform2D
 
 def test_two_points_similarity_exact():
     local = np.array([[0, 0], [100, 0]], float)

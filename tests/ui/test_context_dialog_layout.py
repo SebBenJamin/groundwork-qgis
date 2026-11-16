@@ -6,7 +6,7 @@ import pytest
 def dialog(qgis_app, fake_iface):
     from qgis.core import QgsProject, QgsVectorLayer
 
-    from geophysics_workbench.ui.context_dialog import ContextDialog
+    from groundwork_geophysics.ui.context_dialog import ContextDialog
     prj = QgsProject.instance()
     prj.clear()
     pts = QgsVectorLayer("Point?crs=EPSG:25833&field=id:string&field=depth:double", "wells",
@@ -30,7 +30,7 @@ def test_tabs(dialog):
 def test_fits_laptop():
     from qgis.PyQt.QtCore import QRect
 
-    from geophysics_workbench.ui.context_dialog import initial_size
+    from groundwork_geophysics.ui.context_dialog import initial_size
     size = initial_size(QRect(0, 0, 1366, 728))           # 1366×768 minus the taskbar
     assert size.height() <= 580 and size.height() <= 0.8 * 728
     assert size.width() <= 0.8 * 1366
@@ -56,7 +56,7 @@ def test_plain_labels(dialog):
 def test_size_is_remembered(dialog, qgis_app):
     from qgis.core import QgsSettings
 
-    from geophysics_workbench.ui.context_dialog import SIZE_KEY
+    from groundwork_geophysics.ui.context_dialog import SIZE_KEY
     dialog.resize(700, 500)
     dialog.reject()
     assert QgsSettings().value(SIZE_KEY) is not None
@@ -66,8 +66,8 @@ def test_size_is_remembered(dialog, qgis_app):
 def test_hig_strings_in_the_strip_group(dialog):
     from qgis.core import QgsProject, QgsVectorLayer
 
-    from geophysics_workbench.core.context_settings import BandSetting
-    from geophysics_workbench.ui.strip_rows import StripRows
+    from groundwork_geophysics.core.context_settings import BandSetting
+    from groundwork_geophysics.ui.strip_rows import StripRows
     from tests.ui.test_hig_strings import collect, problems
     prj = QgsProject.instance()
     geo = QgsVectorLayer("Polygon?crs=EPSG:25832&field=unit:string", "Geology", "memory")

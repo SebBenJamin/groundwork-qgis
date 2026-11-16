@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.context import ContextItems, ProjectedPoint
-from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_polyline
-from geophysics_workbench.core.roles import ModelColumns
-from geophysics_workbench.section.data import SectionDataProvider
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_polyline
+from groundwork_geophysics.core.roles import ModelColumns
+from groundwork_geophysics.section.data import SectionDataProvider
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 CRS = "EPSG:25832"
@@ -185,7 +185,7 @@ def test_local_snapshot_leaves_out_what_needs_elevation(tmp_path):
 
 
 def test_add_model_accepts_depth_without_elevations(qgis_app, tmp_path):
-    from geophysics_workbench.ui.project_actions import add_model
+    from groundwork_geophysics.ui.project_actions import add_model
 
     st, p = _drawn(tmp_path)
     src = tmp_path / "zond_model_depth.dat"

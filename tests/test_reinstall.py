@@ -31,18 +31,18 @@ SCRIPT = textwrap.dedent(r'''
         def addDockWidget(self, area, dock): self.w.addDockWidget(area, dock)
         def removeDockWidget(self, dock): self.w.removeDockWidget(dock)
 
-    import geophysics_workbench
-    import geophysics_workbench.plates.items                 # the "old version" loaded
-    sys.modules["geophysics_workbench.plates.items"] = types.ModuleType(
-        "geophysics_workbench.plates.items")                 # without items_registered
+    import groundwork_geophysics
+    import groundwork_geophysics.plates.items                 # the "old version" loaded
+    sys.modules["groundwork_geophysics.plates.items"] = types.ModuleType(
+        "groundwork_geophysics.plates.items")                 # without items_registered
     # what QGIS does on install: drops the package and plugin.py, imports the package again
-    del sys.modules["geophysics_workbench"]
-    sys.modules.pop("geophysics_workbench.plugin", None)
+    del sys.modules["groundwork_geophysics"]
+    sys.modules.pop("groundwork_geophysics.plugin", None)
     import importlib
-    fresh = importlib.import_module("geophysics_workbench")
+    fresh = importlib.import_module("groundwork_geophysics")
     plugin = fresh.classFactory(Iface())
     plugin.initGui()                                         # raised AttributeError
-    ok = hasattr(sys.modules["geophysics_workbench.plates.items"], "items_registered")
+    ok = hasattr(sys.modules["groundwork_geophysics.plates.items"], "items_registered")
     plugin.unload()
     print("OK" if ok else "STALE")
     sys.stdout.flush()

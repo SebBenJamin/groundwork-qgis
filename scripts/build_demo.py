@@ -272,9 +272,9 @@ def _remove(path: Path) -> None:
 def build_workbench(demo_dir: Path = DEMO) -> Path:
     """demo_workbench.gpkg: one profile per station file, one model dataset per profile."""
     sys.path.insert(0, str(ROOT))
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     path = demo_dir / STORE_NAME
     _remove(path)
@@ -307,8 +307,8 @@ def build_qgis_project(demo_dir: Path = DEMO) -> Path:
     if QgsApplication.instance() is None:
         app = QgsApplication([], False)
         app.initQgis()
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import use_store
 
     path = demo_dir / PROJECT_NAME
     path.unlink(missing_ok=True)

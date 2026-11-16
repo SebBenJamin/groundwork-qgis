@@ -3,9 +3,9 @@ def test_package_imports_without_qgis_side_effects():
     import sys
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
-    code = ("import sys, geophysics_workbench; "
-            "assert hasattr(geophysics_workbench, 'classFactory'); "
-            "assert 'geophysics_workbench.plugin' not in sys.modules")
+    code = ("import sys, groundwork_geophysics; "
+            "assert hasattr(groundwork_geophysics, 'classFactory'); "
+            "assert 'groundwork_geophysics.plugin' not in sys.modules")
     r = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
@@ -14,7 +14,7 @@ def test_metadata_targets_qgis4():
     from configparser import ConfigParser
     from pathlib import Path
     cp = ConfigParser()
-    cp.read(Path(__file__).resolve().parent.parent / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
+    cp.read(Path(__file__).resolve().parent.parent / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
     g = cp["general"]
     assert g["name"] == "Geophysics Workbench"
     assert g["qgisMinimumVersion"] == "4.2"
@@ -23,14 +23,14 @@ def test_metadata_targets_qgis4():
 
 
 def test_plugin_loads_and_unloads(fake_iface):
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     p = classFactory(fake_iface)
     p.initGui()
     p.unload()
 
 
 def test_add_action_adds_to_menu(fake_iface):
-    from geophysics_workbench import classFactory
+    from groundwork_geophysics import classFactory
     p = classFactory(fake_iface)
     p.initGui()
     hits = []
@@ -55,7 +55,7 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     zips = package.build(tmp_path)
     assert len(zips) == 4
     erfurt = zips[3]
-    assert erfurt.name.startswith("geophysics_workbench-demo-erfurt-")
+    assert erfurt.name.startswith("groundwork_geophysics-demo-erfurt-")
     erfurt_names = zipfile.ZipFile(erfurt).namelist()
     for need in ("erfurt_project.qgz", "erfurt_workbench.gpkg", "ATTRIBUTION.md",
                  "context/cores.gpkg", "data/ert/ERT02/dcinv.result.vtk",
@@ -63,7 +63,7 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
         assert need in erfurt_names
     assert not any(n.endswith((".qto3settings", "-wal", "-shm")) for n in erfurt_names)
     guelpe = zips[2]
-    assert guelpe.name.startswith("geophysics_workbench-demo-guelpe-")
+    assert guelpe.name.startswith("groundwork_geophysics-demo-guelpe-")
     names = zipfile.ZipFile(guelpe).namelist()
     for need in ("guelpe_project.qgz", "guelpe_workbench.gpkg", "ATTRIBUTION.md",
                  "context/cores.gpkg", "data/ert/T1/dcinv.result.vtk"):
@@ -138,7 +138,7 @@ def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
 def test_plugin_lines_are_wrapped():
     """Minor 10: no line in the plugin's Python is longer than 110 characters."""
     from pathlib import Path
-    root = Path(__file__).resolve().parent.parent / "geophysics_workbench"
+    root = Path(__file__).resolve().parent.parent / "groundwork_geophysics"
     long = [f"{p.relative_to(root)}:{i}" for p in root.rglob("*.py")
             for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
             if len(line) > 110]

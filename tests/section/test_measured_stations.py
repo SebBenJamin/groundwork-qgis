@@ -44,7 +44,7 @@ def _is_dark(pixel):
 
 
 def _generate(provider, profile_id):
-    from geophysics_workbench.section.profile_source import WorkbenchProfileGenerator
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileGenerator
 
     class Owner:
         last_results = None
@@ -59,8 +59,8 @@ def _generate(provider, profile_id):
 def dem_mode(qgis_app, store_with_model):
     """P1's stations measure 100 m at s = 0 and 102 m at s = 50; the DEM agrees at s = 0
     and rises to 2 m above the station at s = 50. The models hang from the DEM."""
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     st, p, _ = store_with_model
     s = np.linspace(0.0, 50.0, 11)
@@ -72,7 +72,7 @@ def dem_mode(qgis_app, store_with_model):
 
 
 def test_dem_mode_draws_the_station_at_its_measured_height_in_red(dem_mode):
-    from geophysics_workbench.section.profile_source import MEASURED_COLOUR
+    from groundwork_geophysics.section.profile_source import MEASURED_COLOUR
 
     prov, p = dem_mode
     snap, results = _generate(prov, p.id)
@@ -117,8 +117,8 @@ def test_failing_band_drawing_keeps_the_stations(qgis_app, monkeypatch):
     are still drawn."""
     from test_context_render import _img, _mm, _results, _x as x_, _y as y_
 
-    from geophysics_workbench.core.context import BandSegment, ContextItems
-    from geophysics_workbench.section import profile_source
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.section import profile_source
 
     def boom(*_a, **_k):
         raise RuntimeError("band broke")

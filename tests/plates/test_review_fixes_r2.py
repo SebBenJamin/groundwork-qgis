@@ -4,14 +4,14 @@ from tests.plates.test_build import _plate, env  # noqa: F401
 
 
 def _build(prj, st, prov, plate):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     return create_or_update_plate(prj, st, prov, plate)
 
 
 def test_emptied_label_is_refreshed(env):
     """The message says: delete the label's text and press Update - that must refresh it."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.plates.build import STALE_PROPERTY
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.plates.build import STALE_PROPERTY
     st, p, prov, prj = env
     st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence"))
     plate = _plate(st, p)
@@ -29,8 +29,8 @@ def test_emptied_label_is_refreshed(env):
 def test_legacy_notes_text_reported_and_followed(env):
     """A 0.7 plate (no record) whose notes changed before the first 0.8 Update: the list is
     kept, but the message says the notes changed, and emptying it refreshes it."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.plates.build import STALE_PROPERTY, WRITTEN
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.plates.build import STALE_PROPERTY, WRITTEN
     st, p, prov, prj = env
     st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence"))
     plate = _plate(st, p)
@@ -50,10 +50,10 @@ def test_plate_note_colours_with_panel_notes_off(env):
     from qgis.core import QgsSingleSymbolRenderer
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.plates import FrameLook
-    from geophysics_workbench.section.field_notes_render import note_looks
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.plates import FrameLook
+    from groundwork_geophysics.section.field_notes_render import note_looks
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers
     st, p, prov, prj = env
     st.save_field_note(FieldNote("b", p.id, 10.0, 20.0, "wet ground"))
     st.rebuild_field_note_geometry({q.id: q.chainage for q in st.profiles()})

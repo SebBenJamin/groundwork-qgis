@@ -52,11 +52,11 @@ def test_guide_steps_give_boreholes_with_layers_and_curves(templates, project):
     import processing
     from processing.core.Processing import Processing
 
-    from geophysics_workbench.core.context_settings import (BoreholeSetting, ContextSettings,
+    from groundwork_geophysics.core.context_settings import (BoreholeSetting, ContextSettings,
                                                             CurveField, CurveTableSetting)
-    from geophysics_workbench.core.model import Profile
-    from geophysics_workbench.section.context_layers import ContextGatherer
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.core.model import Profile
+    from groundwork_geophysics.section.context_layers import ContextGatherer
+    from groundwork_geophysics.ui.context_dialog import write_settings
     Processing.initialize()
     xlsx = templates / "boreholes_template.xlsx"
     result = processing.run("native:createpointslayerfromtable", {

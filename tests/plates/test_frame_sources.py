@@ -4,14 +4,14 @@ import pytest
 
 
 def _look(st, p, **model):
-    from geophysics_workbench.core.plates import FrameLook, ModelLook
+    from groundwork_geophysics.core.plates import FrameLook, ModelLook
     ds = st.datasets(p.id)[0]
     return FrameLook([ModelLook(ds.id, **model)], None, True, True, False)
 
 
 def test_snapshot_with_look_shows_only_chosen_models_and_scale(store_with_model, qgis_app):
-    from geophysics_workbench.core.plates import FrameLook
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.plates import FrameLook
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
     look = _look(st, p, opacity=0.5, scale={"cmap": "viridis", "vmin": 10.0, "vmax": 100.0,
@@ -24,8 +24,8 @@ def test_snapshot_with_look_shows_only_chosen_models_and_scale(store_with_model,
 
 
 def test_frame_look_independent_of_panel_restyle(store_with_model, qgis_app):
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.section.data import LayerStyle, SectionDataProvider
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.section.data import LayerStyle, SectionDataProvider
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
     ds_id = st.datasets(p.id)[0].id
@@ -39,8 +39,8 @@ def test_frame_look_independent_of_panel_restyle(store_with_model, qgis_app):
 def test_latest_or_chosen_interpretation_version(store_with_model, qgis_app):
     from dataclasses import replace
 
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     st.ensure_interpretation()
     v = st.current_version()
@@ -59,8 +59,8 @@ def test_frame_drawing_is_clipped_to_the_plot_area(store_with_model, qgis_app):
     from qgis.core import QgsDoubleRange, QgsProfileRenderContext, QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import WorkbenchProfileGenerator
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileGenerator
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
 
@@ -94,11 +94,11 @@ def test_reopened_project_frames_draw(store_with_model, qgis_app, tmp_path):
     """Review Focus 1: save, clear, read, re-attach: the frame item has its source again."""
     from qgis.core import QgsLayoutItemElevationProfile, QgsPrintLayout, QgsProject
 
-    from geophysics_workbench.core.plates import FrameSpec, PlateSpec
-    from geophysics_workbench.plates.sources import (attach_frame_sources, read_plates,
+    from groundwork_geophysics.core.plates import FrameSpec, PlateSpec
+    from groundwork_geophysics.plates.sources import (attach_frame_sources, read_plates,
                                                      register_frame_sources,
                                                      unregister_frame_sources, write_plates)
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
     prj = QgsProject.instance()
@@ -140,9 +140,9 @@ def test_frame_source_draws_only_its_own_profile(store_with_model, qgis_app):
     source asked for another line (or QGIS's own Elevation Profile tool) draws nothing."""
     from qgis.core import QgsCoordinateReferenceSystem, QgsLineString, QgsPoint, QgsProfileRequest
 
-    from geophysics_workbench.core.plates import FrameSpec
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import FrameProfileSource
+    from groundwork_geophysics.core.plates import FrameSpec
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import FrameProfileSource
     st, p, _ = store_with_model
     source = FrameProfileSource(SectionDataProvider(st), FrameSpec("fz", p.id, _look(st, p)))
 
@@ -159,9 +159,9 @@ def test_frame_source_draws_only_its_own_profile(store_with_model, qgis_app):
 
 def test_plate_look_ignores_panel_notes_switch_and_compare(store_with_model, qgis_app):
     """Review I1: the panel's "Show Field Notes" and Compare must not reach a plate."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.section.data import SectionDataProvider
     st, p, _ = store_with_model
     st.save_field_note(FieldNote("n1", p.id, 3.0, None, "fence"))
     prov = SectionDataProvider(st)
@@ -179,10 +179,10 @@ def test_model_look_keeps_display_settings(store_with_model, qgis_app):
     frame's look, so restyling the panel later does not change a plate."""
     from dataclasses import replace
 
-    from geophysics_workbench.core.plates import ModelLook, plates_from_json, plates_to_json
-    from geophysics_workbench.core.plates import FrameSpec, PlateSpec
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.ui.plates_dialog import panel_look
+    from groundwork_geophysics.core.plates import ModelLook, plates_from_json, plates_to_json
+    from groundwork_geophysics.core.plates import FrameSpec, PlateSpec
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.plates_dialog import panel_look
     st, p, _ = store_with_model
     prov = SectionDataProvider(st)
     ds = st.datasets(p.id)[0]

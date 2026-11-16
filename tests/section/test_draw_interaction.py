@@ -23,7 +23,7 @@ def _click(canvas, pos, right=False):
 
 
 def test_right_click_finishes_line(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     got = []
     dock.interp._finished = lambda kind, pts: got.append((kind, pts))
     dock.interp.start("line")
@@ -34,7 +34,7 @@ def test_right_click_finishes_line(qgis_app, dock):
 
 
 def test_right_click_with_too_few_points_cancels(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     got = []
     dock.interp._finished = lambda kind, pts: got.append(pts)
     dock.interp.start("polygon")
@@ -45,13 +45,13 @@ def test_right_click_with_too_few_points_cancels(qgis_app, dock):
 
 def test_edit_tool_right_click_menu_unchanged(qgis_app, dock):
     """Review Focus 2: only drawing tools finish on right-click."""
-    from geophysics_workbench.section.interp_tools import DrawTool, EditTool
+    from groundwork_geophysics.section.interp_tools import DrawTool, EditTool
     assert "RightButton" in __import__("inspect").getsource(EditTool)
     assert hasattr(DrawTool, "plotPressEvent")
 
 
 def test_tool_hint_shown(qgis_app, dock):
-    from geophysics_workbench.section.interp_controller import TOOL_HINTS
+    from groundwork_geophysics.section.interp_controller import TOOL_HINTS
     assert TOOL_HINTS["line"] == "Line: click to add points, right-click to finish, Esc to cancel"
     for kind in ("line", "polygon", "point", "note", "edit"):
         dock.interp.start(kind)
@@ -63,7 +63,7 @@ def test_tool_hint_shown(qgis_app, dock):
 def test_note_drag_shows_stretch(qgis_app, dock):
     from qgis.PyQt.QtCore import QEvent, Qt
 
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     dock.interp.note_form_factory = lambda note, cats: None
     dock.interp.start("note")
     tool = dock.interp.tool

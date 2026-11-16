@@ -8,7 +8,7 @@ from tests.ui.test_plates_dialog import _dialog
 
 
 def _build(prj, st, prov, plate):
-    from geophysics_workbench.plates.build import create_or_update_plate
+    from groundwork_geophysics.plates.build import create_or_update_plate
     return create_or_update_plate(prj, st, prov, plate)
 
 
@@ -42,7 +42,7 @@ def test_crs_and_caption_kept(env):
 
 def test_legacy_label_edit_survives(env):
     """Review Focus 4: a 0.7 plate has no record of what the plugin wrote."""
-    from geophysics_workbench.plates.build import WRITTEN
+    from groundwork_geophysics.plates.build import WRITTEN
     st, p, prov, prj = env
     plate = _plate(st, p)
     layout = _build(prj, st, prov, plate)
@@ -55,7 +55,7 @@ def test_legacy_label_edit_survives(env):
 
 def test_new_plate_labels_written(env):
     """Review Focus 4: a fresh plate from each template gets its texts."""
-    from geophysics_workbench.plates.build import plate_name
+    from groundwork_geophysics.plates.build import plate_name
     st, p, prov, prj = env
     for i, template in enumerate(("A4_landscape", "A4_portrait", "A3_landscape",
                                   "A3_portrait")):
@@ -66,8 +66,8 @@ def test_new_plate_labels_written(env):
 
 
 def test_edited_notes_kept_and_stale_flagged(env):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.plates.build import STALE_PROPERTY
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.plates.build import STALE_PROPERTY
     st, p, prov, prj = env
     st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence"))
     plate = _plate(st, p)
@@ -82,7 +82,7 @@ def test_edited_notes_kept_and_stale_flagged(env):
 
 
 def test_dialog_says_notes_changed(env):
-    from geophysics_workbench.core.field_notes import FieldNote
+    from groundwork_geophysics.core.field_notes import FieldNote
     st, p, prov, prj = env
     st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence"))
     dlg = _dialog(st, prov, prj, panel_profile=p.id)

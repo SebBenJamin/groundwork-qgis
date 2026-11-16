@@ -1,4 +1,4 @@
-from geophysics_workbench.core.context import collar_height
+from groundwork_geophysics.core.context import collar_height
 
 
 def test_collar_order_field_then_dem_then_surface():

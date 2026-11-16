@@ -10,7 +10,7 @@ def _pieces(store, pid):
 
 
 def test_new_piece_is_undoable(ctl):
-    from geophysics_workbench.core.interpretation import InterpFeature
+    from groundwork_geophysics.core.interpretation import InterpFeature
     c, store, _p = ctl
     pid = c.dock.current_profile_id()
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
@@ -43,7 +43,7 @@ def test_ctrl_z_and_ctrl_y_in_panel(ctl, qgis_app):
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtGui import QShortcut
 
-    from geophysics_workbench.core.interpretation import InterpFeature
+    from groundwork_geophysics.core.interpretation import InterpFeature
     c, store, _p = ctl
     pid = c.dock.current_profile_id()
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
@@ -60,7 +60,7 @@ def test_ctrl_z_and_ctrl_y_in_panel(ctl, qgis_app):
 
 
 def test_switching_profile_clears_undo(ctl):
-    from geophysics_workbench.core.interpretation import InterpFeature
+    from groundwork_geophysics.core.interpretation import InterpFeature
     c, store, _p = ctl
     c.form_factory = lambda feature, s, letters, existing=(): InterpFeature(
         feature.id, feature.version_id, type="fault", name="D")

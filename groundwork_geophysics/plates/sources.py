@@ -11,9 +11,10 @@ from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem,
                        QgsLayoutItemElevationProfile, QgsLineString, QgsPoint)
 
 from ..core.plates import plates_from_json, plates_to_json
+from ..ids import LEGACY_ID
 from ..section.profile_source import FrameProfileSource
 
-SCOPE = "geophysics_workbench"
+SCOPE = LEGACY_ID
 PLATES_KEY = "plates"
 FRAME_PROPERTY = "wb_frame_id"
 _registered: list[str] = []

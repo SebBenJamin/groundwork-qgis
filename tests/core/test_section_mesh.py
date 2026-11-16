@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.section_mesh import SectionMesh
+from groundwork_geophysics.core.section_mesh import SectionMesh
 
 
 def grid_points():
@@ -148,7 +148,7 @@ def test_default_drops_hull_slivers_of_bent_rows():
 
 def _stepped():
     """Two quads with their own vertices: top z 10 over x 0..5, 12 over x 5..10."""
-    from geophysics_workbench.core.cell_centres import quads
+    from groundwork_geophysics.core.cell_centres import quads
     verts, cells = quads(np.array([[0.0, 5.0, 0.0, 10.0], [5.0, 10.0, 0.0, 12.0]]))
     return SectionMesh(verts, cells, np.array([10.0, 20.0]))
 

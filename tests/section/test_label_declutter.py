@@ -14,7 +14,7 @@ def _overlaps(placed):
 
 
 def test_place_labels_never_overlaps():
-    from geophysics_workbench.section.context_render import place_labels
+    from groundwork_geophysics.section.context_render import place_labels
     rnd = random.Random(7)
     for _ in range(50):
         spans = []
@@ -28,7 +28,7 @@ def test_place_labels_never_overlaps():
 
 
 def test_more_important_labels_win():
-    from geophysics_workbench.section.context_render import place_labels
+    from groundwork_geophysics.section.context_render import place_labels
     spans = [(0, 100, 3), (10, 110, 0)]               # the second is more important
     assert place_labels(spans, 1) == [None, 0]
 
@@ -37,8 +37,8 @@ def test_section_labels_do_not_overlap(qgis_app):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
-    from geophysics_workbench.section.context_render import plan_labels, set_label_font
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.context_render import plan_labels, set_label_font
     img = QImage(800, 400, QImage.Format.Format_ARGB32)
     painter = QPainter(img)
     try:
@@ -61,7 +61,7 @@ def test_section_labels_do_not_overlap(qgis_app):
 def test_viewer_stacks_overlapping_labels_keeps_highlight():
     """Usability review 2: in true-distance mode names of covered columns were left out —
     in the window made to compare those boreholes. They now go in further rows."""
-    from geophysics_workbench.section.borehole_viewer import choose_viewer_labels
+    from groundwork_geophysics.section.borehole_viewer import choose_viewer_labels
     spans = [(100.0, 160.0), (110.0, 170.0), (300.0, 360.0)]
     assert choose_viewer_labels(spans, highlight=1, rows=3) == [1, 0, 0]
     crowded = [(100.0 + i, 160.0 + i) for i in range(4)]
@@ -70,7 +70,7 @@ def test_viewer_stacks_overlapping_labels_keeps_highlight():
 
 def test_station_numbers_never_run_together():
     """Usability review 2, R4: "…90100110120…" on a long profile."""
-    from geophysics_workbench.section.profile_source import station_labels_to_draw
+    from groundwork_geophysics.section.profile_source import station_labels_to_draw
     spans = [(i * 12.0, 18.0) for i in range(10)]          # numbers 18 px wide, 12 px apart
     keep = station_labels_to_draw(spans)
     drawn = [x for (x, _w), k in zip(spans, keep) if k]
@@ -85,8 +85,8 @@ def test_labels_over_sloping_ground_do_not_overlap(qgis_app):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
-    from geophysics_workbench.section.context_render import plan_labels, set_label_font
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.context_render import plan_labels, set_label_font
     img = QImage(900, 500, QImage.Format.Format_ARGB32)
     painter = QPainter(img)
     try:

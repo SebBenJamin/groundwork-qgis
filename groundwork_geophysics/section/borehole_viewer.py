@@ -27,10 +27,11 @@ from ..core.context import borehole_key, collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
 from .borehole_draw import ColumnOptions, SymbolPool, draw_borehole, draw_flag
 from ..core.numbers import fmt
+from ..ids import LEGACY_ID
 
-SCOPE = "geophysics_workbench"
+SCOPE = LEGACY_ID
 OPTIONS_KEY = "borehole_viewer"
-GEOMETRY_KEY = "geophysics_workbench/borehole_viewer/geometry"
+GEOMETRY_KEY = f"{LEGACY_ID}/borehole_viewer/geometry"
 COLUMN_PX = 28
 TRACK_PX = 60
 GAP_PX = 40

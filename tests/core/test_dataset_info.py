@@ -1,6 +1,6 @@
-from geophysics_workbench.core.dataset_info import (INFO_FIELDS, dataset_info, provenance_line,
+from groundwork_geophysics.core.dataset_info import (INFO_FIELDS, dataset_info, provenance_line,
                                                     with_info)
-from geophysics_workbench.core.model import Dataset
+from groundwork_geophysics.core.model import Dataset
 
 
 def _dataset(kind="ert_model", provenance=None):

@@ -8,9 +8,9 @@ def overhanging(qgis_app, tmp_path):
     """Profile 0 .. 100 m with stations every 10 m over 0 .. 60 m (z = 0), and a uniform
     R2 model (1000 ohm.m, cells 0 .. 20 m x -2 .. 0 m) placed at chainage 50 .. 70.
     Returns (store, profile, dataset_id)."""
-    from geophysics_workbench.core.model import (Dataset, Profile, attach_station_set,
+    from groundwork_geophysics.core.model import (Dataset, Profile, attach_station_set,
                                                  file_fingerprint)
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     p = Profile("p1", "P4", np.array([[0.0, 0.0], [100.0, 0.0]]), "EPSG:25832")
@@ -29,7 +29,7 @@ def overhanging(qgis_app, tmp_path):
 
 
 def test_snapshot_carries_station_coverage(overhanging):
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     st, p, _ = overhanging
     prov = SectionDataProvider(st)
@@ -58,9 +58,9 @@ def _render(results, size=(400, 200)):
 def test_model_beyond_the_stations_is_drawn_lighter(overhanging, tmp_path):
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import WorkbenchProfileSource
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileSource
 
     st, p, did = overhanging
     prov = SectionDataProvider(st)
@@ -90,7 +90,7 @@ def _request(xy, crs_authid):
 
 
 def test_readout_says_beyond_stations(overhanging, make_dock):
-    from geophysics_workbench.section.readout import format_readout
+    from groundwork_geophysics.section.readout import format_readout
 
     assert format_readout(5.0, 1.0, beyond=True) == "s = 5.0 m · z = 1.0 m · beyond stations"
     assert format_readout(5.0, 1.0) == "s = 5.0 m · z = 1.0 m"

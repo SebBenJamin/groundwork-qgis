@@ -29,7 +29,7 @@ def _band_offsets(img, level=0):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QPainter
 
-    from geophysics_workbench.section.context_render import band_offsets
+    from groundwork_geophysics.section.context_render import band_offsets
 
     painter = QPainter(img)
     try:
@@ -41,8 +41,8 @@ def _band_offsets(img, level=0):
 def _results(context, stations=(), z_range=Z_RANGE, topo_z=0.0, layers=(), topo=None):
     """``layers`` are the viewed profile's snapshot layers (not drawn here: the results
     get no cell paths), which the tie strips take their colour scale from."""
-    from geophysics_workbench.section.data import SectionSnapshot
-    from geophysics_workbench.section.profile_source import WorkbenchProfileResults
+    from groundwork_geophysics.section.data import SectionSnapshot
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileResults
 
     topo = topo or (np.array([40.0, 80.0]), np.array([topo_z, topo_z]))
     snap = SectionSnapshot("p1", list(layers), topo, [(float(s), "") for s in stations], None,
@@ -69,8 +69,8 @@ def _blend(rgb, alpha):
 
 
 def test_band_colour_appears_above_surface(qgis_app):
-    from geophysics_workbench.core.context import BandSegment, ContextItems
-    from geophysics_workbench.core.lithology import label_colour
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.lithology import label_colour
 
     img = _img(_results(ContextItems(band=[BandSegment(50.0, 70.0, "Sand")])))
     near, far = _band_offsets(img)
@@ -80,7 +80,7 @@ def test_band_colour_appears_above_surface(qgis_app):
 
 
 def test_crossing_label_lies_above_the_band(qgis_app):
-    from geophysics_workbench.core.context import BandSegment, ContextItems, Crossing
+    from groundwork_geophysics.core.context import BandSegment, ContextItems, Crossing
 
     items = ContextItems(band=[BandSegment(50.0, 70.0, "Sand")],
                          crossings=[Crossing(60.0, "HS 110 kV", "line", 90.0, rgb=(255, 120, 0))])
@@ -107,7 +107,7 @@ def _has_colour(img, s, rgb, tol=30):
 
 
 def test_crossing_drawn_in_its_colour(qgis_app):
-    from geophysics_workbench.core.context import ContextItems, Crossing
+    from groundwork_geophysics.core.context import ContextItems, Crossing
 
     img = _img(_results(ContextItems(
         crossings=[Crossing(60.0, "HS 110 kV", "line", 90.0, rgb=(0, 0, 255))])))
@@ -120,8 +120,8 @@ def test_crossing_label_has_no_glyph(qgis_app):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.core.context import ContextItems, Crossing
-    from geophysics_workbench.section.context_render import plan_labels
+    from groundwork_geophysics.core.context import ContextItems, Crossing
+    from groundwork_geophysics.section.context_render import plan_labels
 
     c = Crossing(60.0, "380 kV", "line", 90.0, rgb=(0, 0, 255))
     img = QImage(400, 200, QImage.Format.Format_ARGB32)
@@ -137,8 +137,8 @@ def test_crossing_label_has_no_glyph(qgis_app):
 
 
 def test_borehole_column_colours_by_lithology(qgis_app):
-    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
-    from geophysics_workbench.core.lithology import label_colour
+    from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.lithology import label_colour
 
     bh = ProjectedPoint(60.0, 12.0, "BK1", "borehole", 0.0,
                         [LogInterval(0.0, 1.0, "Ton"), LogInterval(1.0, 2.5, "Sand")])
@@ -157,7 +157,7 @@ def _is_red(pixel):
 
 
 def test_dem_disagreement_marks_station_red(qgis_app):
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
 
     s = np.array([40.0, 50.0, 55.0, 60.0, 65.0, 70.0, 80.0])
     z = np.array([0.0, 0.0, 0.0, -2.0, 0.0, 0.0, 0.0])           # 2 m off at s = 60 only
@@ -171,7 +171,7 @@ def test_dem_disagreement_marks_station_red(qgis_app):
 
 
 def test_dem_gap_keeps_station_black_and_breaks_the_line(qgis_app):
-    from geophysics_workbench.core.context import ContextItems
+    from groundwork_geophysics.core.context import ContextItems
 
     s = np.array([40.0, 50.0, 60.0, 70.0, 80.0])
     z = np.array([0.0, 0.0, np.nan, 0.0, 0.0])
@@ -182,9 +182,9 @@ def test_dem_gap_keeps_station_black_and_breaks_the_line(qgis_app):
 
 def _host_layer(quantity, scale, visible=True):
     """A layer of the viewed profile with ``scale``; its one cell is never drawn here."""
-    from geophysics_workbench.core.model import Dataset
-    from geophysics_workbench.core.section_mesh import SectionMesh
-    from geophysics_workbench.section.data import LayerStyle, SectionLayer
+    from groundwork_geophysics.core.model import Dataset
+    from groundwork_geophysics.core.section_mesh import SectionMesh
+    from groundwork_geophysics.section.data import LayerStyle, SectionLayer
 
     d = Dataset("h", "p1", "s1", "ert_model", "x", 0, "", "r2_res_dat", {}, {},
                 quantity=quantity)
@@ -194,8 +194,8 @@ def _host_layer(quantity, scale, visible=True):
 
 
 def _tie_items(scale, points=()):
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.core.ties import Tie, TieColumn
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.core.ties import Tie, TieColumn
 
     col = TieColumn("P3 model", np.array([0.0, -1.0]), np.array([-1.0, -2.0]),
                     np.array([10.0, 500.0]), scale, "resistivity", "ohm.m")
@@ -205,7 +205,7 @@ def _tie_items(scale, points=()):
 def test_tie_strip_uses_host_profiles_scale(qgis_app):
     """R14: the strip is drawn in the colour scale of the profile being viewed, from its
     topmost visible layer of the same quantity (hidden and other-quantity layers skipped)."""
-    from geophysics_workbench.core.colors import ColorScale
+    from groundwork_geophysics.core.colors import ColorScale
 
     own = ColorScale("Spectral_r", 1.0, 1000.0, True)
     host = ColorScale("Spectral_r", 8.0, 40.0, True)
@@ -226,7 +226,7 @@ def test_tie_strip_falls_back_to_its_own_scale(qgis_app):
     """Without a model of the strip's quantity on the viewed profile, the strip keeps the
     other profile's own scale (round 2: a hidden model of that quantity still lends its
     scale, so switching layers never recolours the strip - test_tie_strip_scale)."""
-    from geophysics_workbench.core.colors import ColorScale
+    from groundwork_geophysics.core.colors import ColorScale
 
     own = ColorScale("Spectral_r", 1.0, 1000.0, True)
     for layers in ([], [_host_layer("chargeability", ColorScale("viridis", 0.0, 50.0, False))]):
@@ -239,9 +239,9 @@ def test_tie_strip_falls_back_to_its_own_scale(qgis_app):
 def test_tie_strip_moves_off_a_borehole_column(qgis_app):
     """R15: a borehole column right of the tie line sends the strip left of the line; a
     column standing on the line (both sides blocked) sends it just past the column."""
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
-    from geophysics_workbench.core.lithology import label_colour
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.lithology import label_colour
 
     scale = ColorScale("Spectral_r", 1.0, 1000.0, True)
     blue = tuple(scale.rgba(10.0)[0][:3])
@@ -271,8 +271,8 @@ def test_tie_strip_moves_off_a_borehole_column(qgis_app):
 def test_tie_strip_is_framed_in_the_tie_colour(qgis_app):
     """In the host's own scale the strip matches the section behind it, so a thin frame
     in the tie colour keeps it readable as a column of its own."""
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.section.context_render import TIE_COLOUR
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.section.context_render import TIE_COLOUR
 
     img = _img(_results(_tie_items(ColorScale("Spectral_r", 1.0, 1000.0, True))))
     edge = _x(60.0) + round(_mm(img, 3.0))
@@ -286,11 +286,11 @@ def test_strip_readout_and_panel_show_the_same_topmost_column(qgis_app):
     (the last column), whether the bottom model is empty there or not."""
     from types import SimpleNamespace
 
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.core.ties import Tie, TieColumn
-    from geophysics_workbench.section.context_readout import context_hits
-    from geophysics_workbench.ui.ties_panel import build_rows
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.core.ties import Tie, TieColumn
+    from groundwork_geophysics.section.context_readout import context_hits
+    from groundwork_geophysics.ui.ties_panel import build_rows
 
     scale = ColorScale("Spectral_r", 1.0, 1000.0, True)
 
@@ -318,8 +318,8 @@ def test_strip_readout_and_panel_show_the_same_topmost_column(qgis_app):
 
 
 def test_tie_without_scale_draws_no_strip(qgis_app):
-    from geophysics_workbench.core.context import ContextItems
-    from geophysics_workbench.core.ties import Tie, TieColumn
+    from groundwork_geophysics.core.context import ContextItems
+    from groundwork_geophysics.core.ties import Tie, TieColumn
 
     col = TieColumn("P3 model", np.array([0.0]), np.array([-1.0]), np.array([np.nan]),
                     None, "resistivity", "ohm.m")
@@ -328,11 +328,11 @@ def test_tie_without_scale_draws_no_strip(qgis_app):
 
 
 def test_zrange_includes_borehole_bottom(qgis_app):
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
-    from geophysics_workbench.core.ties import Tie, TieColumn
-    from geophysics_workbench.section.data import SectionSnapshot
-    from geophysics_workbench.section.profile_source import WorkbenchProfileGenerator
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.ties import Tie, TieColumn
+    from groundwork_geophysics.section.data import SectionSnapshot
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileGenerator
 
     class Owner:
         last_results = None
@@ -356,8 +356,8 @@ def test_zrange_includes_borehole_bottom(qgis_app):
 
 
 def test_point_with_depth_draws_stick(qgis_app):
-    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
-    from geophysics_workbench.section.context_render_points import STICK_RGB
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.context_render_points import STICK_RGB
 
     deep = ProjectedPoint(50.0, 2.0, "Ig 1", "point", depth=2.5)
     flat = ProjectedPoint(70.0, 2.0, "Ig 2", "point")
@@ -369,8 +369,8 @@ def test_point_with_depth_draws_stick(qgis_app):
 
 
 def test_band_draws_segment_rgb_and_distinct_label_colours(qgis_app):
-    from geophysics_workbench.core.context import BandSegment, ContextItems
-    from geophysics_workbench.core.lithology import label_colour
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.lithology import label_colour
 
     assert label_colour("Sand, fein") != label_colour("Sand, grob")
     img = _img(_results(ContextItems(band=[BandSegment(50.0, 60.0, "Sand", rgb=(10, 20, 200)),
@@ -382,25 +382,25 @@ def test_band_draws_segment_rgb_and_distinct_label_colours(qgis_app):
 
 
 def _view_items(points, **view):
-    from geophysics_workbench.core.context import BoreholeView, ContextItems
+    from groundwork_geophysics.core.context import BoreholeView, ContextItems
     return ContextItems(points=points, borehole_views={0: BoreholeView(**view)})
 
 
 def _bh60(**kw):
-    from geophysics_workbench.core.context import LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
     return ProjectedPoint(60.0, 1.0, "B1", "borehole", 0.0, [LogInterval(0.0, 2.5, "Sand")],
                           entry=0, **kw)
 
 
 def test_section_column_uses_entry_width_px(qgis_app):
-    from geophysics_workbench.core.lithology import label_colour
+    from groundwork_geophysics.core.lithology import label_colour
     img = _img(_results(_view_items([_bh60()], column_px=40)))
     assert _close(img.pixel(_x(60.0) + 17, _y(-1.0)), label_colour("Sand"))
     assert img.pixel(_x(60.0) + 23, _y(-1.0)) == 0xFFFFFFFF
 
 
 def test_flagged_borehole_has_red_marker(qgis_app):
-    from geophysics_workbench.section.borehole_draw import FLAG_RGB
+    from groundwork_geophysics.section.borehole_draw import FLAG_RGB
     img = _img(_results(_view_items([_bh60(flagged=True, z_source="field", z_dem=-0.5)],
                                     column_px=16)))
     near = [img.pixel(_x(60.0) + dx, _y(0.0) - dy) for dx in range(-12, 13)
@@ -413,7 +413,7 @@ def test_flagged_borehole_has_red_marker(qgis_app):
 
 
 def _curve():
-    from geophysics_workbench.core.context import Curve
+    from groundwork_geophysics.core.context import Curve
     return Curve("t:gr", "gr", "API", np.linspace(0.0, 2.5, 26), np.linspace(10, 140, 26))
 
 
@@ -424,7 +424,7 @@ def test_section_curves_off_by_default(qgis_app):
 
 
 def test_section_curve_drawn_when_chosen(qgis_app):
-    from geophysics_workbench.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
     items = _view_items([_bh60(curves=[_curve()])], column_px=16, curve_keys=("t:gr",))
     items.curve_styles = {"t:gr": CurveStyle(colour="#00b400", width_mm=0.6)}
     img = _img(_results(items))
@@ -433,8 +433,8 @@ def test_section_curve_drawn_when_chosen(qgis_app):
 
 
 def test_total_depth_counts_in_z_values(qgis_app):
-    from geophysics_workbench.core.context import ContextItems, ProjectedPoint
-    from geophysics_workbench.section.context_render import context_z_values
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.context_render import context_z_values
     p = ProjectedPoint(50.0, 0.0, "B", "borehole", 10.0, total_depth=7.0)
     assert context_z_values(ContextItems(points=[p]), None) == [3.0]
 
@@ -457,7 +457,7 @@ def _mid(img, level):
 
 
 def test_two_strips_stack_with_the_first_on_top(qgis_app):
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
 
     items = ContextItems(band=[BandSegment(50, 70, "Seesand", rgb=(10, 20, 200), strip=1,
                                            title="GK 25"),
@@ -471,7 +471,7 @@ def test_two_strips_stack_with_the_first_on_top(qgis_app):
 
 
 def test_empty_strip_takes_no_room(qgis_app):
-    from geophysics_workbench.core.context import BandSegment, ContextItems, strips_of
+    from groundwork_geophysics.core.context import BandSegment, ContextItems, strips_of
 
     items = ContextItems(band=[BandSegment(50, 70, "A", rgb=(10, 20, 200), strip=0, title="a"),
                                BandSegment(50, 70, "B", rgb=(200, 20, 10), strip=2, title="c")])
@@ -480,12 +480,12 @@ def test_empty_strip_takes_no_room(qgis_app):
     x = _x(68.0)
     assert _close(img.pixel(x, _mid(img, 1)), _blend((10, 20, 200), 0.85))
     assert _close(img.pixel(x, _mid(img, 0)), _blend((200, 20, 10), 0.85))
-    from geophysics_workbench.section.context_render import context_headroom_px
+    from groundwork_geophysics.section.context_render import context_headroom_px
     assert context_headroom_px(4.0, 10.0, True, strips=2) > context_headroom_px(4.0, 10.0, True)
 
 
 def test_headroom_grows_with_strips():
-    from geophysics_workbench.section.context_render import context_headroom_px
+    from groundwork_geophysics.section.context_render import context_headroom_px
 
     assert context_headroom_px(4.0, 10.0, True, strips=2) -         context_headroom_px(4.0, 10.0, True, strips=1) == pytest.approx(4.0 * (3.0 + 0.6))
 
@@ -493,7 +493,7 @@ def test_headroom_grows_with_strips():
 def test_titles_dropped_on_short_strips(qgis_app):
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
 
     items = ContextItems(band=[BandSegment(50, 52, "Seesand", rgb=(240, 240, 120), title="GK 25")])
     img = _img(_results(items))
@@ -505,7 +505,7 @@ def test_titles_dropped_on_short_strips(qgis_app):
 def test_title_drawn_at_the_left_end_of_a_long_strip(qgis_app):
     from qgis.PyQt.QtGui import QColor
 
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
 
     items = ContextItems(band=[BandSegment(42, 78, "Seesand", rgb=(240, 240, 120), title="GK 25")])
     img = _img(_results(items))
@@ -522,7 +522,7 @@ def _dark(img, xs, ys):
 
 def test_title_follows_the_view_into_the_first_unit(qgis_app):
     """One unit 0..79 seen over 40..80: its title sits at the left edge of what is visible."""
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
 
     def image(title):
         return _img(_results(ContextItems(band=[BandSegment(
@@ -535,7 +535,7 @@ def test_title_follows_the_view_into_the_first_unit(qgis_app):
 
 def test_title_height_follows_the_ground_under_it(qgis_app):
     """On sloping ground the title lies in its own strip, not at the unit's midpoint height."""
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
 
     topo = (np.array([40.0, 80.0]), np.array([0.0, -1.5]))
     items = ContextItems(band=[BandSegment(42, 78, "Seesand", rgb=(240, 240, 120), title="GK 25")])
@@ -553,7 +553,7 @@ def test_title_height_follows_the_ground_under_it(qgis_app):
 
 
 def test_first_unit_keeps_its_label_beside_the_title(qgis_app):
-    from geophysics_workbench.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
 
     def dark_xs(label):
         items = ContextItems(band=[BandSegment(48, 78, label, rgb=(240, 240, 120),

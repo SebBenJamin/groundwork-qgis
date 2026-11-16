@@ -37,7 +37,7 @@ def test_resize_keeps_the_user_zoom(qgis_app, store_with_model, make_dock, typed
 
 
 def test_notes_changed_in_the_list_are_not_brought_back(ctl, monkeypatch):
-    from geophysics_workbench.ui.field_notes_dialog import FieldNotesDialog
+    from groundwork_geophysics.ui.field_notes_dialog import FieldNotesDialog
     c, store, _p = ctl
     pid = c.dock.current_profile_id()
     c.note_form_factory = lambda note, cats: note.__class__(**{**note.__dict__,
@@ -58,7 +58,7 @@ class _Release:
 
 
 def test_dragged_vertex_stays_selected(ctl):
-    from geophysics_workbench.section.interp_edit import move_vertex
+    from groundwork_geophysics.section.interp_edit import move_vertex
     c, store, p = ctl
     c.start("edit")
     tool = c.tool
@@ -70,7 +70,7 @@ def test_dragged_vertex_stays_selected(ctl):
 
 
 def test_scale_cell_refuses_decimals():
-    from geophysics_workbench.ui.plates_dialog import parse_cell
+    from groundwork_geophysics.ui.plates_dialog import parse_cell
     assert parse_cell("scale", "2.500") == 2500 and parse_cell("scale", "1 000 000") == 1000000
     for text in ("2500.0", "2500,0", "25.00"):
         with pytest.raises(ValueError):
@@ -80,8 +80,8 @@ def test_scale_cell_refuses_decimals():
 def test_remaining_numbers_follow_the_locale(qgis_app):
     from qgis.PyQt.QtCore import QLocale
 
-    from geophysics_workbench.section.borehole_viewer import tick_text
-    from geophysics_workbench.ui.plates_dialog import cell_text
+    from groundwork_geophysics.section.borehole_viewer import tick_text
+    from groundwork_geophysics.ui.plates_dialog import cell_text
     old = QLocale()
     QLocale.setDefault(QLocale(QLocale.Language.German, QLocale.Country.Germany))
     try:

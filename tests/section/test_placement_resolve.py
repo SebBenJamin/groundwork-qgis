@@ -8,12 +8,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import (Dataset, attach_station_set, file_fingerprint,
+from groundwork_geophysics.core.model import (Dataset, attach_station_set, file_fingerprint,
                                              profile_from_line, profile_from_polyline)
-from geophysics_workbench.core.roles import ModelColumns
-from geophysics_workbench.section.data import SectionDataProvider
-from geophysics_workbench.section.placement_resolve import invented, resolve_map
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.core.roles import ModelColumns
+from groundwork_geophysics.section.data import SectionDataProvider
+from groundwork_geophysics.section.placement_resolve import invented, resolve_map
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 CRS = "EPSG:25832"
@@ -473,8 +473,8 @@ def test_the_guess_comes_from_the_first_model_that_gives_one(tmp_path):
 def test_map_points_past_the_line_ends_extend_its_end_segments():
     """Before the start: negative chainage; after the end: beyond the length, along the
     first/last segment; ``beyond`` still marks them."""
-    from geophysics_workbench.core.model import Profile
-    from geophysics_workbench.section.data import xy_to_distance_on
+    from groundwork_geophysics.core.model import Profile
+    from groundwork_geophysics.section.data import xy_to_distance_on
 
     p = Profile("p", "P", np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), CRS)
     s, offset, beyond = xy_to_distance_on(p, "", CRS)(np.array([-5.0, 5.0, 9.0]),

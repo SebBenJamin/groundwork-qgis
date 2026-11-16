@@ -22,8 +22,8 @@ def test_foreign_profile_canvas_follows_registry(qgis_app, store_with_model):
     from qgis.gui import QgsElevationProfileCanvas
     from qgis.PyQt import sip
 
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.profile_source import register_source, unregister_source
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.profile_source import register_source, unregister_source
 
     st, p, _ = store_with_model
     foreign = QgsElevationProfileCanvas()            # stands in for QGIS's Elevation Profile

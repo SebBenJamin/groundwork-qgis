@@ -3,9 +3,9 @@ import numpy as np
 import pytest
 from osgeo import ogr
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 BENT = Chainage(np.array([[0.0, 0.0], [50.0, 0.0], [50.0, 50.0]]))
 

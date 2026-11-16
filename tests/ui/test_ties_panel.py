@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from pytest import approx
 
-from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_stations
-from geophysics_workbench.section.data import LayerStyle, SectionDataProvider
+from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+from groundwork_geophysics.section.data import LayerStyle, SectionDataProvider
 
 from pathlib import Path
 
@@ -58,7 +58,7 @@ class FakeDock:
 
 @pytest.fixture
 def make_panel(qgis_app):
-    from geophysics_workbench.ui.ties_panel import TiesPanel
+    from groundwork_geophysics.ui.ties_panel import TiesPanel
     made = []
 
     def factory(store, near_miss=3.0):
@@ -129,7 +129,7 @@ def test_show_in_section_opens_profile_and_cursor(make_panel, demo_like):
 
 def test_show_in_section_brings_a_closed_section_panel_back(qgis_app, fake_iface, demo_like):
     """R19a: the section panel may have been closed; "Show in section" reopens it."""
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics.plugin import WorkbenchPlugin
     st, p1, _p2, _p3 = demo_like
     plugin = WorkbenchPlugin(fake_iface)
     plugin.initGui()
@@ -179,7 +179,7 @@ def test_detach_removes_listener(make_panel, demo_like):
 
 
 def test_plugin_menu_action_and_lifecycle(qgis_app, fake_iface, store_with_model):
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics.plugin import WorkbenchPlugin
     plugin = WorkbenchPlugin(fake_iface)
     plugin.initGui()
     try:
@@ -215,7 +215,7 @@ def test_double_crossing_gives_two_rows_with_own_columns(make_panel, store_with_
     assert [(r.s_a, r.s_b) for r in rows] == [(approx(3.0), approx(2.0)), (approx(4.0), approx(5.0))]
     ats = [c[1] for c in _cells(panel)]
     assert len(set(ats)) == 2
-    from geophysics_workbench.section.ties_data import tie_column
+    from groundwork_geophysics.section.ties_data import tie_column
     for r in rows:
         for col, pid, pos in ((r.col_a, p1.id, r.s_a), (r.col_b, p2.id, r.s_b)):
             expect = tie_column(prov.layers(pid)[-1], pos)       # topmost = last drawn
@@ -239,9 +239,9 @@ def test_sorting_is_numeric(make_panel, store_with_model, tmp_path):
 
 
 def _plot_labels(values, qgis_app):
-    from geophysics_workbench.core.ties import TieColumn
-    from geophysics_workbench.ui.ties_panel import TieRow
-    from geophysics_workbench.ui.ties_plot import TiesPlot
+    from groundwork_geophysics.core.ties import TieColumn
+    from groundwork_geophysics.ui.ties_panel import TieRow
+    from groundwork_geophysics.ui.ties_plot import TiesPlot
     v = np.array(values, dtype=float)
     z = np.linspace(0.0, -2.0 * len(v) / 2, len(v) + 1)
     col = TieColumn("m", z[:-1], z[1:], v, None, "resistivity", "ohm.m")
@@ -265,7 +265,7 @@ def test_log_ticks_minor_labels_only_on_short_axis(qgis_app):
 
 
 def test_no_ties_while_local(make_panel, demo_like):
-    from geophysics_workbench.core.model import profile_from_polyline
+    from groundwork_geophysics.core.model import profile_from_polyline
     st, p1, _p2, _p3 = demo_like
     local = profile_from_polyline("L9", "EPSG:25832", np.array([[20.0, -10.0], [20.0, 30.0]]))
     st.save_profile(local)                              # crosses P1 at 20 m, no heights

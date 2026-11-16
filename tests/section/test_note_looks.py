@@ -7,10 +7,10 @@ from qgis.PyQt.QtGui import QColor
 def setup(qgis_app, store_with_model):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.section.data import SectionDataProvider
-    from geophysics_workbench.section.field_notes_render import note_looks
-    from geophysics_workbench.ui.field_note_layers import ensure_note_layers, field_note_layers
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.field_notes_render import note_looks
+    from groundwork_geophysics.ui.field_note_layers import ensure_note_layers, field_note_layers
     st, p, _ = store_with_model
     prj = QgsProject.instance()
     prj.clear()
@@ -39,7 +39,7 @@ def test_section_uses_layer_colour(setup):
 
 
 def test_plate_uses_layer_colour(setup):
-    from geophysics_workbench.core.plates import FrameLook
+    from groundwork_geophysics.core.plates import FrameLook
     st, p, prov, layers = setup
     _blue(layers["field_notes_lines"])
     snap = prov.snapshot(p.id, look=FrameLook())
@@ -51,8 +51,8 @@ def test_stretch_drawn_in_layer_colour(setup):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.section.context_render import plan_labels
-    from geophysics_workbench.section.field_notes_render import draw_field_notes
+    from groundwork_geophysics.section.context_render import plan_labels
+    from groundwork_geophysics.section.field_notes_render import draw_field_notes
     import numpy as np
     st, p, prov, layers = setup
     _blue(layers["field_notes_lines"])

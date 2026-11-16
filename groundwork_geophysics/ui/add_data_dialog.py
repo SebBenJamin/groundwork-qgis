@@ -26,6 +26,7 @@ from ..core.model import Dataset
 from ..core.numbers import fmt, fmt_sig, fmt_trim
 from ..core.placement import fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
+from ..ids import LEGACY_ID
 from ..readers.errors import plain_error
 from ..readers.text_columns import map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
@@ -50,7 +51,7 @@ RESPONSE_READERS = ("bert_data",)
 RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response",
                   "dcinv.response")
 #: the last text-table settings, offered for the next file with the same columns
-SETTINGS_KEY = "geophysics_workbench/import/last"
+SETTINGS_KEY = f"{LEGACY_ID}/import/last"
 PREVIEW_ROWS = 20
 #: rows read for the preview and the first guess: the first rows of a model often share one
 #: depth, so 20 would hide the vertical column

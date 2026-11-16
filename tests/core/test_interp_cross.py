@@ -1,6 +1,6 @@
 """Where another profile crosses: what its interpretation looks like at the crossing."""
-from geophysics_workbench.core.interp_cross import CrossMark, crossing_marks
-from geophysics_workbench.core.interpretation import InterpPiece, normalise
+from groundwork_geophysics.core.interp_cross import CrossMark, crossing_marks
+from groundwork_geophysics.core.interpretation import InterpPiece, normalise
 
 
 def _p(kind, verts, fid="f"):

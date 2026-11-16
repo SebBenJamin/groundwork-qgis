@@ -1,5 +1,5 @@
 """Write the four shipped plate templates (A4/A3, landscape/portrait) into
-``geophysics_workbench/plates/templates``. Run with QGIS's Python:
+``groundwork_geophysics/plates/templates``. Run with QGIS's Python:
 
     python-qgis.bat scripts/make_plate_templates.py
 
@@ -120,7 +120,7 @@ def _legend(layout, item_id, title, x, y, w, h):
 
 
 def _borehole_legend(layout, x, y, w, h):
-    from geophysics_workbench.plates.items import BoreholeLegendItem
+    from groundwork_geophysics.plates.items import BoreholeLegendItem
     _label(layout, "wb_legend_boreholes_title", "Boreholes", x, y, w, 5, 9.0, True)
     item = BoreholeLegendItem(layout)
     item.setId("wb_legend_boreholes")
@@ -183,9 +183,9 @@ def build(name):
 
 
 def main(out_dir=None):
-    from geophysics_workbench.plates.items import register_items
+    from groundwork_geophysics.plates.items import register_items
     register_items()
-    out_dir = out_dir or os.path.join(ROOT, "geophysics_workbench", "plates", "templates")
+    out_dir = out_dir or os.path.join(ROOT, "groundwork_geophysics", "plates", "templates")
     os.makedirs(out_dir, exist_ok=True)
     for name in PAGES:
         layout = build(name)

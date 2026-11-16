@@ -3,9 +3,9 @@ import sqlite3
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.model import (Dataset, Profile, StationSet, attach_station_set,
+from groundwork_geophysics.core.model import (Dataset, Profile, StationSet, attach_station_set,
                                              profile_from_stations)
-from geophysics_workbench.store.gpkg_store import ProjectStore
+from groundwork_geophysics.store.gpkg_store import ProjectStore
 
 
 def test_roundtrip_profile_stations_dataset(tmp_path):

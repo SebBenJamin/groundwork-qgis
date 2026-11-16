@@ -2,9 +2,9 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.coverage import (overhang_limit, station_coverage,
+from groundwork_geophysics.core.coverage import (overhang_limit, station_coverage,
                                                 station_overhang)
-from geophysics_workbench.core.model import (attach_station_set, profile_from_stations,
+from groundwork_geophysics.core.model import (attach_station_set, profile_from_stations,
                                              x_to_chainage)
 
 

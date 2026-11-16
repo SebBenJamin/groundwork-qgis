@@ -27,7 +27,7 @@ def _poly_symbol(rgb):
 def test_polygon_piece_drawn_on_section(qgis_app):
     from test_context_render import _close, _img, _x, _y
 
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, normalise
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, normalise
 
     p = normalise(InterpPiece("p1", "v", "f1", "prof", "polygon",
                               [(50, 0.5), (70, 0.5), (70, -2), (50, -2)]))
@@ -42,7 +42,7 @@ def test_letter_label_drawn(qgis_app):
     from qgis.PyQt.QtGui import QColor
     from test_context_render import _img, _x, _y
 
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece
 
     p = InterpPiece("p1", "v", "f1", "prof", "point", [(60, -1)])
     from qgis.core import QgsMarkerSymbol
@@ -59,8 +59,8 @@ def test_letter_label_drawn(qgis_app):
 
 
 def test_frozen_version_shown_when_selected(qgis_app, store_with_model):
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     store = store_with_model[0]
     pid = store.profiles()[0].id
@@ -85,7 +85,7 @@ def test_letter_opaque_on_translucent_fill(qgis_app):
     from qgis.PyQt.QtGui import QColor
     from test_context_render import _img, _x, _y
 
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, normalise
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, normalise
 
     p = normalise(InterpPiece("p1", "v", "f1", "prof", "polygon",
                               [(50, 0.5), (70, 0.5), (70, -2.5), (50, -2.5)]))
@@ -99,8 +99,8 @@ def test_letter_opaque_on_translucent_fill(qgis_app):
 def test_crossing_marks_drawn_at_tie_strip(qgis_app):
     from test_context_render import _close, _img, _x, _y
 
-    from geophysics_workbench.core.interp_cross import CrossMark
-    from geophysics_workbench.core.interpretation import InterpFeature
+    from groundwork_geophysics.core.interp_cross import CrossMark
+    from groundwork_geophysics.core.interpretation import InterpFeature
 
     res = _snapshot_results([], {"f1": InterpFeature("f1", "v", name="A")},
                             {"p9": _poly_symbol((0, 200, 0))})
@@ -116,9 +116,9 @@ def test_crossing_marks_drawn_at_tie_strip(qgis_app):
 
 
 def test_snapshot_has_crossing_marks_mirrored(qgis_app, store_with_model):
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     store, p1, _ = store_with_model
     p2, s2 = profile_from_stations("P2", "EPSG:25832",
@@ -147,7 +147,7 @@ def test_compare_pieces_drawn_faint(qgis_app):
     from qgis.PyQt.QtGui import QColor
     from test_context_render import _img, _x, _y
 
-    from geophysics_workbench.core.interpretation import InterpPiece, normalise
+    from groundwork_geophysics.core.interpretation import InterpPiece, normalise
 
     old = normalise(InterpPiece("old", "r1", "f1", "prof", "polygon",
                                 [(50, 0.5), (70, 0.5), (70, -2), (50, -2)]))

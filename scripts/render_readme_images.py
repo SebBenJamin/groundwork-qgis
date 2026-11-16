@@ -86,7 +86,7 @@ def render(demo: Path, out_dir: Path, profile_name: str) -> None:
     from qgis.core import QgsLayoutExporter
     from qgis.gui import QgsLayerTreeMapCanvasBridge
 
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics.plugin import WorkbenchPlugin
 
     app = QgsApplication.instance()
     iface = FakeIface()

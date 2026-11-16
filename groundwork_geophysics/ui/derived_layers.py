@@ -6,18 +6,19 @@ layer ``electrodes (derived)`` in the "Geophysics Workbench" group below ``stati
 they can be compared with the real positions. The layer is refilled whenever the provider
 reports a change and removed when no profile has derived electrodes. Its style is the
 user's: the default is built from the ``stations`` layer's symbol, and a changed style is
-kept as QML in the project entry ``geophysics_workbench/derived_style``."""
+kept as QML in the project entry ``derived_style`` in the legacy scope (ids.LEGACY_ID)."""
 from __future__ import annotations
 
 from qgis.core import (QgsCategorizedSymbolRenderer, QgsFeature, QgsGeometry, QgsMarkerSymbol,
                        QgsPointXY, QgsProject, QgsRendererCategory, QgsVectorLayer)
 from qgis.PyQt.QtXml import QDomDocument
 
+from ..ids import LEGACY_ID
 from .project_actions import GROUP_NAME, SCOPE, store_layers
 
 DERIVED_NAME = "electrodes (derived)"
 STYLE_KEY = "derived_style"
-_FLAG = "geophysics_workbench/derived"          # custom property marking the layer
+_FLAG = f"{LEGACY_ID}/derived"        # custom property marking the layer
 _defaults: dict[str, str] = {}      # layer id -> the QML the layer was built with
 _OPACITY = {"guessed": 0.5, "spacing": 0.75, "readings": 0.75}
 _FIELDS = "&field=profile_id:string&field=profile:string&field=number:string&field=kind:string"

@@ -13,9 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
 def _layer(mode="smooth", coverage=None, mirror=False, **style):
     from test_gridding import regular_mesh
 
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.core.model import Dataset
-    from geophysics_workbench.section.data import LayerStyle, SectionLayer
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.model import Dataset
+    from groundwork_geophysics.section.data import LayerStyle, SectionLayer
 
     mesh = regular_mesh(40, 3, fn=lambda s, z: s, x0=40.0, z0=-3.0)    # s 40..80, z -3..0
     if coverage is not None:
@@ -29,8 +29,8 @@ def _layer(mode="smooth", coverage=None, mirror=False, **style):
 
 
 def _results(layer, topo=(np.array([0.0, 200.0]), np.array([0.5, 0.5]))):
-    from geophysics_workbench.section.data import SectionSnapshot
-    from geophysics_workbench.section.profile_source import WorkbenchProfileGenerator
+    from groundwork_geophysics.section.data import SectionSnapshot
+    from groundwork_geophysics.section.profile_source import WorkbenchProfileGenerator
 
     class Owner:
         last_results = None
@@ -61,7 +61,7 @@ def _rgb(img, x, y):
 
 
 def _expected(value):
-    from geophysics_workbench.core.colors import ColorScale
+    from groundwork_geophysics.core.colors import ColorScale
     return ColorScale("Spectral_r", 40.0, 80.0, False).rgba([value])[0][:3].astype(int)
 
 
@@ -112,7 +112,7 @@ def test_fade_blank_clears_low_coverage(qgis_app):
 
 
 def test_readout_uses_mesh_value_in_smooth_mode(qgis_app):
-    from geophysics_workbench.section.data import identify_layers
+    from groundwork_geophysics.section.data import identify_layers
     layer = _layer("smooth")
     [hit] = identify_layers([layer], 60.2, -1.5)
     assert hit["value"] == pytest.approx(60.5)                      # the cell's value, not 60.2
@@ -128,7 +128,7 @@ def test_blank_removes_contours_in_low_coverage(qgis_app):
 
 
 def test_field_does_not_overshoot_empty_cells(qgis_app):
-    from geophysics_workbench.section.data import SectionLayer
+    from groundwork_geophysics.section.data import SectionLayer
     layer = _layer("smooth", grid_cell=1.5)
     vals = layer.mesh.values.copy()
     x0 = layer.mesh.vertices[layer.mesh.cells[:, 0], 0]

@@ -6,8 +6,8 @@ from tests.section.test_interp_edit import ctl  # noqa: F401  (fixture)
 def _poly_setup(c, store):
     from qgis.core import QgsProject
 
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.ui.interp_layers import interp_layers
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.ui.interp_layers import interp_layers
     v = store.current_version()
     f = InterpFeature(new_id(), v.id, type="clay lens", name="K")
     store.save_feature(f)
@@ -54,5 +54,5 @@ def test_frozen_piece_without_twin_never_hides_the_model(ctl):
 
 
 def test_compare_overlay_is_faded():
-    from geophysics_workbench.section.interp_render import COMPARE_OPACITY
+    from groundwork_geophysics.section.interp_render import COMPARE_OPACITY
     assert COMPARE_OPACITY == 0.35

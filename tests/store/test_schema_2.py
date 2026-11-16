@@ -6,8 +6,8 @@ import stat
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
 
 TABLES = ("interp_features", "interp_lines_3d", "interp_polygons_3d", "interp_points_3d",
           "interp_footprints")
@@ -37,7 +37,7 @@ def _make_schema_1(path, names=("A", "B"), user_name=None):
     values of a user-added ``name`` field (a field the user created in QGIS)."""
     from osgeo import ogr
 
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(path, "EPSG:25832")
     st.ensure_interpretation()
     v = st.current_version()
@@ -67,13 +67,13 @@ def _make_schema_1(path, names=("A", "B"), user_name=None):
 
 
 def test_new_store_is_schema_2(tmp_path):
-    from geophysics_workbench.store.gpkg_store import SCHEMA_VERSION, ProjectStore
+    from groundwork_geophysics.store.gpkg_store import SCHEMA_VERSION, ProjectStore
     ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     assert SCHEMA_VERSION == 3 and _meta(tmp_path / "wb.gpkg")["schema_version"] == "3"
 
 
 def test_migrate_1_to_2(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "old.gpkg"
     _make_schema_1(path)
     assert "letter" in _columns(path, "interp_features")
@@ -87,7 +87,7 @@ def test_migrate_1_to_2(tmp_path):
 
 def test_migrate_with_user_name_field(tmp_path):
     """Review Focus 2: a user field ``name`` already there - nothing is lost."""
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "old.gpkg"
     _make_schema_1(path, user_name={"A": "x"})
     st = ProjectStore.open(path)
@@ -97,7 +97,7 @@ def test_migrate_with_user_name_field(tmp_path):
 
 
 def test_read_only_store_message(tmp_path):
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     path = tmp_path / "old.gpkg"
     _make_schema_1(path)
     os.chmod(path, stat.S_IREAD)
@@ -109,7 +109,7 @@ def test_read_only_store_message(tmp_path):
 
 
 def test_twins_by_name():
-    from geophysics_workbench.section.interp_render import twin_features
+    from groundwork_geophysics.section.interp_render import twin_features
     frozen = [InterpFeature("f1", "v0", type="clay", name="Clay A")]
     current = [InterpFeature("c1", "v1", type="clay", name="Clay A"),
                InterpFeature("c2", "v1", type="clay", name="Clay B")]

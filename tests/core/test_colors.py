@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.colors import COLORMAPS, ColorScale
+from groundwork_geophysics.core.colors import COLORMAPS, ColorScale
 
 
 def test_log_scale_endpoints_and_nan():

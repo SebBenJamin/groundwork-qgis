@@ -4,10 +4,10 @@ import warnings
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.colors import ColorScale
-from geophysics_workbench.core.gridding import (contour_lines, default_levels, grid_model,
+from groundwork_geophysics.core.colors import ColorScale
+from groundwork_geophysics.core.gridding import (contour_lines, default_levels, grid_model,
                                                 grid_shape)
-from geophysics_workbench.core.section_mesh import SectionMesh
+from groundwork_geophysics.core.section_mesh import SectionMesh
 
 
 def regular_mesh(nx=10, nz=5, fn=lambda s, z: s, x0=0.0, z0=-5.0, d=1.0):

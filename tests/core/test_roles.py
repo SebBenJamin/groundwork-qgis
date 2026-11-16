@@ -2,10 +2,10 @@ from pathlib import Path
 
 import numpy as np
 
-from geophysics_workbench.core.roles import (
+from groundwork_geophysics.core.roles import (
     QUANTITIES, VERTICAL_KINDS, ModelColumns, PositionColumns, guess_model_columns,
     guess_position_columns)
-from geophysics_workbench.readers.texttable import (
+from groundwork_geophysics.readers.texttable import (
     TableOptions, TextTable, guess_options, read_table)
 
 WILD = Path(__file__).resolve().parent.parent / "fixtures" / "wild"

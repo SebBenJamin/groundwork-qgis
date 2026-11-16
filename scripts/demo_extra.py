@@ -20,7 +20,7 @@ from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-METADATA = ROOT / "geophysics_workbench" / "metadata.txt"
+METADATA = ROOT / "groundwork_geophysics" / "metadata.txt"
 P4_SHIFT = -140.0          # m along P1's direction: P3 lies 70 m on one side, P4 70 m on the other
 P4_LENGTH = 235.0
 _SAVE_USER = re.compile(rb'(saveUser(?:Full)?)="[^"]*"')
@@ -131,7 +131,7 @@ def _geology_layer(path: Path):
     from qgis.core import (QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsRendererCategory,
                            QgsVectorLayer)
 
-    from geophysics_workbench.core.lithology import lithology_colour
+    from groundwork_geophysics.core.lithology import lithology_colour
 
     layer = QgsVectorLayer(str(path), "Surface geology (synthetic)", "ogr")
     units = sorted(layer.uniqueValues(layer.fields().indexOf("unit")))
@@ -151,10 +151,10 @@ def add_context(project, context_dir: Path, powerline) -> None:
     it; geology and the hidden DEM below) and the context settings that use them."""
     from qgis.core import QgsRasterLayer, QgsVectorLayer
 
-    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+    from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
                                                             ContextSettings, LineLayerSetting,
                                                             PointLayerSetting)
-    from geophysics_workbench.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.context_dialog import write_settings
 
     gpkg = context_dir / "boreholes.gpkg"
     pylons = _point_layer(str(context_dir / "pylons.geojson"), "Pylons (from OSM)", "triangle",

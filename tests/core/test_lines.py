@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.lines import line_from_cloud, line_through, order_of
-from geophysics_workbench.core.model import (Profile, attach_positions, profile_from_polyline,
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.lines import line_from_cloud, line_through, order_of
+from groundwork_geophysics.core.model import (Profile, attach_positions, profile_from_polyline,
                                              profile_from_positions)
-from geophysics_workbench.core.placement import Positions
+from groundwork_geophysics.core.placement import Positions
 
 
 def _xyz(xs):

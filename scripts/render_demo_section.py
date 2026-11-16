@@ -111,12 +111,12 @@ def zoom_to(dock, ve: float, s0: float, s1: float, z_top: float) -> None:
 
 def version() -> str:
     cp = ConfigParser()
-    cp.read(REPO / "geophysics_workbench" / "metadata.txt", encoding="utf-8")
+    cp.read(REPO / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
     return cp["general"]["version"]
 
 
 def render(out_dir: Path, ver: str, demo: Path) -> list[Path]:
-    from geophysics_workbench.plugin import WorkbenchPlugin
+    from groundwork_geophysics.plugin import WorkbenchPlugin
 
     project = QgsProject.instance()
     if not project.read(str(demo / "demo_project.qgz")):

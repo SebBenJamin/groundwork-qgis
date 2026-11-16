@@ -2,8 +2,8 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.chainage import Chainage
-from geophysics_workbench.core.interpretation import (STARTER_TYPES, InterpPiece, footprint,
+from groundwork_geophysics.core.chainage import Chainage
+from groundwork_geophysics.core.interpretation import (STARTER_TYPES, InterpPiece, footprint,
                                                       label_point, normalise, to_3d,
                                                       type_suggestions)
 
@@ -82,7 +82,7 @@ def test_type_suggestions_merge_case_insensitive():
 
 
 def test_clamp_to_surface_moves_points_above_ground_down():
-    from geophysics_workbench.core.interpretation import clamp_to_surface
+    from groundwork_geophysics.core.interpretation import clamp_to_surface
     surface = (np.array([0.0, 10.0]), np.array([5.0, 7.0]))
     assert clamp_to_surface([(0, 6), (5, 2), (10, 9)], surface) == [(0.0, 5.0), (5.0, 2.0),
                                                                     (10.0, 7.0)]

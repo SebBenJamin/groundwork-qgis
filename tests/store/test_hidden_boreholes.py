@@ -1,6 +1,6 @@
 """Round 2, F4: boreholes hidden per profile live in the workbench store (the user's borehole
 layer is never changed)."""
-from geophysics_workbench.core.model import Profile
+from groundwork_geophysics.core.model import Profile
 
 
 def test_hide_and_show_roundtrip(store_with_model):

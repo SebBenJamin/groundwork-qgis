@@ -1,9 +1,9 @@
 """Editing interpretation: picking, vertex edits, moving, deleting, undo/redo."""
 import pytest
 
-from geophysics_workbench.core.interpretation import (InterpFeature, InterpPiece, new_id,
+from groundwork_geophysics.core.interpretation import (InterpFeature, InterpPiece, new_id,
                                                       normalise)
-from geophysics_workbench.section.interp_edit import (delete_vertex, insert_vertex, move_piece,
+from groundwork_geophysics.section.interp_edit import (delete_vertex, insert_vertex, move_piece,
                                                       move_vertex, pick_piece)
 
 SQUARE = normalise(InterpPiece("sq", "v", "f", "p", "polygon",

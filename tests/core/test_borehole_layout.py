@@ -1,9 +1,9 @@
 import pytest
 
-from geophysics_workbench.core.borehole_layout import (ColumnPlace, ViewTransform, extent_z, fit,
+from groundwork_geophysics.core.borehole_layout import (ColumnPlace, ViewTransform, extent_z, fit,
                                                        layout_even, layout_true,
                                                        vertical_exaggeration)
-from geophysics_workbench.core.context import LogInterval, ProjectedPoint
+from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
 
 
 def test_even_layout_keeps_order_and_gap():

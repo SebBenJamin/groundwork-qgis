@@ -25,6 +25,7 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphi
 
 from ..core.layout import KIND_TEXT
 from ..core.numbers import fmt_trim
+from ..ids import LEGACY_ID
 from .data import identify_layers, layer_name
 from .dock_context import context_lines
 from .layer_list import LayerList
@@ -36,7 +37,7 @@ from .view_fit import ViewFitter
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
 AUTO_VE = 0.0                   # the VE box's "Auto": the exaggeration that fills the panel
-SPLITTER_KEY = "geophysics_workbench/section/splitter"
+SPLITTER_KEY = f"{LEGACY_ID}/section/splitter"
 DEFAULT_VE = AUTO_VE
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."

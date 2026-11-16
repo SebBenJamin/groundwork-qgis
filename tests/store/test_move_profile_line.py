@@ -5,10 +5,10 @@ import pytest
 
 @pytest.fixture
 def populated(tmp_path):
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.core.model import profile_from_stations
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st = ProjectStore.create(tmp_path / "m.gpkg", "EPSG:25832")
     xyz = np.column_stack([np.linspace(0, 100, 5), np.zeros(5), np.zeros(5)])
@@ -53,8 +53,8 @@ def test_move_keeps_a_model_placed_from_the_end_in_place(populated, tmp_path):
     (``placement.zero`` with direction -1): the move carries it, so the model stays put."""
     import shutil
 
-    from geophysics_workbench.core.model import Dataset, file_fingerprint
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint
+    from groundwork_geophysics.section.data import SectionDataProvider
     from tests.conftest import FIXTURES
 
     st, p, _ = populated
@@ -105,8 +105,8 @@ OVERHANG = [-20.0, -10.0, 50.0, 115.0, 120.0]     # on the 100 m line: two befor
 
 def _overhanging(st, p):
     """A line piece and a polygon reaching past both ends, and a note range past both."""
-    from geophysics_workbench.core.field_notes import FieldNote
-    from geophysics_workbench.core.interpretation import InterpPiece, new_id
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.interpretation import InterpPiece, new_id
     v = st.current_version()
     [f] = st.features(v.id)
     st.save_piece(InterpPiece("over", v.id, f.id, p.id, "line",
@@ -149,7 +149,7 @@ def test_a_move_failing_after_the_datasets_leaves_their_placement(populated, tmp
     the whole move rolls back, ``placement.zero`` included."""
     import shutil
 
-    from geophysics_workbench.core.model import Dataset, attach_station_set, file_fingerprint
+    from groundwork_geophysics.core.model import Dataset, attach_station_set, file_fingerprint
     from tests.conftest import FIXTURES
 
     st, p, new_xy = populated

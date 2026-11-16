@@ -29,7 +29,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from geophysics_workbench.core.context import (line_crossings, profile_ties,  # noqa: E402
+from groundwork_geophysics.core.context import (line_crossings, profile_ties,  # noqa: E402
                                                project_points)
 
 EPSG = 25832

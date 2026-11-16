@@ -1,5 +1,5 @@
 import numpy as np, pytest
-from geophysics_workbench.core.chainage import Chainage
+from groundwork_geophysics.core.chainage import Chainage
 
 L = Chainage(np.array([[0, 0], [100, 0], [100, 50]], float))  # crooked, length 150
 
@@ -28,7 +28,7 @@ def test_rejects_degenerate_lines():
         Chainage(np.array([[1, 1], [1, 1]], float))
 
 def test_remap_carries_a_position_across():
-    from geophysics_workbench.core.chainage import remap
+    from groundwork_geophysics.core.chainage import remap
     old = Chainage(np.array([[0, 0], [100, 0]], float))
     new = Chainage(np.array([[0, 2], [50, 2], [100, 6]], float))
     s = remap(old, new, [25.0, 500.0])
@@ -38,7 +38,7 @@ def test_remap_carries_a_position_across():
 
 
 def test_remap_carries_the_part_beyond_the_ends_over():
-    from geophysics_workbench.core.chainage import remap
+    from groundwork_geophysics.core.chainage import remap
     old = Chainage(np.array([[0, 0], [100, 0]], float))
     moved = Chainage(np.array([[0, 1], [100, 1]], float))         # 1 m sideways
     s = [-20.0, -10.0, 50.0, 115.0, 120.0]

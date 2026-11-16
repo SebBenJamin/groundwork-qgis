@@ -38,7 +38,7 @@ def dock(qgis_app, store_with_model, make_dock):
 
 
 def test_draw_tool_collects_and_finishes(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import DrawTool
+    from groundwork_geophysics.section.interp_tools import DrawTool
 
     got = []
     tool = DrawTool(dock.canvas, "line", got.append)
@@ -53,7 +53,7 @@ def test_draw_tool_collects_and_finishes(qgis_app, dock):
 
 
 def test_backspace_and_escape(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import DrawTool
+    from groundwork_geophysics.section.interp_tools import DrawTool
 
     got, cancelled = [], []
     tool = DrawTool(dock.canvas, "polygon", got.append, on_cancel=lambda: cancelled.append(1))
@@ -71,8 +71,8 @@ def test_backspace_and_escape(qgis_app, dock):
 
 def test_tool_stores_true_chainage_when_mirrored(qgis_app, store_with_model):
     """Pieces are stored in forward chainage; a reversed snapshot mirrors them like the rest."""
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.section.data import SectionDataProvider
 
     store = store_with_model[0]
     prof = store.profiles()[0]
@@ -89,7 +89,7 @@ def test_tool_stores_true_chainage_when_mirrored(qgis_app, store_with_model):
 
 
 def test_finished_polygon_saved_and_shown(qgis_app, dock):
-    from geophysics_workbench.core.interpretation import InterpFeature
+    from groundwork_geophysics.core.interpretation import InterpFeature
 
     ctl = dock.interp
     ctl.form_factory = lambda feature, suggestions, letters, existing=(): InterpFeature(
@@ -119,7 +119,7 @@ def test_cancelled_form_discards_piece(qgis_app, dock):
 
 
 def test_sketch_mapping_outside_view_is_not_origin(qgis_app, dock):
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
     dock.canvas.setVisiblePlotRange(0.0, 10.0, -5.0, 5.0)
     qgis_app.processEvents()
     from qgis.core import QgsProfilePoint
@@ -135,7 +135,7 @@ def test_sketch_mapping_outside_view_is_not_origin(qgis_app, dock):
 
 def test_middle_drag_pans_while_drawing(qgis_app, dock):
     from qgis.PyQt.QtGui import QMouseEvent
-    from geophysics_workbench.section.interp_tools import DrawTool
+    from groundwork_geophysics.section.interp_tools import DrawTool
     dock.fit.user_navigated()
     dock.canvas.setVisiblePlotRange(0.0, 10.0, -5.0, 5.0)
     qgis_app.processEvents()
@@ -157,7 +157,7 @@ def test_middle_drag_pans_while_drawing(qgis_app, dock):
 
 
 def test_drawn_vertices_above_ground_snap_to_it(qgis_app, dock):
-    from geophysics_workbench.core.interpretation import InterpFeature
+    from groundwork_geophysics.core.interpretation import InterpFeature
     ctl = dock.interp
     ctl.form_factory = lambda feature, s, l, existing=(): InterpFeature(feature.id, feature.version_id)
     surface = ctl.surface()
@@ -173,9 +173,9 @@ def test_drawn_vertices_above_ground_snap_to_it(qgis_app, dock):
 
 
 def test_click_shows_borehole_and_interpretation_details(qgis_app, dock):
-    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.section.dock_context import click_details
+    from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.section.dock_context import click_details
     dock.fit.user_navigated()
     dock.canvas.setVisiblePlotRange(0.0, 20.0, -10.0, 5.0)
     qgis_app.processEvents()
@@ -202,8 +202,8 @@ def _below_ground_point(dock):
 
 
 def test_draw_tool_snaps_to_existing_vertex(qgis_app, dock):
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.section.interp_tools import plot_to_canvas
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.section.interp_tools import plot_to_canvas
 
     store = dock.provider.store
     store.ensure_interpretation()
@@ -229,7 +229,7 @@ def test_draw_tool_snaps_to_existing_vertex(qgis_app, dock):
 
 
 def test_snap_targets_include_borehole_boundaries(qgis_app, dock):
-    from geophysics_workbench.core.context import ContextItems, LogInterval, ProjectedPoint
+    from groundwork_geophysics.core.context import ContextItems, LogInterval, ProjectedPoint
 
     bh = ProjectedPoint(12.0, 1.0, "B1", "borehole", z_top=100.0,
                         log=[LogInterval(0.0, 2.5, "sand"), LogInterval(2.5, 6.0, "clay")])
@@ -263,7 +263,7 @@ def test_snap_targets_include_coverage_edge(qgis_app, dock):
 
 def test_coverage_edge_failure_and_cache(qgis_app, dock, monkeypatch):
     from dataclasses import replace
-    from geophysics_workbench.core import gridding
+    from groundwork_geophysics.core import gridding
     prov = dock.provider
     [layer] = prov.layers(dock.current_profile_id())
     orig = prov._load_mesh

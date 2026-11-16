@@ -4,7 +4,7 @@ context z (borehole logs, tie strips; R19b)."""
 import numpy as np
 import pytest
 
-from geophysics_workbench.core.context import (BandSegment, ContextItems, Crossing, LogInterval,
+from groundwork_geophysics.core.context import (BandSegment, ContextItems, Crossing, LogInterval,
                                                ProjectedPoint)
 
 
@@ -14,7 +14,7 @@ def test_headroom_covers_the_band_and_three_label_rows(qgis_app):
     from qgis.core import QgsRenderContext
     from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
-    from geophysics_workbench.section.context_render import (context_headroom_px, mm,
+    from groundwork_geophysics.section.context_render import (context_headroom_px, mm,
                                                              plan_labels, set_label_font)
 
     img = QImage(400, 400, QImage.Format.Format_ARGB32)
@@ -45,7 +45,7 @@ def _context(profile):
 def test_short_dock_keeps_the_label_rows_inside_the_plot(qgis_app, store_with_model, make_dock):
     from qgis.core import QgsProfilePoint
 
-    from geophysics_workbench.section.view_extent import headroom_px
+    from groundwork_geophysics.section.view_extent import headroom_px
 
     st, p, _ = store_with_model
     dock = make_dock(st)
@@ -67,7 +67,7 @@ def test_short_dock_keeps_the_label_rows_inside_the_plot(qgis_app, store_with_mo
 
 
 def test_headroom_is_zero_without_context(qgis_app, store_with_model, make_dock):
-    from geophysics_workbench.section.view_extent import headroom_px
+    from groundwork_geophysics.section.view_extent import headroom_px
 
     st, p, _ = store_with_model
     dock = make_dock(st)
@@ -82,9 +82,9 @@ def test_headroom_is_zero_without_context(qgis_app, store_with_model, make_dock)
 
 def test_zoom_full_includes_borehole_bottoms_and_tie_columns(qgis_app, store_with_model,
                                                              make_dock):
-    from geophysics_workbench.core.colors import ColorScale
-    from geophysics_workbench.core.ties import Tie, TieColumn
-    from geophysics_workbench.section.view_extent import data_extent
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.ties import Tie, TieColumn
+    from groundwork_geophysics.section.view_extent import data_extent
 
     st, p, _ = store_with_model
     dock = make_dock(st)
@@ -116,9 +116,9 @@ def test_zoom_full_of_a_local_section_leaves_out_the_boreholes(qgis_app, tmp_pat
     import shutil
     from pathlib import Path
 
-    from geophysics_workbench.core.model import Dataset, file_fingerprint, profile_from_polyline
-    from geophysics_workbench.section.view_extent import data_extent
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_polyline
+    from groundwork_geophysics.section.view_extent import data_extent
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     p = profile_from_polyline("L", "EPSG:25832", np.array([[0.0, 0.0], [50.0, 0.0]]))

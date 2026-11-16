@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from geophysics_workbench import readers
+from groundwork_geophysics import readers
 
 DATA = """6
 # x z

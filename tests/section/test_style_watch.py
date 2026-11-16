@@ -6,9 +6,9 @@ import pytest
 
 @pytest.fixture
 def interp_store(tmp_path):
-    from geophysics_workbench.core.chainage import Chainage
-    from geophysics_workbench.core.interpretation import InterpFeature, InterpPiece, new_id
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.core.chainage import Chainage
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     st = ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
     st.ensure_interpretation()
     v = st.current_version()
@@ -47,16 +47,16 @@ def project(qgis_app):
 
 
 def _watch(store, project, calls):
-    from geophysics_workbench.section.style_watch import StyleWatch
-    from geophysics_workbench.ui.field_note_layers import field_note_layers
-    from geophysics_workbench.ui.interp_layers import interp_layers
+    from groundwork_geophysics.section.style_watch import StyleWatch
+    from groundwork_geophysics.ui.field_note_layers import field_note_layers
+    from groundwork_geophysics.ui.interp_layers import interp_layers
     return StyleWatch(project, lambda: [*interp_layers(store, project).values(),
                                         *field_note_layers(store, project).values()],
                       lambda: calls.append(1))
 
 
 def test_renderer_change_redraws(qgis_app, interp_store, project):
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
     layers = add_interp_layers(interp_store, project)
     calls = []
     watch = _watch(interp_store, project, calls)
@@ -67,7 +67,7 @@ def test_renderer_change_redraws(qgis_app, interp_store, project):
 
 
 def test_layer_added_later_is_watched(qgis_app, interp_store, project):
-    from geophysics_workbench.ui.field_note_layers import add_field_note_layers
+    from groundwork_geophysics.ui.field_note_layers import add_field_note_layers
     calls = []
     watch = _watch(interp_store, project, calls)
     layers = add_field_note_layers(interp_store, project)
@@ -80,7 +80,7 @@ def test_layer_added_later_is_watched(qgis_app, interp_store, project):
 
 
 def test_unload_disconnects(qgis_app, interp_store, project):
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
     layers = add_interp_layers(interp_store, project)
     calls = []
     watch = _watch(interp_store, project, calls)
@@ -93,8 +93,8 @@ def test_unload_disconnects(qgis_app, interp_store, project):
 def test_plugin_redraws_on_interp_style(qgis_app, fake_iface, interp_store, project):
     from qgis.PyQt.QtCore import QCoreApplication, QEvent
 
-    from geophysics_workbench import classFactory
-    from geophysics_workbench.ui.interp_layers import add_interp_layers
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
     plug = classFactory(fake_iface)
     plug.initGui()
     try:

@@ -133,10 +133,10 @@ def read_stations(path: Path) -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------- workbench store
 def build_workbench(out: Path = DEMO_GUELPE) -> Path:
     sys.path.insert(0, str(ROOT))
-    from geophysics_workbench import readers
-    from geophysics_workbench.core.model import (Dataset, file_fingerprint,
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                                  profile_from_stations, x_to_chainage)
-    from geophysics_workbench.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
 
     path = out / STORE_NAME
     path.unlink(missing_ok=True)
@@ -268,7 +268,7 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
                           guek: str = "", guek_field: str | None = None):
     """The demo's Context layers settings (layer ids in): the cores with their logs and the
     synthetic curves, and the LBGR boreholes as a second entry drawn to their total depth."""
-    from geophysics_workbench.core.context_settings import (BandSetting, BoreholeSetting,
+    from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
                                                             ContextSettings, CurveField,
                                                             CurveTableSetting, LineLayerSetting)
     synthetic = CurveTableSetting(curves, "core_id", "depth",
@@ -291,8 +291,8 @@ def apply_core_style(project, logs_id: str, style: Path) -> None:
     folder is registered while reading and writing)."""
     from qgis.core import QgsMapLayer, QgsVectorLayer
 
-    from geophysics_workbench.patterns import register_svg_path, unregister_svg_path
-    from geophysics_workbench.section.borehole_style import save_renderer
+    from groundwork_geophysics.patterns import register_svg_path, unregister_svg_path
+    from groundwork_geophysics.section.borehole_style import save_renderer
     register_svg_path()
     try:
         copy = QgsVectorLayer("Polygon?field=lithology:string", "style", "memory")
@@ -313,7 +313,7 @@ def demo_plate(profile_id: str, dataset_id: str):
     """The demo's report plate: A3 landscape, Transect 3's model with the interpretation and
     the boreholes. No field notes are added: the published data has none, and invented field
     observations do not belong in a real-data demo."""
-    from geophysics_workbench.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
     look = FrameLook([ModelLook(dataset_id)], None, boreholes=True, field_notes=True,
                      context=False)
     return PlateSpec("demo_plate_t3", "1", "Transect 3", "A3_landscape",
@@ -322,9 +322,9 @@ def demo_plate(profile_id: str, dataset_id: str):
 
 def add_demo_plate(project, store) -> None:
     """Make the demo plate's layout (its section is drawn live when the project is open)."""
-    from geophysics_workbench.plates.build import create_or_update_plate, set_plate_details
-    from geophysics_workbench.plates.sources import detach_frame_items, unregister_frame_sources
-    from geophysics_workbench.section.data import SectionDataProvider
+    from groundwork_geophysics.plates.build import create_or_update_plate, set_plate_details
+    from groundwork_geophysics.plates.sources import detach_frame_items, unregister_frame_sources
+    from groundwork_geophysics.section.data import SectionDataProvider
     [p3] = [p for p in store.profiles() if p.name == "Transect 3"]
     set_plate_details(project, **DEMO_DETAILS)
     try:
@@ -346,9 +346,9 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
     if QgsApplication.instance() is None:
         app = QgsApplication([], False)
         app.initQgis()
-    from geophysics_workbench.store.gpkg_store import ProjectStore
-    from geophysics_workbench.ui.context_dialog import write_settings
-    from geophysics_workbench.ui.project_actions import use_store
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.project_actions import use_store
 
     path = out / PROJECT_NAME
     path.unlink(missing_ok=True)

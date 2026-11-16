@@ -1,8 +1,8 @@
 """Workbench project actions for QGIS, without widgets.
 
 A workbench project is a GeoPackage (``ProjectStore``). The QGIS project remembers it in the
-entry ``geophysics_workbench/store_path``: relative to the project file's folder when the
-project has a file name and the store is on the same drive, absolute otherwise. Its
+entry ``store_path`` in the legacy scope (ids.LEGACY_ID): relative to the project file's folder
+when the project has a file name and the store is on the same drive, absolute otherwise. Its
 ``profiles`` and ``stations`` layers live in the layer-tree group "Geophysics Workbench"
 and are read-only in QGIS: only the workbench writes them (ids, station sets, chainage).
 """
@@ -20,11 +20,12 @@ from .. import readers
 from ..core.model import (Dataset, Profile, StationSet, attach_positions, file_fingerprint,
                           profile_from_polyline, profile_from_positions)
 from ..core.placement import Placement
+from ..ids import LEGACY_ID
 from ..readers.base import Z_CHOICES
 from ..section.data import read_options, xy_to_distance_on
 from ..store.gpkg_store import ProjectStore
 
-SCOPE = "geophysics_workbench"
+SCOPE = LEGACY_ID
 STORE_KEY = "store_path"
 GROUP_NAME = "Geophysics Workbench"
 LAYER_NAMES = ("profiles", "stations")
