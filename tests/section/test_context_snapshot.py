@@ -274,7 +274,7 @@ def test_plugin_logs_context_errors_once(qgis_app, fake_iface, store_with_model,
         plugin.provider.snapshot(p.id)
         assert len(logged) == 1
         message, tag = logged[0]
-        assert tag == "Geophysics Workbench"
+        assert tag == "Groundwork"
         assert "P1" in message and "RuntimeError: layer gone" in message
     finally:
         plugin.unload()

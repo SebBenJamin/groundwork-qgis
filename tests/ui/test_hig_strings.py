@@ -175,7 +175,7 @@ def test_disabled_actions_say_why(qgis_app, fake_iface):
         for a in disabled:
             assert a.toolTip() and a.toolTip() != a.text().replace("&", ""), a.text()
         add = next(a for a in plugin.actions if a.text().startswith("Add Data"))
-        assert "Open or create a workbench project" in add.toolTip()
+        assert "Open or create a Groundwork project" in add.toolTip()
         pick = next(a for a in plugin.actions if a.text().startswith("Pick Profile"))
         assert not pick.isEnabled()
     finally:

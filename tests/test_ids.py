@@ -11,11 +11,13 @@ def test_hidden_ids_unchanged():
 
     from groundwork_geophysics.plates import items, sources
     from groundwork_geophysics.section import borehole_style, borehole_viewer, dock, profile_source
-    from groundwork_geophysics.ui import add_data_dialog, context_dialog, project_actions
+    from groundwork_geophysics.ui import add_data_dialog, context_dialog, derived_layers, project_actions
 
     assert (project_actions.SCOPE == sources.SCOPE == borehole_viewer.SCOPE
             == borehole_style.STYLE_SCOPE == OLD_ID)
     assert profile_source.SOURCE_ID == OLD_ID
+    assert profile_source.RESULTS_TYPE == "geophysics_workbench_section"
+    assert derived_layers._FLAG == "geophysics_workbench/derived"
     assert project_actions.STORE_KEY == "store_path"
     assert dock.SPLITTER_KEY == "geophysics_workbench/section/splitter"
     assert borehole_viewer.GEOMETRY_KEY == "geophysics_workbench/borehole_viewer/geometry"

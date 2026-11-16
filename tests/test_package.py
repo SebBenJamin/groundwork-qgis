@@ -16,7 +16,7 @@ def test_metadata_targets_qgis4():
     cp = ConfigParser()
     cp.read(Path(__file__).resolve().parent.parent / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
     g = cp["general"]
-    assert g["name"] == "Geophysics Workbench"
+    assert g["name"] == "Groundwork"
     assert g["qgisMinimumVersion"] == "4.2"
     assert g["supportsQt6"] == "True"
     assert g["version"] == "0.9.1"

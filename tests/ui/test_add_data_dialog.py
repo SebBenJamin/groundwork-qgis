@@ -403,7 +403,7 @@ def test_menu_entry_is_add_data_and_needs_only_a_project(qgis_app, fake_iface, t
         texts = [a.text() for a in plugin.menu.actions()]
         assert "Add Data…" in texts and "Add ERT Model…" not in texts
         assert not plugin.add_data_action.isEnabled()
-        assert "Open or create a workbench project" in plugin.add_data_action.toolTip()
+        assert "Open or create a Groundwork project" in plugin.add_data_action.toolTip()
         st = new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
         plugin.set_store(st)
         assert st.profiles() == [] and plugin.add_data_action.isEnabled()

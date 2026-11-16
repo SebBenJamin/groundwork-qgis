@@ -353,7 +353,7 @@ def test_missing_layer_and_field_are_skipped_with_log(project, profile, qgis_app
         g.close()
     assert [(c.label, c.s) for c in items.crossings] == [("Good", approx(60))]
     assert items.band == []
-    warnings = [m for m, tag, level in got if tag == "Geophysics Workbench"
+    warnings = [m for m, tag, level in got if tag == "Groundwork"
                 and level == Qgis.MessageLevel.Warning]
     assert len(warnings) == 2                     # a stale entry is ignored silently
     for needle in ("voltage_old", "'unit'"):
@@ -519,7 +519,7 @@ def test_dem_outside_profile_logs_one_warning(project, profile, tmp_path, qgis_a
     finally:
         stop()
         g.close()
-    dem_warnings = [m for m, tag, _l in got if tag == "Geophysics Workbench" and "DEM" in m]
+    dem_warnings = [m for m, tag, _l in got if tag == "Groundwork" and "DEM" in m]
     assert len(dem_warnings) == 1
 
 

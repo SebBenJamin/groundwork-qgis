@@ -8,6 +8,7 @@ from qgis.core import QgsLayoutExporter, QgsLayoutRenderContext
 from qgis.PyQt.QtCore import QMarginsF, QSizeF
 from qgis.PyQt.QtGui import QPageLayout, QPageSize, QPainter, QPdfWriter
 
+from ..ids import NAME
 from .build import find_plate_layout
 from .sources import read_plates
 
@@ -62,7 +63,7 @@ def _combined(plates, path: Path) -> None:
     """All pages of all plates into one PDF, drawn as vectors (each page its own size)."""
     writer = QPdfWriter(str(path))
     writer.setResolution(DPI)
-    writer.setCreator("Geophysics Workbench")
+    writer.setCreator(NAME)
     painter = None
     try:
         for plate, layout in plates:

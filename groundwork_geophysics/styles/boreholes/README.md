@@ -1,4 +1,4 @@
-# Borehole styles shipped with the Geophysics Workbench
+# Borehole styles shipped with Groundwork
 
 QGIS style files (`.qml`) to load in **Borehole style… → Import…**, as a starting point for your own style.
 

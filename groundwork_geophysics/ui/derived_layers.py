@@ -2,7 +2,7 @@
 
 A profile without a station set has its electrode positions worked out at draw time (from
 the readings file, a typed spacing, or a guess from the model). They are shown as the memory
-layer ``electrodes (derived)`` in the "Geophysics Workbench" group below ``stations``, so
+layer ``electrodes (derived)`` in the "Groundwork" group below ``stations``, so
 they can be compared with the real positions. The layer is refilled whenever the provider
 reports a change and removed when no profile has derived electrodes. Its style is the
 user's: the default is built from the ``stations`` layer's symbol, and a changed style is

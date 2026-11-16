@@ -56,7 +56,7 @@ def test_demo_works_from_another_folder(qgis_app, tmp_path):
 def test_demo_project_content(qgis_app):
     from qgis.core import QgsProject
 
-    from groundwork_geophysics.ui.project_actions import GROUP_NAME, SCOPE, STORE_KEY
+    from groundwork_geophysics.ui.project_actions import LEGACY_GROUP_NAME, SCOPE, STORE_KEY
 
     prj = QgsProject()
     assert prj.read(str(DEMO / "demo_project.qgz"))
@@ -66,7 +66,7 @@ def test_demo_project_content(qgis_app):
     assert "OpenStreetMap" in names and names["OpenStreetMap"].providerType() == "wms"
     powerline = [l for n, l in names.items() if n.lower().startswith("powerline")]
     assert powerline and powerline[0].labelsEnabled()
-    group = prj.layerTreeRoot().findGroup(GROUP_NAME)
+    group = prj.layerTreeRoot().findGroup(LEGACY_GROUP_NAME)    # demo is rebuilt in Task 5
     assert sorted(l.name() for l in group.findLayers()) == ["profiles", "stations"]
     extent = prj.viewSettings().defaultViewExtent()
     assert not extent.isNull() and extent.crs().authid() == "EPSG:25832"

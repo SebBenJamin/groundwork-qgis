@@ -10,6 +10,7 @@ from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import QCheckBox, QComboBox, QGridLayout, QGroupBox, QLabel
 
 from ..core.context_settings import LineLayerSetting
+from ..ids import NAME
 from ..section.crossing_lines import candidate_line_layers, map_visible, symbol_colour
 from .borehole_mapping import field_of, fill_field_combo
 
@@ -23,7 +24,7 @@ def _guarded(slot):
             slot(self, *args)
         except Exception as exc:
             QgsMessageLog.logMessage(f"Crossing Lines dialog: {type(exc).__name__}: {exc}",
-                                     "Geophysics Workbench", Qgis.MessageLevel.Warning)
+                                     NAME, Qgis.MessageLevel.Warning)
     run.__name__ = slot.__name__
     return run
 

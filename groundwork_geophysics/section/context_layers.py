@@ -22,11 +22,12 @@ from ..core.context import (BandSegment, ContextItems, Crossing, Curve, LogInter
                             project_points)
 from ..core.context_settings import curve_key
 from ..core.model import Profile
+from ..ids import NAME
 from ..ui.context_dialog import read_settings
 from .crossing_lines import active_line_settings, line_colour
 from .dem_sampling import sample_point, sample_profile
 
-LOG_TAG = "Geophysics Workbench"
+LOG_TAG = NAME
 DEBOUNCE_MS = 300
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 _VOLTAGE_FIELD = ("volt", "spannung")

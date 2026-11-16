@@ -614,7 +614,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
             if new or relayout:
                 _place(label, *_inset(slot["frame"]))
             label.setText(f"Profile not found: {f.profile_id} – it is no longer in the "
-                          f"workbench. Remove this frame or choose another profile.")
+                          f"Groundwork project. Remove this frame or choose another profile.")
         else:
             _remove(layout, placeholder)
         if profile is None:

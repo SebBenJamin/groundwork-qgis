@@ -124,7 +124,7 @@ def test_plugin_actions_follow_project_and_dock(qgis_app, fake_iface, tmp_path,
     try:
         assert [prj.receivers(sig) for sig in signals] != before
         texts = [a.text() for a in plugin.menu.actions()]
-        for t in ("New Workbench Project…", "Open Workbench Project…", "New Profile…",
+        for t in ("New Groundwork Project…", "Open Groundwork Project…", "New Profile…",
                   "Add Data…"):
             assert t in texts
         assert plugin.provider is None

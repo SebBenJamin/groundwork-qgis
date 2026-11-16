@@ -20,13 +20,13 @@ from qgis.PyQt.QtCore import QByteArray, QDataStream, QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPainterPath, QPen,
                              QPolygonF)
 
-from ..ids import LEGACY_ID
+from ..ids import LEGACY_ID, NAME
 from .context_render import context_z_values, draw_band, draw_over_stations
 from .data import SectionDataProvider, SectionSnapshot, identify_layers, matching_profiles
 from .topography import measured_line
 
 SOURCE_ID = LEGACY_ID
-SOURCE_NAME = "Geophysics Workbench"
+SOURCE_NAME = NAME
 RESULTS_TYPE = f"{LEGACY_ID}_section"
 CURVE_TOLERANCE = 1.0          # metres: end points and length of canvas curve vs profile
 _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z ranges
@@ -520,7 +520,7 @@ def register_source(provider: SectionDataProvider) -> WorkbenchProfileSource:
         registry.unregisterProfileSource(SOURCE_ID)
     source = WorkbenchProfileSource(provider)
     if not registry.registerProfileSource(source):
-        raise RuntimeError("could not register the Geophysics Workbench profile source")
+        raise RuntimeError("could not register the Groundwork profile source")
     return source
 
 

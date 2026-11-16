@@ -18,6 +18,7 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QPen, QPolygonF
 
 from ..core.borehole_curves import CurveStyle
+from ..ids import NAME
 
 COLOUR_BAR_TYPE = QgsLayoutItemRegistry.PluginItem + 4712
 BOREHOLE_LEGEND_TYPE = QgsLayoutItemRegistry.PluginItem + 4713
@@ -418,9 +419,9 @@ def register_items() -> None:
     """Register the item types once per QGIS session (and their property widgets when a
     GUI is running)."""
     registry = QgsApplication.layoutItemRegistry()
-    for type_id, name, cls in ((COLOUR_BAR_TYPE, "Colour bar (Geophysics Workbench)",
+    for type_id, name, cls in ((COLOUR_BAR_TYPE, f"Colour bar ({NAME})",
                                 ColourBarItem),
-                               (BOREHOLE_LEGEND_TYPE, "Borehole legend (Geophysics Workbench)",
+                               (BOREHOLE_LEGEND_TYPE, f"Borehole legend ({NAME})",
                                 BoreholeLegendItem)):
         if registry.itemMetadata(type_id) is None:
             meta = _Metadata(type_id, name, cls)

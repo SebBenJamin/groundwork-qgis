@@ -1,4 +1,4 @@
-"""Geophysics Workbench - QGIS plugin for georeferenced geophysical profiles and sections."""
+"""Groundwork - QGIS plugin for georeferenced geophysical profiles and sections."""
 
 
 def _drop_stale_modules() -> None:

@@ -3,7 +3,7 @@
 A workbench project is a GeoPackage (``ProjectStore``). The QGIS project remembers it in the
 entry ``store_path`` in the legacy scope (ids.LEGACY_ID): relative to the project file's folder
 when the project has a file name and the store is on the same drive, absolute otherwise. Its
-``profiles`` and ``stations`` layers live in the layer-tree group "Geophysics Workbench"
+``profiles`` and ``stations`` layers live in the layer-tree group "Groundwork"
 and are read-only in QGIS: only the workbench writes them (ids, station sets, chainage).
 """
 from __future__ import annotations
@@ -20,14 +20,15 @@ from .. import readers
 from ..core.model import (Dataset, Profile, StationSet, attach_positions, file_fingerprint,
                           profile_from_polyline, profile_from_positions)
 from ..core.placement import Placement
-from ..ids import LEGACY_ID
+from ..ids import LEGACY_ID, LEGACY_NAME, NAME
 from ..readers.base import Z_CHOICES
 from ..section.data import read_options, xy_to_distance_on
 from ..store.gpkg_store import ProjectStore
 
 SCOPE = LEGACY_ID
 STORE_KEY = "store_path"
-GROUP_NAME = "Geophysics Workbench"
+GROUP_NAME = NAME
+LEGACY_GROUP_NAME = LEGACY_NAME
 LAYER_NAMES = ("profiles", "stations")
 
 
@@ -71,7 +72,7 @@ def attach_store(project: QgsProject) -> ProjectStore | None:
         return None
     path = resolve_entry(entry, project)
     if not path.is_file():
-        raise ValueError(f"Workbench project file not found: {path}")
+        raise ValueError(f"Groundwork project file not found: {path}")
     store = ProjectStore.open(path)
     protect_layers(store, project)
     return store
@@ -151,7 +152,7 @@ def style_layer(layer: QgsVectorLayer, name: str) -> None:
 
 
 def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
-    """Add the store's layers to the "Geophysics Workbench" group unless already there."""
+    """Add the store's layers to the "Groundwork" group unless already there."""
     have = store_layers(store, project)
     root = project.layerTreeRoot()
     group = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)

@@ -60,7 +60,7 @@ def test_source_registers_and_renders(qgis_app, store_with_model, tmp_path):
     st, p, _ = store_with_model
     source = register_source(SectionDataProvider(st))
     assert source.profileSourceId() == SOURCE_ID == "geophysics_workbench"
-    assert source.profileSourceName() == "Geophysics Workbench"
+    assert source.profileSourceName() == "Groundwork"
     assert _registered_ids().count(SOURCE_ID) == 1
 
     crs = QgsCoordinateReferenceSystem(st.crs_authid)
@@ -263,7 +263,7 @@ def test_callback_failures_are_logged_not_raised(qgis_app, store_with_model, mon
             painter.end()
     finally:
         log.close()
-    mine = [(m, lvl) for m, tag, lvl in log.messages if tag == "Geophysics Workbench"]
+    mine = [(m, lvl) for m, tag, lvl in log.messages if tag == "Groundwork"]
     assert [m.split(" failed")[0] for m, _ in mine] == [
         "Section generation", "Section identify", "Section drawing"]
     assert all(lvl == Qgis.MessageLevel.Critical for _, lvl in mine)

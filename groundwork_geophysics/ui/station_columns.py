@@ -27,7 +27,7 @@ def stations_from_columns(arr: np.ndarray, cx, cy, cn, cz,
     xyz = np.column_stack([arr[:, cx], arr[:, cy], z])
     if looks_like_degrees(xyz):
         raise ValueError("The station coordinates look like longitude/latitude in degrees. "
-                         f"Coordinates must be in {crs_authid}, the workbench project's "
+                         f"Coordinates must be in {crs_authid}, the Groundwork project's "
                          "CRS; convert the file first (e.g. in QGIS).")
     numbers = None
     if _chosen(cn):

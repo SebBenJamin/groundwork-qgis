@@ -12,10 +12,10 @@ from qgis.core import (QgsFeatureRenderer, QgsFillSymbol,
 from qgis.PyQt.QtXml import QDomDocument
 
 from ..core.lithology import label_colour
-from ..ids import LEGACY_ID
+from ..ids import LEGACY_ID, NAME
 
 STYLE_SCOPE = LEGACY_ID
-LOG_TAG = "Geophysics Workbench"
+LOG_TAG = NAME
 OUTLINE_MM = 0.15
 
 

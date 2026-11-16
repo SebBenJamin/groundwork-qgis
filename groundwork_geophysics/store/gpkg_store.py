@@ -98,7 +98,7 @@ def _migrate_1_to_2(path: Path) -> None:
     the letter fills the empty names and ``letter`` stays as an ordinary user field.
     One transaction: a failure leaves the file as it was."""
     if not os.access(path, os.W_OK):
-        raise ValueError(f"This workbench file needs a one-time update for 0.8 but cannot be "
+        raise ValueError(f"This Groundwork file needs a one-time update for 0.8 but cannot be "
                          f"written: {path}. Close other programs using it, or make it "
                          f"writable, and open it again.")
     try:
@@ -131,7 +131,7 @@ def _migrate_1_to_2(path: Path) -> None:
             finally:
                 ds = None
     except RuntimeError as exc:
-        raise ValueError(f"This workbench file needs a one-time update for 0.8 but cannot be "
+        raise ValueError(f"This Groundwork file needs a one-time update for 0.8 but cannot be "
                          f"written: {path}. Close other programs using it, or make it "
                          f"writable, and open it again. ({exc})") from None
 
@@ -140,7 +140,7 @@ def _migrate_2_to_3(path: Path) -> None:
     """0.8 -> 0.9: stations get ``inline``, their distance in the model file's own in-line
     metres (NULL where unknown). One transaction: a failure leaves the file as it was."""
     if not os.access(path, os.W_OK):
-        raise ValueError(f"This workbench file needs a one-time update for 0.9 but cannot be "
+        raise ValueError(f"This Groundwork file needs a one-time update for 0.9 but cannot be "
                          f"written: {path}. Close other programs using it, or make it "
                          f"writable, and open it again.")
     try:
@@ -162,7 +162,7 @@ def _migrate_2_to_3(path: Path) -> None:
             finally:
                 lyr = ds = None
     except RuntimeError as exc:
-        raise ValueError(f"This workbench file needs a one-time update for 0.9 but cannot be "
+        raise ValueError(f"This Groundwork file needs a one-time update for 0.9 but cannot be "
                          f"written: {path}. Close other programs using it, or make it "
                          f"writable, and open it again. ({exc})") from None
 
@@ -199,7 +199,7 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
     @classmethod
     def open(cls, path: Path) -> "ProjectStore":
         path = Path(path)
-        bad = ValueError(f"not a Geophysics Workbench project: {path}")
+        bad = ValueError(f"not a Groundwork project: {path}")
         if not path.is_file():
             raise bad
         try:

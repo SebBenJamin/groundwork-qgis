@@ -43,7 +43,7 @@ HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
 HINT_NO_PROFILE_LINK = ('Choose a profile above, or <a href="pick">pick one on the map</a>.')
 HINT_HOVER = "Move the mouse over the section to read values."
-MISSING_PROFILE = "Profile not found in the workbench project; it may have been deleted."
+MISSING_PROFILE = "Profile not found in the Groundwork project; it may have been deleted."
 SETTLED = "Interpretation on {profile} moved onto the real surface: {n} piece(s)"
 SETTLE_FAILED = ("Could not move the interpretation on {profile} onto the real surface: "
                  "{error}. It is tried again when the section is refreshed.")

@@ -1,4 +1,4 @@
-"""Plugin object: owns the 'Geophysics Workbench' menu, the section panel, the map link
+"""Plugin object: owns the 'Groundwork' menu, the section panel, the map link
 and the registered profile source, and follows the QGIS project: the workbench project
 (GeoPackage) it refers to is attached on load and detached when the project is cleared."""
 from functools import partial
@@ -11,6 +11,7 @@ from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
+from .ids import NAME
 from .section.context_layers import ContextGatherer
 from .section.crossing_lines import own_layer_ids
 from .section.data import SectionDataProvider
@@ -31,7 +32,7 @@ def _own_styled_layers(store, project) -> list:
     return [*interp_layers(store, project).values(),
             *field_note_layers(store, project).values()]
 
-MENU_TITLE = "Geophysics Workbench"
+MENU_TITLE = NAME
 _ICON_DIR = Path(__file__).parent / "icons"
 
 
@@ -88,8 +89,8 @@ class WorkbenchPlugin:
         self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         self.dock.hide()
         self.map_link = MapLink(self.iface, self.dock)
-        self.add_action("New Workbench Project…", self.new_workbench_project)
-        self.add_action("Open Workbench Project…", self.open_workbench_project)
+        self.add_action("New Groundwork Project…", self.new_workbench_project)
+        self.add_action("Open Groundwork Project…", self.open_workbench_project)
         self.menu.addSeparator()
         from .ui.profile_actions import RENAME_TEXT
         self.new_profile_action = self.add_action("New Profile…", self.new_profile)
@@ -355,7 +356,7 @@ class WorkbenchPlugin:
 
     def _update_actions(self, *_):
         """Enable what can be used now; a greyed-out entry says why in its tooltip."""
-        no_project = "Open or create a workbench project first"
+        no_project = "Open or create a Groundwork project first"
         has_store = self.store is not None
         has_profile = self.dock is not None and self.dock.current_profile_id() is not None
         for action, ok, why in ((self.new_profile_action, has_store, no_project),
@@ -382,7 +383,7 @@ class WorkbenchPlugin:
     # -- workbench projects ----------------------------------------------------------------------
     def new_workbench_project(self):
         window = self.iface.mainWindow()
-        path, _ = QFileDialog.getSaveFileName(window, "New workbench project", "",
+        path, _ = QFileDialog.getSaveFileName(window, "New Groundwork project", "",
                                               "GeoPackage (*.gpkg)",
                                               options=QFileDialog.Option.DontConfirmOverwrite)
         if not path:
@@ -391,7 +392,7 @@ class WorkbenchPlugin:
             path += ".gpkg"
         project = QgsProject.instance()
         crs_dialog = QgsProjectionSelectionDialog(window)
-        crs_dialog.setWindowTitle("Projected CRS of the workbench project (metres)")
+        crs_dialog.setWindowTitle("Projected CRS of the Groundwork project (metres)")
         if project.crs().isValid():
             crs_dialog.setCrs(project.crs())
         if crs_dialog.exec() != QDialog.DialogCode.Accepted:
@@ -400,12 +401,12 @@ class WorkbenchPlugin:
         try:
             store = project_actions.new_store(Path(path), crs.authid(), project)
         except FileExistsError:
-            QMessageBox.warning(window, "New workbench project",
-                                f"{Path(path).name} already exists. The workbench will not "
+            QMessageBox.warning(window, "New Groundwork project",
+                                f"{Path(path).name} already exists. Groundwork will not "
                                 "overwrite an existing project file; choose another name.")
             return
         except (ValueError, OSError, RuntimeError) as exc:     # RuntimeError: GDAL write
-            QMessageBox.warning(window, "New workbench project", str(exc))
+            QMessageBox.warning(window, "New Groundwork project", str(exc))
             return
         if not project.crs().isValid():
             project.setCrs(QgsCoordinateReferenceSystem(crs.authid()))
@@ -413,14 +414,14 @@ class WorkbenchPlugin:
 
     def open_workbench_project(self):
         window = self.iface.mainWindow()
-        path, _ = QFileDialog.getOpenFileName(window, "Open workbench project", "",
+        path, _ = QFileDialog.getOpenFileName(window, "Open Groundwork project", "",
                                               "GeoPackage (*.gpkg)")
         if not path:
             return
         try:
             store = project_actions.open_store(Path(path), QgsProject.instance())
         except (ValueError, OSError, RuntimeError) as exc:   # corrupt, locked or not a gpkg
-            QMessageBox.warning(window, "Open workbench project", str(exc))
+            QMessageBox.warning(window, "Open Groundwork project", str(exc))
             return
         self.set_store(store)
 
@@ -547,7 +548,7 @@ class WorkbenchPlugin:
             self.dock._fill_combo()
         self.attach_plates()                         # a plate of it shows "not found"
         self._update_actions()
-        self._info(f"Profile “{name}” deleted from the workbench.")
+        self._info(f"Profile “{name}” deleted from the Groundwork project.")
 
     def _info(self, text: str):
         bar = getattr(self.iface, "messageBar", None)
