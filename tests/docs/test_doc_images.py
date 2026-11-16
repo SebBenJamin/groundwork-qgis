@@ -119,3 +119,55 @@ def test_committed_demo_is_the_demo_at_git_head(tmp_path):
     head = subprocess.run([GIT, "show", "HEAD:demo/demo_groundwork.gpkg"], cwd=REPO,
                           capture_output=True, check=True).stdout
     assert (demo / "demo_groundwork.gpkg").read_bytes() == head
+
+
+def test_annotate_corners_marks_on_the_parts(qgis_app):
+    """For dialogs with parts side by side: the markers sit at the parts' top-left corners, just outside them,
+    inside the picture, which keeps its size."""
+    from qgis.PyQt.QtCore import QPoint
+    from qgis.PyQt.QtGui import QColor, QImage
+
+    import render_doc_images as r
+    image = QImage(200, 300, QImage.Format.Format_ARGB32)
+    image.fill(QColor("white"))
+    out = r.annotate_corners(image, [QPoint(100, 150), QPoint(0, 0)])
+    assert (out.width(), out.height()) == (200, 300)
+    half = r.MARK_D // 2
+    assert out.pixelColor(100 - half + 2, 150) == QColor(r.MARK_COLOR)
+    assert out.pixelColor(2, half) == QColor(r.MARK_COLOR)       # pushed inside the picture
+    assert out.pixelColor(100, 150 + half + 3) == QColor("white")
+    assert out.pixelColor(108, 158) == QColor("white")           # the part's own text stays clear
+
+
+def test_marker_points_are_the_parts_corners(qgis_app):
+    import render_doc_images as r
+    dialog = _dialog(qgis_app)
+    a, b = r.marker_points(dialog, ("a", "b"))
+    assert a.x() == b.x() > 0 and a.y() < b.y()
+    assert [p.y() for p in (a, b)] == r.marker_tops(dialog, ("a", "b"))
+
+
+def test_every_picture_has_a_page_with_its_legend():
+    """Each picture is shown on its page, followed by a legend row for each marker."""
+    import render_doc_images as r
+    docs = REPO / "docs"
+    for picture in r.PICTURES:
+        page = docs / picture.page
+        text = page.read_text(encoding="utf-8")
+        link = f"](../../images/howto/{picture.name}.png)"
+        assert link in text, picture.name
+        after = text[text.index(link):]
+        for mark in "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"[:len(picture.targets)]:
+            assert f"\n| {mark} " in after, (picture.name, mark)
+        extra = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"[len(picture.targets):][:1]
+        assert not extra or f"\n| {extra} " not in after.split("\n## ")[0], picture.name
+
+
+def test_pictures_cover_the_dialog_pages():
+    import render_doc_images as r
+    assert {p.name: p.page for p in r.PICTURES} == {
+        "add-data": "user/howto/add-data.md",
+        "profile-properties": "user/howto/placement.md",
+        "context-layers-boreholes": "user/howto/boreholes.md",
+        "plates": "user/howto/plates.md",
+    }

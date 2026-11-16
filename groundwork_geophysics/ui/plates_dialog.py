@@ -165,6 +165,7 @@ class PlatesDialog(QDialog):
         self.failed: list[str] = []
 
         self.plate_list = QListWidget()
+        self.plate_list.setObjectName("plate_list")
         self.plate_list.currentRowChanged.connect(self._show_plate)
         add, dup, delete = (QPushButton(t) for t in ("Add", "Duplicate", "Delete"))
         add.clicked.connect(lambda: self.add_plate())
@@ -179,6 +180,7 @@ class PlatesDialog(QDialog):
         left.addLayout(row)
 
         self.number, self.title = QLineEdit(), QLineEdit()
+        self.number.setObjectName("plate_number")
         self.number.editingFinished.connect(self._header_edited)
         self.title.editingFinished.connect(self._header_edited)
         self.template = QComboBox()
@@ -194,6 +196,7 @@ class PlatesDialog(QDialog):
         head.addRow("Template", self.template)
 
         self.frames = QTableWidget(0, len(COLUMNS))
+        self.frames.setObjectName("frames")
         self.frames.setHorizontalHeaderLabels(COLUMNS)
         self.frames.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.frames.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -204,6 +207,7 @@ class PlatesDialog(QDialog):
             "Add Frame", "Remove Frame", "Take from Section Panel"))
         add_frame.clicked.connect(lambda: self.add_frame())
         remove_frame.clicked.connect(lambda: self.remove_frame(self.frames.currentRow()))
+        take.setObjectName("take_from_panel")
         take.clicked.connect(lambda: self.take_from_panel(max(self.frames.currentRow(), 0)))
         take.setToolTip("Copy the section panel's profile and current look (models, colour "
                         "scales, display, opacity, interpretation version, field notes) into "
@@ -229,10 +233,13 @@ class PlatesDialog(QDialog):
         split.setStretchFactor(1, 3)
 
         details = QPushButton("Plate Details…")
+        details.setObjectName("plate_details")
         details.clicked.connect(self.edit_details)
         create = QPushButton("Create / Update Plates")
+        create.setObjectName("create_plates")
         create.clicked.connect(lambda: self.create_plates())
         export = QPushButton("Export Plates…")
+        export.setObjectName("export_plates")
         export.clicked.connect(lambda: self.export_dialog())
         self.combined = QCheckBox("One combined PDF")
         close = QPushButton("Close")

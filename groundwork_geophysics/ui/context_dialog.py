@@ -101,6 +101,7 @@ class ContextDialog(QDialog):
         rasters = [lyr for lyr in layers if lyr.type() == QgsMapLayer.LayerType.RasterLayer]
 
         self.buffer_spin = _spin(0, MAX_DISTANCE, 25.0)
+        self.buffer_spin.setObjectName("search_distance")
         self.near_miss_spin = _spin(0, MAX_DISTANCE, 10.0)
         self.dem_tolerance_spin = _spin(0, MAX_DISTANCE, 1.0)
         self.tabs = QTabWidget()

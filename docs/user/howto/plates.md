@@ -6,15 +6,30 @@ How to turn sections into report plates (PDF) in the QGIS layout.
 
 Open **Groundwork → Plates…**.
 
-1. **Add** a plate. It starts with one frame showing the profile and look of the section panel.
-2. Set its **number**, **title** and **template**: A4 or A3, portrait or landscape. You can also choose **Own template…** (see [Plate templates](../formats/plate-templates.md)).
-3. **Section frames** are stacked top to bottom. Each row is a profile with its own look. To show the ERT model and the seismics of the same line, add two rows with the same profile.
-   - **Take from Section Panel** copies the panel's profile and look into the selected frame. The look covers which models are shown, their colour scale, display mode and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
-   - **From / To** limit the chainage range. Leave them empty for the full data range.
-   - **Scale / VE** fix the scale (e.g. 2500 for 1:2500) or the vertical exaggeration. Leave them empty to fit the page.
-4. **Plate Details…** sets project, client, job number, date, drawn (author), checked and revision, and a **logo** (an image file; **Clear** removes it). They are entered once per project and shown on every plate. A logo inside the project's folder is stored relative to it, so the folder can move; a logo that cannot be found leaves its cell empty.
-5. **Create / Update Plates** makes the layouts. They are ordinary QGIS print layouts, named e.g. "Plate 1 – Transect 3", and you open them from QGIS's Layout Manager.
-6. **Export Plates…** updates every plate and writes one vector PDF per plate (`Plate_1_Transect_3.pdf`) into a folder you choose. Tick **One combined PDF** to get all pages in one file instead.
+![The Plates dialog with one plate of the profile P1; its parts are numbered 1 to 7](../../images/howto/plates.png)
+
+| | Part | What you do there |
+|---|---|---|
+| ① | Plates | **Add** a plate; it starts with one frame showing the profile and look of the section panel |
+| ② | Number, Title, Template | Name the plate and choose its page |
+| ③ | Section frames | One row per section on the plate, stacked top to bottom |
+| ④ | Take from Section Panel | Copy the panel's profile and look into the selected frame |
+| ⑤ | Plate Details… | The title block's texts and logo, once per project |
+| ⑥ | Create / Update Plates | Make the layouts |
+| ⑦ | Export Plates… | Write the PDFs |
+
+The parts in the order you use them:
+
+- ② **Template**: A4 or A3, portrait or landscape. You can also choose **Own template…** (see [Plate templates](../formats/plate-templates.md)).
+- ③ **Section frames**: each row is a profile with its own look. To show the ERT model and the seismics of the same line, add two rows with the same profile.
+  - **From / To** limit the chainage range. Leave them empty for the full data range.
+  - **Scale / VE** fix the scale (e.g. 2500 for 1:2500) or the vertical exaggeration. Leave them empty to fit the page.
+- ④ **Take from Section Panel**: the look covers which models are shown, their colour scale, display mode and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
+- ⑤ **Plate Details…** sets project, client, job number, date, drawn (author), checked and revision, and a **logo** (an image file; **Clear** removes it).
+  - They are entered once per project and shown on every plate.
+  - A logo inside the project's folder is stored relative to it, so the folder can move; a logo that cannot be found leaves its cell empty.
+- ⑥ **Create / Update Plates** makes the layouts. They are ordinary QGIS print layouts, named e.g. "Plate 1 – Transect 3", and you open them from QGIS's Layout Manager.
+- ⑦ **Export Plates…** updates every plate and writes one vector PDF per plate (`Plate_1_Transect_3.pdf`) into a folder you choose. Tick **One combined PDF** to get all pages in one file instead.
 
 ### Fit to page
 

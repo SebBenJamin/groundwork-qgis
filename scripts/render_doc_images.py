@@ -25,54 +25,93 @@ sys.path.insert(0, str(REPO / "scripts"))
 GUTTER = 36                 # px, left of the grab, in the dialog's window colour
 MARK_D = 24                 # marker diameter
 MARK_GAP = 2                # least distance between two markers
+CORNER_OUT = 6              # a corner marker's centre lies this far outside its part
 MARK_COLOR = "#009485"      # the site's teal (mkdocs.yml: primary)
 DIALOG_WIDTH = 760
+PLATES_WIDTH = 980          # the dialog's own width: all columns of the frames table show
 TABLE_SOURCE = "data/ert/P1/f001_res.dat"       # distance, elevation, resistivity, log10
 TABLE = "data/ert/P1/P1_table.csv"
 TABLE_HEADER = "Distance [m],Elevation [m],Rho [ohm.m]"
 PROFILE = "P1"
+POSITIONS = "data/stations/P1_electrodes.csv"
 
 
-def marker_tops(dialog, targets) -> list[int]:
-    """The top of each named widget in the dialog's coordinates, in the order given."""
+def marker_points(dialog, targets) -> list:
+    """The top-left corner of each named widget in the dialog's coordinates, in the order
+    given. Of several widgets with one name (pages of a stack) the visible one counts."""
     from qgis.PyQt.QtCore import QPoint
     from qgis.PyQt.QtWidgets import QWidget
     tops = []
     for name in targets:
-        widget = dialog.findChild(QWidget, name)
-        if widget is None:
+        found = dialog.findChildren(QWidget, name)
+        if not found:
             raise RuntimeError(f"the dialog has no part named {name!r}")
-        if not widget.isVisibleTo(dialog):
+        widget = next((w for w in found if w.isVisibleTo(dialog)), None)
+        if widget is None:
             raise RuntimeError(f"the part {name!r} is hidden: it cannot be marked")
-        tops.append(widget.mapTo(dialog, QPoint(0, 0)).y())
+        tops.append(widget.mapTo(dialog, QPoint(0, 0)))
     return tops
+
+
+def marker_tops(dialog, targets) -> list[int]:
+    """The top of each named widget in the dialog's coordinates, in the order given."""
+    return [point.y() for point in marker_points(dialog, targets)]
+
+
+def _marker(painter, number: int, x: float, y: float) -> None:
+    """Marker ``number`` with its top-left at (x, y)."""
+    from qgis.PyQt.QtCore import QRectF, Qt
+    from qgis.PyQt.QtGui import QColor
+    circle = QRectF(x, y, MARK_D, MARK_D)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(MARK_COLOR))
+    painter.drawEllipse(circle)
+    painter.setPen(QColor("white"))
+    painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(number))
+
+
+def _marker_painter(image):
+    from qgis.PyQt.QtGui import QFont, QPainter
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    font = QFont(painter.font())
+    font.setBold(True)
+    font.setPixelSize(MARK_D * 3 // 5)
+    painter.setFont(font)
+    return painter
+
+
+def annotate_corners(image, points):
+    """A copy of ``image`` with the markers 1, 2, … at ``points`` (the parts' top-left
+    corners), a little outside each part so its text stays clear, and inside the picture:
+    for dialogs whose parts sit side by side."""
+    from qgis.PyQt.QtGui import QImage
+    out = image.convertToFormat(QImage.Format.Format_ARGB32)
+    painter = _marker_painter(out)
+    try:
+        for number, point in enumerate(points, 1):
+            x = min(max(point.x() - MARK_D / 2 - CORNER_OUT, 0), out.width() - MARK_D)
+            y = min(max(point.y() - MARK_D / 2 - CORNER_OUT, 0), out.height() - MARK_D)
+            _marker(painter, number, x, y)
+    finally:
+        painter.end()
+    return out
 
 
 def annotate(image, tops: list[int]):
     """``image`` with a gutter on its left carrying the markers 1, 2, … at ``tops``."""
-    from qgis.PyQt.QtCore import QRectF, Qt
-    from qgis.PyQt.QtGui import QColor, QFont, QImage, QPainter
+    from qgis.PyQt.QtGui import QImage
     out = QImage(image.width() + GUTTER, image.height(), QImage.Format.Format_ARGB32)
     out.fill(image.pixelColor(0, 0))
-    painter = QPainter(out)
+    painter = _marker_painter(out)
     try:
         painter.drawImage(GUTTER, 0, image)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        font = QFont(painter.font())
-        font.setBold(True)
-        font.setPixelSize(MARK_D * 3 // 5)
-        painter.setFont(font)
         last = None
         for number, top in enumerate(tops, 1):
             if last is not None:                    # never one marker on another
                 top = max(top, last + MARK_D + MARK_GAP)
             last = top
-            circle = QRectF((GUTTER - MARK_D) / 2, top, MARK_D, MARK_D)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(MARK_COLOR))
-            painter.drawEllipse(circle)
-            painter.setPen(QColor("white"))
-            painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(number))
+            _marker(painter, number, (GUTTER - MARK_D) / 2, top)
     finally:
         painter.end()
     return out
@@ -92,8 +131,12 @@ def _texts(dialog):
         model = view.model()
         if model is None or not view.isVisibleTo(dialog):
             continue
+        try:
+            columns = model.columnCount()
+        except TypeError:                       # a list model keeps it private: one column
+            columns = 1
         for row in range(model.rowCount()):
-            for column in range(model.columnCount()):
+            for column in range(columns):
                 yield str(model.index(row, column).data() or "")
 
 
@@ -157,37 +200,110 @@ def add_data_dialog(plugin, demo: Path):
     return dialog
 
 
+def profile_properties_dialog(plugin, demo: Path):
+    """Profile Properties of P1 with Set surveyed positions on and its positions file chosen."""
+    from groundwork_geophysics.ui.profile_properties_dialog import ProfilePropertiesDialog
+
+    os.chdir(demo)
+    dialog = ProfilePropertiesDialog(plugin.iface, plugin.store, _profile_id(plugin),
+                                     plugin.provider, dock=plugin.dock)
+    dialog.show()
+    dialog.set_positions.setChecked(True)
+    dialog.placement.set_positions_file(POSITIONS)
+    return dialog
+
+
+def context_boreholes_dialog(plugin, demo: Path):
+    """Context Layers on its Boreholes tab, with the demo's borehole entry."""
+    plugin.edit_context()
+    dialog = plugin._context_dialog
+    if dialog is None:
+        raise RuntimeError("the Context layers dialog did not open")
+    tabs = dialog.tabs
+    index = next((i for i in range(tabs.count()) if tabs.tabText(i) == "Boreholes"), -1)
+    if index < 0:
+        raise RuntimeError("Context layers has no Boreholes tab")
+    tabs.setCurrentIndex(index)
+    return dialog
+
+
+def plates_dialog(plugin, demo: Path):
+    """Plates with one plate: the profile P1 as the section panel shows it."""
+    from qgis.core import QgsApplication
+    from render_demo_section import wait_idle
+
+    plugin.show_section_panel()             # a new plate starts with the panel's profile
+    plugin.dock.open_profile(_profile_id(plugin))
+    wait_idle(QgsApplication.instance(), plugin.dock)
+    plugin.show_plates()
+    dialog = plugin._plates_dialog
+    if dialog is None:
+        raise RuntimeError("the Plates dialog did not open")
+    if dialog.plate_list.count() == 0:
+        dialog.add_plate()
+    dialog.plate_list.setCurrentRow(0)
+    if dialog.frames.rowCount() == 0:
+        raise RuntimeError("the plate has no section frame")
+    return dialog
+
+
+def _profile_id(plugin) -> str:
+    by_name = {p.name: p.id for p in plugin.store.profiles()}
+    if PROFILE not in by_name:
+        raise RuntimeError(f"the demo has no profile {PROFILE!r}")
+    return by_name[PROFILE]
+
+
 @dataclass(frozen=True)
 class Picture:
     name: str                       # file stem under out_dir
+    page: str                       # the docs page that shows it, relative to docs/
     setup: Callable                 # (plugin, demo) -> the dialog, shown and in its state
     targets: tuple[str, ...]        # object names of the parts, in marker order
+    corners: bool = False           # markers on the parts (side by side), not in a gutter
+    width: int = DIALOG_WIDTH
 
 
 PICTURES = (
-    Picture("add-data", add_data_dialog,
+    Picture("add-data", "user/howto/add-data.md", add_data_dialog,
             ("table_options", "columns_group", "placement", "preview_group", "status_block")),
+    Picture("profile-properties", "user/howto/placement.md", profile_properties_dialog,
+            ("name_edit", "fit_label", "reference_button", "set_positions", "set_combo"),
+            width=620),
+    Picture("context-layers-boreholes", "user/howto/boreholes.md", context_boreholes_dialog,
+            ("borehole_layer", "borehole_elevation", "borehole_total_depth", "interval_table",
+             "interval_id", "interval_text", "borehole_style", "add_curve_table",
+             "search_distance")),
+    Picture("plates", "user/howto/plates.md", plates_dialog,
+            ("plate_list", "plate_number", "frames", "take_from_panel", "plate_details",
+             "create_plates", "export_plates"), corners=True, width=PLATES_WIDTH),
 )
 
 
-def full_height(dialog, app) -> None:
-    """Make the dialog as tall as its scrolling part needs: nothing is cut off."""
+def full_height(dialog, app, width: int = DIALOG_WIDTH) -> None:
+    """Make the dialog ``width`` wide and as tall as its scrolling parts need: nothing that
+    shows is cut off."""
     from qgis.PyQt.QtWidgets import QScrollArea
-    app.processEvents()
-    scroll = dialog.findChild(QScrollArea)
-    extra = 0
-    if scroll is not None and scroll.widget() is not None:
-        extra = scroll.widget().sizeHint().height() - scroll.viewport().height()
-    dialog.resize(DIALOG_WIDTH, dialog.height() + max(extra, 0))
-    for _ in range(5):                          # the layout settles over a few rounds
-        app.processEvents()
-    if scroll is not None and scroll.verticalScrollBar().maximum() > 0:
-        extra = scroll.verticalScrollBar().maximum()
-        dialog.resize(DIALOG_WIDTH, dialog.height() + extra)
-        for _ in range(5):
+
+    def scrolls():
+        return [s for s in dialog.findChildren(QScrollArea)
+                if s.isVisibleTo(dialog) and s.widget() is not None]
+
+    def settle():
+        for _ in range(5):                      # the layout settles over a few rounds
             app.processEvents()
-        if scroll.verticalScrollBar().maximum() > 0:
-            raise RuntimeError("the dialog still scrolls: parts would be cut off")
+
+    settle()
+    extra = max((s.widget().sizeHint().height() - s.viewport().height() for s in scrolls()),
+                default=0)
+    dialog.resize(width, dialog.height() + max(extra, 0))
+    settle()
+    extra = max((s.verticalScrollBar().maximum() for s in scrolls()), default=0)
+    if extra > 0:
+        dialog.resize(width, dialog.height() + extra)
+        settle()
+    if any(s.verticalScrollBar().maximum() > 0 for s in scrolls()):
+        raise RuntimeError("the dialog still scrolls: parts would be cut off")
 
 
 def render(demo: Path, out_dir: Path, private: list[str]) -> list[Path]:
@@ -212,12 +328,15 @@ def render(demo: Path, out_dir: Path, private: list[str]) -> list[Path]:
         for picture in PICTURES:
             dialog = picture.setup(plugin, demo)
             try:
-                full_height(dialog, app)
-                tops = marker_tops(dialog, picture.targets)
+                full_height(dialog, app, picture.width)
+                points = marker_points(dialog, picture.targets)
                 check_no_private_path(dialog, private)
-                image = annotate(dialog.grab().toImage(), tops)
+                grab = dialog.grab().toImage()
+                image = (annotate_corners(grab, points) if picture.corners
+                         else annotate(grab, [p.y() for p in points]))
                 written.append(save(image, out_dir / f"{picture.name}.png"))
-                print(f"  {image.width()} x {image.height()} px, markers at {tops}")
+                print(f"  {image.width()} x {image.height()} px, markers at "
+                      f"{[(p.x(), p.y()) for p in points]}")
             finally:
                 dialog.reject()
                 dialog.deleteLater()
