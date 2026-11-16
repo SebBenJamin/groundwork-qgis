@@ -77,7 +77,7 @@ without changing its values.
 ## State data (Datenlizenz Deutschland Namensnennung 2.0, https://www.govdata.de/dl-de/by-2-0)
 - **Boreholes** (live WFS Bohrpunktkarte): © LBGR, dl-de/by-2-0
 - **Geology** GK 25, Geologische Karte 1 : 25 000 (live {geology_kind}), and GÜK300 (live, switched
-  off): © LBGR, dl-de/by-2-0
+  off on the map; both drawn as strips on the section): © LBGR, dl-de/by-2-0
 - **DGM1** `context/dgm1.tif` (*derived*: tiles merged and cropped): © GeoBasis-DE/LGB, dl-de/by-2-0
 - **Aerial images** DOP20 (live WMS): © GeoBasis-DE/LGB, dl-de/by-2-0
 
