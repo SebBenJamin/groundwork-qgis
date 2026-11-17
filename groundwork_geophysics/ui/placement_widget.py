@@ -14,17 +14,21 @@ from functools import partial
 import numpy as np
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsFieldProxyModel, QgsGeometry,
                        QgsPointXY, QgsVectorLayer, QgsWkbTypes)
-from qgis.gui import (QgsDoubleSpinBox, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox,
-                      QgsProjectionSelectionWidget, QgsRubberBand)
-from qgis.PyQt.QtCore import pyqtSignal
-from qgis.PyQt.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QGroupBox,
-                                 QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton,
-                                 QSizePolicy, QVBoxLayout, QWidget)
+from qgis.gui import (QgsCollapsibleGroupBox, QgsDoubleSpinBox, QgsFieldComboBox,
+                      QgsFileWidget, QgsMapLayerComboBox, QgsProjectionSelectionWidget,
+                      QgsRubberBand)
+from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
+                                 QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+                                 QLineEdit, QPushButton, QRadioButton, QSizePolicy,
+                                 QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..core.layout import inline_distances
 from ..core.model import profile_from_positions
 from ..core.numbers import fmt, fmt_trim, parse
 from ..core.placement import Placement
+from ..core.point_names import (STATUS_TEXT, apply_names, list_order, names_title,
+                                station_label)
 from ..core.roles import PositionColumns, guess_position_columns
 from ..readers.texttable import guess_options, read_table
 from ..section.crossing_lines import own_layer_ids
@@ -44,6 +48,15 @@ ZERO_ITEMS = (("Start of the line", "start"), ("End of the line", "end"),
 ROLES = (("easting", "Easting"), ("northing", "Northing"), ("elevation", "Elevation"),
          ("number", "Number"), ("inline", "Distance"))
 INLINE_TIP = "Each position's distance along the line, in the data file's metres"
+NAMES_SUFFIX = " (names)"
+NUMBER_TIP = ("The electrode number of each position; for a column of point names "
+              "(ERT03_15) the number is read from the name")
+NAMES_TIP = "Which number in a point name such as T1_15 is the electrode number"
+NAMES_BOX_TIP = ("Every position as read from its name, rows to check first. Type another "
+                 "number, or clear it for a point that is not an electrode. The file itself "
+                 "is never changed, and nothing typed here is kept for the next reading.")
+BAD_NUMBER = "Type a whole number, or leave it empty"
+NAMES_VISIBLE_ROWS = 8
 TABLE_FILTER = "Text tables (*.csv *.txt *.dat);;All files (*)"
 
 
@@ -88,6 +101,11 @@ class PlacementWidget(QGroupBox):
         self._needs_distance = False
         self._station1: dict[str, bool] = {}   # profile id -> it has a station 1
         self._skipped = 0                   # rows of the positions file without coordinates
+        self._corrections: dict[int, int | None] = {}  # raw row -> number typed (None: cleared)
+        self._names_key = None              # what the corrections were typed for
+        self._name_rows = None              # NameRow per raw row, or None without names
+        self._names_error = ""              # a refused edit in the list
+        self._watched_points = None         # point layer whose selection the list follows
         self._collapsed = False
         self._busy = False
         self._shape = None                  # (line, points) the overlay shows
@@ -231,6 +249,7 @@ class PlacementWidget(QGroupBox):
             grid.addWidget(QLabel(text), i // 2, (i % 2) * 2)
             grid.addWidget(combo, i // 2, (i % 2) * 2 + 1)
         self.role_combos["inline"].setToolTip(INLINE_TIP)
+        self.role_combos["number"].setToolTip(NUMBER_TIP)
         self.crs_widget = QgsProjectionSelectionWidget()
         self.crs_widget.setObjectName("role_crs")
         self.crs_widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -244,6 +263,8 @@ class PlacementWidget(QGroupBox):
             box.addWidget(w)
         box.addLayout(grid)
         box.addWidget(self.positions_status)
+        self._names_detail()
+        box.addWidget(self._names_panel)
         return page
 
     def _layer_detail(self) -> QWidget:
@@ -259,11 +280,69 @@ class PlacementWidget(QGroupBox):
             self.field_combos[role] = combo
             grid.addWidget(QLabel(text), i // 2, (i % 2) * 2)
             grid.addWidget(combo, i // 2, (i % 2) * 2 + 1)
+        self.field_combos["number"].setFilters(QgsFieldProxyModel.Filter.Numeric
+                                               | QgsFieldProxyModel.Filter.String)
+        self.field_combos["number"].setToolTip(NUMBER_TIP)
         self.field_combos["inline"].setToolTip(INLINE_TIP)
         self.selected_check = QCheckBox("Selected features only")
         self.selected_check.setChecked(True)
         grid.addWidget(self.selected_check, 1, 2, 1, 2)
+        self._layer_names_slot = QVBoxLayout()     # the names panel moves here for a layer
+        self._layer_names_slot.setContentsMargins(0, 0, 0, 0)
+        grid.addLayout(self._layer_names_slot, 2, 0, 1, 4)
         return page
+
+    def _names_detail(self) -> None:
+        """The last/first choice and the row list, shown for a Number of point names."""
+        self._names_row = QWidget()
+        row = QHBoxLayout(self._names_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(QLabel("Number from name"))
+        self._names_buttons = QButtonGroup(self)
+        for name, text in (("names_last", "Last number"), ("names_first", "First number")):
+            radio = QRadioButton(text)
+            radio.setObjectName(name)
+            radio.setToolTip(NAMES_TIP)
+            self._names_buttons.addButton(radio)
+            row.addWidget(radio)
+            setattr(self, name, radio)
+        row.addStretch(1)
+        self.names_last.setChecked(True)
+        self.names_box = QgsCollapsibleGroupBox()
+        self.names_box.setObjectName("names_box")
+        self.names_box.setToolTip(NAMES_BOX_TIP)
+        self.names_table = QTableWidget(0, 3)
+        self.names_table.setObjectName("names_table")
+        self.names_table.setHorizontalHeaderLabels(["Name", "Number", "Status"])
+        self.names_table.verticalHeader().hide()
+        self.names_table.verticalHeader().setDefaultSectionSize(
+            self.names_table.fontMetrics().height() + 6)
+        self.names_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.names_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch)
+        rows = NAMES_VISIBLE_ROWS * self.names_table.verticalHeader().defaultSectionSize()
+        self.names_table.setMaximumHeight(rows + self.names_table.horizontalHeader().sizeHint()
+                                          .height() + 2 * self.names_table.frameWidth())
+        box = QVBoxLayout(self.names_box)
+        box.addWidget(self.names_table)
+        self.names_box.setCollapsed(True)
+        self.names_box.collapsedStateChanged.connect(lambda _c: self.changed.emit())  # refit
+        self._names_panel = QWidget()
+        panel = QVBoxLayout(self._names_panel)
+        panel.setContentsMargins(0, 0, 0, 0)
+        panel.addWidget(self._names_row)
+        panel.addWidget(self.names_box)
+
+    def _place_names_panel(self, src: str | None) -> None:
+        """Put the names panel under the active source's details (positions file or layer)."""
+        panel = self._names_panel
+        target = self._layer_names_slot if src == "layer" else \
+            self._details["positions"].layout()
+        if target.indexOf(panel) >= 0:
+            return
+        for layout in (self._details["positions"].layout(), self._layer_names_slot):
+            layout.removeWidget(panel)
+        target.addWidget(panel)
 
     def _connect(self) -> None:
         change = self._on_change
@@ -281,6 +360,8 @@ class PlacementWidget(QGroupBox):
         self.selected_check.toggled.connect(change)
         self.spacing_edit.textChanged.connect(change)
         self.layer_combo.layerChanged.connect(self._layer_changed)
+        self._names_buttons.buttonToggled.connect(lambda _b, on: on and self._on_change())
+        self.names_table.itemChanged.connect(self._name_edited)
         self.file_widget.fileChanged.connect(self.set_positions_file)
         self.options_box.changed.connect(self._options_changed)
         if hasattr(self.iface, "currentLayerChanged"):
@@ -403,7 +484,13 @@ class PlacementWidget(QGroupBox):
         ok = np.isfinite(d) & np.isfinite(s)
         if ok.sum() < 2:
             return None
-        return d[ok], s[ok], [str(int(n)) for n in np.asarray(sset.numbers)[ok]]
+        labels = [station_label(name, number) for name, number in zip(sset.names, sset.numbers)]
+        return d[ok], s[ok], [label for label, keep in zip(labels, ok) if keep]
+
+    def name_rows(self) -> list | None:
+        """Every position as read from its point name (``core.point_names.NameRow``), or None
+        when the Number is not a column or field of names."""
+        return self._name_rows
 
     def spacing_is_guess(self) -> bool:
         return not self.spacing_edit.text().strip() and self._guess is not None
@@ -490,7 +577,22 @@ class PlacementWidget(QGroupBox):
     def _layer_changed(self, layer) -> None:
         for combo in self.field_combos.values():
             combo.setLayer(layer)
+        self._watch_points(layer)
+        self._names_key = None
         self._on_change()
+
+    def _watch_points(self, layer) -> None:
+        """Follow the point layer's selection, so the positions and their list stay current."""
+        if layer is self._watched_points:
+            return
+        if self._watched_points is not None:
+            try:
+                self._watched_points.selectionChanged.disconnect(self._on_change)
+            except (TypeError, RuntimeError):
+                pass
+        self._watched_points = layer
+        if layer is not None:
+            layer.selectionChanged.connect(self._on_change)
 
     # -- positions ---------------------------------------------------------------------------
     def _options_changed(self) -> None:
@@ -500,6 +602,7 @@ class PlacementWidget(QGroupBox):
     def _read_table(self) -> None:
         path = self.file_widget.filePath()
         self._table, self._table_error = None, ""
+        self._names_key = None              # a file read again (perhaps cleaned) starts afresh
         if not path.strip():
             self._fill_roles()
             return
@@ -516,11 +619,15 @@ class PlacementWidget(QGroupBox):
         guess = guess_position_columns(table) if table is not None else None
         numeric = [] if table is None else \
             [c for c in range(table.n_columns) if table.is_numeric(c)]
+        text = [] if table is None else [c for c in range(table.n_columns) if c not in numeric]
         for role, combo in self.role_combos.items():
             combo.clear()
             combo.addItem("(none)", None)
             for c in numeric:                       # a text column is never a coordinate
                 combo.addItem(table.names[c], c)
+            if role == "number":                    # but it can hold point names
+                for c in text:
+                    combo.addItem(table.names[c] + NAMES_SUFFIX, c)
             chosen = getattr(guess, role) if guess is not None else None
             combo.setCurrentIndex(max(0, combo.findData(chosen)))
         if guess is not None:
@@ -534,7 +641,8 @@ class PlacementWidget(QGroupBox):
             (crs.authid() or ("WKT:" + crs.toWkt() if crs.isValid() else ""))
         return PositionColumns(crs=text, **data)
 
-    def _positions(self):
+    def _raw_positions(self):
+        """The positions as read, with point names and no numbers for a Number of names."""
         if self.source() == "layer":
             fields = {role: combo.currentField() or None
                       for role, combo in self.field_combos.items()}
@@ -547,6 +655,67 @@ class PlacementWidget(QGroupBox):
         positions, self._skipped = positions_from_table(self._table, self._columns(),
                                                         self.store.crs_authid, self.project)
         return positions
+
+    def _names_input(self):
+        """What the list's corrections were typed for: another file, read options, layer,
+        selection or Number column clears them; the last/first choice does not."""
+        if self.source() == "layer":
+            layer = self.layer_combo.currentLayer()
+            selected = tuple(sorted(layer.selectedFeatureIds())) \
+                if layer is not None and self.selected_check.isChecked() else None
+            return ("layer", layer.id() if layer is not None else None,
+                    self.field_combos["number"].currentField(), selected)
+        return ("positions", self.file_widget.filePath(), repr(self.options_box.options()),
+                self.role_combos["number"].currentData())
+
+    def _which(self) -> str:
+        return "first" if self.names_first.isChecked() else "last"
+
+    def _positions(self):
+        raw = self._raw_positions()
+        if raw.names is None:
+            self._name_rows = None
+            return raw
+        key = self._names_input()
+        if key != self._names_key:
+            self._names_key, self._corrections, self._names_error = key, {}, ""
+        positions, self._name_rows = apply_names(raw, self._which(), self._corrections)
+        return positions
+
+    def _name_edited(self, item) -> None:
+        """A Number cell of the list was edited: a whole number, or empty for "not an
+        electrode". Anything else is refused and the cell shows its number again."""
+        if self._busy or item.column() != 1:
+            return
+        raw_row = item.data(Qt.ItemDataRole.UserRole)
+        text = item.text().strip()
+        try:
+            value = None if not text else parse(text)
+            if value is not None and (not np.isfinite(value) or value != round(value)):
+                raise ValueError
+        except ValueError:
+            self._names_error = BAD_NUMBER
+        else:
+            self._names_error = ""
+            self._corrections[raw_row] = None if value is None else int(round(value))
+        self._on_change()
+
+    def _fill_names(self) -> None:
+        """The list from the rows as read: rows to check first."""
+        rows = self._name_rows or []
+        self.names_box.setTitle(names_title(rows))
+        table = self.names_table
+        table.setRowCount(len(rows))
+        for r, i in enumerate(list_order(rows)):
+            row = rows[i]
+            for c, text in enumerate((row.name, "" if row.number is None else str(row.number),
+                                      STATUS_TEXT[row.status])):
+                item = QTableWidgetItem(text)
+                item.setData(Qt.ItemDataRole.UserRole, i)
+                if c != 1:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                table.setItem(r, c, item)
+        table.resizeColumnsToContents()
 
     def _numbers_only(self) -> bool:
         """The positions have station numbers but no distances: the spacing matters."""
@@ -580,6 +749,9 @@ class PlacementWidget(QGroupBox):
                 self._station1[pid] = any(1 in np.asarray(s.numbers).tolist()
                                           for s in self.store.station_sets(pid))
             return self._station1[pid]
+        if src in ("positions", "layer") and self._name_rows is not None:
+            return any(r.number == 1 and r.status in ("ok", "corrected")
+                       for r in self._name_rows)
         if src == "positions" and self._table is not None:
             col = self.role_combos["number"].currentData()
             return col is not None and 1.0 in self._table.numeric(col)
@@ -607,6 +779,18 @@ class PlacementWidget(QGroupBox):
         self._expanded.setVisible(not self._collapsed)
         for name, detail in self._details.items():
             detail.setVisible(name == src)
+        self._name_rows = None
+        if src in ("positions", "layer"):
+            try:
+                self._positions()               # reads the names, before what depends on them
+            except ValueError:
+                pass
+        names = self._name_rows is not None and not self._collapsed
+        if src in ("positions", "layer"):
+            self._place_names_panel(src)
+        self._names_panel.setVisible(names)
+        if names:
+            self._fill_names()
         self._update_line_info()
         self._update_file_info()
         self._spacing_row.setVisible(self._numbers_only() and self._show_spacing)
@@ -629,6 +813,8 @@ class PlacementWidget(QGroupBox):
                               "skipped" if k else ""
             except ValueError as exc:
                 status = str(exc)
+        if self._names_error and src in ("positions", "layer"):
+            status = f"{self._names_error}. {status}" if status else self._names_error
         self.positions_status.setText(status)
 
     def _update_overlay(self) -> None:

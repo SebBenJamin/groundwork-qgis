@@ -63,10 +63,12 @@ def list_order(rows: list[NameRow]) -> list[int]:
 
 
 def names_title(rows: list[NameRow]) -> str:
+    """The row list's group title, e.g. "Electrodes from Names (75 rows, 2 to check)"."""
     n = len(rows)
-    text = f"Electrodes from names: {n} row{'s' if n != 1 else ''}"
+    text = f"{n} row{'s' if n != 1 else ''}"
     check = sum(r.status in TO_CHECK for r in rows)
-    return text + f", {check} to check" if check else text
+    return f"Electrodes from Names ({text}, {check} to check)" if check else \
+        f"Electrodes from Names ({text})"
 
 
 def apply_names(positions: Positions, which: str = "last",

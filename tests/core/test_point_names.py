@@ -23,14 +23,14 @@ def test_rows_get_statuses():
     assert [r.status for r in rows] == [NO_NUMBER, TWICE, OK, OK, TWICE, OK]
     assert [r.number for r in rows] == [None, 3, 1, 2, 3, 3]
     assert list_order(rows) == [0, 1, 4, 2, 3, 5]
-    assert names_title(rows) == "Electrodes from names: 6 rows, 3 to check"
+    assert names_title(rows) == "Electrodes from Names (6 rows, 3 to check)"
 
 
 def test_corrections_and_clearing():
     rows = read_names(["E1", "E2", "E2x", "Base"], corrections={2: 3, 0: None})
     assert [r.status for r in rows] == [CLEARED, OK, CORRECTED, NO_NUMBER]
     assert [r.guess for r in rows] == [1, 2, 2, None]
-    assert names_title(rows) == "Electrodes from names: 4 rows, 1 to check"
+    assert names_title(rows) == "Electrodes from Names (4 rows, 1 to check)"
 
 
 def test_correction_can_clash():
@@ -39,7 +39,7 @@ def test_correction_can_clash():
 
 
 def test_names_title_without_problems_and_singular():
-    assert names_title(read_names(["E1"])) == "Electrodes from names: 1 row"
+    assert names_title(read_names(["E1"])) == "Electrodes from Names (1 row)"
 
 
 def test_apply_names_keeps_used_rows():
