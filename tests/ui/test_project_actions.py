@@ -291,3 +291,18 @@ def test_build_profile_refuses_a_placement_on_an_existing_profile(store_with_mod
     st, p, _ = store_with_model
     with pytest.raises(ValueError, match="existing profile"):
         build_profile(st, Placement(profile_id=p.id), "X", "ert")
+
+
+def test_station_labels_use_names(qgis_app, tmp_path):
+    """New stations layers label a station by its point name, else its number; still off."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.project_actions import new_store
+
+    prj = QgsProject()
+    new_store(tmp_path / "w.gpkg", "EPSG:25832", prj)
+    stations = prj.mapLayersByName("stations")[0]
+    settings = stations.labeling().settings()
+    assert settings.isExpression
+    assert settings.fieldName == "coalesce(nullif(\"name\", ''), to_string(\"number\"))"
+    assert not stations.labelsEnabled()

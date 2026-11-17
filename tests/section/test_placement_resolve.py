@@ -482,3 +482,20 @@ def test_map_points_past_the_line_ends_extend_its_end_segments():
     assert s == pytest.approx([-5.0, 5.0, 25.0])
     assert offset == pytest.approx([1.0, -2.0, 1.0])
     assert beyond.tolist() == [True, False, True]
+
+
+@pytest.mark.parametrize("names, at", [(["A1", "", "A3"], "A3"), (["A1", "B", ""], "16")])
+def test_fit_report_names_the_station(tmp_path, names, at):
+    """The station that moves most is named by its point name, else by its number."""
+    from groundwork_geophysics.section.placement_resolve import resolve
+
+    st = ProjectStore.create(tmp_path / "p.gpkg", CRS)
+    p = profile_from_polyline("K", CRS, np.array([[0.0, 0.0], [73.4, 0.0], [124.5, 0.0]]))
+    xyz = np.array([[0.0, 0.0, 100.0], [50.0, 0.0, 100.0], [73.4, 0.0, 100.0]])
+    s = attach_station_set(p, "K", "ert", xyz, numbers=np.array([1, 11, 16]),
+                           inline=np.array([0.0, 50.0, 75.0]), names=names)
+    st.save_profile(p); st.save_station_set(s)
+    d = _add(st, p, _text_model(tmp_path / "model.txt"), "text_columns", TEXT_OPTIONS, "t", s.id)
+    provider = SectionDataProvider(st)
+    r = resolve(p, st.station_sets(p.id), d, provider.layout(p.id))
+    assert r.fit.at == at

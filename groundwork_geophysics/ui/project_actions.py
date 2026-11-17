@@ -137,9 +137,15 @@ def protect_layers(store: ProjectStore, project: QgsProject) -> None:
         layer.setReadOnly(True)
 
 
-def _labels(field: str, size: float, enabled: bool, placement=None) -> tuple:
+#: a station's map label: its point name, else its number
+STATION_LABEL = "coalesce(nullif(\"name\", ''), to_string(\"number\"))"
+
+
+def _labels(field: str, size: float, enabled: bool, placement=None,
+            expression: bool = False) -> tuple:
     settings = QgsPalLayerSettings()
     settings.fieldName = field
+    settings.isExpression = expression
     if placement is not None:
         settings.placement = placement
     fmt = QgsTextFormat()
@@ -161,7 +167,7 @@ def style_layer(layer: QgsVectorLayer, name: str) -> None:
     else:
         symbol = QgsMarkerSymbol.createSimple({"name": "circle", "color": "255,255,255",
                                                "outline_color": "20,60,160", "size": "1.4"})
-        labeling, enabled = _labels("number", 7.0, False)
+        labeling, enabled = _labels(STATION_LABEL, 7.0, False, expression=True)
     layer.setRenderer(QgsSingleSymbolRenderer(symbol))
     layer.setLabeling(labeling)
     layer.setLabelsEnabled(enabled)

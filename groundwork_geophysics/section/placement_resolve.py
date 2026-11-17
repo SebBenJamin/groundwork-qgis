@@ -25,6 +25,7 @@ import numpy as np
 from ..core.layout import inline_distances
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport, fit_report, pinned_map, rigid_map
+from ..core.point_names import station_label
 
 GUESS_REJECTED_NOTE = ("Known points not used: the station spacing guessed from the model "
                        "does not fit them; type the station spacing in Profile Properties")
@@ -92,7 +93,9 @@ def _pins(station_set: StationSet, layout: ProfileLayout):
         # some stations have no distance (so neither spacing is usable): the weakest source
         # among the ones that do
         _, source = inline_distances(numbers[ok], station_set.inline[ok], *args)
-    return d[ok], s[ok], [str(int(n)) for n in numbers[ok]], source
+    labels = [station_label(name, n) for name, n, keep in zip(station_set.names, numbers, ok)
+              if keep]
+    return d[ok], s[ok], labels, source
 
 
 def _not_used(exc: ValueError) -> str:
