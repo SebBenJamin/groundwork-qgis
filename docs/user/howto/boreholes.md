@@ -45,6 +45,8 @@ The plugin reads boreholes from ordinary QGIS layers. You set those up once per 
 
 Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
+**The borehole viewer** shows the boreholes of the profile open in the section panel side by side. Open it with **Groundwork › Show Borehole Viewer**, or click a column in the section (that borehole is then framed).
+
 **How they look is set in the borehole viewer**, and the section follows:
 
 - **Layer text** and the ticked **Curves** in the viewer's side panel are drawn on the section too.
