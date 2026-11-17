@@ -47,6 +47,8 @@ HIDDEN_OPACITY = 0.35        # a borehole hidden in the section, still shown her
 BACKGROUND_RGB = (255, 255, 255)
 HIDDEN_MARK = "hidden in section"
 CLICK_PX = 4                 # a press and release closer than this is a click, not a pan
+NO_BOREHOLES = ("This profile has no boreholes nearby. Add a borehole layer in "
+                "Context Layers…, or open another profile in the section panel.")
 LABELS = (("name", "Name", True), ("elevation", "Elevation", True),
           ("distance", "Distance / offset", False))
 
@@ -124,10 +126,21 @@ class BoreholeCanvas(QWidget):
             painter.end()
         return img
 
+    def empty_hint(self) -> str:
+        """What the empty canvas says: no boreholes on this profile; "" when there are."""
+        return NO_BOREHOLES if self.viewer.profile_id and not self.viewer.boreholes else ""
+
     def paintEvent(self, _event):
         painter = QPainter(self)
         try:
             painter.fillRect(self.rect(), QColor(*BACKGROUND_RGB))
+            hint = self.empty_hint()
+            if hint:
+                painter.setPen(QPen(QColor(*AXIS_RGB)))
+                painter.drawText(self.rect().adjusted(24, 24, -24, -24),
+                                 int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap),
+                                 hint)
+                return
             self._paint(painter)
         finally:
             painter.end()
