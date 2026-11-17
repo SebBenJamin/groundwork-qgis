@@ -125,7 +125,10 @@ def positions_from_layer(layer, number_field: str | None, inline_field: str | No
     index = layer.fields().indexOf(number_field) if number_field else -1
     names_field = index >= 0 and not layer.fields().at(index).isNumeric()
     names: list[str] = []
-    feats = list(layer.selectedFeatures() if selected_only else layer.getFeatures())
+    # selectedFeatures() comes in no fixed order: read them in the layer's own (feature id)
+    # order, so "the later point" of two with the same number is always the same one
+    feats = sorted(layer.selectedFeatures(), key=lambda f: f.id()) if selected_only \
+        else list(layer.getFeatures())
     if selected_only and not feats:
         raise ValueError(f"Select the points in layer “{layer.name()}”, or use all of its "
                          "features.")
