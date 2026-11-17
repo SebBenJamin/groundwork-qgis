@@ -42,7 +42,7 @@ def _dataset(profile_id="p1", station_set_id="s1"):
 def _make_schema_2(path, monkeypatch):
     """A store as 0.8 wrote it: no ``inline`` column on stations, schema_version 2."""
     from groundwork_geophysics.store import gpkg_store
-    old_fields = [f for f in gpkg_store._STATION_FIELDS if f[0] != "inline"]
+    old_fields = [f for f in gpkg_store._STATION_FIELDS if f[0] not in ("inline", "name")]
     with monkeypatch.context() as m:
         m.setattr(gpkg_store, "SCHEMA_VERSION", 2)
         m.setattr(gpkg_store, "_STATION_FIELDS", old_fields)
@@ -59,10 +59,9 @@ def _make_schema_2(path, monkeypatch):
     return s
 
 
-def test_new_store_is_schema_3(tmp_path):
-    from groundwork_geophysics.store.gpkg_store import SCHEMA_VERSION, ProjectStore
+def test_new_store_has_inline(tmp_path):
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
     ProjectStore.create(tmp_path / "wb.gpkg", "EPSG:25832")
-    assert SCHEMA_VERSION == 3 and _meta(tmp_path / "wb.gpkg")["schema_version"] == "3"
     assert "inline" in _columns(tmp_path / "wb.gpkg", "stations")
 
 
@@ -92,7 +91,7 @@ def test_schema_2_store_is_migrated(tmp_path, monkeypatch):
     path = tmp_path / "old.gpkg"
     s = _make_schema_2(path, monkeypatch)
     st = ProjectStore.open(path)
-    assert _meta(path)["schema_version"] == "3"
+    assert _meta(path)["schema_version"] == "4"
     assert "inline" in _columns(path, "stations")
     [back] = st.station_sets("p1")
     assert back.inline.shape == (3,) and np.isnan(back.inline).all()
@@ -105,7 +104,7 @@ def test_schema_2_store_is_migrated(tmp_path, monkeypatch):
     np.testing.assert_allclose(p.xy, _profile().xy)
     assert st.datasets("p1") == [_dataset()]
     ProjectStore.open(path)                                  # a second open changes nothing
-    assert _meta(path)["schema_version"] == "3"
+    assert _meta(path)["schema_version"] == "4"
 
 
 def test_schema_1_store_opens_through_both_updates(tmp_path):
@@ -114,7 +113,7 @@ def test_schema_1_store_opens_through_both_updates(tmp_path):
     path = tmp_path / "old.gpkg"
     _make_schema_1(path)
     st = ProjectStore.open(path)
-    assert _meta(path)["schema_version"] == "3"
+    assert _meta(path)["schema_version"] == "4"
     assert "inline" in _columns(path, "stations")
     assert sorted(f.name for f in st.features(st.current_version().id)) == ["A", "B"]
 
@@ -158,7 +157,7 @@ def test_a_migration_failing_part_way_leaves_the_file_as_it_was(tmp_path, monkey
     assert _meta(path)["schema_version"] == "2"
     assert "inline" not in _columns(path, "stations")
     st = ProjectStore.open(path)                    # the next open updates it
-    assert _meta(path)["schema_version"] == "3"
+    assert _meta(path)["schema_version"] == "4"
     [back] = st.station_sets("p1")
     np.testing.assert_allclose(back.xyz, s.xyz)
 
@@ -170,9 +169,9 @@ def test_newer_store_is_refused(tmp_path):
     path = tmp_path / "new.gpkg"
     ProjectStore.create(path, "EPSG:25832")
     ds = ogr.Open(str(path), 1)
-    ds.ExecuteSQL("UPDATE wb_meta SET value = '4' WHERE key = 'schema_version'")
+    ds.ExecuteSQL("UPDATE wb_meta SET value = '5' WHERE key = 'schema_version'")
     ds = None
-    with pytest.raises(ValueError, match="unsupported schema_version 4"):
+    with pytest.raises(ValueError, match="unsupported schema_version 5"):
         ProjectStore.open(path)
 
 
@@ -212,8 +211,8 @@ def test_open_project_layers_survive_migration(qgis_app, tmp_path, monkeypatch, 
     plug = classFactory(fake_iface)
     plug.initGui()
     try:
-        plug.set_store(ProjectStore.open(path))            # updates the file to schema 3
-        assert _meta(path)["schema_version"] == "3"
+        plug.set_store(ProjectStore.open(path))            # updates the file to schema 4
+        assert _meta(path)["schema_version"] == "4"
         assert layer.isValid() and layer.fields().indexOf("inline") >= 0
         assert layer.featureCount() == 3
     finally:

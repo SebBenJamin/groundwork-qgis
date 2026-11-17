@@ -187,11 +187,11 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
 
 
 def reload_stale_layers(store: ProjectStore, project: QgsProject) -> int:
-    """0.9 gave stations an ``inline`` field (store schema 3). A project's stations layer
-    loaded from the file before the store was updated still lists the old fields: reload it.
-    Idempotent; returns the number of layers reloaded."""
+    """0.9 gave stations an ``inline`` field (store schema 3), 0.12 a ``name`` field (schema
+    4). A project's stations layer loaded from the file before the store was updated still
+    lists the old fields: reload it. Idempotent; returns the number of layers reloaded."""
     layer = store_layers(store, project).get("stations")
-    if layer is None or layer.fields().indexOf("inline") >= 0:
+    if layer is None or all(layer.fields().indexOf(f) >= 0 for f in ("inline", "name")):
         return 0
     layer.dataProvider().reloadData()
     layer.reload()
