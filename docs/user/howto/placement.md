@@ -34,7 +34,7 @@ Profile Properties… replaces Rename Profile….
 
 ## Points with names instead of numbers
 
-Field GPS files often name their points (`ERT03_15`, `E15`, `15a`, `Base`). In "Where the Line Runs" (New Profile, Add Data and Profile Properties) the **Number** also lists text columns, marked **(names)**, and a point layer's text fields.
+Field GPS files often name their points (`ERT03_15`, `E15`, `15a`, `Base`). In "Where the Line Runs" (New Profile, Add Data and Profile Properties) the **Number** also lists text columns, marked **(names)**, and a point layer's text fields. A column of numbers with a few named points among them (`Base`, `GCP3`) counts as names too, so those points show up in the list instead of being dropped.
 
 ![New Profile with a file of point names: the Number shows "Name (names)", parts numbered 1 and 2](../../images/howto/electrode-names.png)
 
