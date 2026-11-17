@@ -248,6 +248,45 @@ def plates_dialog(plugin, demo: Path):
     return dialog
 
 
+NAMED_POSITIONS = "data/stations/P1_gps_names.csv"
+
+
+def write_named_positions(demo: Path) -> Path:
+    """The demo's P1 electrodes as a field GPS file names them (ERT01_01 …), with a base
+    point, a control point and one electrode measured twice. Returns it relative to
+    ``demo``."""
+    rows = [line.split(",") for line in
+            (demo / POSITIONS).read_text(encoding="utf-8").splitlines()[1:] if line.strip()]
+    x0, y0, z0 = (float(v) for v in rows[0][1:4])
+    out = ["Name,East,North,Height", f"Base,{x0 + 25:.2f},{y0 - 8:.2f},{z0:.2f}",
+           f"GCP3,{x0 + 30:.2f},{y0 + 12:.2f},{z0:.2f}"]
+    for n, x, y, z in rows[:24]:
+        out.append(f"ERT01_{int(n):02d},{x},{y},{z}")
+        if n == "7":                        # measured again a little later
+            out.append(f"ERT01_07,{float(x) + 0.05:.2f},{y},{z}")
+    (demo / NAMED_POSITIONS).write_text("\n".join(out) + "\n", encoding="utf-8")
+    return Path(NAMED_POSITIONS)
+
+
+def electrode_names_dialog(plugin, demo: Path):
+    """New Profile with a positions file of point names and the Electrodes from Names list
+    open."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.new_profile_dialog import NewProfileDialog
+
+    path = write_named_positions(demo)
+    os.chdir(demo)
+    dialog = NewProfileDialog(plugin.iface, plugin.store, QgsProject.instance(),
+                              plugin.provider)
+    dialog.show()
+    dialog.placement.set_positions_file(path.as_posix())
+    if dialog.placement.name_rows() is None:
+        raise RuntimeError("the names column was not taken as the Number")
+    dialog.placement.names_box.setCollapsed(False)
+    return dialog
+
+
 def _profile_id(plugin) -> str:
     by_name = {p.name: p.id for p in plugin.store.profiles()}
     if PROFILE not in by_name:
@@ -278,6 +317,8 @@ PICTURES = (
     Picture("plates", "user/howto/plates.md", plates_dialog,
             ("plate_list", "plate_number", "frames", "take_from_panel", "plate_details",
              "create_plates", "export_plates"), corners=True, width=PLATES_WIDTH),
+    Picture("electrode-names", "user/howto/placement.md", electrode_names_dialog,
+            ("names_row", "names_box"), width=620),
 )
 
 

@@ -295,6 +295,7 @@ class PlacementWidget(QGroupBox):
     def _names_detail(self) -> None:
         """The last/first choice and the row list, shown for a Number of point names."""
         self._names_row = QWidget()
+        self._names_row.setObjectName("names_row")
         row = QHBoxLayout(self._names_row)
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(QLabel("Number from name"))

@@ -4,7 +4,7 @@ qgisMinimumVersion=4.2
 supportsQt6=True
 description=Groundwork: geophysical profiles in QGIS. Sections under the map with boreholes, geology and interpretation
 about=Load, display and interpret georeferenced geophysical profiles and sections (ERT today; GPR and seismics planned) in QGIS.
-version=0.11.0
+version=0.12.0
 author=Sebastian Benjamin
 email=8215349+SebBenJamin@users.noreply.github.com
 license=GPL-2.0-or-later
@@ -14,7 +14,8 @@ repository=https://github.com/SebBenJamin/groundwork-qgis
 tags=geophysics,ERT,resistivity,section,profile,borehole,geology,interpretation
 experimental=True
 icon=icons/workbench.svg
-changelog=0.11.0: a title block (stamp) on new plates, ruled into cells, with Checked and a logo in Plate details and survey details from Dataset info; a documentation site with search; Help and About Groundwork in the menu; Help buttons in the main dialogs
+changelog=0.12.0: electrode numbers read from point names (ERT03_15, E15, 15a) in positions files and point layers, with a list of every point to check and correct; names kept with the stations and shown in the fit report and map labels; projects are updated once and 0.11 cannot open them afterwards
+    0.11.0: a title block (stamp) on new plates, ruled into cells, with Checked and a logo in Plate details and survey details from Dataset info; a documentation site with search; Help and About Groundwork in the menu; Help buttons in the main dialogs
     0.10.0: renamed to Groundwork (was Geophysics Workbench): uninstall the old plugin once; projects and files keep working
     0.9.1: several surface strips (geology maps stacked above the ground with titles, set up in Context Layers; old projects keep their one strip); the Gülpe demo shows GK 25 and GÜK 300
     0.9.0: Add Data (any text table, columns you assign, map coordinates), models placed on the surveyed electrodes with a fit report, derived electrodes, local sections with a reference height, Profile Properties (files updated once, 0.8 cannot open them; existing models move to surveyed positions)

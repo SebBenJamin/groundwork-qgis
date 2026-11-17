@@ -19,7 +19,7 @@ def test_metadata_targets_qgis4():
     assert g["name"] == "Groundwork"
     assert g["qgisMinimumVersion"] == "4.2"
     assert g["supportsQt6"] == "True"
-    assert g["version"] == "0.11.0"
+    assert g["version"] == "0.12.0"
 
 
 def test_plugin_loads_and_unloads(fake_iface):
