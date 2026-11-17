@@ -208,9 +208,10 @@ class PositionColumns:
         return [c for _, c in self._roles() if c is not None]
 
     def names_number(self, table) -> bool:
-        """The number column is a text column: the numbers are read from point names."""
+        """The number column holds text (all names, or numbers with a few named points such
+        as ``Base``): the numbers are read from point names, so no row is dropped unseen."""
         n = self.number
-        return n is not None and 0 <= n < table.n_columns and not table.is_numeric(n)
+        return n is not None and 0 <= n < table.n_columns and table.has_text(n)
 
     def problems(self, table) -> list[str]:
         """What is missing or wrong, as messages for the user; empty when complete. Only the
@@ -354,11 +355,13 @@ NAME_HEADERS = {"name", "punkt", "point", "pkt", "pt", "bez", "bezeichnung", "la
 _DATE = re.compile(r"^\d{1,4}[-./]\d{1,2}[-./]\d{1,4}")
 
 
-def _name_column(table, cols: _Columns) -> int | None:
-    """A text column of point names: by header word, else the first text column where more
-    than half of the filled cells hold a digit and no cell looks like a date or a time."""
+def _name_column(table, cols: _Columns, taken=()) -> int | None:
+    """A column of point names: a column with text cells (also numbers with a few named
+    points) by header word, else the first text column where more than half of the filled
+    cells hold a digit and no cell looks like a date or a time."""
     text = [c for c in range(table.n_columns) if c not in cols.numeric]
-    named = cols.named(NAME_HEADERS, text)
+    mixed = [c for c in range(table.n_columns) if c not in taken and table.has_text(c)]
+    named = cols.named(NAME_HEADERS, mixed)
     if named is not None:
         return named
     for c in text:
@@ -395,6 +398,6 @@ def guess_position_columns(table) -> PositionColumns:
             number = before[-1] if before and cols.whole(before[-1]) else None
             elevation = after[0] if after else None
     if number is None:
-        number = _name_column(table, cols)
+        number = _name_column(table, cols, {east, north, elevation, found["inline"]})
     return PositionColumns(easting=east, northing=north, crs=cols.crs(east, north),
                            elevation=elevation, number=number, inline=found["inline"])

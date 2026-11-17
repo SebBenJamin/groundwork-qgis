@@ -48,6 +48,8 @@ def _edit(w, name_row, text, occurrence=0):
     table = _find(w, "table", "names_table")
     rows = [r for r in range(table.rowCount()) if table.item(r, 0).text() == name_row]
     table.item(rows[occurrence], 1).setText(text)
+    from qgis.PyQt.QtWidgets import QApplication
+    QApplication.processEvents()                    # the edit is applied after its signal
 
 
 def test_name_column_reads_numbers(qgis_app, make_widget):
@@ -179,3 +181,36 @@ def test_reading_the_same_file_again_clears_corrections(qgis_app, make_widget):
     assert 20 in w.placement().positions.numbers.tolist()
     w.set_positions_file(NAMES)
     assert 20 not in w.placement().positions.numbers.tolist()
+
+
+def test_mostly_numbered_point_column_is_read_as_names(qgis_app, make_widget, tmp_path):
+    """Plain numbers with a few named control points: the column is offered and guessed as
+    names, so Base and GCP3 are listed (not skipped, not numbered as electrodes)."""
+    csv = tmp_path / "mixed.csv"
+    rows = ["Punkt,East,North", "Base,1005,2020", "GCP3,1012,2018"] + \
+        [f"{n},{1000 + 2 * n},2000" for n in range(1, 9)]
+    csv.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    w = make_widget()
+    w.set_positions_file(csv)
+    assert _find(w, "combo", "role_number").currentText() == "Punkt (names)"
+    assert _find(w, "box", "names_box").title() == "Electrodes from Names (10 rows, 2 to check)"
+    assert w.placement().positions.numbers.tolist() == list(range(1, 9))
+    assert "skipped" not in w.positions_status.text()
+
+
+def test_table_is_kept_when_its_rows_do_not_change(qgis_app, make_widget):
+    """An unrelated change (typing a spacing) leaves the list as it is, so an open editor and
+    the user's place in a long list survive; an edit is applied after its signal returns."""
+    w = make_widget()
+    w.set_positions_file(NAMES)
+    table = _find(w, "table", "names_table")
+    item = table.item(0, 0)
+    w.spacing_edit.setText("2")
+    qgis_app.processEvents()
+    assert table.item(0, 0) is item
+    rows = [r for r in range(table.rowCount()) if table.item(r, 0).text() == "GCP3"]
+    table.item(rows[0], 1).setText("")
+    assert table.item(rows[0], 1).text() == ""          # not rebuilt inside its own signal
+    assert w.names_box.title().endswith("3 to check)")
+    qgis_app.processEvents()
+    assert w.names_box.title().endswith("2 to check)")

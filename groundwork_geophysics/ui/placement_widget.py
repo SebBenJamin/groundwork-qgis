@@ -17,7 +17,7 @@ from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsFieldProxyModel, Q
 from qgis.gui import (QgsCollapsibleGroupBox, QgsDoubleSpinBox, QgsFieldComboBox,
                       QgsFileWidget, QgsMapLayerComboBox, QgsProjectionSelectionWidget,
                       QgsRubberBand)
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
                                  QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
                                  QLineEdit, QPushButton, QRadioButton, QSizePolicy,
@@ -105,6 +105,11 @@ class PlacementWidget(QGroupBox):
         self._names_key = None              # what the corrections were typed for
         self._name_rows = None              # NameRow per raw row, or None without names
         self._names_error = ""              # a refused edit in the list
+        self._filled_rows = None            # the rows the list shows now
+        self._names_timer = QTimer(self)     # applies a list edit after its signal returns
+        self._names_timer.setSingleShot(True)
+        self._names_timer.setInterval(0)
+        self._names_timer.timeout.connect(self._on_change)
         self._watched_points = None         # point layer whose selection the list follows
         self._collapsed = False
         self._busy = False
@@ -620,15 +625,17 @@ class PlacementWidget(QGroupBox):
         guess = guess_position_columns(table) if table is not None else None
         numeric = [] if table is None else \
             [c for c in range(table.n_columns) if table.is_numeric(c)]
-        text = [] if table is None else [c for c in range(table.n_columns) if c not in numeric]
+        # a column with any text cell (Base among point numbers) is read as point names
+        text = [] if table is None else [c for c in range(table.n_columns) if table.has_text(c)]
         for role, combo in self.role_combos.items():
             combo.clear()
             combo.addItem("(none)", None)
-            for c in numeric:                       # a text column is never a coordinate
-                combo.addItem(table.names[c], c)
-            if role == "number":                    # but it can hold point names
-                for c in text:
-                    combo.addItem(table.names[c] + NAMES_SUFFIX, c)
+            names = text if role == "number" else []    # a text column is never a coordinate
+            for c in numeric:
+                if c not in names:
+                    combo.addItem(table.names[c], c)
+            for c in names:
+                combo.addItem(table.names[c] + NAMES_SUFFIX, c)
             chosen = getattr(guess, role) if guess is not None else None
             combo.setCurrentIndex(max(0, combo.findData(chosen)))
         if guess is not None:
@@ -699,12 +706,17 @@ class PlacementWidget(QGroupBox):
         else:
             self._names_error = ""
             self._corrections[raw_row] = None if value is None else int(round(value))
-        self._on_change()
+        self._filled_rows = None            # the cell shows what was read, not what was typed
+        self._names_timer.start()           # after this signal returns: never rebuild the
+        #                                     table under the item that is being committed
 
     def _fill_names(self) -> None:
         """The list from the rows as read: rows to check first."""
         rows = self._name_rows or []
         self.names_box.setTitle(names_title(rows))
+        if rows == self._filled_rows:       # unchanged: keep an open editor and the scroll
+            return
+        self._filled_rows = list(rows)
         table = self.names_table
         table.setRowCount(len(rows))
         for r, i in enumerate(list_order(rows)):
