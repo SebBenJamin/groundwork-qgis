@@ -109,3 +109,23 @@ def test_positions_with_units_keep_elevation():
     q = guess_position_columns(_table(["Nr", "Easting [m]", "Northing (m)", "Elevation [m NN]"],
                                       rows))
     assert (q.number, q.easting, q.northing, q.elevation) == (0, 1, 2, 3)
+
+
+def _names_table():
+    return read_table(WILD / "positions_names.csv", guess_options(WILD / "positions_names.csv"))
+
+
+def test_text_number_column_is_allowed():
+    table = _names_table()
+    assert PositionColumns(easting=1, northing=2, number=0).problems(table) == []
+    assert "cannot be a text column" in " ".join(
+        PositionColumns(easting=0, northing=2).problems(table))
+
+
+def test_name_column_is_guessed():
+    guess = guess_position_columns(_names_table())
+    assert (guess.number, guess.easting, guess.northing, guess.elevation) == (0, 1, 2, 3)
+    dated = TextTable(["Datum", "Zeit", "E", "N"],
+                      [["2026-11-03", "10:15", "500000.0", "5600000.0"],
+                       ["2026-11-03", "10:16", "500002.0", "5600000.0"]], [2, 3])
+    assert guess_position_columns(dated).number is None

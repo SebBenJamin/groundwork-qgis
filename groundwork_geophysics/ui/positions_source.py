@@ -4,8 +4,8 @@ layers. Raises ValueError with a message for the user."""
 from __future__ import annotations
 
 import numpy as np
-from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsCsException,
-                       QgsGeometry, QgsPointXY, QgsWkbTypes)
+from qgis.core import (NULL, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
+                       QgsCsException, QgsGeometry, QgsPointXY, QgsWkbTypes)
 
 from ..core.placement import Positions
 from ..core.roles import PositionColumns, looks_like_degrees
@@ -75,11 +75,14 @@ def positions_from_table(table: TextTable, cols: PositionColumns, store_crs: str
                          project) -> tuple[Positions, int]:
     """(positions in the store CRS, rows skipped). A row is skipped when it has no number in
     the easting, northing or (when chosen) number column; a missing elevation or in-line
-    distance is NaN."""
+    distance is NaN. A text number column gives each row's point name (``names``) and no
+    numbers: the caller reads the numbers from the names."""
     problems = cols.problems(table)
     if problems:
         raise ValueError("; ".join(problems))
-    required = [cols.easting, cols.northing] + ([cols.number] if cols.number is not None else [])
+    names = cols.names_number(table)
+    required = [cols.easting, cols.northing] + \
+        ([cols.number] if cols.number is not None and not names else [])
     _, skipped, _ = select_rows(table, required)
     ok = np.isfinite(np.column_stack([table.numeric(c) for c in required])).all(axis=1)
 
@@ -92,9 +95,13 @@ def positions_from_table(table: TextTable, cols: PositionColumns, store_crs: str
         raise ValueError("Choose the CRS of the coordinates.")
     _check_degrees(xy, crs)
     xy = _transform_xy(xy, crs, store_crs, project)
-    numbers = _whole(column(cols.number)) if cols.number is not None else None
     inline = column(cols.inline) if cols.inline is not None else None
-    return Positions(np.column_stack([xy, column(cols.elevation)]), numbers, inline), skipped
+    xyz = np.column_stack([xy, column(cols.elevation)])
+    if names:
+        cells = [row[cols.number].strip() for row, keep in zip(table.cells, ok) if keep]
+        return Positions(xyz, None, inline, cells), skipped
+    numbers = _whole(column(cols.number)) if cols.number is not None else None
+    return Positions(xyz, numbers, inline), skipped
 
 
 def _value(feature, field: str | None) -> float:
@@ -111,9 +118,13 @@ def positions_from_layer(layer, number_field: str | None, inline_field: str | No
                          elevation_field: str | None, selected_only: bool, store_crs: str,
                          project) -> Positions:
     """Positions from a point layer's (selected) features, in the store CRS. Without an
-    elevation field the points' own Z is used when they have one."""
+    elevation field the points' own Z is used when they have one. A text number field gives
+    each feature's point name (``names``, "" for NULL) and no numbers."""
     if layer is None:
         raise ValueError("Choose a point layer.")
+    index = layer.fields().indexOf(number_field) if number_field else -1
+    names_field = index >= 0 and not layer.fields().at(index).isNumeric()
+    names: list[str] = []
     feats = list(layer.selectedFeatures() if selected_only else layer.getFeatures())
     if selected_only and not feats:
         raise ValueError(f"Select the points in layer “{layer.name()}”, or use all of its "
@@ -134,7 +145,11 @@ def positions_from_layer(layer, number_field: str | None, inline_field: str | No
         if not elevation_field and point.is3D():
             height = point.z()
         z.append(height)
-        numbers.append(_value(f, number_field))
+        if names_field:
+            v = f[number_field]
+            names.append("" if v is None or v == NULL else str(v).strip())
+        else:
+            numbers.append(_value(f, number_field))
         inline.append(_value(f, inline_field))
     if len(xy) < 2:
         raise ValueError(f"Layer “{layer.name()}” needs at least two points.")
@@ -142,8 +157,9 @@ def positions_from_layer(layer, number_field: str | None, inline_field: str | No
     _check_degrees(xy, layer.crs())
     xy = _transform_xy(xy, layer.crs(), store_crs, project)
     return Positions(np.column_stack([xy, np.array(z, dtype=float)]),
-                     _whole(np.array(numbers)) if number_field else None,
-                     np.array(inline, dtype=float) if inline_field else None)
+                     _whole(np.array(numbers)) if number_field and not names_field else None,
+                     np.array(inline, dtype=float) if inline_field else None,
+                     names if names_field else None)
 
 
 def selected_line(layer, store_crs: str, project) -> np.ndarray:
