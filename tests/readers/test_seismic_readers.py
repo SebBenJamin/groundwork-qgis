@@ -51,3 +51,68 @@ def test_resistivity_vtk_unchanged():
     assert r.provenance["array"].startswith("Resistivity")
     assert r.mesh.quantity == "resistivity" and "method" not in r.provenance
     assert r.provenance["coverage_array"] == "Sensitivity(log10)"
+
+
+HEADER = "x z velocity converage standardized coverage sc_v"
+
+
+def _xzv(folder: Path, stem: str = "L9", topography: bool = True) -> Path:
+    """A 4 x 3 grid of cell centres as Refrainv saves them; the bottom row has no rays
+    (coverage -inf, standardized 0), one middle cell is outside the resolved area."""
+    rows = []
+    for j, z in enumerate((100.0, 98.0, 96.0)):
+        for i, x in enumerate((1.0, 3.0, 5.0, 7.0)):
+            v = 400.0 + 500.0 * j + 10 * i
+            if j == 2:
+                c, s = "-inf", 0.0
+            elif j == 1 and i == 0:
+                c, s = "0.50", 0.0
+            else:
+                c, s = f"{2.0 + 0.1 * i - j:.2f}", 1.0
+            rows.append(f"{x:.2f} {z:.2f} {v:.2f} {c} {s:.2f} {v * s:.2f}")
+    p = folder / f"{stem}_xzv.txt"
+    p.write_text(HEADER + "\n" + "\n".join(rows) + "\n")
+    if topography:
+        (folder / f"{stem}_topography.txt").write_text("x z\n0.00 101.00\n2.00 101.10\n"
+                                                       "4.00 101.20\n8.00 101.30\n")
+    return p
+
+
+def test_refrapy_detected_first(tmp_path):
+    assert readers.detect(_xzv(tmp_path))[0] == "refrapy_xzv"
+
+
+def test_refrapy_reads_velocity_coverage_and_cut(tmp_path):
+    r = readers.read(_xzv(tmp_path))
+    assert r.mesh.quantity == "p_velocity" and r.mesh.unit == "m/s"
+    assert r.provenance["kind"] == "srt_model" and r.provenance["method"] == "srt"
+    assert r.z_kind == "elevation"
+    # resolved rows (standardized 1) have coverages 1.1 .. 2.3: the cut is the lowest
+    assert r.mesh.coverage_cut == pytest.approx(1.1)
+    assert r.provenance["coverage_cut"] == pytest.approx(1.1)
+    assert np.isnan(r.mesh.coverage).any() and not np.isinf(r.mesh.coverage).any()
+    assert r.provenance["n_cells"] == 12 and r.provenance["n_unresolved"] == 5
+    assert r.provenance["station_x"] == [0.0, 2.0, 4.0, 8.0]
+    assert 400 <= np.nanmin(r.mesh.values) and np.nanmax(r.mesh.values) <= 1430
+
+
+def test_refrapy_without_topography_file_still_reads(tmp_path):
+    r = readers.read(_xzv(tmp_path, topography=False))
+    assert "station_x" not in r.provenance
+    assert "_topography.txt" in r.provenance["warning"]
+
+
+def test_refrapy_rejects_short_rows(tmp_path):
+    p = tmp_path / "bad_xzv.txt"
+    p.write_text(HEADER + "\n1 2 3\n4 5 6\n7 8 9\n")
+    with pytest.raises(ValueError, match="bad_xzv.txt"):
+        readers.read(p, reader="refrapy_xzv")
+
+
+def test_refrapy_user_run_reads():
+    p = Path(".cache/demo_seismic/refrapy_calhoun/models/20261118-191757/L1_xzv.txt")
+    if not p.exists():
+        pytest.skip("the user's Refrainv run is not in the local cache")
+    r = readers.read(p)
+    assert r.provenance["n_cells"] == 6886 and r.provenance["n_unresolved"] == 3013
+    assert 100 <= np.nanmin(r.mesh.values) and np.nanmax(r.mesh.values) <= 7000
