@@ -21,11 +21,13 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayo
                                  QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ..core.borehole_curves import data_range
-from ..core.borehole_layout import (ViewTransform, column_depth, extent_z, fit, layout_even,
+from ..core.borehole_layout import (ViewTransform, column_depth, even_gap, extent_z, fit,
+                                    layout_even,
                                     vertical_exaggeration)
 from ..core.context import borehole_key, collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
-from .borehole_draw import ColumnOptions, SymbolPool, draw_borehole, draw_flag
+from .borehole_draw import (ColumnOptions, SymbolPool, draw_borehole, draw_flag,
+                            layer_text_width, text_font)
 from ..core.numbers import fmt
 from ..ids import LEGACY_ID
 
@@ -35,7 +37,7 @@ GEOMETRY_KEY = f"{LEGACY_ID}/borehole_viewer/geometry"
 COLUMN_PX = 28
 TRACK_PX = 60
 GAP_PX = 40
-TEXT_PX = 90                 # room for layer text in the even layout
+MIN_GAP_PX = 12              # even spacing: the gaps shrink down to this to fit the window
 AXIS_PX = 52                 # left margin for the vertical axis
 LABEL_PX = 54                # room above the columns for the labels
 GROUND_RGB = (90, 140, 60)
@@ -68,17 +70,48 @@ class BoreholeCanvas(QWidget):
         self.setMinimumSize(300, 240)
 
     # -- geometry ------------------------------------------------------------------------------
+    def layer_font(self):
+        """The font the layer text is drawn with (as ``borehole_draw`` picks it), for
+        measuring how much room the text needs."""
+        img = QImage(1, 1, QImage.Format.Format_ARGB32)
+        dots = round(self.logicalDpiX() / 0.0254)
+        img.setDotsPerMeterX(dots)
+        img.setDotsPerMeterY(dots)
+        painter = QPainter(img)
+        try:
+            from qgis.core import QgsRenderContext
+            return text_font(painter, QgsRenderContext.fromQPainter(painter))
+        finally:
+            painter.end()
+
     def _widths(self, points) -> list[float]:
+        """Each column's drawn width: the column, its curve tracks and its layer text."""
         v = self.viewer
         n_tracks = len(v.chosen_curves())
+        font = self.layer_font() if v.show_check["text"].isChecked() else None
         return [COLUMN_PX + n_tracks * (TRACK_PX + 4)
-                + (TEXT_PX if v.show_check["text"].isChecked() else 0) for _p in points]
+                + (layer_text_width(p, font) if font is not None else 0.0) for p in points]
+
+    def _even_room(self) -> float:
+        return max(1.0, self.width() - AXIS_PX - 8.0)
 
     def _x_layout(self, points) -> list[float]:
-        """Each column's centre in layout units (px for even, metres for true distance)."""
+        """Each column's centre in layout units (px for even, metres for true distance); even
+        gaps shrink so the columns fit the window."""
         if self.viewer.mode == "even":
-            return [c.x + COLUMN_PX / 2 for c in layout_even(self._widths(points), GAP_PX)]
+            widths = self._widths(points)
+            gap = even_gap(widths, self._even_room(), GAP_PX, MIN_GAP_PX)
+            return [c.x + COLUMN_PX / 2 for c in layout_even(widths, gap)]
         return [p.s for p in points]
+
+    def off_view(self) -> tuple[int, int]:
+        """Even spacing: how many columns of the last paint lie wholly left / right of the
+        window; (0, 0) in true distance."""
+        if self.viewer.mode != "even":
+            return 0, 0
+        left = sum(1 for _p, r in self.column_rects if r.right() < AXIS_PX)
+        right = sum(1 for _p, r in self.column_rects if r.left() > self.width())
+        return left, right
 
     def _z_top(self, p) -> float | None:
         surface = self.viewer.surface_at(p.s)
@@ -103,8 +136,9 @@ class BoreholeCanvas(QWidget):
         xs = self._x_layout(points)
         if self.viewer.mode == "even":
             t = fit((0.0, 1.0), ez, (w - AXIS_PX, h - LABEL_PX), None)
-            total = xs[-1] + self._widths(points)[-1]
-            t = ViewTransform(-(AXIS_PX + max(0.0, (w - AXIS_PX - total) / 2)), 1.0,
+            total = xs[-1] - COLUMN_PX / 2 + self._widths(points)[-1]
+            spare = self._even_room() - total             # < 0: start at the left edge
+            t = ViewTransform(-(AXIS_PX + max(0.0, spare / 2)), 1.0,
                               t.z0 + LABEL_PX / t.z_scale, t.z_scale)
         else:
             pad = max(5.0, 0.05 * (max(xs) - min(xs)))
@@ -136,6 +170,7 @@ class BoreholeCanvas(QWidget):
             painter.fillRect(self.rect(), QColor(*BACKGROUND_RGB))
             hint = self.empty_hint()
             if hint:
+                self.column_rects = []
                 painter.setPen(QPen(QColor(*AXIS_RGB)))
                 painter.drawText(self.rect().adjusted(24, 24, -24, -24),
                                  int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap),
@@ -198,6 +233,7 @@ class BoreholeCanvas(QWidget):
             painter.setPen(QPen(QColor(*AXIS_RGB)))
             painter.drawText(QPointF(AXIS_PX + 4, painter.device().height() - 6),
                              f"VE {fmt(vertical_exaggeration(t), 1)}×")
+        v.update_notes()
 
     def _ground(self, painter) -> None:
         topo = self.viewer.topo
@@ -675,19 +711,36 @@ class BoreholeViewer(QWidget):
         self._save_if_changed()
         if refit or self.canvas.transform is None:
             self.canvas.fit_view()
-        missing = [p.label for p in self.boreholes
-                   if self.axis == "elevation" and self.canvas._z_top(p) is None]
-        self.show_readout([f"No height: {', '.join(missing)} (shown in depth mode)"]
-                          if missing else [])
+        self.show_readout([])
         self.canvas.update()
 
-    def show_readout(self, lines: list[str]) -> None:
+    def notes(self) -> list[str]:
+        """What the status line says besides the hover readout: boreholes without a height,
+        columns out of view (even spacing)."""
+        out = []
         missing = [p.label for p in self.boreholes
                    if self.axis == "elevation" and self.canvas._z_top(p) is None]
-        note = f"No height: {', '.join(missing)} (shown in depth mode)" if missing else ""
-        text = " · ".join(lines)
-        self.status.setText(text if not note or note in text else
-                            (text + "    " + note).strip())
+        if missing:
+            out.append(f"No height: {', '.join(missing)} (shown in depth mode)")
+        left, right = self.canvas.off_view()
+        if right:
+            out.append("1 more borehole to the right (drag to see it)" if right == 1 else
+                       f"{right} more boreholes to the right (drag to see them)")
+        if left:
+            out.append("1 more borehole to the left" if left == 1 else
+                       f"{left} more boreholes to the left")
+        return out
+
+    def show_readout(self, lines: list[str]) -> None:
+        self._readout = list(lines)
+        self.update_notes()
+
+    def update_notes(self) -> None:
+        """The status line: the hover readout, then the notes (set only when it changed)."""
+        parts = ([" · ".join(self._readout)] if getattr(self, "_readout", None) else [])
+        text = "    ".join(parts + self.notes())
+        if self.status.text() != text:
+            self.status.setText(text)
 
     # -- styles --------------------------------------------------------------------------------
     def _style_menu(self) -> None:

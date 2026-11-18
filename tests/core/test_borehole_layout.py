@@ -78,3 +78,24 @@ def test_spread_texts_too_many_drops_thinnest():
 def test_spread_texts_empty():
     from groundwork_geophysics.core.borehole_layout import spread_texts
     assert spread_texts([], 10, 0, 100) == []
+
+
+# -- even spacing fits the window ----------------------------------------------------------------
+def test_even_gap_shrinks_to_fit():
+    from groundwork_geophysics.core.borehole_layout import even_gap
+    assert even_gap([100] * 5, 600) == 25
+
+
+def test_even_gap_never_below_min():
+    from groundwork_geophysics.core.borehole_layout import even_gap
+    assert even_gap([100] * 9, 600) == 12
+
+
+def test_even_gap_room_to_spare():
+    from groundwork_geophysics.core.borehole_layout import even_gap
+    assert even_gap([50] * 3, 2000) == 40
+
+
+def test_fit_even_one_column():
+    from groundwork_geophysics.core.borehole_layout import even_gap
+    assert even_gap([100], 50) == 40 and even_gap([], 50) == 40

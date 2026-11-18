@@ -120,3 +120,13 @@ def spread_texts(layers: list[tuple[float, float]], height: float, lo: float,
     for i, y in zip(keep, ys):
         out[i] = y
     return out
+
+
+def even_gap(widths_px: list[float], room_px: float, gap_px: float = 40,
+             min_gap_px: float = 12) -> float:
+    """The gap between evenly spaced columns that makes them fit ``room_px``, never wider than
+    ``gap_px`` nor narrower than ``min_gap_px`` (``gap_px`` for one column or none)."""
+    if len(widths_px) < 2:
+        return gap_px
+    gap = (room_px - sum(widths_px)) / (len(widths_px) - 1)
+    return max(min_gap_px, min(gap_px, gap))

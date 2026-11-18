@@ -349,3 +349,60 @@ def test_settings_column_never_cut_off(viewer, qgis_app):
     qgis_app.processEvents()
     assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     assert scroll.minimumWidth() >= scroll.widget().minimumSizeHint().width()
+
+
+# -- even spacing reaches every column ----------------------------------------------------------
+def _rects(viewer):
+    viewer.canvas.render_image()
+    return dict((p.label, r) for p, r in viewer.canvas.column_rects)
+
+
+def test_even_text_room_is_the_measured_text(viewer):
+    from groundwork_geophysics.section.borehole_draw import layer_text_width
+    viewer.set_axis("depth")
+    viewer.set_mode("even")
+    viewer.show_check["text"].setChecked(True)
+    rects = _rects(viewer)
+    rk15 = next(p for p in viewer.boreholes if p.label == "RK15")
+    room = rects["RK16"].left() - rects["RK15"].right()
+    assert room == pytest.approx(layer_text_width(rk15, viewer.canvas.layer_font()) + 40, abs=1)
+    assert room < 90 + 40
+
+
+def test_even_fit_shows_all_columns_when_they_fit(viewer, qgis_app):
+    viewer.set_axis("depth")
+    viewer.set_mode("even")
+    viewer.show_check["text"].setChecked(True)
+    viewer.resize(520, 600)
+    qgis_app.processEvents()
+    viewer.set_mode("even")                                        # Fit
+    width = viewer.canvas.width()
+    rects = _rects(viewer)
+    assert len(rects) == 3
+    assert all(0 <= r.left() and r.right() + 40 <= width for r in rects.values())
+
+
+def _many(fake_dock, n=12):
+    from groundwork_geophysics.core.context import ContextItems
+    fake_dock.provider.items["p3"] = ContextItems(points=[
+        _bh(10.0 * i, f"B{i}", 20.0, [(0, 2, "a very long layer description of the core", None)])
+        for i in range(n)])
+
+
+def test_even_fit_names_columns_off_to_the_right(viewer, fake_dock, qgis_app):
+    _many(fake_dock)
+    viewer.resize(520, 600)
+    viewer.show_profile("p3")
+    viewer.set_axis("depth")
+    viewer.set_mode("even")
+    viewer.show_check["text"].setChecked(True)
+    viewer.set_mode("even")
+    viewer.canvas.render_image()
+    left, right = viewer.canvas.off_view()
+    assert left == 0 and right > 0
+    assert f"{right} more boreholes to the right (drag to see them)" in viewer.status.text()
+    c = viewer.canvas
+    c.transform = c.transform.panned(-c.width(), 0)
+    c.render_image()
+    assert c.off_view()[0] > 0
+    assert f"{c.off_view()[0]} more boreholes to the left" in viewer.status.text()
