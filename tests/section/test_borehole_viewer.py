@@ -406,3 +406,98 @@ def test_even_fit_names_columns_off_to_the_right(viewer, fake_dock, qgis_app):
     c.render_image()
     assert c.off_view()[0] > 0
     assert f"{c.off_view()[0]} more boreholes to the left" in viewer.status.text()
+
+
+# -- Auto VE ---------------------------------------------------------------------------------------
+def _fresh(fake_dock, qgis_app, pid="p1", options=None):
+    """A viewer on a project without saved viewer options (or with ``options``)."""
+    import json
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.section.borehole_viewer import OPTIONS_KEY, SCOPE, BoreholeViewer
+    prj = QgsProject.instance()
+    prj.removeEntry(SCOPE, OPTIONS_KEY)
+    if options is not None:
+        prj.writeEntry(SCOPE, OPTIONS_KEY, json.dumps(options))
+    v = BoreholeViewer(fake_dock, prj)
+    v.resize(900, 600)
+    v.show_profile(pid)
+    v.show()
+    qgis_app.processEvents()
+    return v
+
+
+def _ctrl_wheel(canvas):
+    from qgis.PyQt.QtCore import QPoint, QPointF, Qt
+    from qgis.PyQt.QtGui import QWheelEvent
+    pos = QPointF(canvas.width() / 2, canvas.height() / 2)
+    canvas.wheelEvent(QWheelEvent(pos, pos, QPoint(0, 0), QPoint(0, 120),
+                                  Qt.MouseButton.NoButton, Qt.KeyboardModifier.ControlModifier,
+                                  Qt.ScrollPhase.NoScrollPhase, False))
+
+
+def test_ve_auto_by_default_fills_the_height(fake_dock, qgis_app):
+    v = _fresh(fake_dock, qgis_app, options={"mode": "true", "axis": "elevation"})
+    try:
+        assert v.ve_spin.value() == 0.0 and v.is_auto_ve()
+        rects = _rects(v)
+        text = v.ve_spin.specialValueText()
+        assert text.startswith("Auto (") and text.endswith("×)")
+        tops, bottoms = [r.top() for r in rects.values()], [r.bottom() for r in rects.values()]
+        assert max(bottoms) - min(tops) >= 0.7 * v.canvas.height()
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_typed_ve_kept(fake_dock, qgis_app):
+    from groundwork_geophysics.core.borehole_layout import vertical_exaggeration
+    v = _fresh(fake_dock, qgis_app, options={"mode": "true", "axis": "elevation"})
+    try:
+        v.ve_spin.setValue(5.0)
+        assert vertical_exaggeration(v.canvas.transform) == pytest.approx(5.0)
+        _ctrl_wheel(v.canvas)
+        assert v.ve_spin.value() == pytest.approx(5.0 * 1.2)
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_auto_stays_auto_on_zoom(fake_dock, qgis_app):
+    v = _fresh(fake_dock, qgis_app, options={"mode": "true", "axis": "elevation"})
+    try:
+        _ctrl_wheel(v.canvas)
+        assert v.ve_spin.value() == 0.0
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_auto_ve_clamped(fake_dock, qgis_app):
+    from groundwork_geophysics.core.context import ContextItems
+    fake_dock.provider.items["flat"] = ContextItems(points=[
+        _bh(100.0 * i, f"F{i}", 20.0, [(0, 0.1, "a", None)]) for i in range(6)])
+    v = _fresh(fake_dock, qgis_app, pid="flat", options={"mode": "true", "axis": "elevation"})
+    try:
+        v.canvas.render_image()
+        assert v.ve_spin.specialValueText() == "Auto (50×)"
+        v.set_axis("depth")
+        v.canvas.render_image()
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_old_project_ve_kept(fake_dock, qgis_app):
+    v = _fresh(fake_dock, qgis_app, options={"ve": 5.0})
+    w = None
+    try:
+        assert v.ve_spin.value() == 5.0
+        w = _fresh(fake_dock, qgis_app)
+        assert w.ve_spin.value() == 0.0
+    finally:
+        for x in (v, w):
+            if x is not None:
+                x.close()
+                x.deleteLater()

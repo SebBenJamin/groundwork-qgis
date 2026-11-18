@@ -38,6 +38,8 @@ COLUMN_PX = 28
 TRACK_PX = 60
 GAP_PX = 40
 MIN_GAP_PX = 12              # even spacing: the gaps shrink down to this to fit the window
+AUTO_VE = 0.0                # the VE box's "Auto": the exaggeration that fills the window
+VE_TIP = "Vertical exaggeration (Auto: fill the window)"
 AXIS_PX = 52                 # left margin for the vertical axis
 LABEL_PX = 54                # room above the columns for the labels
 GROUND_RGB = (90, 140, 60)
@@ -142,8 +144,16 @@ class BoreholeCanvas(QWidget):
                               t.z0 + LABEL_PX / t.z_scale, t.z_scale)
         else:
             pad = max(5.0, 0.05 * (max(xs) - min(xs)))
-            t = fit((min(xs) - pad, max(xs) + pad), ez, (w - AXIS_PX, h - LABEL_PX),
-                    self.viewer.ve_spin.value())
+            extent_x, size = (min(xs) - pad, max(xs) + pad), (w - AXIS_PX, h - LABEL_PX)
+            if self.viewer.is_auto_ve():                  # the exaggeration that fills both ways
+                from .view_fit import AUTO_MAX, AUTO_MIN
+                ve = vertical_exaggeration(fit(extent_x, ez, size, None))
+                ve = min(max(ve, AUTO_MIN), AUTO_MAX)
+                self.viewer.show_auto_ve(ve)
+            else:
+                ve = self.viewer.ve_spin.value()
+                self.viewer.ve_spin.setToolTip(VE_TIP)
+            t = fit(extent_x, ez, size, ve)
             t = ViewTransform(t.x0 - AXIS_PX / t.x_scale, t.x_scale,
                               t.z0 + LABEL_PX / t.z_scale, t.z_scale)
         self.transform = t
@@ -447,8 +457,10 @@ class BoreholeViewer(QWidget):
         self.axis_combo.addItem("Elevation", "elevation")
         self.axis_combo.addItem("Depth", "depth")
         self.ve_spin = QDoubleSpinBox()
-        self.ve_spin.setRange(0.1, 100.0)
-        self.ve_spin.setValue(5.0)
+        self.ve_spin.setRange(AUTO_VE, 100.0)
+        self.ve_spin.setSpecialValueText("Auto")     # the minimum: fill the window
+        self.ve_spin.setValue(AUTO_VE)
+        self.ve_spin.setToolTip(VE_TIP)
         self.ve_spin.setPrefix("VE ")
         self.ve_spin.setSuffix("×")
         fit_btn = QPushButton("Fit")
@@ -701,8 +713,19 @@ class BoreholeViewer(QWidget):
         self.axis_combo.blockSignals(False)
         self._redraw()
 
+    def is_auto_ve(self) -> bool:
+        return self.ve_spin.value() <= self.ve_spin.minimum()
+
+    def show_auto_ve(self, ve: float) -> None:
+        """The box itself says what Auto chose."""
+        from ..core.numbers import fmt_trim
+        self.ve_spin.setSpecialValueText(f"Auto ({fmt_trim(ve, 1)}×)")
+        self.ve_spin.setToolTip(f"Vertical exaggeration: Auto, now {fmt_trim(ve, 1)}× (fills "
+                                "the window)")
+
     def view_changed(self) -> None:
-        if self.mode == "true" and self.canvas.transform is not None:
+        """A zoom: a typed VE follows it; Auto stays Auto (the corner shows the VE now)."""
+        if self.mode == "true" and self.canvas.transform is not None and not self.is_auto_ve():
             self.ve_spin.blockSignals(True)
             self.ve_spin.setValue(vertical_exaggeration(self.canvas.transform))
             self.ve_spin.blockSignals(False)
