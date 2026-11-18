@@ -16,7 +16,7 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPen, QPolygonF
 
 from ..core.borehole_curves import CurveStyle, data_range, track_fraction
-from ..core.borehole_layout import column_depth
+from ..core.borehole_layout import column_depth, spread_texts
 from .borehole_style import default_symbol
 
 HIGHLIGHT_RGB = (230, 120, 0)
@@ -27,7 +27,7 @@ TEXT_RGB = (40, 40, 40)
 TEXT_MM = 2.4
 OUTLINE_MM = 0.15
 TRACK_GAP_PX = 4.0
-TEXT_GAP_PX = 4.0
+TEXT_GAP_PX = 10.0          # room for a leader line to a text moved off its layer
 TICK_PX = 4.0
 TICK_MIN_SPACING_PX = 18.0
 _DASH = {"solid": Qt.PenStyle.SolidLine, "dash": Qt.PenStyle.DashLine,
@@ -123,7 +123,7 @@ def draw_borehole(painter, rc, x_px: float, y_of_depth: Callable[[float], float]
             right = track.right()
             area = area.united(track)
         if opts.layer_text:
-            area = area.united(_texts(painter, rc, right + TEXT_GAP_PX, y_of_depth, p))
+            area = area.united(_texts(painter, rc, right + TEXT_GAP_PX, col, y_of_depth, p))
     finally:
         painter.restore()
     if opts.highlight:
@@ -163,7 +163,7 @@ def _interval(rc, col: QRectF, y_of_depth, iv, pool: SymbolPool) -> None:
     sym.renderPolygon(poly, None, feature, rc)
 
 
-def _font(painter, rc) -> QFont:
+def text_font(painter, rc) -> QFont:
     font = QFont(painter.font())
     font.setPixelSize(max(8, round(rc.convertToPainterUnits(TEXT_MM, _MM))))
     return font
@@ -174,7 +174,7 @@ def _ticks(painter, rc, col: QRectF, y_of_depth, depth: float) -> None:
     step = next((s for s in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100)
                  if s * px_per_m >= TICK_MIN_SPACING_PX), 100)
     painter.setPen(_pen(rc, OUTLINE_RGB, OUTLINE_MM))
-    painter.setFont(_font(painter, rc))
+    painter.setFont(text_font(painter, rc))
     fm = painter.fontMetrics()
     for d in np.arange(0.0, depth + 1e-9, step):
         y = y_of_depth(float(d))
@@ -184,18 +184,36 @@ def _ticks(painter, rc, col: QRectF, y_of_depth, depth: float) -> None:
                                  y + fm.ascent() / 2 - 1), text)
 
 
-def _texts(painter, rc, x: float, y_of_depth, p) -> QRectF:
-    painter.setFont(_font(painter, rc))
-    painter.setPen(QPen(QColor(*TEXT_RGB)))
+def layer_text_width(p, font: QFont) -> float:
+    """How far right of the column (and its tracks) ``p``'s layer text reaches: the gap and
+    the widest text; 0 when no layer has text."""
+    from qgis.PyQt.QtGui import QFontMetricsF
+    fm = QFontMetricsF(font)
+    widths = [fm.horizontalAdvance(iv.text) for iv in p.log if iv.text]
+    return TEXT_GAP_PX + max(widths) if widths else 0.0
+
+
+def _texts(painter, rc, x: float, col: QRectF, y_of_depth, p) -> QRectF:
+    """The layer texts right of the column, spread apart where layers are thin (a short
+    leader line to a text's layer when it had to move); a text that finds no room is left
+    out (the hover readout still names the layer)."""
+    painter.setFont(text_font(painter, rc))
+    pen = QPen(QColor(*TEXT_RGB))
+    painter.setPen(pen)
     fm = painter.fontMetrics()
     area = QRectF()
-    for iv in p.log:
-        if not iv.text:
+    texted = [iv for iv in p.log if iv.text]
+    layers = [tuple(sorted((y_of_depth(iv.top), y_of_depth(iv.bottom)))) for iv in texted]
+    h = float(fm.height())
+    ys = spread_texts(layers, h, col.top() - h, col.bottom() + h)
+    for iv, (ya, yb), y in zip(texted, layers, ys):
+        if y is None:
             continue
-        y = (y_of_depth(iv.top) + y_of_depth(iv.bottom)) / 2
+        centre = (ya + yb) / 2
+        if abs(y - centre) > h / 2:
+            painter.drawLine(QPointF(x - TEXT_GAP_PX + 1, centre), QPointF(x - 2, y))
         painter.drawText(QPointF(x, y + fm.ascent() / 2 - 1), iv.text)
-        area = area.united(QRectF(x, y - fm.height() / 2, fm.horizontalAdvance(iv.text),
-                                  fm.height()))
+        area = area.united(QRectF(x, y - h / 2, fm.horizontalAdvance(iv.text), h))
     return area
 
 
@@ -249,7 +267,7 @@ def _track(painter, rc, track: QRectF, y_of_depth, curve, style: CurveStyle, giv
 
 
 def _header(painter, rc, track: QRectF, curve, rng) -> None:
-    painter.setFont(_font(painter, rc))
+    painter.setFont(text_font(painter, rc))
     painter.setPen(QPen(QColor(*TEXT_RGB)))
     fm = painter.fontMetrics()
     y = track.top() - 2

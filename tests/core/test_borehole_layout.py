@@ -52,3 +52,29 @@ def test_depth_extent_includes_heightless_borehole_but_elevation_does_not():
     assert extent_z([a, b], "elevation", no_surface) == (21.0, 25.0)
     assert extent_z([b], "elevation", no_surface) is None
     assert extent_z([b], "elevation", lambda s: 30.0) == (21.0, 30.0)
+
+
+# -- layer text spread apart (thin layers) ------------------------------------------------------
+def test_spread_texts_far_apart_unchanged():
+    from groundwork_geophysics.core.borehole_layout import spread_texts
+    assert spread_texts([(0, 40), (40, 80)], 10, -10, 90) == [20, 60]
+
+
+def test_spread_texts_thin_layers_pushed_apart():
+    from groundwork_geophysics.core.borehole_layout import spread_texts
+    ys = spread_texts([(0, 2), (2, 4), (4, 6)], 10, -10, 100)
+    assert ys == sorted(ys)
+    assert all(b - a >= 10 - 1e-9 for a, b in zip(ys, ys[1:]))
+    assert all(-5 - 1e-9 <= y <= 95 + 1e-9 for y in ys)
+
+
+def test_spread_texts_too_many_drops_thinnest():
+    from groundwork_geophysics.core.borehole_layout import spread_texts
+    ys = spread_texts([(0, 10), (10, 11), (11, 30)], 10, 0, 20)
+    assert ys[1] is None and ys[0] is not None and ys[2] is not None
+    assert ys[2] - ys[0] >= 10 - 1e-9
+
+
+def test_spread_texts_empty():
+    from groundwork_geophysics.core.borehole_layout import spread_texts
+    assert spread_texts([], 10, 0, 100) == []

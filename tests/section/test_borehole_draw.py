@@ -142,3 +142,38 @@ def test_log_scale_with_min_at_or_below_zero_uses_the_smallest_positive_value(qg
     assert curve_range(c, CurveStyle(log=True), (0.0, 500.0)) == (5.0, 500.0)
     assert curve_range(Curve("k", "r", "", np.array([0.0]), np.array([-1.0])),
                        CurveStyle(log=True), None) is None
+
+
+def _text_rows(img, x0, x1):
+    """Rows with dark text pixels between x0 and x1, grouped into runs of touching rows."""
+    from qgis.PyQt.QtGui import qGray
+    rows = [y for y in range(img.height())
+            if any(qGray(img.pixel(x, y)) < 120 for x in range(x0, x1))]
+    runs = []
+    for y in rows:
+        if runs and y == runs[-1][-1] + 1:
+            runs[-1].append(y)
+        else:
+            runs.append([y])
+    return runs
+
+
+def _thin_layers():
+    return _bh([(0, 0.05, "loam Sl4", (255, 255, 255)), (0.05, 0.1, "silt Ut3", (255, 255, 255)),
+                (0.1, 3, "sand", (255, 255, 255))])
+
+
+def test_thin_layer_texts_do_not_overlap(qgis_app):
+    from groundwork_geophysics.section.borehole_draw import TEXT_GAP_PX, ColumnOptions
+    img, _ = _draw(_thin_layers(), ColumnOptions(width_px=16, layer_text=True))
+    rows = [y for run in _text_rows(img, int(108 + TEXT_GAP_PX + 1), 400) for y in run]
+    upper = [y for y in rows if y < 60]               # the two thin layers' texts (sand: y 82)
+    # both texts sit at their layers' middles (y 21 and 23) unless spread: two lines of
+    # the 9 px text are at least 14 px from the top of the first to the bottom of the second
+    assert max(upper) - min(upper) >= 14
+
+
+def test_moved_text_gets_a_leader(qgis_app):
+    from groundwork_geophysics.section.borehole_draw import TEXT_GAP_PX, ColumnOptions
+    img, _ = _draw(_thin_layers(), ColumnOptions(width_px=16, layer_text=True))
+    assert _text_rows(img, 110, int(108 + TEXT_GAP_PX - 1))
