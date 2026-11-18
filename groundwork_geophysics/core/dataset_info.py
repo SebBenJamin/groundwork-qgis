@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from .dataset_types import type_label
+
 INFO_FIELDS = ("method", "array", "spacing", "date", "software", "reference", "note")
-KIND_LABELS = {"ert_model": "ERT model", "ert_misfit": "ERT misfit",
-               "ert_measured": "ERT measured data"}
 
 
 def dataset_info(d) -> dict[str, str]:
@@ -29,7 +29,7 @@ def provenance_line(profile_name: str, d) -> str:
     """e.g. "Transect 3 · ERT model: BERT inversion (Pohle et al. 2025) · dipole-dipole,
     1 m spacing · RMS 8.0 %"; parts with nothing known are left out."""
     info = dataset_info(d)
-    head = KIND_LABELS.get(d.kind, d.kind)
+    head = type_label(d.kind)
     software = info.get("software", "")
     if software:
         head += f": {software}" + (f" ({info['reference']})" if info.get("reference") else "")

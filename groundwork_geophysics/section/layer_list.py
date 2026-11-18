@@ -9,6 +9,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, 
                                  QScrollArea, QSizePolicy, QSlider, QSplitter, QToolButton,
                                  QVBoxLayout, QWidget)
 
+from ..core.dataset_types import type_label
 from .data import SectionLayer, layer_name
 from .readout import format_value, unit_label
 from .scale_dialog import DisplayDialog, ramp_icon
@@ -110,7 +111,7 @@ class _LayerRow(QWidget):
         if style.scale is not None:
             self.scale_button.setIcon(ramp_icon(style.scale, 40, 10))
         d = layer.dataset
-        tip = f"{layer_name(d)} (version {d.version})\n{d.source_path}"
+        tip = f"{layer_name(d)} (version {d.version})\n{type_label(d.kind)}\n{d.source_path}"
         self.check.setToolTip(tip if ok else f"{tip}\n\n{layer.error}")
         self.check.setStyleSheet("" if ok else "color: #c00000;")
 

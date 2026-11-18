@@ -22,6 +22,9 @@ DEGREES_HINT = " The coordinates look like degrees: EPSG:4326 is chosen."
 #: role words under the column names in the preview
 VERTICAL_WORDS = {"elevation": "elevation", "depth": "depth", "local": "local height"}
 NOT_USED = "not used"
+#: quantities the combo names with their unit (the rest is "Other", typed by the user)
+FIXED_UNITS = {value: unit for _text, value, unit in QUANTITIES if value}
+QUANTITY_WORDS = {"resistivity": "resistivity", "p_velocity": "P-wave velocity"}
 
 
 def _row(*widgets, stretch_last: bool = False) -> QWidget:
@@ -137,9 +140,9 @@ class ModelColumnsBox(QGroupBox):
             self.crs_widget.setCrs(crs_of(columns.crs, self.store_crs))
             self.vertical_kind_combo.setCurrentIndex(
                 max(0, self.vertical_kind_combo.findData(columns.vertical_kind)))
-            other = columns.quantity != "resistivity"
+            other = columns.quantity not in FIXED_UNITS
             self.quantity_combo.setCurrentIndex(self.quantity_combo.findData("" if other
-                                                                             else "resistivity"))
+                                                                             else columns.quantity))
             self.quantity_name.setText(columns.quantity if other else "")
             self.unit_edit.setText(columns.unit if other else "")
             self.log10_check.setChecked(columns.log10)
@@ -155,7 +158,7 @@ class ModelColumnsBox(QGroupBox):
         crs = self.crs_widget.crs()
         crs_text = "" if crs.authid() == self.store_crs else \
             (crs.authid() or ("WKT:" + crs.toWkt() if crs.isValid() else ""))
-        resistivity = self.quantity_combo.currentData() == "resistivity"
+        fixed = self.quantity_combo.currentData() or ""
         return ModelColumns(
             position="map" if self.position_map.isChecked() else "distance",
             distance=self.distance_combo.currentData(),
@@ -164,14 +167,14 @@ class ModelColumnsBox(QGroupBox):
             vertical=self.vertical_combo.currentData(),
             vertical_kind=self.vertical_kind_combo.currentData() or "",
             value=self.value_combo.currentData(),
-            quantity="resistivity" if resistivity else self.quantity_name.text().strip(),
-            unit="ohm.m" if resistivity else self.unit_edit.text().strip(),
+            quantity=fixed or self.quantity_name.text().strip(),
+            unit=FIXED_UNITS[fixed] if fixed else self.unit_edit.text().strip(),
             log10=self.log10_check.isChecked())
 
     def roles(self) -> dict[int, str]:
         """Role word per assigned column, for the preview's second header line."""
         c = self.columns()
-        value = "resistivity" if c.quantity == "resistivity" else (c.quantity or "value")
+        value = QUANTITY_WORDS.get(c.quantity) or c.quantity or "value"
         pairs = ([("easting", c.easting), ("northing", c.northing)] if c.position == "map"
                  else [("distance", c.distance)])
         pairs += [(VERTICAL_WORDS.get(c.vertical_kind, "vertical"), c.vertical),
@@ -190,7 +193,7 @@ class ModelColumnsBox(QGroupBox):
     # -- state -------------------------------------------------------------------------------
     def _sync(self) -> None:
         on_map = self.position_map.isChecked()
-        other = self.quantity_combo.currentData() != "resistivity"
+        other = not self.quantity_combo.currentData()
         for widget, shown in ((self._distance_row, not on_map), (self._map_row, on_map),
                               (self._crs_row, on_map), (self._other_row, other)):
             widget.setVisible(shown)

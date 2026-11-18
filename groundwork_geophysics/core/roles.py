@@ -36,7 +36,8 @@ _ELEVATION = _HEADER_NAMES["z"] - {"z"}     # a bare z says nothing about its me
 
 VERTICAL_KINDS = (("Elevation", "elevation"), ("Depth below surface", "depth"),
                   ("Local height", "local"))
-QUANTITIES = (("Resistivity (ohm.m)", "resistivity", "ohm.m"), ("Other", "", ""))
+QUANTITIES = (("Resistivity (ohm.m)", "resistivity", "ohm.m"),
+              ("P-wave velocity (m/s)", "p_velocity", "m/s"), ("Other", "", ""))
 POSITIONS = ("distance", "map")
 WGS84 = "EPSG:4326"
 

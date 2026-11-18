@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.dataset_info import KIND_LABELS, dataset_info
+from ..core.dataset_info import dataset_info
+from ..core.dataset_types import method_label
 
 #: the logo picture's source: @wb_logo made absolute (relative to the project folder), or ''
 #: when it is unset or the file is missing, so the cell stays empty instead of a broken image
@@ -33,7 +34,7 @@ def _distinct(values) -> list[str]:
 def _method(d) -> str:
     info = dataset_info(d)
     typed = " · ".join(x for x in (info.get("method", ""), info.get("array", "")) if x)
-    return typed or KIND_LABELS.get(d.kind, d.kind).split(" ")[0]
+    return typed or method_label(d.kind)
 
 
 def _rms(d) -> str:
