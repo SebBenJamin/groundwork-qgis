@@ -39,3 +39,11 @@ def test_srt_type_is_linear_velocity():
 def test_velocity_quantity_offered():
     assert ("P-wave velocity (m/s)", "p_velocity", "m/s") in roles.QUANTITIES
     assert roles.QUANTITIES[-1] == ("Other", "", "")
+
+
+def test_method_of_a_profile():
+    from groundwork_geophysics.core.dataset_types import method_of
+    assert method_of(["srt_model"]) == "srt"
+    assert method_of(["srt_model", "ert_model"]) == "ert"        # mixed: ERT words stay
+    assert method_of([]) == "ert"
+    assert method_of(["ert_model"], ["srt"]) == "srt"            # its station set decides

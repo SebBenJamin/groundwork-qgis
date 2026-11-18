@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.dataset_info import dataset_info
-from ..core.dataset_types import method_label
+from ..core.dataset_types import method_label, method_of, station_words
 
 #: the logo picture's source: @wb_logo made absolute (relative to the project folder), or ''
 #: when it is unset or the file is missing, so the cell stays empty instead of a broken image
@@ -52,8 +52,9 @@ def _survey(datasets: list, fits: list, crs_authid: str, crs_description: str) -
         return _shared([i.get(key, "") for i in infos])
 
     lines = []
+    word = station_words(method_of([d.kind for d in datasets]))[0]
     first = " · ".join(x for x in (f"Acquired {shared('date')}" if shared("date") else "",
-                                    f"electrode spacing {shared('spacing')}"
+                                    f"{word} spacing {shared('spacing')}"
                                     if shared("spacing") else "") if x)
     if first:
         lines.append(first[0].upper() + first[1:])

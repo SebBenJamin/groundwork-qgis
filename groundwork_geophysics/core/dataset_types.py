@@ -58,6 +58,16 @@ def model_kind(method: str) -> str:
         raise ValueError(f"unknown method {method!r}") from None
 
 
+def method_of(kinds, station_methods=()) -> str:
+    """A profile's method code: its first station set's, else "srt" when every dataset is a
+    refraction one, else "ert" (mixed or no data keep the ERT words)."""
+    for m in station_methods:
+        if m:
+            return m
+    kinds = list(kinds)
+    return "srt" if kinds and all(k.startswith("srt_") for k in kinds) else "ert"
+
+
 def station_words(method: str) -> tuple[str, str]:
     """(singular, plural) of what a method's stations are called."""
     return ("geophone", "geophones") if method == "srt" else ("electrode", "electrodes")

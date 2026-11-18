@@ -661,6 +661,7 @@ def test_velocity_table_with_a_coverage_column(qgis_app, make_dialog, project_st
     [d] = st.datasets(prof.id)
     assert (d.quantity, d.unit) == ("p_velocity", "m/s")
     assert d.reader_options["columns"]["coverage"] == 3
+    assert d.kind == "srt_model"                      # the velocity quantity proposes it
 
 
 def _refrapy_copy(tmp_path):
@@ -728,3 +729,17 @@ def test_summary_values_are_plain_numbers_with_the_unit(qgis_app, tmp_path):
     text = describe(readers.read(_refrapy_copy(tmp_path)), "elevation")
     assert "e+0" not in text
     assert text.endswith("m/s") and "1430" in text.replace(".", "").replace(",", "")
+
+
+def test_method_follows_the_next_file(qgis_app, make_dialog, project_store, selected_line,
+                                      tmp_path):
+    """A file that names no method gets the method of what it holds, never the previous
+    file's: a resistivity model after a Refrapy file is ERT again."""
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_refrapy_copy(tmp_path))
+    assert dlg.method_combo.currentData() == "srt"
+    res = tmp_path / "f001_res.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", res)
+    dlg.set_file(res)
+    assert dlg.method_combo.currentData() == "ert"

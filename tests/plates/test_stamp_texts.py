@@ -74,3 +74,9 @@ def test_two_models_one_without_info_shows_only_what_both_share():
     t = stamp_texts(_plate(), ["T1", "T2"], [a, _dataset()], [(500, 2.0), (500, 2.0)],
                     "EPSG:25833", "")
     assert "Acquired" not in t["survey"]
+
+
+def test_refraction_spacing_is_a_geophone_spacing():
+    d = with_info(_dataset("srt_model"), {"spacing": "2 m"})
+    survey = stamp_texts(_plate(), ["L10"], [d], [(500, 2.0)], "EPSG:32617", "")["survey"]
+    assert survey.splitlines()[0] == "Geophone spacing 2 m"

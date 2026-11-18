@@ -19,9 +19,16 @@ from .section_mesh import SectionMesh
 #: in-line sources, strongest first
 SOURCES = ("distances", "readings", "spacing", "guessed")
 
-KIND_TEXT = {"readings": "electrodes from the readings file",
-             "spacing": "electrodes from a spacing of {spacing} m",
-             "guessed": "electrodes guessed from the model"}
+KIND_TEXT = {"readings": "{words} from the readings file",
+             "spacing": "{words} from a spacing of {spacing} m",
+             "guessed": "{words} guessed from the model"}
+
+
+def kind_text(kind: str, method: str, spacing: str = "") -> str:
+    """The section's line on where its stations come from, in the method's words
+    ("electrodes" for ERT, "geophones" for refraction)."""
+    from .dataset_types import station_words
+    return KIND_TEXT[kind].format(words=station_words(method)[1], spacing=spacing)
 
 
 def _usable(spacing: float | None) -> bool:

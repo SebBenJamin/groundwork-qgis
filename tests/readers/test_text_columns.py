@@ -178,3 +178,19 @@ def test_text_table_with_coverage(tmp_path):
                                     value=2, quantity="p_velocity", unit="m/s"))
     assert without.mesh.coverage is None
     assert np.array_equal(without.mesh.values, r.mesh.values)
+
+
+def test_coverage_column_never_drops_cells(tmp_path):
+    """A row with -inf (no ray) or no coverage keeps its cell: the coverage is optional."""
+    p = tmp_path / "vel.txt"
+    rows = [f"{x} {z} {500 + x + z} {1 + x / 10}" for z in (100, 98, 96) for x in (1, 3, 5, 7)]
+    rows[0] = "1 100 601 -inf"
+    rows[1] = "3 100 603"                               # no coverage at all
+    p.write_text("\n".join(rows) + "\n")
+    cols = ModelColumns(distance=0, vertical=1, vertical_kind="elevation", value=2,
+                        coverage=3, quantity="p_velocity", unit="m/s")
+    r = _read(p, cols)
+    assert r.provenance["n_rows"] == 12 and r.provenance["n_skipped"] == 0
+    c = r.mesh.coverage
+    assert np.isnan(c).sum() == 1                       # the blank one: unknown
+    assert np.nanmin(c) < 1.0                           # -inf: below the lowest (1.1)

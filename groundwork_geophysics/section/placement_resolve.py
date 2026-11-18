@@ -30,8 +30,9 @@ from ..core.point_names import station_label
 GUESS_REJECTED_NOTE = ("Known points not used: the station spacing guessed from the model "
                        "does not fit them; type the station spacing in Profile Properties")
 NOT_USED_NOTE = "Known points not used: {reason}"
-NO_ELECTRODES_NOTE = ("No electrode positions: import them or type the spacing in Profile "
-                      "Properties")
+#: ``word``: "electrode", or "geophone" for a refraction profile
+NO_STATIONS_NOTE = "No {word} positions: import them or type the spacing in Profile Properties"
+NO_ELECTRODES_NOTE = NO_STATIONS_NOTE.format(word="electrode")
 #: metres: offsets and gaps of invented stations agree to this (float noise on UTM lines)
 INVENTED_TOL = 1e-6
 

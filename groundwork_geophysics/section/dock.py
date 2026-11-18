@@ -23,7 +23,7 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphi
                                  QVBoxLayout,
                                  QWidget)
 
-from ..core.layout import KIND_TEXT
+from ..core.layout import KIND_TEXT, kind_text
 from ..core.numbers import fmt_trim
 from ..ids import LEGACY_ID
 from .data import identify_layers, layer_name
@@ -493,8 +493,8 @@ class SectionDock(QDockWidget):
             found = self.provider.electrodes(pid)
             if found is not None and found.kind in KIND_TEXT:
                 spacing = self._profile.metadata.get("electrode_spacing")
-                parts.append(KIND_TEXT[found.kind].format(
-                    spacing="" if spacing is None else fmt_trim(float(spacing))))
+                parts.append(kind_text(found.kind, self.provider.station_method(pid),
+                                       "" if spacing is None else fmt_trim(float(spacing))))
             if note := self.provider.placement_note(pid):
                 parts.append(note)
             if self.provider.is_local(pid):

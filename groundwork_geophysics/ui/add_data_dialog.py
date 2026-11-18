@@ -32,7 +32,7 @@ from ..ids import LEGACY_ID
 from ..readers.errors import plain_error
 from ..readers.text_columns import map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
-from ..section.placement_resolve import ProfileLayout, resolve
+from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .fit_line import WARNING_STYLE, fit_line, show_fit
 from ..core.dataset_types import METHODS, READINGS_KINDS, station_words
@@ -66,7 +66,6 @@ GUESSED_ELECTRODES = ("{Words}: none in this file; guessed from the top row of c
 NAMED_STATIONS = ("{Words}: taken from the shot and geophone points saved next to the file: "
                   "{n}, about {spacing} m apart. Shown as a guess until real positions are "
                   "imported.")
-NO_STATIONS_NOTE = "No {word} positions: import them or type the spacing in Profile Properties"
 METHOD_TIP = "Method of the data, and of the station set made from the positions"
 READINGS_METHOD_TIP = "Measured ERT data: the method is ERT"
 ERROR_STYLE = "color: #b00020;"
@@ -171,6 +170,7 @@ class AddDataDialog(QDialog):
         self._pending_columns = None                # remembered assignment for the next table
         self._result = self._read_key = None        # the whole file as read
         self._z_preset = None                       # (path, reader) whose z hint is shown
+        self._method_for = None                     # (path, quantity) of a table's method
         self._line_key, self._line, self._line_error = None, None, ""
         self._on_map_shown = False
         self._zero_chosen = False                   # the user chose where distance 0 lies
@@ -411,11 +411,15 @@ class AddDataDialog(QDialog):
             self.z_combo.blockSignals(True)         # unknown -> choose
             self.z_combo.setCurrentIndex(max(0, self.z_combo.findData(self._result.z_kind)))
             self.z_combo.blockSignals(False)
-            self._preset_method(self._result.provenance)
+            self._preset_method(self._result.provenance, self._result.mesh.quantity)
+            self._method_for = None
             self._z_preset = (path, reader)
             self._read_key = self._key(profile)
-        elif self._is_table():
-            self._preset_method({})
+        elif self._is_table():                      # proposed again only when the file or
+            quantity = self.columns_group.columns().quantity   # its quantity changes
+            key = (path, quantity)
+            self._preset_method({}, quantity, propose=key != self._method_for)
+            self._method_for = key
         if self._key(profile) != self._read_key:          # a text table: its sample only
             self._result, self._read_key = None, None
             self._result = read_for(self.store, profile, path, reader, self._reader_options(),
@@ -647,13 +651,16 @@ class AddDataDialog(QDialog):
             layout.guess, layout.guessed_spacing = guess, float(np.median(np.diff(guess)))
         return layout
 
-    def _preset_method(self, provenance: dict) -> None:
-        """The method the file says (Refrapy, a velocity VTK); measured ERT data fix it to
-        ERT. Silent: the preview follows in the same refresh."""
+    def _preset_method(self, provenance: dict, quantity: str, propose: bool = True) -> None:
+        """The method the file says (Refrapy, a velocity VTK), else the one of what it holds
+        (P-wave velocity: refraction, otherwise ERT), never the previous file's; measured ERT
+        data fix it to ERT. ``propose`` False only enables the row. Silent: the preview
+        follows in the same refresh."""
         readings = provenance.get("kind") in READINGS_KINDS
-        proposed = "ert" if readings else provenance.get("method")
+        proposed = "ert" if readings else (provenance.get("method") or
+                                           ("srt" if quantity == "p_velocity" else "ert"))
         self.method_combo.blockSignals(True)
-        if proposed:
+        if propose or readings:
             self.method_combo.setCurrentIndex(max(0, self.method_combo.findData(proposed)))
         self.method_combo.setEnabled(not readings)
         self.method_combo.setToolTip(READINGS_METHOD_TIP if readings else METHOD_TIP)

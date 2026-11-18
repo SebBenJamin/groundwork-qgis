@@ -22,6 +22,7 @@ from ..readers.errors import plain_error
 from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
+from ..core.dataset_types import method_of, station_words
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport
@@ -29,7 +30,7 @@ from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
-from .placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, Resolution, resolve
+from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
 from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local_surface,
                          station_line, station_marks, topo_set)
 
@@ -836,6 +837,11 @@ class SectionDataProvider:
         return self._layout_sources(self._profile(profile_id),
                                     self.store.datasets(profile_id)).layout
 
+    def station_method(self, profile_id: str) -> str:
+        """The profile's method code ("ert", "srt"), for the words its stations get."""
+        return method_of([d.kind for d in self.store.datasets(profile_id)],
+                         [s.method for s in self.store.station_sets(profile_id)])
+
     def electrodes(self, profile_id: str) -> Electrodes | None:
         """The profile's first station set ("imported"); without one, electrodes derived
         from the readings file, the typed spacing or the model's top (never stored); None
@@ -887,7 +893,7 @@ class SectionDataProvider:
             if r.note:
                 return r.note
         if not sets and self.electrodes(profile_id) is None:
-            return NO_ELECTRODES_NOTE
+            return NO_STATIONS_NOTE.format(word=station_words(self.station_method(profile_id))[0])
         return ""
 
     # -- layers ----------------------------------------------------------------------------

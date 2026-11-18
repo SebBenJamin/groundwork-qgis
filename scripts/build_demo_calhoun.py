@@ -132,7 +132,7 @@ def build_workbench(stations: dict, out: Path = DEMO) -> Path:
                     provenance, name=f"{name} Vp (Flinchum et al. picks, pyGIMLi as Refrainv)",
                     quantity=result.mesh.quantity, unit=result.mesh.unit)
         store.save_dataset(with_info(d, {
-            "method": "Seismic refraction", "spacing": "2 m (every 2nd geophone)",
+            "method": "Seismic refraction", "spacing": "2 m",
             "software": "pyGIMLi as Refrapy's Refrainv",
             "reference": "picks: Flinchum, HydroShare"}))
     return path
