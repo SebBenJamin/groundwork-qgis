@@ -207,11 +207,20 @@ class PositionColumns:
         """The assigned columns: easting, northing, elevation, number, in-line distance."""
         return [c for _, c in self._roles() if c is not None]
 
+    def names_number(self, table) -> bool:
+        """The number column holds text (all names, or numbers with a few named points such
+        as ``Base``): the numbers are read from point names, so no row is dropped unseen."""
+        n = self.number
+        return n is not None and 0 <= n < table.n_columns and table.has_text(n)
+
     def problems(self, table) -> list[str]:
-        """What is missing or wrong, as messages for the user; empty when complete."""
+        """What is missing or wrong, as messages for the user; empty when complete. Only the
+        number column may be a text column (of point names)."""
         required = "Choose the easting and northing columns"
+        names = self.names_number(table)
         return _review(table, [(label, col, required if label in ("easting", "northing")
-                                else None, True) for label, col in self._roles()])
+                                else None, True) for label, col in self._roles()
+                               if not (names and label == "number")])
 
 
 class _Columns:
@@ -340,6 +349,30 @@ def guess_model_columns(table) -> ModelColumns:
                         value=value)
 
 
+#: header words of a column of point names (``ERT03_15``), whose numbers are the electrodes
+NAME_HEADERS = {"name", "punkt", "point", "pkt", "pt", "bez", "bezeichnung", "label", "id",
+                "station", "nr", "number"}
+_DATE = re.compile(r"^\d{1,4}[-./]\d{1,2}[-./]\d{1,4}")
+
+
+def _name_column(table, cols: _Columns, taken=()) -> int | None:
+    """A column of point names: a column with text cells (also numbers with a few named
+    points) by header word, else the first text column where more than half of the filled
+    cells hold a digit and no cell looks like a date or a time."""
+    text = [c for c in range(table.n_columns) if c not in cols.numeric]
+    mixed = [c for c in range(table.n_columns) if c not in taken and table.has_text(c)]
+    named = cols.named(NAME_HEADERS, mixed)
+    if named is not None:
+        return named
+    for c in text:
+        cells = [row[c].strip() for row in table.cells if row[c].strip()]
+        if not cells or any(":" in v or _DATE.match(v) for v in cells):
+            continue
+        if sum(any(ch.isdigit() for ch in v) for v in cells) * 2 > len(cells):
+            return c
+    return None
+
+
 def guess_position_columns(table) -> PositionColumns:
     """First guess of a positions table's roles from header names; easting and northing
     otherwise from projected-looking values, else by position as ``guess_columns`` does.
@@ -364,5 +397,7 @@ def guess_position_columns(table) -> PositionColumns:
             after = [c for c in nums if c > north]
             number = before[-1] if before and cols.whole(before[-1]) else None
             elevation = after[0] if after else None
+    if number is None:
+        number = _name_column(table, cols, {east, north, elevation, found["inline"]})
     return PositionColumns(easting=east, northing=north, crs=cols.crs(east, north),
                            elevation=elevation, number=number, inline=found["inline"])

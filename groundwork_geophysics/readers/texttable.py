@@ -81,6 +81,11 @@ class TextTable:
         """More than half of the rows hold a number in ``col``."""
         return bool(self.n_rows) and int(np.isfinite(self.numeric(col)).sum()) * 2 > self.n_rows
 
+    def has_text(self, col: int) -> bool:
+        """Some filled cell of ``col`` is not a number (``Base`` among point numbers)."""
+        values = self.numeric(col)
+        return any(row[col].strip() and not np.isfinite(v) for row, v in zip(self.cells, values))
+
 
 def _content_lines(text: str, skip: int) -> list[tuple[int, str]]:
     out = []

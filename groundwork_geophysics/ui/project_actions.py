@@ -137,9 +137,15 @@ def protect_layers(store: ProjectStore, project: QgsProject) -> None:
         layer.setReadOnly(True)
 
 
-def _labels(field: str, size: float, enabled: bool, placement=None) -> tuple:
+#: a station's map label: its point name, else its number
+STATION_LABEL = "coalesce(nullif(\"name\", ''), to_string(\"number\"))"
+
+
+def _labels(field: str, size: float, enabled: bool, placement=None,
+            expression: bool = False) -> tuple:
     settings = QgsPalLayerSettings()
     settings.fieldName = field
+    settings.isExpression = expression
     if placement is not None:
         settings.placement = placement
     fmt = QgsTextFormat()
@@ -161,7 +167,7 @@ def style_layer(layer: QgsVectorLayer, name: str) -> None:
     else:
         symbol = QgsMarkerSymbol.createSimple({"name": "circle", "color": "255,255,255",
                                                "outline_color": "20,60,160", "size": "1.4"})
-        labeling, enabled = _labels("number", 7.0, False)
+        labeling, enabled = _labels(STATION_LABEL, 7.0, False, expression=True)
     layer.setRenderer(QgsSingleSymbolRenderer(symbol))
     layer.setLabeling(labeling)
     layer.setLabelsEnabled(enabled)
@@ -187,11 +193,11 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
 
 
 def reload_stale_layers(store: ProjectStore, project: QgsProject) -> int:
-    """0.9 gave stations an ``inline`` field (store schema 3). A project's stations layer
-    loaded from the file before the store was updated still lists the old fields: reload it.
-    Idempotent; returns the number of layers reloaded."""
+    """0.9 gave stations an ``inline`` field (store schema 3), 0.12 a ``name`` field (schema
+    4). A project's stations layer loaded from the file before the store was updated still
+    lists the old fields: reload it. Idempotent; returns the number of layers reloaded."""
     layer = store_layers(store, project).get("stations")
-    if layer is None or layer.fields().indexOf("inline") >= 0:
+    if layer is None or all(layer.fields().indexOf(f) >= 0 for f in ("inline", "name")):
         return 0
     layer.dataProvider().reloadData()
     layer.reload()

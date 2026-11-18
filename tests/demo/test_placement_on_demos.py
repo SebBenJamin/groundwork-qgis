@@ -74,7 +74,8 @@ def test_sparse_known_points_land_like_the_full_survey(qgis_app, tmp_path, demo,
     keep = np.unique(np.r_[order[::5], order[-1]])
     st.save_station_set(replace(
         full, numbers=full.numbers[keep], xyz=full.xyz[keep], chainage=full.chainage[keep],
-        offset=full.offset[keep], inline=np.full(len(keep), np.nan)))
+        offset=full.offset[keep], inline=np.full(len(keep), np.nan),
+        names=[full.names[i] for i in keep]))
     sparse, fit_sparse = placed_x()
     assert fit_full is not None and fit_sparse is not None, "the spacing must pin the model"
     worst = float(np.abs(sparse - surveyed).max())

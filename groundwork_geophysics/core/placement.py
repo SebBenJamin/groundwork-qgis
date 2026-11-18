@@ -15,10 +15,12 @@ import numpy as np
 @dataclass(eq=False)
 class Positions:
     """Station positions read with a dataset: map coordinates and height, and optionally the
-    station numbers and each station's distance in the file's in-line metres."""
+    station numbers, each station's distance in the file's in-line metres and its point
+    name ("" where it has none)."""
     xyz: np.ndarray
     numbers: np.ndarray | None = None
     inline: np.ndarray | None = None
+    names: list[str] | None = None
 
 
 @dataclass(eq=False)

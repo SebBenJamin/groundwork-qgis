@@ -32,6 +32,26 @@ When the line moves:
 
 Profile Properties… replaces Rename Profile….
 
+## Points with names instead of numbers
+
+Field GPS files often name their points (`ERT03_15`, `E15`, `15a`, `Base`). In "Where the Line Runs" (New Profile, Add Data and Profile Properties) the **Number** also lists text columns, marked **(names)**, and a point layer's text fields. A column of numbers with a few named points among them (`Base`, `GCP3`) counts as names too, so those points show up in the list instead of being dropped.
+
+![New Profile with a file of point names: the Number shows "Name (names)", parts numbered 1 and 2](../../images/howto/electrode-names.png)
+
+| | Part | What it is for |
+|---|---|---|
+| ① | Number from name | Which number in a name is the electrode: the **last** (`ERT03_15` → 15) or the **first** (`15_2` → 15) |
+| ② | Electrodes from Names | Every point as read, the ones to check first; the title counts them |
+
+1. Choose the column of names as **Number**. A column called Name, Punkt, Point, Label or similar is chosen for you.
+2. Choose ① the last or the first number.
+3. Open ② **Electrodes from Names**. The points to check come first:
+    - *not an electrode*: no number in the name. The point is left out.
+    - *measured twice, later row used*: two points read as the same number. The later one in the file is used.
+4. Type another number to correct a row, or clear it to leave the point out.
+
+Your file is never changed, and the corrections are not kept: reading the file again, for example after cleaning it, starts afresh. The names are stored with the stations. The fit report names stations by them, and in new projects the stations layer's labels do too.
+
 ## Known points and the fit report
 
 A **known point** is a surveyed position whose distance in the model file is known. A station gets its distance from the first of these that has one:

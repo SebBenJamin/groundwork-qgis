@@ -170,4 +170,5 @@ def test_pictures_cover_the_dialog_pages():
         "profile-properties": "user/howto/placement.md",
         "context-layers-boreholes": "user/howto/boreholes.md",
         "plates": "user/howto/plates.md",
+        "electrode-names": "user/howto/placement.md",
     }

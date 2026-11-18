@@ -141,15 +141,18 @@ def test_typed_spacing_is_returned(qgis_app, fake_iface, project_store, make_wid
 
 
 def test_text_column_cannot_be_a_coordinate(qgis_app, fake_iface, project_store, make_widget):
-    # the remark column is not offered
+    # the remark column is not offered as a coordinate; the Number offers it as point names
     from qgis.PyQt.QtWidgets import QComboBox
 
     w = make_widget()
     w.set_positions_file(WILD / "positions_sparse.csv")
-    for role in ("easting", "northing", "elevation", "number", "inline"):
+    for role in ("easting", "northing", "elevation", "inline"):
         combo = w.findChild(QComboBox, f"role_{role}")
         assert combo.findData(4) == -1, role
         assert combo.findText("remark") == -1, role
+    number = w.findChild(QComboBox, "role_number")
+    assert number.itemText(number.findData(4)) == "remark (names)"
+    assert number.currentData() != 4                # the numeric number column stays chosen
     assert w.findChild(QComboBox, "role_easting").currentData() == 1
 
 

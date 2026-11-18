@@ -48,6 +48,8 @@ class StationSet:
     warnings: list[str] = field(default_factory=list)
     #: each station's distance in the model file's own in-line metres; NaN where unknown
     inline: np.ndarray | None = None
+    #: each station's point name from the positions it was read from; "" where none
+    names: list[str] | None = None
 
     def __post_init__(self):
         n = len(self.numbers)
@@ -57,6 +59,12 @@ class StationSet:
             self.inline = np.asarray(self.inline, dtype=float)
             if self.inline.shape != (n,):
                 raise ValueError(f"inline has {self.inline.size} values for {n} stations")
+        if self.names is None:
+            self.names = [""] * n
+        else:
+            self.names = ["" if v is None else str(v) for v in self.names]
+            if len(self.names) != n:
+                raise ValueError(f"names has {len(self.names)} values for {n} stations")
 
     @property
     def direction(self) -> int:
@@ -121,9 +129,11 @@ def _as_xyz(xyz: np.ndarray) -> np.ndarray:
 
 def attach_station_set(profile: Profile, name: str, method: str, xyz: np.ndarray,
                        numbers: np.ndarray | None = None, tolerance: float = 5.0,
-                       inline: np.ndarray | None = None) -> StationSet:
+                       inline: np.ndarray | None = None,
+                       names: list[str] | None = None) -> StationSet:
     """Project stations onto ``profile``; warn about those further than ``tolerance`` off it.
-    ``inline``: each station's distance in the model file's own metres (NaN where unknown)."""
+    ``inline``: each station's distance in the model file's own metres (NaN where unknown);
+    ``names``: each station's point name ("" where none)."""
     xyz = _as_xyz(xyz)
     nums = np.arange(1, len(xyz) + 1) if numbers is None else np.asarray(numbers, dtype=int)
     if len(nums) != len(xyz):
@@ -133,7 +143,7 @@ def attach_station_set(profile: Profile, name: str, method: str, xyz: np.ndarray
                 for n, o in zip(nums, off) if abs(o) > tolerance]
     metre0 = float(s[np.argmin(nums)]) if len(nums) else 0.0
     return StationSet(_new_id(), profile.id, name, method, nums, xyz, s, off, metre0, warnings,
-                      inline)
+                      inline, names)
 
 
 def profile_from_stations(name: str, crs_authid: str, xyz: np.ndarray,
@@ -163,8 +173,8 @@ def profile_from_polyline(name: str, crs_authid: str, xy: np.ndarray,
 
 
 def _ordered(positions: Positions) -> tuple:
-    """(order, xyz, numbers, inline) of the positions in ``lines.order_of`` order; numbers
-    default to 1..n in that order. Raises ValueError for a repeated station number."""
+    """(order, xyz, numbers, inline, names) of the positions in ``lines.order_of`` order;
+    numbers default to 1..n in that order. Raises ValueError for a repeated station number."""
     xyz = _as_xyz(positions.xyz)
     n = len(xyz)
     if positions.numbers is not None:
@@ -179,27 +189,32 @@ def _ordered(positions: Positions) -> tuple:
     inline = None if positions.inline is None else np.asarray(positions.inline, dtype=float)
     if inline is not None and inline.shape != (n,):
         raise ValueError(f"inline has {inline.size} values for {n} stations")
+    names = None if positions.names is None else list(positions.names)
+    if names is not None and len(names) != n:
+        raise ValueError(f"names has {len(names)} values for {n} stations")
     order = lines.order_of(positions)
     numbers = np.arange(1, n + 1) if positions.numbers is None else numbers[order]
-    return order, xyz[order], numbers, None if inline is None else inline[order]
+    return (order, xyz[order], numbers, None if inline is None else inline[order],
+            None if names is None else [names[i] for i in order])
 
 
 def profile_from_positions(name: str, crs_authid: str, positions: Positions,
                            method: str = "ert") -> tuple[Profile, StationSet]:
     """Profile through the positions, ordered by number, else by in-line distance, else as
     given, with a station set on them that keeps their in-line distances."""
-    order, xyz, numbers, inline = _ordered(positions)
+    order, xyz, numbers, inline, names = _ordered(positions)
     line = lines.line_through(xyz[:, :2], rows=order + 1)
     profile = Profile(_new_id(), name, line, crs_authid)
-    return profile, attach_station_set(profile, name, method, xyz, numbers, inline=inline)
+    return profile, attach_station_set(profile, name, method, xyz, numbers, inline=inline,
+                                       names=names)
 
 
 def attach_positions(profile: Profile, name: str, method: str, positions: Positions,
                      tolerance: float = 5.0) -> StationSet:
     """Station set from the positions, projected onto ``profile`` (whose line is kept), with
     their in-line distances; warns about stations further than ``tolerance`` off the line."""
-    _, xyz, numbers, inline = _ordered(positions)
-    return attach_station_set(profile, name, method, xyz, numbers, tolerance, inline)
+    _, xyz, numbers, inline, names = _ordered(positions)
+    return attach_station_set(profile, name, method, xyz, numbers, tolerance, inline, names)
 
 
 def profile_from_line(name: str, crs_authid: str, xy: np.ndarray, spacing: float,
