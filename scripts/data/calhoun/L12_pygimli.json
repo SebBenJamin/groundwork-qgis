@@ -1,0 +1,30 @@
+{
+ "line": "L12",
+ "n_picks": 1381,
+ "n_cells": 1946,
+ "chi2": 0.7639096637711744,
+ "relrms_percent": 2.6220577747144644,
+ "absrms_ms": 0.9381447639536618,
+ "minutes": 0.6,
+ "pygimli": "1.2.6",
+ "mesh": {
+  "paraDepth": 60.0,
+  "paraDX": 1.5,
+  "paraMaxCellSize": 20.0,
+  "quality": 32.0
+ },
+ "invert": {
+  "lam": 100.0,
+  "zWeight": 0.1,
+  "useGradient": true,
+  "vTop": 400.0,
+  "vBottom": 4500.0,
+  "maxIter": 15,
+  "limits": [
+   0.00014285714285714287,
+   0.01
+  ],
+  "secNodes": 3
+ },
+ "geophone_step_m": 2
+}
