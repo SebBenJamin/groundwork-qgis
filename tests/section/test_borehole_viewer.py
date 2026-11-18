@@ -501,3 +501,36 @@ def test_old_project_ve_kept(fake_dock, qgis_app):
             if x is not None:
                 x.close()
                 x.deleteLater()
+
+
+# -- labels left out are named ---------------------------------------------------------------------
+def _close_together(fake_dock):
+    from groundwork_geophysics.core.context import ContextItems
+    fake_dock.provider.items["close"] = ContextItems(points=[
+        _bh(10.0 + 0.3 * i, f"RK1{i}", 20.0, [(0, 2, "sand", None)]) for i in range(3)])
+
+
+def test_dropped_labels_are_named(fake_dock, qgis_app):
+    _close_together(fake_dock)
+    v = _fresh(fake_dock, qgis_app, pid="close",
+               options={"mode": "true", "axis": "elevation",
+                        "labels": {"name": True, "elevation": True, "distance": True}})
+    try:
+        v.canvas.render_image()
+        dropped = v.canvas.dropped_labels
+        assert dropped
+        assert f"Labels left out: {', '.join(dropped)}" in v.status.text()
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_notes_once(viewer):
+    viewer.set_axis("elevation")
+    viewer.canvas.render_image()
+    rect = dict((p.label, r) for p, r in viewer.canvas.column_rects)["RK15"]
+    viewer.show_readout(viewer.canvas.readout_text(rect.center().x(), rect.center().y()))
+    viewer.canvas.render_image()
+    viewer.canvas.render_image()
+    text = viewer.status.text()
+    assert text.count("No height") == 1 and text.startswith("RK15")

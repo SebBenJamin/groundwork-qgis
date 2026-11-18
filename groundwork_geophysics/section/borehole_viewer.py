@@ -66,6 +66,7 @@ class BoreholeCanvas(QWidget):
         self.viewer = viewer
         self.transform: ViewTransform | None = None
         self.column_rects: list = []          # [(ProjectedPoint, QRectF)] of the last paint
+        self.dropped_labels: list[str] = []   # labels of the last paint left out for want of room
         self._drag = None
         self._press = None
         self.setMouseTracking(True)
@@ -181,6 +182,7 @@ class BoreholeCanvas(QWidget):
             hint = self.empty_hint()
             if hint:
                 self.column_rects = []
+                self.dropped_labels = []
                 painter.setPen(QPen(QColor(*AXIS_RGB)))
                 painter.drawText(self.rect().adjusted(24, 24, -24, -24),
                                  int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap),
@@ -283,7 +285,11 @@ class BoreholeCanvas(QWidget):
         highlight = next((i for i, item in enumerate(pending) if item[4]), None)
         block = max((len(lines) for lines, _x, _y in blocks), default=1) * fm.height()
         rows = max(1, int((LABEL_PX - 10) // max(block, 1)))
-        for (lines, x, y_top), row in zip(blocks, choose_viewer_labels(spans, highlight, rows)):
+        self.dropped_labels = []
+        for (lines, x, y_top), row, item in zip(blocks, choose_viewer_labels(spans, highlight, rows),
+                                                pending):
+            if row is None and lines:
+                self.dropped_labels.append(item[0].label)
             if row is None or not lines:
                 continue
             y = y_top - 10 - row * block
@@ -739,7 +745,7 @@ class BoreholeViewer(QWidget):
 
     def notes(self) -> list[str]:
         """What the status line says besides the hover readout: boreholes without a height,
-        columns out of view (even spacing)."""
+        columns out of view (even spacing), labels left out for want of room."""
         out = []
         missing = [p.label for p in self.boreholes
                    if self.axis == "elevation" and self.canvas._z_top(p) is None]
@@ -752,6 +758,8 @@ class BoreholeViewer(QWidget):
         if left:
             out.append("1 more borehole to the left" if left == 1 else
                        f"{left} more boreholes to the left")
+        if self.canvas.dropped_labels:
+            out.append(f"Labels left out: {', '.join(self.canvas.dropped_labels)}")
         return out
 
     def show_readout(self, lines: list[str]) -> None:
