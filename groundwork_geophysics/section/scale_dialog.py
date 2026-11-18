@@ -282,7 +282,7 @@ class DisplayDialog(ColorScaleDialog):
         self.threshold_spin.setToolTip("In the file's coverage units (often log10)")
         threshold = style.coverage_threshold
         if threshold is None and coverage is not None:
-            threshold = default_threshold(coverage)
+            threshold = default_threshold(coverage, getattr(mesh, "coverage_cut", None))
         self.threshold_spin.setValue(0.0 if threshold is None else threshold)
         self.fade_radio = QRadioButton("Fade")
         self.blank_radio = QRadioButton("Blank")

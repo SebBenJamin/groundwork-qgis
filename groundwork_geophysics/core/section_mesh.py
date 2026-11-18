@@ -111,6 +111,9 @@ class SectionMesh:
     #: shown for each; None for model meshes
     readings: object | None = field(default=None, repr=False, compare=False)
     point_values: np.ndarray | None = field(default=None, repr=False, compare=False)
+    #: the coverage the source program itself takes as resolved (default fade threshold);
+    #: None when the file does not say
+    coverage_cut: float | None = field(default=None, repr=False, compare=False)
     _bbox: np.ndarray | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -131,15 +134,22 @@ class SectionMesh:
 
     # -- construction ---------------------------------------------------
     @classmethod
-    def from_points(cls, x, z, v, max_edge: float | None = None, **kw) -> "SectionMesh":
+    def from_points(cls, x, z, v, max_edge: float | None = None, coverage=None,
+                    **kw) -> "SectionMesh":
         """Delaunay mesh of scattered points. With an explicit max_edge, triangles with
         a longer edge are dropped. By default a local rule is used: a triangle is
         dropped when its longest edge exceeds 3 x the largest per-vertex scale of its
         corners (median length of the Delaunay edges at that vertex). Either way,
-        near-collinear slivers on the boundary (convex-hull filling) are then peeled off."""
+        near-collinear slivers on the boundary (convex-hull filling) are then peeled off.
+        ``coverage`` (one value per point): a triangle gets the lowest of its corners (nan
+        when one is nan), as a triangle touching an unresolved point is not resolved."""
         x, z, v = (np.asarray(a, dtype=float).ravel() for a in (x, z, v))
         if not (x.size == z.size == v.size):
             raise ValueError("x, z and v must have the same length")
+        if coverage is not None:
+            coverage = np.asarray(coverage, dtype=float).ravel()
+            if coverage.size != x.size:
+                raise ValueError("coverage must have one value per point")
         if x.size < 3:
             raise ValueError("Need at least 3 points to build a mesh")
         pts = np.column_stack([x, z])
@@ -165,24 +175,35 @@ class SectionMesh:
         vv = v[simplices]
         vals = np.exp(np.log(vv).mean(axis=1)) if quantity == "resistivity" else vv.mean(axis=1)
         cells = np.column_stack([simplices, np.full(len(simplices), -1)])
+        if coverage is not None:
+            kw["coverage"] = coverage[simplices].min(axis=1)     # nan propagates
         return cls(pts, cells, vals, **kw)
 
     @classmethod
-    def from_cell_centres(cls, x, z, v, z_kind: str = "unknown",
+    def from_cell_centres(cls, x, z, v, z_kind: str = "unknown", coverage=None,
                           **kw) -> tuple["SectionMesh", str]:
         """Mesh of a model given as one value per cell centre: ``(mesh, reconstruction)``.
 
         Centres in rows of constant z (else columns of constant x) become their real
         rectangular cells (``core.cell_centres``); a nan value keeps its quad, without
         colour. For a depth model the top row's upper edge is the surface (depth 0).
-        Otherwise the finite points are triangulated by ``from_points``."""
+        Otherwise the finite points are triangulated by ``from_points``. ``coverage``: one
+        value per centre, kept per cell."""
         x, z, v = (np.asarray(a, dtype=float).ravel() for a in (x, z, v))
         if not (x.size == z.size == v.size):
             raise ValueError("x, z and v must have the same length")
+        if coverage is not None:
+            coverage = np.asarray(coverage, dtype=float).ravel()
+            if coverage.size != x.size:
+                raise ValueError("coverage must have one value per cell centre")
         found = cell_boxes(x, z, depth=(z_kind == "depth")) if x.size >= 4 else None
         if found is None:
             ok = np.isfinite(v)
-            return cls.from_points(x[ok], z[ok], v[ok], **kw), "delaunay"
+            return cls.from_points(x[ok], z[ok], v[ok],
+                                   coverage=None if coverage is None else coverage[ok],
+                                   **kw), "delaunay"
+        if coverage is not None:
+            kw["coverage"] = coverage
         kind, boxes = found
         good = v[np.isfinite(v)]
         if kw.get("quantity", "resistivity") == "resistivity" and not np.all(good > 0):

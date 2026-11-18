@@ -197,3 +197,35 @@ def test_shared_vertices_do_not_fold_at_a_surface_step():
         top = hung.vertices[:, 1] + np.abs(m.vertices[:, 1])   # the surface each vertex took
         for x in xs:
             assert np.ptp(top[m.vertices[:, 0] == x]) == 0.0, (x, order)
+
+
+def test_point_mesh_keeps_minimum_coverage():
+    x, z = [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]
+    v = [100.0, 200.0, 300.0, 400.0]
+    cov = [1.0, 2.0, np.nan, 3.0]
+    m = SectionMesh.from_points(x, z, v, coverage=cov, quantity="p_velocity", unit="m/s")
+    assert m.coverage is not None and len(m.coverage) == len(m.values)
+    for tri, c, val in zip(m.cells[:, :3], m.coverage, m.values):
+        corners = np.asarray(cov)[tri]
+        if np.isnan(corners).any():
+            assert np.isnan(c)
+        else:
+            assert c == corners.min()
+        assert val == pytest.approx(np.asarray(v)[tri].mean())   # arithmetic, not log
+
+
+def test_velocity_points_free_of_resistivity_rule():
+    from groundwork_geophysics.readers.base import mesh_from_points
+    mesh, _n, _kind = mesh_from_points([0, 1, 0, 1], [0, 0, 1, 1], [0.0, 200, 300, 400],
+                                       "v.txt", quantity="p_velocity", unit="m/s")
+    assert mesh.quantity == "p_velocity"
+
+
+def test_mesh_from_points_turns_minus_inf_coverage_into_nan():
+    from groundwork_geophysics.readers.base import mesh_from_points
+    mesh, _n, _kind = mesh_from_points([0, 1, 0, 1], [0, 0, 1, 1], [100.0, 200, 300, 400],
+                                       "v.txt", quantity="p_velocity", unit="m/s",
+                                       coverage=[-np.inf, 1.0, 2.0, 3.0], coverage_cut=1.5)
+    assert np.isnan(mesh.coverage).any() and np.isfinite(mesh.coverage).any()
+    assert not np.isinf(mesh.coverage).any()
+    assert mesh.coverage_cut == 1.5

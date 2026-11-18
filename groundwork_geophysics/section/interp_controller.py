@@ -229,7 +229,8 @@ class InterpController(QObject):
                 continue
             thr = st.coverage_threshold
             if thr is None:
-                thr = gridding.default_threshold(mesh.coverage)
+                thr = gridding.default_threshold(mesh.coverage,
+                                                 getattr(mesh, "coverage_cut", None))
             topo_key = None if surface is None else (np.asarray(surface[0]).tobytes(),
                                                      np.asarray(surface[1]).tobytes())
             key = (layer.dataset.id, hash(mesh.vertices.tobytes()),

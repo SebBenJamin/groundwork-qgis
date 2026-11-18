@@ -83,8 +83,12 @@ def mesh_from_resistivity_points(x, z, v, name: str,
 
 def mesh_from_points(x, z, v, name: str, z_kind: str = "unknown",
                      quantity: str = "resistivity",
-                     unit: str = "ohm.m") -> tuple[SectionMesh, int, str]:
+                     unit: str = "ohm.m", coverage=None,
+                     coverage_cut: float | None = None) -> tuple[SectionMesh, int, str]:
     """Mesh of a cell-centre model: ``(mesh, n_masked, reconstruction)``.
+
+    ``coverage`` (one value per point; not finite values become nan) and ``coverage_cut``
+    (the file's own resolved/unresolved threshold) are carried by the mesh.
 
     For a resistivity model checks positivity first. Then rebuilds the real cells when the
     centres form rows or columns (``SectionMesh.from_cell_centres``; ``reconstruction`` is
@@ -104,9 +108,15 @@ def mesh_from_points(x, z, v, name: str, z_kind: str = "unknown",
             raise ValueError(f"{name}: {n_neg} resistivity value(s) are zero or negative (invalid data)")
     keep = ~unplaced
     v = np.where(masked, np.nan, v)[keep]
+    if coverage is not None:
+        coverage = np.asarray(coverage, dtype=float)
+        coverage = np.where(np.isfinite(coverage), coverage, np.nan)[keep]
     try:
         mesh, kind = SectionMesh.from_cell_centres(x[keep], z[keep], v, z_kind=z_kind,
+                                                   coverage=coverage,
                                                    quantity=quantity, unit=unit)
     except ValueError as exc:
         raise ValueError(f"{name}: {exc}") from None
+    if coverage_cut is not None and np.isfinite(coverage_cut):
+        mesh.coverage_cut = float(coverage_cut)
     return mesh, n_masked, kind

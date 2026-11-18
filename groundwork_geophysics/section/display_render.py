@@ -47,7 +47,7 @@ def _fade(layer):
         return None
     thr = st.coverage_threshold
     if thr is None:
-        thr = default_threshold(mesh.coverage)
+        thr = default_threshold(mesh.coverage, getattr(mesh, "coverage_cut", None))
     return thr
 
 
