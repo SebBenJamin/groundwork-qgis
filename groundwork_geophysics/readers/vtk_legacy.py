@@ -23,6 +23,12 @@ from .textcols import decode_bytes
 _TRIANGLE, _QUAD = 5, 9
 
 
+def _is_velocity(name: str) -> bool:
+    """A model's velocity array: not a bootstrap run's Top_/Bottom_Velocity bound."""
+    low = name.lower()
+    return "velocity" in low and not low.startswith(("top_", "bottom_"))
+
+
 class _Tokens:
     def __init__(self, tokens: list[str], name: str):
         self.t, self.i, self.name = tokens, 0, name
@@ -124,10 +130,15 @@ class VtkLegacyReader(Reader):
                 raise ValueError(f"{path.name}: array {want!r} not found; available: {', '.join(names)}")
             chosen = want
         else:
+            # a refraction model (pyGIMLi, Refrapy): its velocity, never coverage or the
+            # bootstrap's Top_/Bottom_Velocity
+            velocity = [n for n in names if _is_velocity(n)]
             # ResIPy also writes Resistivity(log10): prefer the linear array
             resist = [n for n in names if "resist" in n.lower()]
-            chosen = next((n for n in resist if "log" not in n.lower()),
-                          resist[0] if resist else names[0])
+            chosen = next((n for n in velocity if n.lower() == "velocity"),
+                          velocity[0] if velocity else
+                          next((n for n in resist if "log" not in n.lower()),
+                               resist[0] if resist else names[0]))
         values = arrays[chosen]
         if len(values) != len(cells):
             raise ValueError(f"{path.name}: array {chosen!r} has {len(values)} values for {len(cells)} cells")
@@ -138,8 +149,12 @@ class VtkLegacyReader(Reader):
         i, j = axes
         verts = points[:, [i, j]]
         is_res = "resist" in chosen.lower() and "log" not in chosen.lower()
+        is_vel = _is_velocity(chosen)
         cov_name = options.get("coverage_array")
-        if cov_name is None:                    # BERT coverage(log10), ResIPy Sensitivity(log10)
+        if cov_name is None and is_vel:         # ray coverage; not the 0/1 standardized one
+            cov_name = next((n for n in names if "coverage" in n.lower()
+                             and not n.lower().startswith(("s_", "standard"))), None)
+        elif cov_name is None:                  # BERT coverage(log10), ResIPy Sensitivity(log10)
             cov_name = next((n for n in names if n != chosen and (
                 "coverage" in n.lower() or "sensitivity" in n.lower())), None)
         elif cov_name == "":                    # explicitly none
@@ -153,10 +168,11 @@ class VtkLegacyReader(Reader):
             coverage = np.where(fill_mask(raw), np.nan, raw)
         else:
             cov_name = None
-        mesh = SectionMesh(verts, conn, values,
-                           quantity="resistivity" if is_res else chosen,
-                           unit="ohm.m" if is_res else "", coverage=coverage)
-        return ReaderResult(mesh, "elevation", {
+        quantity, unit = (("resistivity", "ohm.m") if is_res else
+                          ("p_velocity", "m/s") if is_vel else (chosen, ""))
+        mesh = SectionMesh(verts, conn, values, quantity=quantity, unit=unit,
+                           coverage=coverage)
+        provenance = {
             "reader": self.name,
             "source_name": path.name,
             "array_names": names,
@@ -165,7 +181,10 @@ class VtkLegacyReader(Reader):
             "axes": (int(i), int(j)),
             "n_cells": int(len(cells)),
             "n_masked": int(masked.sum()),
-        })
+        }
+        if is_vel:
+            provenance.update(kind="srt_model", method="srt")
+        return ReaderResult(mesh, "elevation", provenance)
 
     @staticmethod
     def _read_cell_data(tk: _Tokens, n: int, arrays: dict) -> None:
