@@ -379,7 +379,10 @@ def test_even_fit_shows_all_columns_when_they_fit(viewer, qgis_app):
     width = viewer.canvas.width()
     rects = _rects(viewer)
     assert len(rects) == 3
-    assert all(0 <= r.left() and r.right() + 40 <= width for r in rects.values())
+    from groundwork_geophysics.section.borehole_viewer import COLUMN_PX
+    widths = viewer.canvas._widths(viewer.boreholes)          # column + its layer text
+    assert all(0 <= r.left() and r.left() + w <= width for r, w in zip(rects.values(), widths))
+    assert all(w > COLUMN_PX for w in widths)
 
 
 def _many(fake_dock, n=12):
@@ -534,3 +537,10 @@ def test_notes_once(viewer):
     viewer.canvas.render_image()
     text = viewer.status.text()
     assert text.count("No height") == 1 and text.startswith("RK15")
+
+
+def test_wording(viewer):
+    from qgis.PyQt.QtWidgets import QLabel, QPushButton
+    assert any(b.text() == "Curve Style…" for b in viewer.findChildren(QPushButton))
+    font_label = next(lb for lb in viewer.findChildren(QLabel) if lb.text() == "Font")
+    assert font_label.buddy() is viewer.font_button

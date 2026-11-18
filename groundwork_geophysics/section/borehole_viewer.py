@@ -471,7 +471,7 @@ class BoreholeViewer(QWidget):
         self.ve_spin.setSuffix("×")
         fit_btn = QPushButton("Fit")
         style_btn = QPushButton("Borehole Style…")
-        curve_btn = QPushButton("Curve style…")
+        curve_btn = QPushButton("Curve Style…")
         bar = QHBoxLayout()
         for w in (QLabel("Spacing"), self.mode_combo, QLabel("Axis"), self.axis_combo,
                   self.ve_spin, fit_btn):
@@ -514,7 +514,12 @@ class BoreholeViewer(QWidget):
         fmt.setSize(9)
         self.font_button.setTextFormat(fmt)
         self.font_button.changed.connect(lambda: self._redraw(refit=False))
-        label_layout.addWidget(self.font_button)
+        font_row = QHBoxLayout()
+        font_label = QLabel("Font")
+        font_label.setBuddy(self.font_button)
+        font_row.addWidget(font_label)
+        font_row.addWidget(self.font_button, 1)
+        label_layout.addLayout(font_row)
         side.addWidget(label_box)
         # how the section draws the columns: written to the borehole entries, so the
         # section follows (with layer text and the curves ticked above)

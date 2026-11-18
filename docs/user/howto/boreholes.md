@@ -47,6 +47,11 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
 **The borehole viewer** shows the boreholes of the profile open in the section panel side by side. Open it with **Groundwork › Show Borehole Viewer**, or click a column in the section (that borehole is then framed).
 
+- **VE Auto** (the default with true distance) stretches the columns to fill the window; the box shows the value it chose, e.g. "Auto (46×)". Type a number to keep a fixed exaggeration.
+- **Even** spacing moves the columns closer together until they fit the window. When they still do not fit, the line under the view counts the ones out of sight, e.g. "4 more boreholes to the right (drag to see them)".
+- **Layer text** in thin layers is spread apart, with a short line to its layer; in a column too short for all of it, the thinnest layers' text is left out (hover over the column to read it). The section draws layer text the same way.
+- Column labels that find no room are named under the view: "Labels left out: RK11, RK13".
+
 **How they look is set in the borehole viewer**, and the section follows:
 
 - **Layer text** and the ticked **Curves** in the viewer's side panel are drawn on the section too.
@@ -71,7 +76,7 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
     Both are Categorized on a column `lithology`; switch to your column after importing. Their colours and patterns are the plugin's choice, not a standard's drawing rules.
 
   - **A class only applies to values that are exactly that code** ("fS, ms, u'" is not "fS"). To style by the main component, add a column in QGIS's field calculator with `trim(regexp_substr("lithology", '^[^,;]+'))` and style by that column.
-- **Curve style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
+- **Curve Style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
 - **Leaving a borehole out of one section**: right-click its column in the section → **Hide in Section**. It leaves that profile's section and plates only; the map, other profiles and your layer are not changed. The borehole viewer still shows it, faded and marked "hidden in section". There, click a column to select it (Ctrl+click for several) and right-click → **Hide in Section** or **Show in Section**. **Show › Hidden boreholes** switches the hidden ones off in the viewer. A borehole whose id field is empty cannot be hidden on its own.
 - Without a saved style, each layer text gets its own neutral colour. The plugin never guesses a colour from the words.
 
