@@ -90,7 +90,8 @@ def test_refrapy_reads_velocity_coverage_and_cut(tmp_path):
     # resolved rows (standardized 1) have coverages 1.1 .. 2.3: the cut is the lowest
     assert r.mesh.coverage_cut == pytest.approx(1.1)
     assert r.provenance["coverage_cut"] == pytest.approx(1.1)
-    assert np.isnan(r.mesh.coverage).any() and not np.isinf(r.mesh.coverage).any()
+    assert np.isfinite(r.mesh.coverage).all()             # no ray: below the rest, not nan
+    assert (r.mesh.coverage < r.mesh.coverage_cut).any()
     assert r.provenance["n_cells"] == 12 and r.provenance["n_unresolved"] == 5
     assert r.provenance["station_x"] == [0.0, 2.0, 4.0, 8.0]
     assert 400 <= np.nanmin(r.mesh.values) and np.nanmax(r.mesh.values) <= 1430
@@ -116,3 +117,19 @@ def test_refrapy_user_run_reads():
     r = readers.read(p)
     assert r.provenance["n_cells"] == 6886 and r.provenance["n_unresolved"] == 3013
     assert 100 <= np.nanmin(r.mesh.values) and np.nanmax(r.mesh.values) <= 7000
+
+
+def test_no_ray_cells_fade(tmp_path):
+    """Refrainv's -inf coverage (no ray) is below the cut, so the default fade covers it."""
+    from groundwork_geophysics.core.gridding import coverage_alpha, default_threshold
+    r = readers.read(_xzv(tmp_path))
+    m = r.mesh
+    alpha = coverage_alpha(m.coverage, default_threshold(m.coverage, m.coverage_cut), "fade")
+    assert (alpha < 1).sum() >= 4            # at least the bottom row's cells fade
+
+
+def test_pygimli_vtk_minus_inf_coverage_fades(tmp_path):
+    p = _vtk(tmp_path / "velocity.vtk", ["Coverage", "Velocity"])
+    p.write_text(p.read_text().replace("1000 1001", "-inf 1.5"))
+    r = readers.read(p)
+    assert np.isfinite(r.mesh.coverage).all() and r.mesh.coverage[0] < r.mesh.coverage[1]

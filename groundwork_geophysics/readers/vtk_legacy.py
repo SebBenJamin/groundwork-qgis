@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from ..core.section_mesh import SectionMesh
-from .base import Reader, ReaderResult, fill_mask
+from .base import Reader, ReaderResult, coverage_values, fill_mask
 from .textcols import decode_bytes
 
 _TRIANGLE, _QUAD = 5, 9
@@ -165,7 +165,7 @@ class VtkLegacyReader(Reader):
         coverage = None
         if cov_name is not None and len(arrays[cov_name]) == len(cells):
             raw = arrays[cov_name]
-            coverage = np.where(fill_mask(raw), np.nan, raw)
+            coverage = coverage_values(raw)
         else:
             cov_name = None
         quantity, unit = (("resistivity", "ohm.m") if is_res else

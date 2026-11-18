@@ -56,6 +56,18 @@ def fill_mask(v) -> np.ndarray:
     return ~np.isfinite(v) | (v <= FILL_VALUE + 1e-6)
 
 
+def coverage_values(raw) -> np.ndarray:
+    """A file's coverage as the fade reads it: ``-inf`` (no ray at all, pyGIMLi's log of 0)
+    one unit below the lowest finite coverage, so it fades with the low values; fills
+    (-9999), nan and +inf become nan (unknown, drawn in full)."""
+    c = np.asarray(raw, dtype=float).copy()
+    none = np.isneginf(c)
+    c[fill_mask(c)] = np.nan
+    finite = c[np.isfinite(c)]
+    c[none] = (finite.min() - 1.0) if finite.size else np.nan
+    return c
+
+
 def is_log10_pair(arr: np.ndarray, value_col: int, log_col: int, tol: float = 0.02) -> bool:
     """True when column ``log_col`` is log10 of column ``value_col`` in every row with a
     usable (positive, non-fill) value, and there is at least one such row. Used to tell
@@ -87,7 +99,7 @@ def mesh_from_points(x, z, v, name: str, z_kind: str = "unknown",
                      coverage_cut: float | None = None) -> tuple[SectionMesh, int, str]:
     """Mesh of a cell-centre model: ``(mesh, n_masked, reconstruction)``.
 
-    ``coverage`` (one value per point; not finite values become nan) and ``coverage_cut``
+    ``coverage`` (one value per point, read by ``coverage_values``) and ``coverage_cut``
     (the file's own resolved/unresolved threshold) are carried by the mesh.
 
     For a resistivity model checks positivity first. Then rebuilds the real cells when the
@@ -109,8 +121,7 @@ def mesh_from_points(x, z, v, name: str, z_kind: str = "unknown",
     keep = ~unplaced
     v = np.where(masked, np.nan, v)[keep]
     if coverage is not None:
-        coverage = np.asarray(coverage, dtype=float)
-        coverage = np.where(np.isfinite(coverage), coverage, np.nan)[keep]
+        coverage = coverage_values(coverage)[keep]
     try:
         mesh, kind = SectionMesh.from_cell_centres(x[keep], z[keep], v, z_kind=z_kind,
                                                    coverage=coverage,

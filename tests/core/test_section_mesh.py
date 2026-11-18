@@ -224,11 +224,15 @@ def test_velocity_points_free_of_resistivity_rule():
     assert mesh.quantity == "p_velocity"
 
 
-def test_mesh_from_points_turns_minus_inf_coverage_into_nan():
+def test_mesh_from_points_puts_minus_inf_coverage_below_the_rest():
+    """-inf (no ray at all, as pyGIMLi writes it) must fade like low coverage, not count as
+    unknown (nan, drawn in full): it becomes one unit below the lowest finite coverage."""
     from groundwork_geophysics.readers.base import mesh_from_points
-    mesh, _n, _kind = mesh_from_points([0, 1, 0, 1], [0, 0, 1, 1], [100.0, 200, 300, 400],
-                                       "v.txt", quantity="p_velocity", unit="m/s",
-                                       coverage=[-np.inf, 1.0, 2.0, 3.0], coverage_cut=1.5)
-    assert np.isnan(mesh.coverage).any() and np.isfinite(mesh.coverage).any()
-    assert not np.isinf(mesh.coverage).any()
+    mesh, _n, _kind = mesh_from_points([0, 1, 0, 1, 2], [0, 0, 1, 1, 0],
+                                       [100.0, 200, 300, 400, 500], "v.txt",
+                                       quantity="p_velocity", unit="m/s",
+                                       coverage=[-np.inf, 1.0, 2.0, 3.0, np.nan],
+                                       coverage_cut=1.5)
+    assert np.isfinite(mesh.coverage).any() and not np.isinf(mesh.coverage).any()
+    assert np.nanmin(mesh.coverage) >= 0.0 - 1e-9          # -inf -> 1.0 - 1 = 0.0
     assert mesh.coverage_cut == 1.5
