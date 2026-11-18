@@ -113,3 +113,13 @@ def test_thinned_keeps_every_nth_geophone_and_all_shots():
     thin = calhoun_data.thinned(line, 2)
     assert thin.picks[:, 1].tolist() == [2.0, 4.0] and set(thin.picks[:, 0]) == {0.0, 5.0}
     assert calhoun_data.thinned(line, 1).picks.shape == picks.shape
+
+
+def test_stations_merge_geophones_beyond_the_elevation_file():
+    import calhoun_data
+    piece = np.array([[0.0, 0.0, 0, 0, 0, 0.0, 0, 0], [10.0, 0.0, 0, 0, 0, 10.0, 0, 0]])
+    picks = np.array([[0.0, 1.0, 0.01], [0.0, 2.0, 0.02], [0.0, 3.0, 0.03]])
+    x = np.array([0.0, 1.0, 2.0])                  # the file ends at 2 m: 3 m lands on it
+    line = calhoun_data.LineData(picks, x, np.full(3, 100.0), x)
+    _xyz, numbers, inline = calhoun_data.stations_xy(line, piece, 0.0)
+    assert numbers.tolist() == [1, 2] and inline == pytest.approx([1.0, 2.0])

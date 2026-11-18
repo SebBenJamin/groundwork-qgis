@@ -110,9 +110,10 @@ def stations_xy(line: LineData, piece: np.ndarray, offset: float
     """The geophones as stations: ``(xyz, numbers 1..n, inline)``, ordered along the line;
     ``inline`` is each geophone's horizontal metres (the model file's x)."""
     nominal = np.unique(line.picks[:, 1])
+    # geophones beyond the elevation file's end land on its last point: one station there
+    _keys, first = np.unique(np.round(line.to_h(nominal), 2), return_index=True)
+    nominal = nominal[first]
     x_h = line.to_h(nominal)
-    order = np.argsort(x_h, kind="stable")
-    nominal, x_h = nominal[order], x_h[order]
     xy = _along(piece, x_h - offset)
     xyz = np.column_stack([xy, line.z_at(nominal)])
     return xyz, np.arange(1, len(x_h) + 1), x_h
