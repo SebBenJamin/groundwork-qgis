@@ -53,6 +53,8 @@ HIDDEN_MARK = "hidden in section"
 CLICK_PX = 4                 # a press and release closer than this is a click, not a pan
 NO_BOREHOLES = ("This profile has no boreholes nearby. Add a borehole layer in "
                 "Context Layers…, or open another profile in the section panel.")
+ALL_HIDDEN = ("Every borehole of this profile is hidden in its section. Tick Show › Hidden "
+              "boreholes to see them here.")
 LABELS = (("name", "Name", True), ("elevation", "Elevation", True),
           ("distance", "Distance / offset", False))
 
@@ -172,8 +174,12 @@ class BoreholeCanvas(QWidget):
         return img
 
     def empty_hint(self) -> str:
-        """What the empty canvas says: no boreholes on this profile; "" when there are."""
-        return NO_BOREHOLES if self.viewer.profile_id and not self.viewer.boreholes else ""
+        """What the empty canvas says: no boreholes on this profile, or all of them hidden;
+        "" when some are shown."""
+        v = self.viewer
+        if not v.profile_id or v.boreholes:
+            return ""
+        return ALL_HIDDEN if v.hidden and not v.show_check["hidden"].isChecked() else NO_BOREHOLES
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -616,6 +622,8 @@ class BoreholeViewer(QWidget):
             if self.profile_id and not provider.is_local(self.profile_id) else None
         self.boreholes = sorted((p for p in (self.items.points if self.items else [])
                                  if p.kind == "borehole"), key=lambda p: p.s)
+        self.canvas.column_rects = []         # the last paint was of other data: its
+        self.canvas.dropped_labels = []       # notes go with it
         self._sync_look()
 
     def is_hidden(self, point) -> bool:

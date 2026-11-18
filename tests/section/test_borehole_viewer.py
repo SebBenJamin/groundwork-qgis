@@ -544,3 +544,44 @@ def test_wording(viewer):
     assert any(b.text() == "Curve Style…" for b in viewer.findChildren(QPushButton))
     font_label = next(lb for lb in viewer.findChildren(QLabel) if lb.text() == "Font")
     assert font_label.buddy() is viewer.font_button
+
+
+def test_notes_cleared_on_a_profile_without_boreholes(fake_dock, qgis_app):
+    """Final review: the last profile's "Labels left out" stayed under an empty profile."""
+    from groundwork_geophysics.core.context import ContextItems
+    _close_together(fake_dock)
+    fake_dock.provider.items["none"] = ContextItems(points=[])
+    v = _fresh(fake_dock, qgis_app, pid="close",
+               options={"mode": "true", "axis": "elevation",
+                        "labels": {"name": True, "elevation": True, "distance": True}})
+    try:
+        v.canvas.render_image()
+        assert "Labels left out" in v.status.text()
+        v.show_profile("none")
+        v.canvas.repaint()
+        qgis_app.processEvents()
+        assert v.status.text() == ""
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_all_hidden_says_so(fake_dock, qgis_app):
+    """Final review: with every borehole hidden and Show › Hidden boreholes off, the viewer
+    sent the user to add a borehole layer."""
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.borehole_viewer import ALL_HIDDEN, NO_BOREHOLES
+    fake_dock.provider.items["hid"] = ContextItems(points=[
+        ProjectedPoint(5.0, 1.0, "H1", "borehole", 20.0, [], entry=0, bid="H1", layer_id="L1",
+                       total_depth=2.0)])
+    fake_dock.provider.hidden["hid"] = {("L1", "H1")}
+    v = _fresh(fake_dock, qgis_app, pid="hid")
+    try:
+        v.show_check["hidden"].setChecked(False)
+        assert v.canvas.empty_hint() == ALL_HIDDEN != NO_BOREHOLES
+        v.show_check["hidden"].setChecked(True)
+        assert v.canvas.empty_hint() == ""
+    finally:
+        v.show_check["hidden"].setChecked(True)
+        v.close()
+        v.deleteLater()
