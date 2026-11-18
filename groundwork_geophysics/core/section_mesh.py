@@ -141,8 +141,9 @@ class SectionMesh:
         dropped when its longest edge exceeds 3 x the largest per-vertex scale of its
         corners (median length of the Delaunay edges at that vertex). Either way,
         near-collinear slivers on the boundary (convex-hull filling) are then peeled off.
-        ``coverage`` (one value per point): a triangle gets the lowest of its corners (nan
-        when one is nan), as a triangle touching an unresolved point is not resolved."""
+        ``coverage`` (one value per point): a triangle gets the middle of its corners (nan
+        counted lowest), so a lone unresolved point leaves no hole while two unresolved
+        corners make the edge of the resolved area."""
         x, z, v = (np.asarray(a, dtype=float).ravel() for a in (x, z, v))
         if not (x.size == z.size == v.size):
             raise ValueError("x, z and v must have the same length")
@@ -175,8 +176,9 @@ class SectionMesh:
         vv = v[simplices]
         vals = np.exp(np.log(vv).mean(axis=1)) if quantity == "resistivity" else vv.mean(axis=1)
         cells = np.column_stack([simplices, np.full(len(simplices), -1)])
-        if coverage is not None:
-            kw["coverage"] = coverage[simplices].min(axis=1)     # nan propagates
+        if coverage is not None:              # the middle corner, nan counted lowest
+            mid = np.sort(np.nan_to_num(coverage[simplices], nan=-np.inf), axis=1)[:, 1]
+            kw["coverage"] = np.where(np.isneginf(mid), np.nan, mid)
         return cls(pts, cells, vals, **kw)
 
     @classmethod

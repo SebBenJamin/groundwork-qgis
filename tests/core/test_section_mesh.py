@@ -199,19 +199,22 @@ def test_shared_vertices_do_not_fold_at_a_surface_step():
             assert np.ptp(top[m.vertices[:, 0] == x]) == 0.0, (x, order)
 
 
-def test_point_mesh_keeps_minimum_coverage():
+def test_point_mesh_keeps_the_middle_coverage():
+    """A triangle gets the middle of its corners' coverages (nan counted lowest): one
+    unresolved corner (an isolated ray-less cell) leaves no hole; two make the edge."""
     x, z = [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]
     v = [100.0, 200.0, 300.0, 400.0]
     cov = [1.0, 2.0, np.nan, 3.0]
     m = SectionMesh.from_points(x, z, v, coverage=cov, quantity="p_velocity", unit="m/s")
     assert m.coverage is not None and len(m.coverage) == len(m.values)
     for tri, c, val in zip(m.cells[:, :3], m.coverage, m.values):
-        corners = np.asarray(cov)[tri]
-        if np.isnan(corners).any():
-            assert np.isnan(c)
-        else:
-            assert c == corners.min()
+        corners = np.sort(np.nan_to_num(np.asarray(cov)[tri], nan=-np.inf))
+        middle = corners[1]
+        assert (np.isnan(c) if np.isinf(middle) else c == middle)
         assert val == pytest.approx(np.asarray(v)[tri].mean())   # arithmetic, not log
+    two_nan = SectionMesh.from_points([0, 1, 0], [0, 0, 1], [1.0, 2, 3],
+                                      coverage=[np.nan, np.nan, 5.0], quantity="p_velocity")
+    assert np.isnan(two_nan.coverage).all()
 
 
 def test_velocity_points_free_of_resistivity_rule():
