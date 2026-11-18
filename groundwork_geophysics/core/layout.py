@@ -19,9 +19,16 @@ from .section_mesh import SectionMesh
 #: in-line sources, strongest first
 SOURCES = ("distances", "readings", "spacing", "guessed")
 
-KIND_TEXT = {"readings": "electrodes from the readings file",
-             "spacing": "electrodes from a spacing of {spacing} m",
-             "guessed": "electrodes guessed from the model"}
+KIND_TEXT = {"readings": "{words} from the readings file",
+             "spacing": "{words} from a spacing of {spacing} m",
+             "guessed": "{words} guessed from the model"}
+
+
+def kind_text(kind: str, method: str, spacing: str = "") -> str:
+    """The section's line on where its stations come from, in the method's words
+    ("electrodes" for ERT, "geophones" for refraction)."""
+    from .dataset_types import station_words
+    return KIND_TEXT[kind].format(words=station_words(method)[1], spacing=spacing)
 
 
 def _usable(spacing: float | None) -> bool:
@@ -118,6 +125,17 @@ def guess_electrodes(mesh: SectionMesh, z_kind: str) -> np.ndarray:
         return np.empty(0)
     top = _quad_top(mesh, z_kind)
     return top if top.size >= 2 else np.empty(0)
+
+
+def model_stations(mesh: SectionMesh, provenance: dict, z_kind: str) -> np.ndarray:
+    """Station positions a model file gives, in file distance, ascending: the ones it names
+    (``provenance["station_x"]``, e.g. Refrapy's shot and geophone points), else
+    ``guess_electrodes``."""
+    named = (provenance or {}).get("station_x")
+    if named is not None and len(named) >= 2:
+        x = np.asarray(named, dtype=float)
+        return np.unique(x[np.isfinite(x)])
+    return guess_electrodes(mesh, z_kind)
 
 
 def guessed_spacing(mesh: SectionMesh, z_kind: str) -> float | None:

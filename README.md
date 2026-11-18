@@ -51,6 +51,7 @@ included as a demo.*
 |---|---|---|
 | Gülpe | Real: ERT, sediment cores and state survey data from Lake Gülpe (Havel, Brandenburg) | `guelpe_project.qgz` |
 | Erfurt | Real: seven ERT lines and 56 cores from Erfurt (Thuringia) | `erfurt_project.qgz` |
+| Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
 The background maps and the Gülpe state layers load from the internet. Opening a demo writes
@@ -150,6 +151,14 @@ details.
   prospection approach to localize a Black Death mass grave in Erfurt/Central Germany.
   PLoS ONE 21(1): e0337410, https://doi.org/10.1371/journal.pone.0337410, Supporting
   Information S1 File, Suppl. Table 3. CC BY 4.0.
+
+**Calhoun demo** (`demo_calhoun/`)
+- Seismic refraction picks and line positions: Flinchum, B. A.: Supporting Data Repository:
+  Landscape Curvature and Deep Critical Zone Structure. HydroShare,
+  http://www.hydroshare.org/resource/340773feb3b341d884f6742b55966609. CC BY 4.0. The Vp
+  models are re-inverted from these picks with pyGIMLi (as Refrapy's Refrainv runs it),
+  not the authors' published models.
+- Terrain: USGS 3D Elevation Program 1 m DEM (cut to the lines), public domain.
 
 **Synthetic demo** (`demo/`)
 - Power line and pylons: © OpenStreetMap contributors, ODbL. Everything else (boreholes,

@@ -6,7 +6,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
 DEMOS = (("demo", "demo_project.qgz"), ("demo_guelpe", "guelpe_project.qgz"),
-         ("demo_erfurt", "erfurt_project.qgz"))
+         ("demo_erfurt", "erfurt_project.qgz"), ("demo_calhoun", "calhoun_project.qgz"))
 
 
 @pytest.mark.parametrize("folder,project", DEMOS)

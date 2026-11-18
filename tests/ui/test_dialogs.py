@@ -64,7 +64,7 @@ def test_add_model_dialog_preview_and_save(qgis_app, fake_iface, store_with_mode
         dlg.set_file(src)
         assert dlg.format_combo.currentData() == "zondres_xyz"
         assert dlg.name_edit.text() == "zond_model"
-        assert "ohm" in dlg.summary_label.text() and "x " in dlg.summary_label.text()
+        assert "Ω·m" in dlg.summary_label.text() and "x " in dlg.summary_label.text()
         assert dlg.z_combo.currentData() is None              # zond 'Z' header: unknown
         dlg.accept()
         assert "elevation or depth" in warnings_shown[-1] and len(st.datasets(p.id)) == 1
@@ -226,7 +226,7 @@ def test_add_model_preview_rereads_a_fixed_file(qgis_app, fake_iface, store_with
         assert "f004_res.dat" in dlg.summary_label.text()
         shutil.copy(FIXTURES / "f001_res.dat", f)                 # user fixes the file
         dlg.set_file(f)
-        assert "ohm" in dlg.summary_label.text()
+        assert "Ω·m" in dlg.summary_label.text()
     finally:
         _close(dlg, qgis_app)
 

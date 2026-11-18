@@ -306,3 +306,42 @@ def test_station_labels_use_names(qgis_app, tmp_path):
     assert settings.isExpression
     assert settings.fieldName == "coalesce(nullif(\"name\", ''), to_string(\"number\"))"
     assert not stations.labelsEnabled()
+
+
+def test_add_model_kind_from_method(qgis_app, tmp_path, store_with_model):
+    from groundwork_geophysics.ui.project_actions import add_model
+    st, p, _ = store_with_model
+    sid = st.station_sets(p.id)[0].id
+    seismic = FIXTURES.parent / "seismic"
+    for name in ("L9_xzv.txt", "L9_topography.txt"):
+        shutil.copy(seismic / name, tmp_path / name)
+    d = add_model(st, p.id, sid, tmp_path / "L9_xzv.txt", "refrapy_xzv", {}, "v",
+                  kind="srt_model")
+    assert d.kind == "srt_model" and (d.quantity, d.unit) == ("p_velocity", "m/s")
+    src = tmp_path / "f002_res.dat"
+    shutil.copy(FIXTURES / "f001_res.dat", src)
+    assert add_model(st, p.id, sid, src, "r2_res_dat", {}, "r", kind="srt_model").kind == \
+        "srt_model"                                   # the user's choice wins for a model
+    data = tmp_path / "t.data"
+    data.write_text(BERT_DATA)
+    assert add_model(st, p.id, sid, data, "bert_data", {"z_kind": "depth"}, "m",
+                     kind="srt_model").kind == "ert_measured"   # readings stay ERT
+
+
+BERT_DATA = """6
+# x z
+0 10.0
+1 10.1
+2 10.2
+3 10.3
+4 10.4
+5 10.5
+5
+# a b m n rhoa err
+1 4 2 3 100.0 0.03
+2 5 3 4 110.0 0.03
+3 6 4 5 120.0 0.03
+1 6 2 5 130.0 0.03
+1 2 3 4 140.0 0.03
+0
+"""

@@ -18,13 +18,13 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QVBoxLayout, QWidget)
 
 from .help import add_help_button
+from ..core.dataset_types import METHODS
 from ..section.data import matching_profiles
 from ..section.profile_source import CURVE_TOLERANCE
 from .dialog_size import fit_to_content
 from .placement_widget import PlacementWidget
 from .project_actions import create_profile
 
-METHODS = [("ERT", "ert")]
 REVERSE = "Reverse the line"
 #: sources whose line can be run either way (positions follow their numbers)
 LINE_SOURCES = ("line", "points")

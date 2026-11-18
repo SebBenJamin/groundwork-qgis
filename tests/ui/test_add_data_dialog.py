@@ -88,7 +88,7 @@ def test_distance_file_on_a_selected_line_creates_profile_and_dataset(
     dlg.set_file(WILD / "dist_y_rho_junk.txt")
     assert dlg.placement.source() == "line"
     assert "guessed" in dlg.electrode_label.text()
-    assert not dlg.method_combo.isVisible()          # a line makes no station set
+    assert dlg.method_combo.isVisible()              # the data's method, line or not
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
     [p] = st.profiles()
@@ -320,7 +320,7 @@ def test_opened_with_a_profile_it_is_preselected(qgis_app, make_dialog, store_wi
     dlg = make_dialog(st, p.id)
     assert dlg.placement.source() == "existing"
     assert dlg.placement.placement().profile_id == p.id
-    assert not dlg.method_combo.isVisible()
+    assert dlg.method_combo.isVisible()              # the data's method
     dlg.set_file(FIXTURES / "ert" / "f001_res.dat")
     assert dlg.placement.zero_combo.currentData() == "station1"   # as 0.8 placed it
 
@@ -637,3 +637,109 @@ def test_a_missing_file_says_what_to_do_here(qgis_app, make_dialog, project_stor
     text = dlg.summary_label.text()
     assert "does_not_exist.txt: file not found" in text
     assert text.endswith("Check the path, or choose another file.") and "layer" not in text
+
+
+def test_velocity_table_with_a_coverage_column(qgis_app, make_dialog, project_store,
+                                               selected_line, warnings_shown, tmp_path):
+    p = tmp_path / "vp.txt"
+    p.write_text("dist elev vp cov\n" + "".join(
+        f"{x} {z} {500 + x + z} {1 + x / 10}\n" for z in (100, 98, 96) for x in (1, 3, 5, 7)))
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(p)
+    box = dlg.columns_group
+    _index(box.vertical_combo, 1)
+    _index(box.vertical_kind_combo, "elevation")
+    _index(box.value_combo, 2)
+    _index(box.quantity_combo, "p_velocity")
+    assert not box.quantity_name.isVisible()
+    _index(box.coverage_combo, 3)
+    assert box.roles()[3] == "coverage" and box.roles()[2] == "P-wave velocity"
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [prof] = st.profiles()
+    [d] = st.datasets(prof.id)
+    assert (d.quantity, d.unit) == ("p_velocity", "m/s")
+    assert d.reader_options["columns"]["coverage"] == 3
+    assert d.kind == "srt_model"                      # the velocity quantity proposes it
+
+
+def _refrapy_copy(tmp_path):
+    for name in ("L9_xzv.txt", "L9_topography.txt"):
+        shutil.copy(FIXTURES / "seismic" / name, tmp_path / name)
+    return tmp_path / "L9_xzv.txt"
+
+
+def test_dialog_preselects_reader_method(qgis_app, make_dialog, project_store, selected_line,
+                                         tmp_path):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_refrapy_copy(tmp_path))
+    assert dlg.method_combo.currentData() == "srt"
+    assert dlg.method_combo.isVisible() and dlg.method_combo.isEnabled()
+
+
+def test_dialog_fixes_ert_for_readings(qgis_app, make_dialog, project_store, selected_line,
+                                       tmp_path):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    _index(dlg.method_combo, "srt")
+    data = tmp_path / "t.data"
+    data.write_text(BERT_DATA)
+    dlg.set_file(data)
+    assert dlg.method_combo.currentData() == "ert" and not dlg.method_combo.isEnabled()
+    assert dlg.method_combo.toolTip()
+
+
+def test_geophone_words(qgis_app, make_dialog, project_store, selected_line, tmp_path,
+                        warnings_shown):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_refrapy_copy(tmp_path))
+    assert dlg.electrode_label.text().startswith("Geophones:"), dlg.electrode_label.text()
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [p] = st.profiles()
+    [d] = st.datasets(p.id)
+    assert d.kind == "srt_model"
+
+
+BERT_DATA = """6
+# x z
+0 10.0
+1 10.1
+2 10.2
+3 10.3
+4 10.4
+5 10.5
+5
+# a b m n rhoa err
+1 4 2 3 100.0 0.03
+2 5 3 4 110.0 0.03
+3 6 4 5 120.0 0.03
+1 6 2 5 130.0 0.03
+1 2 3 4 140.0 0.03
+0
+"""
+
+
+def test_summary_values_are_plain_numbers_with_the_unit(qgis_app, tmp_path):
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.ui.add_data_dialog import describe
+    text = describe(readers.read(_refrapy_copy(tmp_path)), "elevation")
+    assert "e+0" not in text
+    assert text.endswith("m/s") and "1430" in text.replace(".", "").replace(",", "")
+
+
+def test_method_follows_the_next_file(qgis_app, make_dialog, project_store, selected_line,
+                                      tmp_path):
+    """A file that names no method gets the method of what it holds, never the previous
+    file's: a resistivity model after a Refrapy file is ERT again."""
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_refrapy_copy(tmp_path))
+    assert dlg.method_combo.currentData() == "srt"
+    res = tmp_path / "f001_res.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", res)
+    dlg.set_file(res)
+    assert dlg.method_combo.currentData() == "ert"

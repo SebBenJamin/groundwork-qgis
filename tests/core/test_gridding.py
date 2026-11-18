@@ -135,3 +135,10 @@ def test_field_reaches_up_to_the_ground_over_a_stepped_mesh_top():
     assert (g.cell[between] >= 0).all()                             # treated as inside
     plain = grid_model(mesh, topo, (21, 11), log=False)
     assert plain.z.max() == pytest.approx(0.0)                      # off by default: mesh only
+
+
+def test_default_threshold_prefers_the_files_cut():
+    from groundwork_geophysics.core.gridding import default_threshold
+    assert default_threshold([0, 1, 2, 3], cut=1.5) == 1.5
+    assert default_threshold([0, 1, 2, 3], cut=None) == default_threshold([0, 1, 2, 3])
+    assert np.isfinite(default_threshold([np.nan, 1.0], cut=float("nan")))

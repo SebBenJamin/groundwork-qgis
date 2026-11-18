@@ -8,7 +8,9 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent.parent
 DEMOS = [("demo", "demo_project.qgz", "demo_groundwork.gpkg", "demo_workbench.gpkg"),
          ("demo_guelpe", "guelpe_project.qgz", "guelpe_groundwork.gpkg", "guelpe_workbench.gpkg"),
-         ("demo_erfurt", "erfurt_project.qgz", "erfurt_groundwork.gpkg", "erfurt_workbench.gpkg")]
+         ("demo_erfurt", "erfurt_project.qgz", "erfurt_groundwork.gpkg", "erfurt_workbench.gpkg"),
+         ("demo_calhoun", "calhoun_project.qgz", "calhoun_groundwork.gpkg",
+          "calhoun_workbench.gpkg")]
 
 
 def _qgs_text(qgz):

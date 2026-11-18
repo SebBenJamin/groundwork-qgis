@@ -25,6 +25,7 @@ from qgis.PyQt.QtCore import QSizeF, Qt
 from qgis.PyQt.QtXml import QDomDocument
 
 from ..core.dataset_info import provenance_line
+from ..core.dataset_types import quantity_label
 from ..core.plates import frame_fits, stack_fit
 from .items import ColourBarItem, register_items
 from .stamp import build_stamp, stamp_texts
@@ -799,7 +800,7 @@ def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool
             bar.setId(_free_id(layout, n, k))
             bar.settings.setOrientation(Qt.Orientation.Horizontal if portrait
                                         else Qt.Orientation.Vertical)
-            bar.title = (d.quantity or "").capitalize()
+            bar.title = quantity_label(d.quantity)
             bar.unit = unit_label(d.unit)
             layout.addLayoutItem(bar)
         if fresh or relayout:

@@ -17,6 +17,7 @@ from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsP
                        QgsVectorLayer, QgsVectorLayerSimpleLabeling)
 
 from .. import readers
+from ..core.dataset_types import READINGS_KINDS, model_kind
 from ..core.model import (Dataset, Profile, StationSet, attach_positions, file_fingerprint,
                           profile_from_polyline, profile_from_positions)
 from ..core.placement import Placement
@@ -310,8 +311,12 @@ def checked_z_kind(options: dict, result: readers.ReaderResult, path: Path) -> s
 def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: Path,
               reader: str, options: dict, name: str, provider=None,
               result: readers.ReaderResult | None = None, profile: Profile | None = None,
-              station_set: StationSet | None = None) -> Dataset:
+              station_set: StationSet | None = None, kind: str | None = None) -> Dataset:
     """Validate ``path`` by reading it once, then save it as a model dataset.
+
+    ``kind``: the dataset type the user chose (e.g. "srt_model"); a readings file keeps its
+    reader's kind (measured ERT data or misfit), and without a choice the reader's kind
+    counts, else "ert_model".
 
     ``options`` may hold ``z_kind`` and ``chainage_offset`` (default 0) plus reader options;
     a missing ``z_kind`` comes from the reader. Raises the reader's ValueError for unusable
@@ -327,8 +332,11 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
         result = read_for(store, store.profile(profile_id), path, reader, opts)
     opts["z_kind"] = checked_z_kind(opts, result, path)
     mtime, sha1 = file_fingerprint(str(path))
+    read_kind = result.provenance.get("kind")
+    if read_kind not in READINGS_KINDS and kind:
+        read_kind = kind
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
-                      result.provenance.get("kind", "ert_model"),
+                      read_kind or "ert_model",
                       model_source_path(store, path),
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
                       dict(result.provenance), name=name or path.stem,
@@ -439,7 +447,8 @@ def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
     result = read_for(store, profile, path, reader, opts)
     changed = profile if created or placement.spacing is not None else None
     dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
-                        result=result, profile=changed, station_set=new_set)
+                        result=result, profile=changed, station_set=new_set,
+                        kind=model_kind(method) if method else None)
     steps = []
     if created or new_set is not None:
         steps.append(lambda: refresh_layers(store, project))

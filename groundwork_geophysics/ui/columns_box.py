@@ -22,6 +22,9 @@ DEGREES_HINT = " The coordinates look like degrees: EPSG:4326 is chosen."
 #: role words under the column names in the preview
 VERTICAL_WORDS = {"elevation": "elevation", "depth": "depth", "local": "local height"}
 NOT_USED = "not used"
+#: quantities the combo names with their unit (the rest is "Other", typed by the user)
+FIXED_UNITS = {value: unit for _text, value, unit in QUANTITIES if value}
+QUANTITY_WORDS = {"resistivity": "resistivity", "p_velocity": "P-wave velocity"}
 
 
 def _row(*widgets, stretch_last: bool = False) -> QWidget:
@@ -79,6 +82,9 @@ class ModelColumnsBox(QGroupBox):
         self.unit_edit.setPlaceholderText("Unit")
         self.unit_edit.setToolTip("Unit of the values, for example mV/V")
         self.log10_check = QCheckBox("Values are log10")
+        self.coverage_combo = combo("coverage_combo",
+                                    "Optional: the inversion's coverage or sensitivity per "
+                                    "cell, for fading unresolved parts")
         self.hint_label = QLabel(GUESSED_HINT)
         self.hint_label.setWordWrap(True)
 
@@ -94,7 +100,8 @@ class ModelColumnsBox(QGroupBox):
                 ("CRS", self._crs_row),
                 ("Vertical", _row(self.vertical_combo, self.vertical_kind_combo)),
                 ("Value", _row(self.value_combo, self.quantity_combo, self.log10_check)),
-                ("", self._other_row))
+                ("", self._other_row),
+                ("Coverage", _row(self.coverage_combo)))
         self._labels: dict[QWidget, QLabel] = {}
         for r, (text, widget) in enumerate(rows):
             label = QLabel(text)
@@ -107,7 +114,7 @@ class ModelColumnsBox(QGroupBox):
             radio.toggled.connect(lambda on: on and self._edited())
         for box in (self.distance_combo, self.easting_combo, self.northing_combo,
                     self.vertical_combo, self.vertical_kind_combo, self.value_combo,
-                    self.quantity_combo):
+                    self.quantity_combo, self.coverage_combo):
             box.currentIndexChanged.connect(self._edited)
         self.crs_widget.crsChanged.connect(self._edited)
         self.log10_check.toggled.connect(self._edited)
@@ -126,7 +133,8 @@ class ModelColumnsBox(QGroupBox):
                                 (self.easting_combo, columns.easting),
                                 (self.northing_combo, columns.northing),
                                 (self.vertical_combo, columns.vertical),
-                                (self.value_combo, columns.value)):
+                                (self.value_combo, columns.value),
+                                (self.coverage_combo, columns.coverage)):
                 box.clear()
                 box.addItem("(none)", None)
                 for c in numeric:
@@ -137,9 +145,9 @@ class ModelColumnsBox(QGroupBox):
             self.crs_widget.setCrs(crs_of(columns.crs, self.store_crs))
             self.vertical_kind_combo.setCurrentIndex(
                 max(0, self.vertical_kind_combo.findData(columns.vertical_kind)))
-            other = columns.quantity != "resistivity"
+            other = columns.quantity not in FIXED_UNITS
             self.quantity_combo.setCurrentIndex(self.quantity_combo.findData("" if other
-                                                                             else "resistivity"))
+                                                                             else columns.quantity))
             self.quantity_name.setText(columns.quantity if other else "")
             self.unit_edit.setText(columns.unit if other else "")
             self.log10_check.setChecked(columns.log10)
@@ -155,7 +163,7 @@ class ModelColumnsBox(QGroupBox):
         crs = self.crs_widget.crs()
         crs_text = "" if crs.authid() == self.store_crs else \
             (crs.authid() or ("WKT:" + crs.toWkt() if crs.isValid() else ""))
-        resistivity = self.quantity_combo.currentData() == "resistivity"
+        fixed = self.quantity_combo.currentData() or ""
         return ModelColumns(
             position="map" if self.position_map.isChecked() else "distance",
             distance=self.distance_combo.currentData(),
@@ -164,18 +172,20 @@ class ModelColumnsBox(QGroupBox):
             vertical=self.vertical_combo.currentData(),
             vertical_kind=self.vertical_kind_combo.currentData() or "",
             value=self.value_combo.currentData(),
-            quantity="resistivity" if resistivity else self.quantity_name.text().strip(),
-            unit="ohm.m" if resistivity else self.unit_edit.text().strip(),
-            log10=self.log10_check.isChecked())
+            quantity=fixed or self.quantity_name.text().strip(),
+            unit=FIXED_UNITS[fixed] if fixed else self.unit_edit.text().strip(),
+            log10=self.log10_check.isChecked(),
+            coverage=self.coverage_combo.currentData())
 
     def roles(self) -> dict[int, str]:
         """Role word per assigned column, for the preview's second header line."""
         c = self.columns()
-        value = "resistivity" if c.quantity == "resistivity" else (c.quantity or "value")
+        value = QUANTITY_WORDS.get(c.quantity) or c.quantity or "value"
         pairs = ([("easting", c.easting), ("northing", c.northing)] if c.position == "map"
                  else [("distance", c.distance)])
         pairs += [(VERTICAL_WORDS.get(c.vertical_kind, "vertical"), c.vertical),
-                  (value + (" (log10)" if c.log10 else ""), c.value)]
+                  (value + (" (log10)" if c.log10 else ""), c.value),
+                  ("coverage", c.coverage)]
         out: dict[int, str] = {}
         for word, col in pairs:
             if col is not None:
@@ -190,7 +200,7 @@ class ModelColumnsBox(QGroupBox):
     # -- state -------------------------------------------------------------------------------
     def _sync(self) -> None:
         on_map = self.position_map.isChecked()
-        other = self.quantity_combo.currentData() != "resistivity"
+        other = not self.quantity_combo.currentData()
         for widget, shown in ((self._distance_row, not on_map), (self._map_row, on_map),
                               (self._crs_row, on_map), (self._other_row, other)):
             widget.setVisible(shown)

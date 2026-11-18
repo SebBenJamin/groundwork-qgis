@@ -53,7 +53,13 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     import package
 
     zips = package.build(tmp_path)
-    assert len(zips) == 4
+    assert len(zips) == 5
+    calhoun_names = zipfile.ZipFile(zips[4]).namelist()
+    assert zips[4].name.startswith("groundwork_geophysics-demo-calhoun-")
+    for need in ("calhoun_project.qgz", "calhoun_groundwork.gpkg", "ATTRIBUTION.md",
+                 "context/dem_3dep.tif", "data/refraction/L10/L10_xzv.txt",
+                 "data/refraction/L10/L10_topography.txt", "data/stations/L10_geophones.csv"):
+        assert need in calhoun_names
     erfurt = zips[3]
     assert erfurt.name.startswith("groundwork_geophysics-demo-erfurt-")
     erfurt_names = zipfile.ZipFile(erfurt).namelist()

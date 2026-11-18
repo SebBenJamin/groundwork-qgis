@@ -39,8 +39,11 @@ def fade_band(coverage) -> float:
     return float(0.1 * (np.percentile(c, 95) - np.percentile(c, 5)))
 
 
-def default_threshold(coverage) -> float:
-    """Default coverage threshold: the 10th percentile of the finite values (0.0 if none)."""
+def default_threshold(coverage, cut: float | None = None) -> float:
+    """Default coverage threshold: the file's own ``cut`` when it gives a finite one, else
+    the 10th percentile of the finite values (0.0 if none)."""
+    if cut is not None and np.isfinite(cut):
+        return float(cut)
     c = np.asarray(coverage, float)
     c = c[np.isfinite(c)]
     return float(np.percentile(c, 10)) if c.size else 0.0

@@ -46,11 +46,25 @@ def _rows(path: Path, table: dict, columns: dict, max_rows: int | None = None
     problems = cols.problems(tab)
     if problems:
         raise ValueError(f"{path.name}: " + "; ".join(problems))
+    required = cols.used()[:-1] if cols.coverage is not None else cols.used()
     try:
-        arr, skipped, first = select_rows(tab, cols.used())
+        arr, skipped, first = select_rows(tab, required)
     except ValueError as exc:
         raise ValueError(f"{path.name}: {exc}") from None
+    if cols.coverage is not None:            # optional: never drops a row, keeps -inf
+        kept = np.isfinite(np.column_stack([tab.numeric(c) for c in required])).all(axis=1)
+        cov = [_coverage_number(tab.cells[i][cols.coverage], tab.decimal_comma)
+               for i in np.flatnonzero(kept)]
+        arr = np.column_stack([arr, np.asarray(cov, dtype=float)])
     return cols, arr, skipped, first
+
+
+def _coverage_number(cell: str, decimal_comma: bool) -> float:
+    """A coverage cell as a float, -inf kept (no ray); nan when empty or not a number."""
+    try:
+        return float(cell.replace(",", ".") if decimal_comma else cell)
+    except ValueError:
+        return float("nan")
 
 
 def map_points(path, table: dict, columns: dict, max_rows: int | None = None) -> np.ndarray:
@@ -83,7 +97,9 @@ class TextColumnsReader(Reader):
         """``max_rows``: read only the first data rows (a preview); never stored."""
         path = Path(path)
         cols, arr, skipped, first = _rows(path, table, columns, max_rows)
-        z, v = arr[:, -2], arr[:, -1]
+        k = 2 if cols.position == "map" else 1           # vertical, value, [coverage]
+        z, v = arr[:, k], arr[:, k + 1]
+        coverage = arr[:, k + 2] if cols.coverage is not None else None
         provenance = {"reader": self.name, "source_name": path.name, "n_rows": int(len(arr)),
                       "n_skipped": skipped, "first_skipped_line": first,
                       "position": cols.position}
@@ -104,7 +120,8 @@ class TextColumnsReader(Reader):
         if cols.log10:
             v = np.where(fill_mask(v), v, 10.0 ** v)
         mesh, n_masked, reconstruction = mesh_from_points(x, z, v, path.name, kind,
-                                                          cols.quantity, cols.unit)
+                                                          cols.quantity, cols.unit,
+                                                          coverage=coverage)
         provenance["n_masked"] = n_masked
         provenance["reconstruction"] = reconstruction
         return ReaderResult(mesh, kind, provenance)

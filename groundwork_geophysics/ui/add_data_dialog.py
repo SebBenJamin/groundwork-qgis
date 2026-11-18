@@ -21,20 +21,21 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDial
 from .help import add_help_button
 from .. import readers
 from ..core.coverage import overhang_message
-from ..core.layout import guess_electrodes
+from ..core.layout import model_stations
 from ..core.lines import line_from_cloud
 from ..core.model import Dataset
 from ..core.numbers import fmt, fmt_sig, fmt_trim
+from ..section.readout import format_value, unit_label
 from ..core.placement import fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
 from ..ids import LEGACY_ID
 from ..readers.errors import plain_error
 from ..readers.text_columns import map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
-from ..section.placement_resolve import NO_ELECTRODES_NOTE, ProfileLayout, resolve
+from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .fit_line import WARNING_STYLE, fit_line, show_fit
-from .new_profile_dialog import METHODS
+from ..core.dataset_types import METHODS, READINGS_KINDS, station_words
 from .placement_widget import PlacementWidget
 from .positions_source import xy_to_store
 from .project_actions import (NotRefreshed, add_data, dataset_options, draft_profile,
@@ -59,9 +60,14 @@ PREVIEW_ROWS = 20
 SAMPLE_ROWS = 1000
 #: metres: cells of a map file further from the line than this are warned about
 OFF_LINE = 5.0
-GUESSED_ELECTRODES = ("Electrodes: none in this file; guessed from the top row of cells: "
+GUESSED_ELECTRODES = ("{Words}: none in this file; guessed from the top row of cells: "
                       "{n}, about {spacing} m apart. Shown as a guess until real positions "
                       "are imported.")
+NAMED_STATIONS = ("{Words}: taken from the shot and geophone points saved next to the file: "
+                  "{n}, about {spacing} m apart. Shown as a guess until real positions are "
+                  "imported.")
+METHOD_TIP = "Method of the data, and of the station set made from the positions"
+READINGS_METHOD_TIP = "Measured ERT data: the method is ERT"
 ERROR_STYLE = "color: #b00020;"
 
 
@@ -102,7 +108,8 @@ def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) 
               "local": "local height"}.get(z_kind, "Z meaning not set")
     text = (f"{len(mesh.values)} cells · x {fmt(xmin)} – {fmt(xmax)} m, z {fmt(zmin)} – "
             f"{fmt(zmax)} m ({z_word}) · " +
-            (f"values {fmt_sig(values.min())} – {fmt_sig(values.max())} {mesh.unit}"
+            (f"values {format_value(values.min())} – {format_value(values.max())} "
+             f"{unit_label(mesh.unit)}".rstrip()
              if len(values) else "no values"))
     n_masked = int(result.provenance.get("n_masked") or 0)
     if n_masked and result.provenance.get("reconstruction") == "delaunay":
@@ -163,6 +170,7 @@ class AddDataDialog(QDialog):
         self._pending_columns = None                # remembered assignment for the next table
         self._result = self._read_key = None        # the whole file as read
         self._z_preset = None                       # (path, reader) whose z hint is shown
+        self._method_for = None                     # (path, quantity) of a table's method
         self._line_key, self._line, self._line_error = None, None, ""
         self._on_map_shown = False
         self._zero_chosen = False                   # the user chose where distance 0 lies
@@ -198,7 +206,7 @@ class AddDataDialog(QDialog):
         self.method_combo = QComboBox()
         for text, value in METHODS:
             self.method_combo.addItem(text, value)
-        self.method_combo.setToolTip("Method of the station set made from the positions")
+        self.method_combo.setToolTip(METHOD_TIP)
         self.station_set_combo = QComboBox()
         self.station_set_combo.setObjectName("station_set_combo")
         self.station_set_combo.setToolTip("The profile's station set this file belongs to")
@@ -264,6 +272,7 @@ class AddDataDialog(QDialog):
         self.format_combo.currentIndexChanged.connect(self._format_changed)
         self.response_edit.editingFinished.connect(self._refresh)
         self.z_combo.currentIndexChanged.connect(self._refresh)
+        self.method_combo.currentIndexChanged.connect(self._refresh)
         self.station_set_combo.currentIndexChanged.connect(self._refresh)
         self.table_options.changed.connect(self._refresh)
         self.columns_group.changed.connect(self._refresh)
@@ -402,8 +411,15 @@ class AddDataDialog(QDialog):
             self.z_combo.blockSignals(True)         # unknown -> choose
             self.z_combo.setCurrentIndex(max(0, self.z_combo.findData(self._result.z_kind)))
             self.z_combo.blockSignals(False)
+            self._preset_method(self._result.provenance, self._result.mesh.quantity)
+            self._method_for = None
             self._z_preset = (path, reader)
             self._read_key = self._key(profile)
+        elif self._is_table():                      # proposed again only when the file or
+            quantity = self.columns_group.columns().quantity   # its quantity changes
+            key = (path, quantity)
+            self._preset_method({}, quantity, propose=key != self._method_for)
+            self._method_for = key
         if self._key(profile) != self._read_key:          # a text table: its sample only
             self._result, self._read_key = None, None
             self._result = read_for(self.store, profile, path, reader, self._reader_options(),
@@ -515,7 +531,6 @@ class AddDataDialog(QDialog):
                 combo.setCurrentIndex(i)
                 combo.blockSignals(False)
         source = self.placement.source()
-        self._form.setRowVisible(self.method_combo, source in ("positions", "layer"))
         pid = self.placement.profile_combo.currentData() if source == "existing" else None
         if pid != self._sets_for:                   # the chosen profile's station sets
             self._sets_for = pid
@@ -548,7 +563,8 @@ class AddDataDialog(QDialog):
         """Fit report, electrode note and warnings for the placement as chosen."""
         mesh = result.mesh
         on_map, readings = self._on_map(), mesh.readings is not None
-        guess = np.empty(0) if on_map or readings else guess_electrodes(mesh, z_kind)
+        guess = (np.empty(0) if on_map or readings
+                 else model_stations(mesh, result.provenance, z_kind))
         self.placement.set_guessed_spacing(float(np.median(np.diff(guess)))
                                            if guess.size >= 2 else None)
         warnings = [self._line_error] if on_map and self._line_error else []
@@ -581,8 +597,9 @@ class AddDataDialog(QDialog):
             fit = fit_report(*known) if known is not None else resolution.fit
             guess_used = self.placement.spacing_is_guess() if known is not None else guessed
             show_fit(self.fit_label, *fit_line(fit, guess_used, resolution.note))
+        named = not on_map and not readings and "station_x" in result.provenance
         self.electrode_label.setText(self._electrode_text(placement, profile, sets, readings,
-                                                          guess))
+                                                          guess, named))
         if station_set is not None and not guessed:
             overhang = overhang_message(span[0], span[1], station_set, profile.name)
             if overhang:
@@ -634,17 +651,36 @@ class AddDataDialog(QDialog):
             layout.guess, layout.guessed_spacing = guess, float(np.median(np.diff(guess)))
         return layout
 
-    def _electrode_text(self, placement, profile, sets, readings: bool, guess) -> str:
-        """What the section will show as electrodes when the profile has no positions."""
+    def _preset_method(self, provenance: dict, quantity: str, propose: bool = True) -> None:
+        """The method the file says (Refrapy, a velocity VTK), else the one of what it holds
+        (P-wave velocity: refraction, otherwise ERT), never the previous file's; measured ERT
+        data fix it to ERT. ``propose`` False only enables the row. Silent: the preview
+        follows in the same refresh."""
+        readings = provenance.get("kind") in READINGS_KINDS
+        proposed = "ert" if readings else (provenance.get("method") or
+                                           ("srt" if quantity == "p_velocity" else "ert"))
+        self.method_combo.blockSignals(True)
+        if propose or readings:
+            self.method_combo.setCurrentIndex(max(0, self.method_combo.findData(proposed)))
+        self.method_combo.setEnabled(not readings)
+        self.method_combo.setToolTip(READINGS_METHOD_TIP if readings else METHOD_TIP)
+        self.method_combo.blockSignals(False)
+
+    def _electrode_text(self, placement, profile, sets, readings: bool, guess,
+                        named: bool = False) -> str:
+        """What the section will show as electrodes (geophones) when the profile has no
+        positions."""
         if sets or readings or profile.metadata.get("electrode_spacing") is not None:
             return ""
         if placement.profile_id is not None and self.provider is not None and \
                 self.provider.electrodes(placement.profile_id) is not None:
             return ""                               # its other data give them
+        word, words = station_words(self.method_combo.currentData() or "")
         if guess.size < 2:
-            return NO_ELECTRODES_NOTE
-        return GUESSED_ELECTRODES.format(n=guess.size,
-                                         spacing=fmt_trim(float(np.median(np.diff(guess)))))
+            return NO_STATIONS_NOTE.format(word=word)
+        text = NAMED_STATIONS if named else GUESSED_ELECTRODES
+        return text.format(Words=words.capitalize(), n=guess.size,
+                           spacing=fmt_trim(float(np.median(np.diff(guess)))))
 
     def _set_warnings(self, warnings: list[str]) -> None:
         self.warning_label.setText("\n".join(warnings))

@@ -499,3 +499,34 @@ def test_fit_report_names_the_station(tmp_path, names, at):
     provider = SectionDataProvider(st)
     r = resolve(p, st.station_sets(p.id), d, provider.layout(p.id))
     assert r.fit.at == at
+
+
+def _refrapy(tmp_path) -> Path:
+    for name in ("L9_xzv.txt", "L9_topography.txt"):
+        shutil.copy(FIXTURES / "seismic" / name, tmp_path / name)
+    return tmp_path / "L9_xzv.txt"
+
+
+def test_station_x_is_the_layout_guess(tmp_path):
+    """A Refrapy model is triangulated (no guess from its cells), but its topography file
+    names the shot and geophone points: they are the guess."""
+    st, p = _drawn(tmp_path)
+    _add(st, p, _refrapy(tmp_path), "refrapy_xzv", {"z_kind": "elevation"}, "d",
+         kind="srt_model")
+    provider = SectionDataProvider(st)
+    e = provider.electrodes(p.id)
+    assert e is not None and e.kind == "guessed"
+    assert e.chainage == pytest.approx([0.0, 2.0, 4.0, 8.0])
+
+
+def test_a_refraction_profile_without_positions_asks_for_geophones(tmp_path):
+    from groundwork_geophysics.core.layout import kind_text
+    st, p = _drawn(tmp_path)
+    vtk = tmp_path / "f001_res.vtk"
+    shutil.copy(FIXTURES / "ert" / "f001_res.vtk", vtk)
+    _add(st, p, vtk, "vtk_legacy", {"z_kind": "elevation"}, "d", kind="srt_model")
+    provider = SectionDataProvider(st)
+    assert provider.placement_note(p.id).startswith("No geophone positions")
+    assert provider.station_method(p.id) == "srt"
+    assert kind_text("guessed", "srt") == "geophones guessed from the model"
+    assert kind_text("spacing", "ert", "2") == "electrodes from a spacing of 2 m"
