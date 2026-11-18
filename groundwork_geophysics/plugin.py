@@ -62,6 +62,7 @@ class WorkbenchPlugin:
         self._context_dialog = None
         self._plates_dialog = None
         self.plates_action = None
+        self.viewer_action = None
         self.rename_action = self.delete_action = None
         self._project_signals = []
         self._syncing_derived = False
@@ -104,6 +105,10 @@ class WorkbenchPlugin:
         self.plates_action = self.add_action("Plates…", self.show_plates)
         self.menu.addSeparator()
         self.add_action("Show Section Panel", self.show_section_panel)
+        self.viewer_action = self.add_action("Show Borehole Viewer",
+                                             lambda: self.open_borehole_viewer())
+        self.viewer_action.setProperty(
+            "enabled_tip", "The boreholes of the profile open in the section panel, side by side")
         self.pick_action = self.add_action("Pick Profile on Map", self.toggle_pick_tool,
                                            checkable=True)
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
@@ -175,6 +180,7 @@ class WorkbenchPlugin:
         self.pick_action = self.new_profile_action = self.add_data_action = None
         self.rename_action = self.delete_action = None
         self.context_action = self.ties_action = self.plates_action = None
+        self.viewer_action = None
         self.help_action = self.about_action = None
         from .patterns import unregister_svg_path
         unregister_svg_path()
@@ -331,9 +337,9 @@ class WorkbenchPlugin:
         self._close_borehole_viewer()
         self.set_store(None)
 
-    def open_borehole_viewer(self, entry: int, label: str) -> None:
-        """Show the current profile's boreholes, ``(entry, label)`` highlighted; one window,
-        re-used by later clicks."""
+    def open_borehole_viewer(self, entry: int | None = None, label: str = "") -> None:
+        """Show the current profile's boreholes, ``(entry, label)`` highlighted (from a click
+        on a column; none from the menu); one window, re-used later."""
         from .section.borehole_viewer import BoreholeViewer
         if self.dock is None or self.dock.provider is None:
             return
@@ -343,7 +349,8 @@ class WorkbenchPlugin:
         if self.borehole_viewer is None:
             self.borehole_viewer = BoreholeViewer(self.dock, QgsProject.instance(),
                                                   self.iface.mainWindow())
-        self.borehole_viewer.show_profile(profile_id, (entry, label))
+        self.borehole_viewer.show_profile(profile_id,
+                                          None if entry is None else (entry, label))
         self.borehole_viewer.show()
         self.borehole_viewer.raise_()
         self.borehole_viewer.activateWindow()
@@ -385,6 +392,8 @@ class WorkbenchPlugin:
                                 (self.rename_action, has_profile,
                                  "Open a profile in the section panel first"),
                                 (self.delete_action, has_profile,
+                                 "Open a profile in the section panel first"),
+                                (self.viewer_action, has_profile,
                                  "Open a profile in the section panel first")):
             if action is None:
                 continue

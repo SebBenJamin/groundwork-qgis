@@ -349,3 +349,239 @@ def test_settings_column_never_cut_off(viewer, qgis_app):
     qgis_app.processEvents()
     assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     assert scroll.minimumWidth() >= scroll.widget().minimumSizeHint().width()
+
+
+# -- even spacing reaches every column ----------------------------------------------------------
+def _rects(viewer):
+    viewer.canvas.render_image()
+    return dict((p.label, r) for p, r in viewer.canvas.column_rects)
+
+
+def test_even_text_room_is_the_measured_text(viewer):
+    from groundwork_geophysics.section.borehole_draw import layer_text_width
+    viewer.set_axis("depth")
+    viewer.set_mode("even")
+    viewer.show_check["text"].setChecked(True)
+    rects = _rects(viewer)
+    rk15 = next(p for p in viewer.boreholes if p.label == "RK15")
+    room = rects["RK16"].left() - rects["RK15"].right()
+    assert room == pytest.approx(layer_text_width(rk15, viewer.canvas.layer_font()) + 40, abs=1)
+    assert room < 90 + 40
+
+
+def test_even_fit_shows_all_columns_when_they_fit(viewer, qgis_app):
+    viewer.set_axis("depth")
+    viewer.set_mode("even")
+    viewer.show_check["text"].setChecked(True)
+    viewer.resize(520, 600)
+    qgis_app.processEvents()
+    viewer.set_mode("even")                                        # Fit
+    width = viewer.canvas.width()
+    rects = _rects(viewer)
+    assert len(rects) == 3
+    from groundwork_geophysics.section.borehole_viewer import COLUMN_PX
+    widths = viewer.canvas._widths(viewer.boreholes)          # column + its layer text
+    assert all(0 <= r.left() and r.left() + w <= width for r, w in zip(rects.values(), widths))
+    assert all(w > COLUMN_PX for w in widths)
+
+
+def _many(fake_dock, n=12):
+    from groundwork_geophysics.core.context import ContextItems
+    fake_dock.provider.items["p3"] = ContextItems(points=[
+        _bh(10.0 * i, f"B{i}", 20.0, [(0, 2, "a very long layer description of the core", None)])
+        for i in range(n)])
+
+
+def test_even_fit_names_columns_off_to_the_right(viewer, fake_dock, qgis_app):
+    _many(fake_dock)
+    viewer.resize(520, 600)
+    viewer.show_profile("p3")
+    viewer.set_axis("depth")
+    viewer.set_mode("even")
+    viewer.show_check["text"].setChecked(True)
+    viewer.set_mode("even")
+    viewer.canvas.render_image()
+    left, right = viewer.canvas.off_view()
+    assert left == 0 and right > 0
+    assert f"{right} more boreholes to the right (drag to see them)" in viewer.status.text()
+    c = viewer.canvas
+    c.transform = c.transform.panned(-c.width(), 0)
+    c.render_image()
+    assert c.off_view()[0] > 0
+    assert f"{c.off_view()[0]} more boreholes to the left" in viewer.status.text()
+
+
+# -- Auto VE ---------------------------------------------------------------------------------------
+def _fresh(fake_dock, qgis_app, pid="p1", options=None):
+    """A viewer on a project without saved viewer options (or with ``options``)."""
+    import json
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.section.borehole_viewer import OPTIONS_KEY, SCOPE, BoreholeViewer
+    prj = QgsProject.instance()
+    prj.removeEntry(SCOPE, OPTIONS_KEY)
+    if options is not None:
+        prj.writeEntry(SCOPE, OPTIONS_KEY, json.dumps(options))
+    v = BoreholeViewer(fake_dock, prj)
+    v.resize(900, 600)
+    v.show_profile(pid)
+    v.show()
+    qgis_app.processEvents()
+    return v
+
+
+def _ctrl_wheel(canvas):
+    from qgis.PyQt.QtCore import QPoint, QPointF, Qt
+    from qgis.PyQt.QtGui import QWheelEvent
+    pos = QPointF(canvas.width() / 2, canvas.height() / 2)
+    canvas.wheelEvent(QWheelEvent(pos, pos, QPoint(0, 0), QPoint(0, 120),
+                                  Qt.MouseButton.NoButton, Qt.KeyboardModifier.ControlModifier,
+                                  Qt.ScrollPhase.NoScrollPhase, False))
+
+
+def test_ve_auto_by_default_fills_the_height(fake_dock, qgis_app):
+    v = _fresh(fake_dock, qgis_app, options={"mode": "true", "axis": "elevation"})
+    try:
+        assert v.ve_spin.value() == 0.0 and v.is_auto_ve()
+        rects = _rects(v)
+        text = v.ve_spin.specialValueText()
+        assert text.startswith("Auto (") and text.endswith("×)")
+        tops, bottoms = [r.top() for r in rects.values()], [r.bottom() for r in rects.values()]
+        assert max(bottoms) - min(tops) >= 0.7 * v.canvas.height()
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_typed_ve_kept(fake_dock, qgis_app):
+    from groundwork_geophysics.core.borehole_layout import vertical_exaggeration
+    v = _fresh(fake_dock, qgis_app, options={"mode": "true", "axis": "elevation"})
+    try:
+        v.ve_spin.setValue(5.0)
+        assert vertical_exaggeration(v.canvas.transform) == pytest.approx(5.0)
+        _ctrl_wheel(v.canvas)
+        assert v.ve_spin.value() == pytest.approx(5.0 * 1.2)
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_auto_stays_auto_on_zoom(fake_dock, qgis_app):
+    v = _fresh(fake_dock, qgis_app, options={"mode": "true", "axis": "elevation"})
+    try:
+        _ctrl_wheel(v.canvas)
+        assert v.ve_spin.value() == 0.0
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_auto_ve_clamped(fake_dock, qgis_app):
+    from groundwork_geophysics.core.context import ContextItems
+    fake_dock.provider.items["flat"] = ContextItems(points=[
+        _bh(100.0 * i, f"F{i}", 20.0, [(0, 0.1, "a", None)]) for i in range(6)])
+    v = _fresh(fake_dock, qgis_app, pid="flat", options={"mode": "true", "axis": "elevation"})
+    try:
+        v.canvas.render_image()
+        assert v.ve_spin.specialValueText() == "Auto (50×)"
+        v.set_axis("depth")
+        v.canvas.render_image()
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_old_project_ve_kept(fake_dock, qgis_app):
+    v = _fresh(fake_dock, qgis_app, options={"ve": 5.0})
+    w = None
+    try:
+        assert v.ve_spin.value() == 5.0
+        w = _fresh(fake_dock, qgis_app)
+        assert w.ve_spin.value() == 0.0
+    finally:
+        for x in (v, w):
+            if x is not None:
+                x.close()
+                x.deleteLater()
+
+
+# -- labels left out are named ---------------------------------------------------------------------
+def _close_together(fake_dock):
+    from groundwork_geophysics.core.context import ContextItems
+    fake_dock.provider.items["close"] = ContextItems(points=[
+        _bh(10.0 + 0.3 * i, f"RK1{i}", 20.0, [(0, 2, "sand", None)]) for i in range(3)])
+
+
+def test_dropped_labels_are_named(fake_dock, qgis_app):
+    _close_together(fake_dock)
+    v = _fresh(fake_dock, qgis_app, pid="close",
+               options={"mode": "true", "axis": "elevation",
+                        "labels": {"name": True, "elevation": True, "distance": True}})
+    try:
+        v.canvas.render_image()
+        dropped = v.canvas.dropped_labels
+        assert dropped
+        assert f"Labels left out: {', '.join(dropped)}" in v.status.text()
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_notes_once(viewer):
+    viewer.set_axis("elevation")
+    viewer.canvas.render_image()
+    rect = dict((p.label, r) for p, r in viewer.canvas.column_rects)["RK15"]
+    viewer.show_readout(viewer.canvas.readout_text(rect.center().x(), rect.center().y()))
+    viewer.canvas.render_image()
+    viewer.canvas.render_image()
+    text = viewer.status.text()
+    assert text.count("No height") == 1 and text.startswith("RK15")
+
+
+def test_wording(viewer):
+    from qgis.PyQt.QtWidgets import QLabel, QPushButton
+    assert any(b.text() == "Curve Style…" for b in viewer.findChildren(QPushButton))
+    font_label = next(lb for lb in viewer.findChildren(QLabel) if lb.text() == "Font")
+    assert font_label.buddy() is viewer.font_button
+
+
+def test_notes_cleared_on_a_profile_without_boreholes(fake_dock, qgis_app):
+    """Final review: the last profile's "Labels left out" stayed under an empty profile."""
+    from groundwork_geophysics.core.context import ContextItems
+    _close_together(fake_dock)
+    fake_dock.provider.items["none"] = ContextItems(points=[])
+    v = _fresh(fake_dock, qgis_app, pid="close",
+               options={"mode": "true", "axis": "elevation",
+                        "labels": {"name": True, "elevation": True, "distance": True}})
+    try:
+        v.canvas.render_image()
+        assert "Labels left out" in v.status.text()
+        v.show_profile("none")
+        v.canvas.repaint()
+        qgis_app.processEvents()
+        assert v.status.text() == ""
+    finally:
+        v.close()
+        v.deleteLater()
+
+
+def test_all_hidden_says_so(fake_dock, qgis_app):
+    """Final review: with every borehole hidden and Show › Hidden boreholes off, the viewer
+    sent the user to add a borehole layer."""
+    from groundwork_geophysics.core.context import ContextItems, ProjectedPoint
+    from groundwork_geophysics.section.borehole_viewer import ALL_HIDDEN, NO_BOREHOLES
+    fake_dock.provider.items["hid"] = ContextItems(points=[
+        ProjectedPoint(5.0, 1.0, "H1", "borehole", 20.0, [], entry=0, bid="H1", layer_id="L1",
+                       total_depth=2.0)])
+    fake_dock.provider.hidden["hid"] = {("L1", "H1")}
+    v = _fresh(fake_dock, qgis_app, pid="hid")
+    try:
+        v.show_check["hidden"].setChecked(False)
+        assert v.canvas.empty_hint() == ALL_HIDDEN != NO_BOREHOLES
+        v.show_check["hidden"].setChecked(True)
+        assert v.canvas.empty_hint() == ""
+    finally:
+        v.show_check["hidden"].setChecked(True)
+        v.close()
+        v.deleteLater()

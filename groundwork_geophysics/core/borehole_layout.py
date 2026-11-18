@@ -98,3 +98,35 @@ def extent_z(points, axis: str, surface_z: Callable[[float], float | None]):
         lows.append(top - column_depth(p))
         highs.append(top)
     return (min(lows), max(highs)) if lows else None
+
+
+def spread_texts(layers: list[tuple[float, float]], height: float, lo: float,
+                 hi: float) -> list[float | None]:
+    """Where each layer text goes in one column: its centre y (px), keeping the order, no two
+    closer than ``height``, all inside ``lo..hi``; ``None`` for a text left out. ``layers`` are
+    the texts' layers as (y_top, y_bottom), top to bottom. When ``lo..hi`` cannot hold them
+    all, the texts of the thinnest layers are left out."""
+    keep = list(range(len(layers)))
+    while keep and len(keep) * height > hi - lo:
+        keep.remove(min(keep, key=lambda i: (abs(layers[i][1] - layers[i][0]), -i)))
+    ys = [(layers[i][0] + layers[i][1]) / 2 for i in keep]
+    for k in range(len(ys)):
+        ys[k] = max(ys[k], lo + height / 2, ys[k - 1] + height if k else ys[k])
+    for k in reversed(range(len(ys))):
+        ys[k] = min(ys[k], hi - height / 2, ys[k + 1] - height if k + 1 < len(ys) else ys[k])
+    for k in range(len(ys)):
+        ys[k] = max(ys[k], lo + height / 2)
+    out: list[float | None] = [None] * len(layers)
+    for i, y in zip(keep, ys):
+        out[i] = y
+    return out
+
+
+def even_gap(widths_px: list[float], room_px: float, gap_px: float = 40,
+             min_gap_px: float = 12) -> float:
+    """The gap between evenly spaced columns that makes them fit ``room_px``, never wider than
+    ``gap_px`` nor narrower than ``min_gap_px`` (``gap_px`` for one column or none)."""
+    if len(widths_px) < 2:
+        return gap_px
+    gap = (room_px - sum(widths_px)) / (len(widths_px) - 1)
+    return max(min_gap_px, min(gap_px, gap))
