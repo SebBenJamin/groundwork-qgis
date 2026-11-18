@@ -120,6 +120,17 @@ def guess_electrodes(mesh: SectionMesh, z_kind: str) -> np.ndarray:
     return top if top.size >= 2 else np.empty(0)
 
 
+def model_stations(mesh: SectionMesh, provenance: dict, z_kind: str) -> np.ndarray:
+    """Station positions a model file gives, in file distance, ascending: the ones it names
+    (``provenance["station_x"]``, e.g. Refrapy's shot and geophone points), else
+    ``guess_electrodes``."""
+    named = (provenance or {}).get("station_x")
+    if named is not None and len(named) >= 2:
+        x = np.asarray(named, dtype=float)
+        return np.unique(x[np.isfinite(x)])
+    return guess_electrodes(mesh, z_kind)
+
+
 def guessed_spacing(mesh: SectionMesh, z_kind: str) -> float | None:
     """The median gap of ``guess_electrodes``, or None without a guess (always None for a
     triangulated mesh, see ``guess_electrodes``)."""

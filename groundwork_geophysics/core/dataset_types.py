@@ -25,6 +25,8 @@ TYPES: dict[str, DatasetType] = {t.code: t for t in (
     DatasetType("srt_model", "Seismic refraction", "Vp model", "p_velocity", "m/s", False),
 )}
 
+#: kinds of readings files (measured data, misfit): never a model, always ERT so far
+READINGS_KINDS = ("ert_measured", "ert_misfit")
 #: station-set and dataset method choices: (label, code)
 METHODS: list[tuple[str, str]] = [("ERT", "ert"), ("Seismic refraction", "srt")]
 _MODEL_KINDS = {"ert": "ert_model", "srt": "srt_model"}

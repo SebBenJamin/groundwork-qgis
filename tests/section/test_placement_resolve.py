@@ -499,3 +499,21 @@ def test_fit_report_names_the_station(tmp_path, names, at):
     provider = SectionDataProvider(st)
     r = resolve(p, st.station_sets(p.id), d, provider.layout(p.id))
     assert r.fit.at == at
+
+
+def _refrapy(tmp_path) -> Path:
+    for name in ("L9_xzv.txt", "L9_topography.txt"):
+        shutil.copy(FIXTURES / "seismic" / name, tmp_path / name)
+    return tmp_path / "L9_xzv.txt"
+
+
+def test_station_x_is_the_layout_guess(tmp_path):
+    """A Refrapy model is triangulated (no guess from its cells), but its topography file
+    names the shot and geophone points: they are the guess."""
+    st, p = _drawn(tmp_path)
+    _add(st, p, _refrapy(tmp_path), "refrapy_xzv", {"z_kind": "elevation"}, "d",
+         kind="srt_model")
+    provider = SectionDataProvider(st)
+    e = provider.electrodes(p.id)
+    assert e is not None and e.kind == "guessed"
+    assert e.chainage == pytest.approx([0.0, 2.0, 4.0, 8.0])

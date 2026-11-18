@@ -22,7 +22,7 @@ from ..readers.errors import plain_error
 from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
-from ..core.layout import Electrodes, derived_electrodes, guess_electrodes
+from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport
 from ..core.section_mesh import SectionMesh
@@ -763,10 +763,11 @@ class SectionDataProvider:
 
     # -- placement -------------------------------------------------------------------------
     def _model_guess(self, d: Dataset, result: readers.ReaderResult, z_kind: str) -> np.ndarray:
-        """``guess_electrodes`` of a read, cached with it (the top edge walk is not free)."""
+        """``model_stations`` of a read, cached with it (the top edge walk is not free)."""
         hit = self._guesses.get(d.id)
         if hit is None or hit[0] is not result or hit[1] != z_kind:
-            hit = self._guesses[d.id] = (result, z_kind, guess_electrodes(result.mesh, z_kind))
+            hit = self._guesses[d.id] = (result, z_kind,
+                                         model_stations(result.mesh, result.provenance, z_kind))
         return hit[2]
 
     def _layout_sources(self, profile: Profile | None, datasets: list[Dataset]

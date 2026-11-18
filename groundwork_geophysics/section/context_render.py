@@ -15,6 +15,7 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 
 from ..core.context import DEFAULT_LINE_RGB, strips_of
+from ..core.dataset_types import READINGS_KINDS  # readings: never a tie strip's scale
 from ..core.lithology import label_colour
 from ..core.ties import strip_column
 
@@ -341,8 +342,6 @@ def tie_strip_column(tie):
     return strip_column(tie)
 
 
-#: readings (measured, or with the model response / misfit): never a tie strip's scale
-READINGS_KINDS = ("ert_measured", "ert_misfit")
 
 
 def strip_scale(col, host_layers):
