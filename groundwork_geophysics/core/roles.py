@@ -135,6 +135,8 @@ class ModelColumns:
     quantity: str = "resistivity"       # "" until an "Other" quantity is named
     unit: str = "ohm.m"
     log10: bool = False
+    #: optional per-cell coverage (as in the file, often log): fades unresolved cells
+    coverage: int | None = None
 
     def __post_init__(self):
         if self.position not in POSITIONS:
@@ -152,7 +154,8 @@ class ModelColumns:
                    vertical_kind=str(d.get("vertical_kind", "")),
                    value=_index(d.get("value")),
                    quantity=str(d.get("quantity", "resistivity")),
-                   unit=str(d.get("unit", "ohm.m")), log10=bool(d.get("log10", False)))
+                   unit=str(d.get("unit", "ohm.m")), log10=bool(d.get("log10", False)),
+                   coverage=_index(d.get("coverage")))
 
     def _roles(self) -> list[tuple[str, int | None]]:
         if self.position == "map":
@@ -162,8 +165,10 @@ class ModelColumns:
         return pos + [("vertical", self.vertical), ("value", self.value)]
 
     def used(self) -> list[int]:
-        """The assigned columns: position first, then vertical and value."""
-        return [c for _, c in self._roles() if c is not None]
+        """The assigned columns: position first, then vertical and value; the optional
+        coverage last."""
+        out = [c for _, c in self._roles() if c is not None]
+        return out + ([self.coverage] if self.coverage is not None else [])
 
     def problems(self, table) -> list[str]:
         """What is missing or wrong, as messages for the user; empty when complete."""

@@ -162,3 +162,19 @@ def test_max_rows_reads_only_the_first_rows():
                      columns=cols.to_dict(), max_rows=25)
     assert r.provenance["n_rows"] + r.provenance["n_skipped"] == 25
     assert len(map_points(WILD / "east_north_depth_rho.csv", {}, MAP_COLS, max_rows=6)) == 6
+
+
+def test_text_table_with_coverage(tmp_path):
+    rows = [[x, z, 500.0 + x + z, 1.0 + x / 10] for z in (100.0, 98.0, 96.0)
+            for x in (1.0, 3.0, 5.0, 7.0)]
+    p = _write(tmp_path / "vel.txt", rows)
+    cols = ModelColumns(distance=0, vertical=1, vertical_kind="elevation", value=2,
+                        coverage=3, quantity="p_velocity", unit="m/s")
+    r = _read(p, cols)
+    assert r.mesh.quantity == "p_velocity" and r.mesh.unit == "m/s"
+    assert r.mesh.coverage is not None and len(r.mesh.coverage) == len(r.mesh.values)
+    assert np.nanmax(r.mesh.values) == pytest.approx(507.0 + 100.0)
+    without = _read(p, ModelColumns(distance=0, vertical=1, vertical_kind="elevation",
+                                    value=2, quantity="p_velocity", unit="m/s"))
+    assert without.mesh.coverage is None
+    assert np.array_equal(without.mesh.values, r.mesh.values)

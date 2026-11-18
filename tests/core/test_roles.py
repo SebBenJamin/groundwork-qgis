@@ -129,3 +129,15 @@ def test_name_column_is_guessed():
                       [["2026-11-03", "10:15", "500000.0", "5600000.0"],
                        ["2026-11-03", "10:16", "500002.0", "5600000.0"]], [2, 3])
     assert guess_position_columns(dated).number is None
+
+
+def test_coverage_column_round_trips():
+    from groundwork_geophysics.core.roles import ModelColumns
+    c = ModelColumns(distance=0, vertical=1, vertical_kind="elevation", value=2, coverage=3,
+                     quantity="p_velocity", unit="m/s")
+    assert ModelColumns.from_dict(c.to_dict()) == c
+    assert c.used() == [0, 1, 2, 3]
+    old = c.to_dict()
+    del old["coverage"]
+    assert ModelColumns.from_dict(old).coverage is None
+    assert ModelColumns.from_dict(old).used() == [0, 1, 2]

@@ -82,6 +82,9 @@ class ModelColumnsBox(QGroupBox):
         self.unit_edit.setPlaceholderText("Unit")
         self.unit_edit.setToolTip("Unit of the values, for example mV/V")
         self.log10_check = QCheckBox("Values are log10")
+        self.coverage_combo = combo("coverage_combo",
+                                    "Optional: the inversion's coverage or sensitivity per "
+                                    "cell, for fading unresolved parts")
         self.hint_label = QLabel(GUESSED_HINT)
         self.hint_label.setWordWrap(True)
 
@@ -97,7 +100,8 @@ class ModelColumnsBox(QGroupBox):
                 ("CRS", self._crs_row),
                 ("Vertical", _row(self.vertical_combo, self.vertical_kind_combo)),
                 ("Value", _row(self.value_combo, self.quantity_combo, self.log10_check)),
-                ("", self._other_row))
+                ("", self._other_row),
+                ("Coverage", _row(self.coverage_combo)))
         self._labels: dict[QWidget, QLabel] = {}
         for r, (text, widget) in enumerate(rows):
             label = QLabel(text)
@@ -110,7 +114,7 @@ class ModelColumnsBox(QGroupBox):
             radio.toggled.connect(lambda on: on and self._edited())
         for box in (self.distance_combo, self.easting_combo, self.northing_combo,
                     self.vertical_combo, self.vertical_kind_combo, self.value_combo,
-                    self.quantity_combo):
+                    self.quantity_combo, self.coverage_combo):
             box.currentIndexChanged.connect(self._edited)
         self.crs_widget.crsChanged.connect(self._edited)
         self.log10_check.toggled.connect(self._edited)
@@ -129,7 +133,8 @@ class ModelColumnsBox(QGroupBox):
                                 (self.easting_combo, columns.easting),
                                 (self.northing_combo, columns.northing),
                                 (self.vertical_combo, columns.vertical),
-                                (self.value_combo, columns.value)):
+                                (self.value_combo, columns.value),
+                                (self.coverage_combo, columns.coverage)):
                 box.clear()
                 box.addItem("(none)", None)
                 for c in numeric:
@@ -169,7 +174,8 @@ class ModelColumnsBox(QGroupBox):
             value=self.value_combo.currentData(),
             quantity=fixed or self.quantity_name.text().strip(),
             unit=FIXED_UNITS[fixed] if fixed else self.unit_edit.text().strip(),
-            log10=self.log10_check.isChecked())
+            log10=self.log10_check.isChecked(),
+            coverage=self.coverage_combo.currentData())
 
     def roles(self) -> dict[int, str]:
         """Role word per assigned column, for the preview's second header line."""
@@ -178,7 +184,8 @@ class ModelColumnsBox(QGroupBox):
         pairs = ([("easting", c.easting), ("northing", c.northing)] if c.position == "map"
                  else [("distance", c.distance)])
         pairs += [(VERTICAL_WORDS.get(c.vertical_kind, "vertical"), c.vertical),
-                  (value + (" (log10)" if c.log10 else ""), c.value)]
+                  (value + (" (log10)" if c.log10 else ""), c.value),
+                  ("coverage", c.coverage)]
         out: dict[int, str] = {}
         for word, col in pairs:
             if col is not None:

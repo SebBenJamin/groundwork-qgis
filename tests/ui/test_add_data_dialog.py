@@ -637,3 +637,27 @@ def test_a_missing_file_says_what_to_do_here(qgis_app, make_dialog, project_stor
     text = dlg.summary_label.text()
     assert "does_not_exist.txt: file not found" in text
     assert text.endswith("Check the path, or choose another file.") and "layer" not in text
+
+
+def test_velocity_table_with_a_coverage_column(qgis_app, make_dialog, project_store,
+                                               selected_line, warnings_shown, tmp_path):
+    p = tmp_path / "vp.txt"
+    p.write_text("dist elev vp cov\n" + "".join(
+        f"{x} {z} {500 + x + z} {1 + x / 10}\n" for z in (100, 98, 96) for x in (1, 3, 5, 7)))
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(p)
+    box = dlg.columns_group
+    _index(box.vertical_combo, 1)
+    _index(box.vertical_kind_combo, "elevation")
+    _index(box.value_combo, 2)
+    _index(box.quantity_combo, "p_velocity")
+    assert not box.quantity_name.isVisible()
+    _index(box.coverage_combo, 3)
+    assert box.roles()[3] == "coverage" and box.roles()[2] == "P-wave velocity"
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [prof] = st.profiles()
+    [d] = st.datasets(prof.id)
+    assert (d.quantity, d.unit) == ("p_velocity", "m/s")
+    assert d.reader_options["columns"]["coverage"] == 3

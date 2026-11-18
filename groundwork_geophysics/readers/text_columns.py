@@ -83,7 +83,9 @@ class TextColumnsReader(Reader):
         """``max_rows``: read only the first data rows (a preview); never stored."""
         path = Path(path)
         cols, arr, skipped, first = _rows(path, table, columns, max_rows)
-        z, v = arr[:, -2], arr[:, -1]
+        k = 2 if cols.position == "map" else 1           # vertical, value, [coverage]
+        z, v = arr[:, k], arr[:, k + 1]
+        coverage = arr[:, k + 2] if cols.coverage is not None else None
         provenance = {"reader": self.name, "source_name": path.name, "n_rows": int(len(arr)),
                       "n_skipped": skipped, "first_skipped_line": first,
                       "position": cols.position}
@@ -104,7 +106,8 @@ class TextColumnsReader(Reader):
         if cols.log10:
             v = np.where(fill_mask(v), v, 10.0 ** v)
         mesh, n_masked, reconstruction = mesh_from_points(x, z, v, path.name, kind,
-                                                          cols.quantity, cols.unit)
+                                                          cols.quantity, cols.unit,
+                                                          coverage=coverage)
         provenance["n_masked"] = n_masked
         provenance["reconstruction"] = reconstruction
         return ReaderResult(mesh, kind, provenance)
