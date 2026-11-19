@@ -1,7 +1,7 @@
 """The 3D view's mouse in the section: what the mouse points at in a QGIS 3D map view (a
 curtain, a borehole column, a cloud point) becomes chainage and elevation on the section
-panel's open profile, and the panel shows its cursor there. One way only: the section's own
-mouse does not move anything in 3D."""
+panel's open profile; the panel shows its cursor there and, as for its own mouse, the 2D map
+its marker. One way only: the section's own mouse does not move anything in 3D."""
 from __future__ import annotations
 
 import numpy as np
@@ -12,7 +12,10 @@ from qgis.PyQt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 
 #: a hit counts when it is this close to the profile's line: max(1 m, 1 % of its length)
 TOLERANCE_M, TOLERANCE_SHARE = 1.0, 0.01
-CAST_MS = 66                         # at most about 15 rays a second
+CAST_MS = 40                         # at most about 25 rays a second
+#: a miss keeps the cursor this long before it hides (a ray slipping between a cloud's points
+#: must not blink it off)
+HOLD_MS = 300
 #: degrees around the ray a point of a point cloud may lie (QGIS's identify tool uses 0.5;
 #: the default 0 misses every point)
 ANGLE_DEGREES = 0.5
@@ -45,6 +48,10 @@ class View3dLink(QObject):
         self._cast.setSingleShot(True)
         self._cast.setInterval(CAST_MS)
         self._cast.timeout.connect(self.cast_now)
+        self._hold = QTimer(self)
+        self._hold.setSingleShot(True)
+        self._hold.setInterval(HOLD_MS)
+        self._hold.timeout.connect(self.hide_now)
         self._poll = QTimer(self)
         self._poll.setInterval(POLL_MS)
         self._poll.timeout.connect(self.poll)
@@ -74,7 +81,7 @@ class View3dLink(QObject):
         elif etype == QEvent.Type.Leave:
             self._pending = None
             self._cast.stop()
-            self._show(None)
+            self.hide_now()
         return False                             # the 3D view handles its mouse as usual
 
     def cast_now(self) -> None:
@@ -104,13 +111,30 @@ class View3dLink(QObject):
         if sip.isdeleted(self.dock):
             return
         profile = self.dock.current_profile()
-        if hit is None or profile is None:
-            self.dock.show_cursor(None)
+        at = None
+        if hit is not None and profile is not None:
+            p = hit.mapCoordinates()
+            x, y = self._to_store(p.x(), p.y())
+            at = None if x is None else section_point((x, y, p.z()), profile.chainage)
+        if at is None:
+            if not self._hold.isActive():
+                self._hold.start()               # hide only if nothing is hit for a moment
             return
-        p = hit.mapCoordinates()
-        x, y = self._to_store(p.x(), p.y())
-        at = None if x is None else section_point((x, y, p.z()), profile.chainage)
-        self.dock.show_cursor(*(at if at is not None else (None,)))
+        self._hold.stop()
+        self.dock.show_cursor(*at)
+        self.dock.cursor_moved.emit(*at)         # the map's marker follows, as for the panel
+
+    def holding(self) -> bool:
+        """A miss is waiting to hide the cursor."""
+        return self._hold.isActive()
+
+    def hide_now(self) -> None:
+        """Hide the section's cursor and the map's marker."""
+        self._hold.stop()
+        if sip.isdeleted(self.dock):
+            return
+        self.dock.show_cursor(None)
+        self.dock.cursor_left.emit()
 
     def _to_store(self, x: float, y: float):
         """Map coordinates of the 3D view (the project CRS) in the store's CRS."""
@@ -130,6 +154,7 @@ class View3dLink(QObject):
     def unload(self) -> None:
         self._poll.stop()
         self._cast.stop()
+        self._hold.stop()
         for canvas in self._canvases:
             if not sip.isdeleted(canvas):
                 canvas.removeEventFilter(self)

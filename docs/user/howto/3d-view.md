@@ -54,7 +54,7 @@ The interpretation lines, polygons and points (3D) stand at the depth you drew t
 
 ## Pointing in 3D shows the place in the section
 
-Move the mouse over a curtain, a section picture, a borehole column or a point cloud in the 3D view (with no mouse button held): when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section. Over anything else, or off the 3D view, the cursor hides. It only follows while the section panel is open with a profile in it. The section never switches profile by itself: open the profile you want to follow first.
+Move the mouse over a curtain, a section picture, a borehole column or a point cloud in the 3D view (with no mouse button held): when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section, and the marker on the 2D map moves to the same place on the profile line. Over anything else, or off the 3D view, the cursor hides. It only follows while the section panel is open with a profile in it. The section never switches profile by itself: open the profile you want to follow first.
 
 ## Working with the layers
 

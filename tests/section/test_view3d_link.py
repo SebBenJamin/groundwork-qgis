@@ -116,7 +116,54 @@ def test_without_a_hit_on_the_open_profile_the_cursor_hides(qgis_app, store_with
     link.poll()
     _move(canvas)
     link.cast_now()
+    # a miss is held a moment (a ray slipping between a cloud's points must not blink the
+    # cursor off), then the cursor hides
+    assert dock.cursor_chainage() == 10.0 and link.holding()
+    link.hide_now()
     assert dock.cursor_chainage() is None
+    link.unload()
+
+
+def test_a_hit_after_a_short_miss_keeps_the_cursor_steady(qgis_app, store_with_model,
+                                                          make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    x, y = (float(v) for v in p.chainage.to_xy(20.0))
+    hits = [_Hit((x, y, 98.0), 5.0)]
+    canvas = _canvas(hits)
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _move(canvas)
+    link.cast_now()
+    hits.clear()                                     # the ray slips between points
+    _move(canvas)
+    link.cast_now()
+    hits.append(_Hit((x, y, 97.0), 5.0))
+    _move(canvas)
+    link.cast_now()
+    assert not link.holding() and dock.cursor_chainage() == pytest.approx(20.0, abs=1e-6)
+    link.unload()
+
+
+def test_the_map_marker_follows_the_3d_pointer(qgis_app, store_with_model, make_dock_and_link):
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p, _ = store_with_model
+    dock, map_link = make_dock_and_link(st)
+    dock.open_profile(p.id)
+    x, y = (float(v) for v in p.chainage.to_xy(20.0))
+    canvas = _canvas([_Hit((x, y, 98.0), 5.0)])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _move(canvas)
+    link.cast_now()
+    c = map_link.marker.center()
+    assert map_link.marker.isVisible() and (c.x(), c.y()) == pytest.approx((x, y))
+    QCoreApplication.sendEvent(canvas, QEvent(QEvent.Type.Leave))
+    assert not map_link.marker.isVisible()
     link.unload()
 
 
