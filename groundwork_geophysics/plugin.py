@@ -23,7 +23,7 @@ from .ui import derived_layers, project_actions
 from .ui.context_dialog import read_settings
 from .section.field_notes_render import note_looks
 from .ui.field_note_layers import ensure_note_layers, migrate_note_styles
-from .ui.interp_layers import interp_layers, migrate_letter_styles
+from .ui.interp_layers import ensure_3d_styles, interp_layers, migrate_letter_styles
 
 
 def _own_styled_layers(store, project) -> list:
@@ -227,6 +227,7 @@ class WorkbenchPlugin:
             project = QgsProject.instance()
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
+            ensure_3d_styles(store, project)            # before 0.14: no 3D style
             ensure_note_layers(store, project)          # notes always have a layer to style
             migrate_note_styles(store, project)
             self.provider.note_looks = partial(note_looks, store, project)

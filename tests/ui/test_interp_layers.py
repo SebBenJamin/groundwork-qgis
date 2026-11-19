@@ -160,3 +160,69 @@ def test_layers_panel_legend_lists_a_new_entity(qgis_app, interp_store):
     reload_interp_layers(interp_store, prj)
     assert legend_labels() == ["A · anomaly", "B · geology"]
     prj.clear()
+
+
+def _colour_3d(symbol):
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.PyQt import sip
+    c = sip.cast(symbol, QgsPolygon3DSymbol).materialSettings().diffuse()
+    return c.red(), c.green(), c.blue()
+
+
+def test_the_3d_layers_get_one_3d_category_per_entity_in_its_2d_colour(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    for name in ("interp_lines_3d", "interp_polygons_3d", "interp_points_3d"):
+        r3d = layers[name].renderer3D()
+        assert r3d is not None and r3d.type() == "categorized", name
+        assert r3d.classAttribute() == "feature_id"
+    polys = layers["interp_polygons_3d"]
+    cats2d, cats3d = polys.renderer().categories(), polys.renderer3D().categories()
+    assert [c.value() for c in cats3d] == [c.value() for c in cats2d]
+    c2 = cats2d[0].symbol().color()
+    assert _colour_3d(cats3d[0].symbol()) == (c2.red(), c2.green(), c2.blue())
+    assert layers["interp_footprints"].renderer3D() is None
+    prj.clear()
+
+
+def test_a_new_entity_gets_its_3d_category_and_a_deleted_one_loses_it(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, reload_interp_layers
+
+    prj = QgsProject()
+    polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+    v = interp_store.current_version()
+    f = InterpFeature(new_id(), v.id, type="clay lens", name="B")
+    interp_store.save_feature(f)
+    interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
+                                        [(0, 0), (5, 0), (5, -2)]))
+    reload_interp_layers(interp_store, prj)
+    assert len(polys.renderer3D().categories()) == 2
+    interp_store.delete_feature(f.id)
+    reload_interp_layers(interp_store, prj)
+    assert [c.value() for c in polys.renderer3D().categories()] == [
+        c.value() for c in polys.renderer().categories()]
+    prj.clear()
+
+
+def test_older_projects_get_the_3d_style_once_and_a_users_own_is_kept(qgis_app, interp_store):
+    from qgis._3d import QgsLine3DSymbol, QgsVectorLayer3DRenderer
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, ensure_3d_styles
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    layers["interp_polygons_3d"].setRenderer3D(None)                 # as before 0.14
+    own = QgsVectorLayer3DRenderer(QgsLine3DSymbol())
+    layers["interp_lines_3d"].setRenderer3D(own)                     # the user's
+    assert ensure_3d_styles(interp_store, prj) == 1
+    assert layers["interp_polygons_3d"].renderer3D().type() == "categorized"
+    assert layers["interp_lines_3d"].renderer3D().type() == "vector"
+    assert ensure_3d_styles(interp_store, prj) == 0
+    prj.clear()

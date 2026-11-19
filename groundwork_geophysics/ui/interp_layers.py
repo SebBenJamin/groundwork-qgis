@@ -104,6 +104,82 @@ def sync_categories(layer: QgsVectorLayer, features) -> None:
                                                                   _entity_rgb(len(r.categories()))),
                                               entity_label(feat)))
     layer.setRenderer(r)
+    sync_3d(layer)
+
+
+# -- the 3D view ------------------------------------------------------------------------------
+#: the interpretation layers with real heights (the footprints lie on the map)
+LAYERS_3D = ("interp_lines_3d", "interp_polygons_3d", "interp_points_3d")
+
+
+def _symbol_3d(geometry_type, rgb):
+    """A 3D symbol at the feature's own heights in colour ``rgb``: lines as tubes,
+    polygons flat (seen from both sides), points as spheres."""
+    from qgis._3d import (QgsLine3DSymbol, QgsPhongMaterialSettings, QgsPoint3DSymbol,
+                          QgsPolygon3DSymbol)
+    from qgis.core import Qgis
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor(*rgb))
+    material.setAmbient(QColor(*rgb))
+    if geometry_type == QgsWkbTypes.GeometryType.LineGeometry:
+        symbol = QgsLine3DSymbol()
+        symbol.setRenderAsSimpleLines(False)
+        symbol.setWidth(0.5)
+    elif geometry_type == QgsWkbTypes.GeometryType.PolygonGeometry:
+        symbol = QgsPolygon3DSymbol()
+        symbol.setExtrusionHeight(0.0)
+        symbol.setAddBackFaces(True)
+    else:
+        symbol = QgsPoint3DSymbol()
+        symbol.setShape(Qgis.Point3DShape.Sphere)
+        symbol.setShapeProperties({"radius": 0.75})
+    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    symbol.setMaterialSettings(material)
+    return symbol
+
+
+def default_3d(layer: QgsVectorLayer) -> None:
+    """One 3D category per entity, in its 2D category's colour (kept in step by
+    ``sync_categories``)."""
+    from qgis._3d import QgsCategorized3DRenderer
+    renderer = QgsCategorized3DRenderer("feature_id", [])
+    layer.setRenderer3D(renderer)
+    sync_3d(layer)
+
+
+def sync_3d(layer: QgsVectorLayer) -> None:
+    """Match the 3D categories to the 2D ones: add new entities in their 2D colour, drop
+    deleted ones; a 3D category the user restyled stays, a 3D renderer the user replaced is
+    left alone."""
+    r3d = layer.renderer3D()
+    r2d = layer.renderer()
+    if (r3d is None or r3d.type() != "categorized" or r3d.classAttribute() != "feature_id"
+            or not isinstance(r2d, QgsCategorizedSymbolRenderer)):
+        return
+    from qgis._3d import Qgs3DRendererCategory
+    r3d = r3d.clone()
+    wanted = {c.value(): c for c in r2d.categories()}
+    for i in reversed(range(len(r3d.categories()))):
+        if r3d.categories()[i].value() not in wanted:
+            r3d.deleteCategory(i)
+    have = {c.value() for c in r3d.categories()}
+    for value, cat in wanted.items():
+        if value not in have:
+            c = cat.symbol().color()
+            r3d.addCategory(Qgs3DRendererCategory(
+                value, _symbol_3d(layer.geometryType(), (c.red(), c.green(), c.blue()))))
+    layer.setRenderer3D(r3d)
+
+
+def ensure_3d_styles(store: ProjectStore, project: QgsProject) -> int:
+    """Give the 3D interpretation layers of an older project their 3D style, once: only a
+    layer without any 3D renderer gets it. Returns how many did."""
+    changed = 0
+    for name, layer in interp_layers(store, project).items():
+        if name in LAYERS_3D and layer.renderer3D() is None:
+            default_3d(layer)
+            changed += 1
+    return changed
 
 
 #: a reference to the 0.7 field ``letter`` in a saved style: quoted in an expression (plain
@@ -153,6 +229,8 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
             layer.setSubsetString(f"\"version_id\" = '{store.current_version().id}'")
         else:
             default_style(layer)
+            if name in LAYERS_3D:
+                default_3d(layer)
             sync_categories(layer, store.features(store.current_version().id))
             layer.setReadOnly(True)
         project.addMapLayer(layer, False)
