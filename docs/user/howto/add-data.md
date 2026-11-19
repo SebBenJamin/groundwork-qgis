@@ -1,6 +1,6 @@
 # Add data
 
-**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data) are recognised; for any other text table you say what the columns are. A Groundwork project must be open; a profile need not be.
+**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models) are recognised; for any other text table you say what the columns are. A Groundwork project must be open; a profile need not be.
 
 ![The Add Data dialog with a text table chosen; its parts are numbered 1 to 5](../../images/howto/add-data.png)
 
@@ -64,7 +64,8 @@ To add surveyed positions afterwards, see [Placement on the electrodes](placemen
   - **Elevation**: heights above sea level;
   - **Depth below surface**: the depths must be all positive or all negative (the size is used); a column with both signs is refused with a message;
   - **Local height**: heights against an arbitrary zero. The section is drawn as a *local section*, see [Reference height](reference-height.md).
-- **Value**: **Resistivity** (Ω·m) or **Other** (type a name and a unit). Tick **Values are log10** when the column holds log10 of the values.
+- **Value**: **Resistivity** (Ω·m), **P-wave velocity** (m/s) or **Other** (type a name and a unit). Tick **Values are log10** when the column holds log10 of the values.
+- **Coverage** (optional): the inversion's coverage or sensitivity per cell, used to fade the parts of the section it does not resolve.
 
 How the first guess is made:
 
@@ -86,7 +87,10 @@ The dialog remembers the last table settings and column roles and offers them ag
 
 **Distance 0 is at** the start of the line, the end of the line, or station 1 (when the profile has stations), plus an **Offset** you can type.
 
-Two rows at the top of the dialog belong here: **Station set** appears when the profile has several sets, and **Method** when the import creates stations.
+Two rows at the top of the dialog belong here:
+
+- **Method**: ERT or Seismic refraction. It is preselected from the file (a velocity file proposes Seismic refraction) and gives the dataset its type, for example *Seismic refraction Vp model*, which the plate's title block, colour bar and layer tooltip show. Stations made by the import are electrodes or geophones. Measured ERT data are always ERT.
+- **Station set** appears when the profile has several sets.
 
 The new line and its points are drawn on the map while the dialog is open.
 

@@ -7,10 +7,11 @@ geology.** Groundwork is a plugin for profile-based geophysics in QGIS: sections
 panel under the map, with your boreholes, geology and crossing lines on them, your
 interpretation as ordinary QGIS layers and report plates in the QGIS layout.
 
-Today it works with **resistivity (ERT)**. **Ground-penetrating radar (GPR) and seismics**
-are planned next, on the same profiles, next to the same context.
+Today it works with **resistivity (ERT)** and **seismic refraction** (P-wave velocity
+models). **Ground-penetrating radar (GPR) and seismic reflection sections** are planned next,
+on the same profiles, next to the same context.
 
-[![Version 0.12.0](https://img.shields.io/badge/version-0.12.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
+[![Version 0.13.0](https://img.shields.io/badge/version-0.13.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
 [![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
 [![Licence GPL-2.0-or-later](https://img.shields.io/badge/licence-GPL--2.0--or--later-lightgrey)](LICENSE)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
@@ -26,7 +27,7 @@ included as a demo.*
 | | |
 |---|---|
 | 🗺️ **Map and section, linked** | A section panel under the map. Move the mouse over the section and a cursor follows on the map, and the other way round. |
-| 📥 **Your files as they are** | ERT models from R2/ResIPy, ZondRes2D, pyGIMLi/BERT and VTK, plus measured data and misfit. Any other text table works too: say which column is what, as in QGIS's own text import. Files are read where they lie and never changed. |
+| 📥 **Your files as they are** | ERT models from R2/ResIPy, ZondRes2D, pyGIMLi/BERT and VTK, plus measured data and misfit; seismic refraction velocity models from Refrapy and pyGIMLi, faded where no ray reached. Any other text table works too: say which column is what, as in QGIS's own text import. Files are read where they lie and never changed. |
 | 📍 **On the real electrodes** | Models are placed on the surveyed electrode positions, even when only some were measured, with a report of how well they fit. Sections in local heights get a reference height. |
 | 🪨 **Context on the section** | Boreholes as lithology columns with log curves, one or more geology (or soil, land use) maps as strips above the ground, a terrain line from a DEM, crossing lines and ties to crossing profiles. All styled through QGIS. |
 | ✏️ **Interpretation as QGIS layers** | Draw lines, polygons and points on the section per profile, with type, name, confidence and note. Undo, frozen versions, 2D and 3D layers, DXF and CSV export. |
@@ -37,7 +38,7 @@ included as a demo.*
 ## Get started
 
 1. **Install** QGIS 4.2 or newer.
-2. **Download** `groundwork_geophysics-0.12.0.zip` from the
+2. **Download** `groundwork_geophysics-0.13.0.zip` from the
    [latest release](https://github.com/SebBenJamin/groundwork-qgis/releases/latest).
 3. In QGIS choose **Plugins → Manage and Install Plugins… → Install from ZIP**, pick the zip
    and click **Install Plugin**. A **Groundwork** menu appears.
@@ -70,7 +71,7 @@ map with its surveyed positions; any data measured along it can be placed on it 
 with the same boreholes, geology and interpretation. Planned:
 
 - 📡 **GPR**: radargrams on the profile.
-- 🔊 **Seismics**: seismic sections on the profile.
+- 🔊 **Seismic reflection**: processed (zero-offset) seismic sections on the profile.
 - 🔀 **Several methods on one profile**: ERT, GPR and seismics side by side, interpreted
   together.
 
@@ -91,7 +92,7 @@ The same pages, in the repository:
 - Data formats: [Borehole tables](docs/user/formats/borehole-tables.md) ·
   [Plate templates](docs/user/formats/plate-templates.md)
 - [Troubleshooting](docs/user/troubleshooting.md)
-- [What changed in each release](docs/releases/), latest: [0.12.0](docs/releases/0.12.0.md)
+- [What changed in each release](docs/releases/), latest: [0.13.0](docs/releases/0.13.0.md)
 
 Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundwork.gpkg`).
 
