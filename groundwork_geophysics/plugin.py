@@ -7,7 +7,7 @@ from pathlib import Path
 from qgis.core import (Qgis, QgsApplication, QgsCoordinateReferenceSystem, QgsMessageLog,
                        QgsProject)
 from qgis.gui import QgsProjectionSelectionDialog
-from qgis.PyQt.QtCore import Qt, QTimer
+from qgis.PyQt.QtCore import QLocale, Qt, QTimer
 from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
@@ -67,6 +67,9 @@ class WorkbenchPlugin:
         self._project_signals = []
         self._syncing_derived = False
         self._derived_timer = None
+        self._syncing_3d = False
+        self._view3d_timer = None
+        self.view3d_action = None
 
     @property
     def store(self):
@@ -109,6 +112,9 @@ class WorkbenchPlugin:
                                              lambda: self.open_borehole_viewer())
         self.viewer_action.setProperty(
             "enabled_tip", "The boreholes of the profile open in the section panel, side by side")
+        self.view3d_action = self.add_action("Show in 3D…", self.show_in_3d)
+        self.view3d_action.setProperty(
+            "enabled_tip", "Pick the models and boreholes to show in QGIS's 3D view")
         self.pick_action = self.add_action("Pick Profile on Map", self.toggle_pick_tool,
                                            checkable=True)
         self.map_link.tool.setAction(self.pick_action)   # unchecks when another tool takes over
@@ -242,6 +248,8 @@ class WorkbenchPlugin:
             self.provider.on_context_error = self._log_context_error
             self.provider.on_data_change.append(self._schedule_derived)
             self._sync_derived(create=True)
+            self.provider.on_change.append(self._schedule_3d)
+            self._sync_3d()
             self._context_logged.clear()
             self.source = register_source(self.provider)
             if self.dock is not None:
@@ -331,6 +339,57 @@ class WorkbenchPlugin:
         finally:
             self._syncing_derived = False
 
+    def _schedule_3d(self) -> None:
+        """Data, styles or the fade changed: refill the 3D layers once things settle."""
+        if self._view3d_timer is None:
+            self._view3d_timer = QTimer()
+            self._view3d_timer.setSingleShot(True)
+            self._view3d_timer.timeout.connect(self._sync_3d)
+        self._view3d_timer.start(300)
+
+    def _sync_3d(self, create: bool = False) -> dict:
+        """Refill the Show in 3D layers (created only when the user asks); never raises out
+        of opening or a notification."""
+        from .ui import view3d_layers
+        if self.provider is None or self._syncing_3d:
+            return {}
+        self._syncing_3d = True
+        try:
+            return view3d_layers.sync(self.provider.store, self.provider,
+                                      QgsProject.instance(), create=create)
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"3D view layers: {exc}", MENU_TITLE,
+                                     Qgis.MessageLevel.Warning)
+            return {}
+        finally:
+            self._syncing_3d = False
+
+    def show_in_3d(self):
+        """Show in 3D…: pick the models and boreholes; the layers follow the choice."""
+        from .ui.view3d_dialog import View3dDialog
+        from .ui.view3d_layers import read_choice, write_choice
+        if self.store is None:
+            return
+        project = QgsProject.instance()
+        dialog = View3dDialog(self.store, read_choice(project), parent=self.iface.mainWindow())
+        if not dialog.exec():
+            return
+        choice = dialog.choice()
+        write_choice(project, choice)
+        layers = self._sync_3d(create=True)
+        if not choice.models and not choice.boreholes:
+            self._info("Nothing is shown in 3D.")
+            return
+        parts = []
+        if "models" in layers:
+            parts.append(f"{QLocale().toString(layers['models'].featureCount())} model cells")
+        if "boreholes" in layers:
+            parts.append(f"{QLocale().toString(layers['boreholes'].featureCount())} borehole "
+                         f"intervals")
+        shown = " and ".join(parts) if parts else "nothing that could be built"
+        self._info(f"Shown in 3D: {shown}. Open a 3D map view with View → 3D Map Views → "
+                   f"New 3D Map View.")
+
     def _project_write(self, *_):
         derived_layers.save_style(QgsProject.instance())
 
@@ -389,6 +448,7 @@ class WorkbenchPlugin:
                                 (self.context_action, has_store, no_project),
                                 (self.ties_action, has_store, no_project),
                                 (self.plates_action, has_store, no_project),
+                                (self.view3d_action, has_store, no_project),
                                 (self.pick_action, has_store, no_project),
                                 (self.rename_action, has_profile,
                                  "Open a profile in the section panel first"),

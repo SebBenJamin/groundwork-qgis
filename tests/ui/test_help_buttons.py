@@ -61,10 +61,17 @@ def _plate_details(iface, st, p, prov, prj):
     return PlateDetailsDialog(prj)
 
 
+def _view3d(iface, st, p, prov, prj):
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    return View3dDialog(st, Choice())
+
+
 @pytest.mark.parametrize("make,key", [(_add_data, "add_data"), (_new_profile, "new_profile"),
                                       (_profile_properties, "profile_properties"),
                                       (_context, "context_layers"), (_plates, "plates"),
-                                      (_plate_details, "plate_details")])
+                                      (_plate_details, "plate_details"),
+                                      (_view3d, "view3d")])
 def test_dialog_help_buttons(env, make, key):
     from qgis.PyQt.QtWidgets import QDialogButtonBox
 
