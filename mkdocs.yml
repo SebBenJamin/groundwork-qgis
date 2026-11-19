@@ -60,6 +60,7 @@ nav:
       - Field notes: user/howto/field-notes.md
       - Dataset info: user/howto/dataset-info.md
       - Report plates: user/howto/plates.md
+      - The 3D view: user/howto/3d-view.md
   - Data formats:
       - Borehole tables: user/formats/borehole-tables.md
       - Plate templates: user/formats/plate-templates.md

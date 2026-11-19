@@ -32,6 +32,7 @@ included as a demo.*
 | 🪨 **Context on the section** | Boreholes as lithology columns with log curves, one or more geology (or soil, land use) maps as strips above the ground, a terrain line from a DEM, crossing lines and ties to crossing profiles. All styled through QGIS. |
 | ✏️ **Interpretation as QGIS layers** | Draw lines, polygons and points on the section per profile, with type, name, confidence and note. Undo, frozen versions, 2D and 3D layers, DXF and CSV export. |
 | 📄 **Report plates** | A4 and A3 layouts with stacked sections, colour bars, legends, a mini-map and a title block, exported as vector PDF. Your text edits survive updates. |
+| 🧊 **3D view** | Models as curtains under their profiles, boreholes as columns and the interpretation at its depth, in QGIS's own 3D view. Shown when you ask, never stored. |
 
 ![A resistivity section with sediment cores, station numbers and geology strips](docs/images/section.png)
 
@@ -88,7 +89,7 @@ The same pages, in the repository:
   [Reference height](docs/user/howto/reference-height.md) ·
   [Boreholes and logs](docs/user/howto/boreholes.md) ·
   [Field notes](docs/user/howto/field-notes.md) · [Dataset info](docs/user/howto/dataset-info.md) ·
-  [Report plates](docs/user/howto/plates.md)
+  [Report plates](docs/user/howto/plates.md) · [The 3D view](docs/user/howto/3d-view.md)
 - Data formats: [Borehole tables](docs/user/formats/borehole-tables.md) ·
   [Plate templates](docs/user/formats/plate-templates.md)
 - [Troubleshooting](docs/user/troubleshooting.md)
