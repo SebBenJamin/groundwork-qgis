@@ -67,6 +67,58 @@ def field_contours(grid: Grid, chainage, scale, levels) -> list[tuple[float, np.
     return out
 
 
+def bend_chainages(chainage, share: float = 0.01, least: float = 0.3) -> list[float]:
+    """Chainages of the line's real bends: its vertices kept by Douglas-Peucker with a
+    tolerance of ``share`` of its length (at least ``least`` m), so electrode jitter along
+    a straight line does not count."""
+    xy = chainage.xy
+    cum = np.r_[0.0, np.cumsum(np.hypot(*np.diff(xy, axis=0).T))]
+    tol = max(least, share * cum[-1])
+    keep, stack = set(), [(0, len(xy) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1:
+            continue
+        d = xy[b] - xy[a]
+        rel = xy[a + 1:b] - xy[a]
+        dist = np.abs(rel[:, 0] * d[1] - rel[:, 1] * d[0]) / (np.hypot(*d) or 1.0)
+        i = int(np.argmax(dist))
+        if dist[i] > tol:
+            keep.add(a + 1 + i)
+            stack += [(a, a + 1 + i), (a + 1 + i, b)]
+    return [float(cum[i]) for i in sorted(keep)]
+
+
+def picture_strip(alpha, s0: float, s1: float, z0: float, z1: float, extra_s, step: float,
+                  max_columns: int = 400) -> tuple[np.ndarray, np.ndarray]:
+    """The strip of triangles a section picture hangs on: columns at ``extra_s`` (the line's
+    bends) and about every ``step`` m (at most ``max_columns``), each from the lowest to the
+    highest painted texel of the picture (``alpha``: (rows, columns), row 0 at ``z1``) over
+    s0..s1, z0..z1. Returns (n, 4) rows of (s, z, u, v), bottom then top per column (v from
+    the picture's top), and the triangles between neighbouring columns."""
+    alpha = np.asarray(alpha)
+    h, w = alpha.shape
+    count = int(min(max_columns, max(2, (s1 - s0) / step + 1)))
+    inner = [float(s) for s in extra_s if s0 < s < s1]
+    ss = np.unique(np.r_[np.linspace(s0, s1, count), inner])
+    rows_painted = alpha > 0
+    out = []
+    for s in ss:
+        col = int(np.clip(round((s - s0) / (s1 - s0) * (w - 1)), 0, w - 1))
+        rows = np.flatnonzero(rows_painted[:, max(0, col - 2):col + 3].any(axis=1))
+        top, bottom = (rows[0] - 1, rows[-1] + 1) if rows.size else (h // 2, h // 2 - 1)
+        z_top = z1 - max(top, 0) / h * (z1 - z0)
+        z_bottom = z1 - min(bottom + 1, h) / h * (z1 - z0)
+        u = (s - s0) / (s1 - s0)
+        for z in (z_bottom, z_top):
+            out.append((s, z, u, (z1 - z) / (z1 - z0)))
+    tris = []
+    for i in range(len(ss) - 1):
+        a, b, c, d = 2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3      # a, c bottom; b, d top
+        tris += [(a, c, d), (a, d, b)]
+    return np.asarray(out, float), np.asarray(tris, np.uint32).reshape(-1, 3)
+
+
 @dataclass(frozen=True)
 class CurtainCell:
     ring: list                  # closed [(x, y, z)], the first point repeated last
