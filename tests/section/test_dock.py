@@ -440,3 +440,17 @@ def test_info_line_asks_for_positions_when_there_is_no_guess(qgis_app, tmp_path,
     dock.open_profile(p.id)
     assert ("No electrode positions: import them or type the spacing in Profile Properties"
             in dock.info_text())
+
+
+def test_events_while_the_panel_is_taken_apart_are_ignored(qgis_app):
+    """Reinstalling the plugin tears the old panel down while Qt still sends it events; its
+    Python side may already have dropped the canvas then."""
+    from qgis.PyQt.QtCore import QEvent, QObject
+
+    from groundwork_geophysics.section.dock import SectionDock
+    dock = SectionDock()
+    canvas = dock.canvas
+    del dock.canvas
+    assert dock.eventFilter(QObject(), QEvent(QEvent.Type.Leave)) is False
+    dock.canvas = canvas
+    dock.deleteLater()

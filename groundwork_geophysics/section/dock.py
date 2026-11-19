@@ -533,6 +533,8 @@ class SectionDock(QDockWidget):
         return self.fit.is_busy()
 
     def eventFilter(self, obj, event):
+        if "canvas" not in self.__dict__:
+            return False                        # being taken apart (plugin reload): ignore
         etype = event.type()
         if obj is self.canvas.viewport():
             if etype == QEvent.Type.Leave:
