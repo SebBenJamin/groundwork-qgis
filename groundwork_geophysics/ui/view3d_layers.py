@@ -144,13 +144,16 @@ def _style_models(layer: QgsVectorLayer) -> None:
                                                QgsProperty.fromField("color"))
     layer.setRenderer(QgsSingleSymbolRenderer(fill))
     try:
-        from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+        from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
     except ImportError:                         # a QGIS built without 3D
         return
     symbol = QgsPolygon3DSymbol()
     symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
     symbol.setExtrusionHeight(0.0)
-    symbol.setAddBackFaces(True)
+    # each cell is two faces a little behind the plane on either side; hiding back faces
+    # leaves the one behind, so an interpretation drawn in the plane is always in front
+    symbol.setAddBackFaces(False)
+    symbol.setCullingMode(Qgs3DTypes.CullingMode.Back)
     symbol.setMaterialSettings(_colour_material())
     renderer = QgsVectorLayer3DRenderer(symbol)
     _one_chunk(renderer)
@@ -211,7 +214,7 @@ def _style_lines(layer: QgsVectorLayer, width: float) -> None:
     layer.setRenderer3D(renderer)
 
 
-_KINDS = {"models": ("PolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models),
+_KINDS = {"models": ("MultiPolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models),
           "boreholes": ("PolygonZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
           "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours)}
 
@@ -294,16 +297,21 @@ def _threshold(section_layer) -> float | None:
 
 
 def _model_features(layer, profile, dataset, section_layer) -> list[QgsFeature]:
+    from qgis.core import QgsMultiPolygon
+
     from ..core.colors import ColorScale
-    from ..core.view3d import curtain_cells
+    from ..core.view3d import curtain_cells, curtain_gap
     mesh = section_layer.mesh
     scale = section_layer.style.scale or ColorScale.auto(mesh.values)
     cells = curtain_cells(mesh, profile.chainage, scale.rgba(mesh.values),
-                          _threshold(section_layer))
+                          _threshold(section_layer), curtain_gap(profile.chainage.length))
     out = []
     for cell in cells:
         f = QgsFeature(layer.fields())
-        f.setGeometry(QgsGeometry(QgsPolygon(QgsLineString([QgsPoint(*p) for p in cell.ring]))))
+        both = QgsMultiPolygon()
+        for face in cell.faces:
+            both.addGeometry(QgsPolygon(QgsLineString([QgsPoint(*p) for p in face])))
+        f.setGeometry(QgsGeometry(both))
         f.setAttributes([profile.id, profile.name, dataset.id, dataset.name or dataset.id,
                          cell.value, cell.coverage, int(cell.resolved),
                          QColor(*cell.rgb).name()])
@@ -363,6 +371,11 @@ def _as_cells(section_layer) -> bool:
 
 def _sync_models(store, project, gathered, create: bool):
     chosen = [(p, d, la) for p, d, la in gathered if not _shown(la) or _as_cells(la)]
+    old = layers_3d(project).get("models")
+    if old is not None and not QgsWkbTypes.isMultiType(old.wkbType()):
+        _built.pop(old.id(), None)                  # saved while cells were one face
+        project.removeMapLayer(old.id())
+        create = True
     layer = _layer(store, project, "models", bool(chosen), create)
     if layer is None:
         return None
@@ -604,19 +617,27 @@ def _write_picture(path: Path, store, project, profile, section_layer, topo) -> 
                            QgsVector3D)
 
     from ..core.tiles3d import enu_axes, glb, tileset
-    from ..core.view3d import bend_chainages, picture_strip
+    from ..core.view3d import bend_chainages, curtain_gap, left_normals, picture_strip
     from ..section.picture import section_pictures
     bends = bend_chainages(profile.chainage)
+    gap = curtain_gap(profile.chainage.length)
     raw = []
     for pic in section_pictures(section_layer, topo):
         if not pic.alpha.any():
             continue
         sz, tris = picture_strip(pic.alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
-        raw.append((sz, tris, _png(pic.image)))
+        # two faces, as for the cells: the strip's triangles face the right of the line and
+        # stand ``gap`` to its left; their reversed copy faces left and stands to the right
+        n = len(sz)
+        raw.append((np.vstack([sz, sz]), np.vstack([tris, tris[:, ::-1] + n]),
+                    _png(pic.image), n))
     if not raw:
         return False
     sz = np.vstack([r[0] for r in raw])
     xy = np.atleast_2d(profile.chainage.to_xy(sz[:, 0])).reshape(-1, 2)
+    side = left_normals(profile.chainage, sz[:, 0]) * gap
+    first = np.concatenate([np.r_[np.ones(r[3]), -np.ones(r[3])] for r in raw])
+    xy = xy + side * first[:, None]
     to_ecef = QgsCoordinateTransform(QgsCoordinateReferenceSystem(store.crs_authid),
                                      QgsCoordinateReferenceSystem("EPSG:4978"), project)
     ecef = np.array([[q.x(), q.y(), q.z()] for q in
@@ -628,7 +649,7 @@ def _write_picture(path: Path, store, project, profile, section_layer, topo) -> 
     enu = np.column_stack([local @ east, local @ north, local @ up])
     gltf = np.column_stack([enu[:, 0], enu[:, 2], -enu[:, 1]])          # glTF is y-up
     pieces, start = [], 0
-    for psz, tris, png in raw:
+    for psz, tris, png, _n in raw:
         end = start + len(psz)
         pieces.append((gltf[start:end], psz[:, 2:4], tris, png))
         start = end

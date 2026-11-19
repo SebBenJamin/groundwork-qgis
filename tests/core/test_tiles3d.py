@@ -41,12 +41,12 @@ def test_the_glb_is_a_valid_container_with_a_texture_per_piece():
     assert pos["count"] == 6 and pos["max"] == [2.0, 0.0, 1.0]
 
 
-def test_every_triangle_is_also_there_reversed_so_both_sides_show():
+def test_the_triangles_are_written_as_given_on_a_single_sided_material():
     from groundwork_geophysics.core.tiles3d import glb
     _p, _uv, tris, _png = _piece(3)
     doc = _chunks(glb([_piece(3)]))[4]
     indices = doc["accessors"][doc["meshes"][0]["primitives"][0]["indices"]]
-    assert indices["count"] == 2 * tris.size
+    assert indices["count"] == tris.size
     material = doc["materials"][0]
     # opaque (QGIS ignores texture alpha anyway); single-sided, as the reversed triangles
     # already make both sides: a viewer honouring doubleSided would draw each face twice

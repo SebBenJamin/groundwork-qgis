@@ -17,9 +17,8 @@ _LINEAR, _LINEAR_MIPMAP_LINEAR, _CLAMP = 9729, 9987, 33071
 def glb(pieces) -> bytes:
     """A binary glTF 2.0: one mesh with a textured, unlit, opaque primitive per piece
     ``(positions (n, 3), uvs (n, 2), triangles (m, 3), png bytes)`` (positions in glTF's
-    y-up axes). Every triangle is also written reversed, so the strip shows from both sides
-    (QGIS hides back faces of a tiled scene); the material is single-sided, or a viewer
-    that honours ``doubleSided`` would draw each face twice."""
+    y-up axes). The material is single-sided (QGIS hides back faces of a tiled scene): a
+    strip seen from both sides brings its own reversed triangles."""
     parts, views, accessors, prims, materials, textures, images = [], [], [], [], [], [], []
     offset = 0
 
@@ -38,7 +37,7 @@ def glb(pieces) -> bytes:
         pos = np.asarray(positions, np.float32).reshape(-1, 3)
         uv = np.asarray(uvs, np.float32).reshape(-1, 2)
         tri = np.asarray(triangles, np.uint32).reshape(-1, 3)
-        idx = np.vstack([tri, tri[:, ::-1]]).ravel()
+        idx = tri.ravel()
         a = len(accessors)
         accessors += [
             {"bufferView": add(pos.tobytes(), _ARRAY_BUFFER), "componentType": _FLOAT,

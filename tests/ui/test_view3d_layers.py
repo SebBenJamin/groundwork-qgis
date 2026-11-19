@@ -661,7 +661,8 @@ def test_the_picture_hangs_under_the_profile_line(setup):
     pts = np.array([[q.x(), q.y(), q.z()] for q in
                     (back.transform(QgsVector3D(*map(float, e))) for e in ecef)])
     s, offset = p.chainage.project(pts[:, :2])
-    assert np.abs(offset).max() < 0.05                          # on the line, to a few cm
+    from groundwork_geophysics.core.view3d import curtain_gap        # each face a gap off
+    assert np.abs(np.abs(offset) - curtain_gap(p.chainage.length)).max() < 0.01
     mesh = provider.layers(p.id)[0].mesh
     _s0, _s1, z0, z1 = mesh.bounds()
     assert pts[:, 2].min() >= z0 - 0.5 and pts[:, 2].max() <= z1 + 5.0
@@ -713,3 +714,61 @@ def test_a_folder_name_with_a_hash_still_gives_a_valid_picture(qgis_app, tmp_pat
     sync(st, provider, prj, create=True)
     picture = pictures_3d(prj)["d"]
     assert picture.isValid()
+
+
+# -- two faces per curtain, so an interpretation in the plane is never hidden ---------------
+def test_cells_are_two_faces_standing_back_from_the_plane(setup):
+    from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.core.view3d import curtain_gap
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    lyr = sync(st, provider, prj, create=True)["models"]
+    gap = curtain_gap(p.chainage.length)
+    f = next(lyr.getFeatures())
+    parts = f.geometry().constGet()
+    assert parts.numGeometries() == 2                    # one face per side
+    ys = sorted({round(v.y(), 6) for v in parts.vertices()})
+    assert ys == pytest.approx([-gap, gap])              # the line runs east at y = 0
+    symbol = sip.cast(lyr.renderer3D().symbol(), QgsPolygon3DSymbol)
+    assert not symbol.addBackFaces() and symbol.cullingMode() == Qgs3DTypes.CullingMode.Back
+
+
+def test_a_cells_layer_saved_with_one_face_becomes_two(setup):
+    from qgis.core import QgsVectorLayer, QgsWkbTypes
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    old = QgsVectorLayer(f"PolygonZ?crs={CRS}", "Models in 3D", "memory")
+    old.setCustomProperty("geophysics_workbench/view3d", "models")
+    prj.addMapLayer(old)
+    _choose(prj, ["d"])
+    lyr = sync(st, provider, prj)["models"]
+    assert QgsWkbTypes.isMultiType(lyr.wkbType()) and lyr.featureCount() > 0
+
+
+def test_a_picture_is_two_faces_standing_back_from_the_plane(setup):
+    import json
+    import struct
+
+    from groundwork_geophysics.core.view3d import curtain_gap
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder, sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    data = next(cloud_folder(st).glob("*.glb")).read_bytes()
+    jlen = struct.unpack_from("<I", data, 12)[0]
+    doc = json.loads(data[20:20 + jlen])
+    prim = doc["meshes"][0]["primitives"][0]
+    acc = doc["accessors"][prim["attributes"]["POSITION"]]
+    view = doc["bufferViews"][acc["bufferView"]]
+    start = 20 + jlen + 8 + view["byteOffset"]
+    pos = np.frombuffer(data[start:start + view["byteLength"]], np.float32).reshape(-1, 3)
+    north = -pos[:, 2]                                    # glTF z is south, for this line
+    gap = curtain_gap(p.chainage.length)
+    half = len(pos) // 2
+    assert np.allclose(north[:half] - north[half:], 2 * gap, atol=1e-3)
+    indices = doc["accessors"][prim["indices"]]["count"]
+    assert indices == 2 * 3 * (half // 2 - 1) * 2       # two triangles per column gap, twice

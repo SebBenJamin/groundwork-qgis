@@ -67,6 +67,42 @@ def field_contours(grid: Grid, chainage, scale, levels) -> list[tuple[float, np.
     return out
 
 
+def curtain_gap(length: float) -> float:
+    """How far each face of a curtain stands back from its profile's plane: 0.2 % of the
+    profile's length, 5 cm to 50 cm (enough for the graphics card to tell the faces from an
+    interpretation drawn in the plane, small next to the curtain)."""
+    return float(min(0.5, max(0.05, 0.002 * length)))
+
+
+def left_normals(chainage, s) -> np.ndarray:
+    """(n, 2) unit vectors to the left of the line at chainages ``s`` (at a bend: between
+    the two legs)."""
+    s = np.atleast_1d(np.asarray(s, float))
+    d = (np.atleast_2d(chainage.to_xy(s + 1e-3)) - np.atleast_2d(chainage.to_xy(s - 1e-3)))
+    d /= np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-12)[:, None]
+    return np.column_stack([-d[:, 1], d[:, 0]])
+
+
+def two_faces(ring_s, ring_z, chainage, gap: float) -> tuple[list, list]:
+    """A curtain cell (a ring in chainage and elevation) as two closed 3D rings, one per
+    side: the ring that faces the right of the line (counter-clockwise in (s, z)) stands
+    ``gap`` to the left, its reversed copy facing left stands ``gap`` to the right. With
+    back faces hidden, each side then sees a face behind the plane, so whatever is drawn in
+    the plane (the interpretation) is always in front."""
+    s, z = np.asarray(ring_s, float), np.asarray(ring_z, float)
+    if len(s) > 1 and s[0] == s[-1] and z[0] == z[-1]:
+        s, z = s[:-1], z[:-1]
+    area = float(np.sum(s * np.roll(z, -1) - np.roll(s, -1) * z))
+    if area < 0:                                   # clockwise: turn it round
+        s, z = s[::-1], z[::-1]
+    xy = np.atleast_2d(chainage.to_xy(s)).reshape(-1, 2)
+    left = left_normals(chainage, s) * gap
+    front = [(float(x), float(y), float(h)) for (x, y), h in zip(xy + left, z)]
+    back = [(float(x), float(y), float(h)) for (x, y), h in zip(xy - left, z)]
+    back = [back[0]] + back[:0:-1]
+    return front + front[:1], back + back[:1]
+
+
 def bend_chainages(chainage, share: float = 0.01, least: float = 0.3) -> list[float]:
     """Chainages of the line's real bends: its vertices kept by Douglas-Peucker with a
     tolerance of ``share`` of its length (at least ``least`` m), so electrode jitter along
@@ -126,6 +162,8 @@ class CurtainCell:
     coverage: float             # nan when the model has none (or the cell's is unknown)
     resolved: bool              # coverage at or above the threshold, or unknown
     rgb: tuple
+    #: with a gap: the cell as two closed rings, one per side (see ``two_faces``)
+    faces: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -140,14 +178,19 @@ class BoreholeInterval:
     rgb: tuple
 
 
-def curtain_cells(mesh, chainage, rgba, threshold: float | None) -> list[CurtainCell]:
+def curtain_cells(mesh, chainage, rgba, threshold: float | None,
+                  gap: float = 0.0) -> list[CurtainCell]:
     """``mesh`` (chainage s, elevation z) as 3D cells under ``chainage``'s line; ``rgba``: one
     uint8 row per cell (``ColorScale.rgba``). With a ``threshold`` (the section fades low
     coverage), cells whose finite coverage is below it are left out; without one, every cell
-    is kept and ``resolved`` says how it compares with the model's default threshold."""
+    is kept and ``resolved`` says how it compares with the model's default threshold. With a
+    ``gap``, each cell also comes as two faces standing that far back on either side."""
     verts = np.asarray(mesh.vertices, float)
     xy = np.atleast_2d(chainage.to_xy(verts[:, 0]))
     z = verts[:, 1]
+    if gap > 0:                                     # per vertex, so neighbours share it
+        side = left_normals(chainage, verts[:, 0]) * gap
+        front_xy, back_xy = xy + side, xy - side
     coverage = None if mesh.coverage is None else np.asarray(mesh.coverage, float)
     cut = threshold
     if cut is None and coverage is not None:
@@ -161,10 +204,21 @@ def curtain_cells(mesh, chainage, rgba, threshold: float | None) -> list[Curtain
             continue
         if colours.shape[1] > 3 and colours[i][3] == 0:
             continue                        # the section leaves it out (no value, clear)
-        ring = [(float(xy[k, 0]), float(xy[k, 1]), float(z[k])) for k in cell if k >= 0]
+        idx = [int(k) for k in cell if k >= 0]
+        ring = [(float(xy[k, 0]), float(xy[k, 1]), float(z[k])) for k in idx]
         ring.append(ring[0])
+        faces = ()
+        if gap > 0:
+            s_, z_ = verts[idx, 0], verts[idx, 1]
+            if float(np.sum(s_ * np.roll(z_, -1) - np.roll(s_, -1) * z_)) < 0:
+                idx = idx[::-1]                     # counter-clockwise in (s, z): faces right
+            front = [(float(front_xy[k, 0]), float(front_xy[k, 1]), float(z[k])) for k in idx]
+            back_idx = [idx[0]] + idx[:0:-1]
+            back = [(float(back_xy[k, 0]), float(back_xy[k, 1]), float(z[k]))
+                    for k in back_idx]
+            faces = (front + front[:1], back + back[:1])
         r, g, b = (int(c) for c in colours[i][:3])
-        out.append(CurtainCell(ring, float(mesh.values[i]), cov, resolved, (r, g, b)))
+        out.append(CurtainCell(ring, float(mesh.values[i]), cov, resolved, (r, g, b), faces))
     return out
 
 

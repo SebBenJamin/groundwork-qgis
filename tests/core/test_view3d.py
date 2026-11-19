@@ -3,6 +3,7 @@ borehole log intervals as vertical segments at the borehole's map position."""
 import math
 
 import numpy as np
+import pytest
 
 from groundwork_geophysics.core.chainage import Chainage
 from groundwork_geophysics.core.context import LogInterval, ProjectedPoint
@@ -197,3 +198,37 @@ def test_contours_lie_under_the_line():
     assert {level for level, _ in lines} == {30.0, 100.0, 300.0}
     for _level, xyz in lines:
         assert xyz.shape[1] == 3 and _on_line(xyz).max() < 1e-6
+
+
+# -- two faces per curtain: an interpretation in the curtain's plane is never hidden ---------
+def test_the_gap_grows_with_the_profile_within_limits():
+    from groundwork_geophysics.core.view3d import curtain_gap
+    assert curtain_gap(60.0) == pytest.approx(0.12)
+    assert curtain_gap(10.0) == pytest.approx(0.05)
+    assert curtain_gap(5000.0) == pytest.approx(0.5)
+
+
+def test_each_side_sees_a_face_behind_the_plane():
+    """A ring counter-clockwise in (s, z) faces the right of the line (south, for a line
+    running east); it is moved to the left (north), so a viewer in the south sees it behind
+    the plane, and its reversed copy, facing north, goes south."""
+    from groundwork_geophysics.core.view3d import two_faces
+    line = Chainage(np.array([[0.0, 0.0], [60.0, 0.0]]))
+    ring_s, ring_z = [10.0, 20.0, 20.0, 10.0], [0.0, 0.0, 5.0, 5.0]   # counter-clockwise
+    front, back = two_faces(ring_s, ring_z, line, 0.1)
+    assert all(y == pytest.approx(0.1) for _x, y, _z in front)        # north of the line
+    assert all(y == pytest.approx(-0.1) for _x, y, _z in back)        # south of it
+    assert [(x, z) for x, _y, z in front] == [(10.0, 0.0), (20.0, 0.0), (20.0, 5.0),
+                                              (10.0, 5.0), (10.0, 0.0)]
+    assert [(x, z) for x, _y, z in back] == [(10.0, 0.0), (10.0, 5.0), (20.0, 5.0),
+                                             (20.0, 0.0), (10.0, 0.0)]
+    cw_front, _ = two_faces(ring_s[::-1], ring_z[::-1], line, 0.1)     # the same, either way
+    assert cw_front == front
+
+
+def test_the_faces_follow_a_bend():
+    from groundwork_geophysics.core.view3d import two_faces
+    corner = Chainage(np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]))
+    front, _ = two_faces([5.0, 15.0, 15.0, 5.0], [0.0, 0.0, 1.0, 1.0], corner, 0.1)
+    x, y, _z = front[1]                       # s = 15: 5 m up the northward leg
+    assert (x, y) == pytest.approx((9.9, 5.0))                        # left of it is west
