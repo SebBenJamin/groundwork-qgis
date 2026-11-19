@@ -214,3 +214,29 @@ def test_the_layers_keep_their_place_when_the_project_comes_back(setup):
     again = sync(st, provider, prj)
     assert again["models"].id() == first["models"].id()
     assert again["models"].featureCount() > 0 and set(layers_3d(prj)) == {"models", "boreholes"}
+
+
+def test_a_borehole_without_collar_height_starts_at_the_sections_surface(setup):
+    import numpy as np
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    provider.context_source = lambda profile: ContextItems(
+        points=[replace(_borehole(), z_top=None)])
+    provider.notify_changed()
+    _choose(prj, boreholes=[p.id])
+    lyr = sync(st, provider, prj, create=True)["boreholes"]
+    line_s, line_z = provider.surface(p.id).line
+    top = max(v.z() for f in lyr.getFeatures() for v in f.geometry().constGet().vertices())
+    assert top == pytest.approx(float(np.interp(10.0, line_s, line_z)))
+
+
+def test_a_style_only_refill_leaves_the_boreholes_alone(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"], [p.id])
+    lyr = sync(st, provider, prj, create=True)["boreholes"]
+    provider.context_source = lambda profile: ContextItems(points=[])
+    provider.notify_changed()
+    assert sync(st, provider, prj, boreholes=False)["boreholes"].featureCount() == 2
+    assert sync(st, provider, prj)["boreholes"] is lyr and lyr.featureCount() == 0

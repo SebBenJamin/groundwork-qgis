@@ -69,6 +69,7 @@ class WorkbenchPlugin:
         self._derived_timer = None
         self._syncing_3d = False
         self._view3d_timer = None
+        self._view3d_boreholes = False          # the next refill also gathers boreholes
         self.view3d_action = None
 
     @property
@@ -249,6 +250,7 @@ class WorkbenchPlugin:
             self.provider.on_data_change.append(self._schedule_derived)
             self._sync_derived(create=True)
             self.provider.on_change.append(self._schedule_3d)
+            self.provider.on_data_change.append(lambda: self._schedule_3d(boreholes=True))
             self._sync_3d()
             self._context_logged.clear()
             self.source = register_source(self.provider)
@@ -339,24 +341,29 @@ class WorkbenchPlugin:
         finally:
             self._syncing_derived = False
 
-    def _schedule_3d(self) -> None:
-        """Data, styles or the fade changed: refill the 3D layers once things settle."""
+    def _schedule_3d(self, boreholes: bool = False) -> None:
+        """A section style changed (or, with ``boreholes``, the data or context): refill
+        the 3D layers once things settle."""
+        self._view3d_boreholes = self._view3d_boreholes or boreholes
         if self._view3d_timer is None:
             self._view3d_timer = QTimer()
             self._view3d_timer.setSingleShot(True)
-            self._view3d_timer.timeout.connect(self._sync_3d)
+            self._view3d_timer.timeout.connect(
+                lambda: self._sync_3d(boreholes=self._view3d_boreholes))
         self._view3d_timer.start(300)
 
-    def _sync_3d(self, create: bool = False) -> dict:
+    def _sync_3d(self, create: bool = False, boreholes: bool = True) -> dict:
         """Refill the Show in 3D layers (created only when the user asks); never raises out
         of opening or a notification."""
         from .ui import view3d_layers
         if self.provider is None or self._syncing_3d:
             return {}
         self._syncing_3d = True
+        self._view3d_boreholes = False
         try:
             return view3d_layers.sync(self.provider.store, self.provider,
-                                      QgsProject.instance(), create=create)
+                                      QgsProject.instance(), create=create,
+                                      boreholes=boreholes)
         except Exception as exc:
             QgsMessageLog.logMessage(f"3D view layers: {exc}", MENU_TITLE,
                                      Qgis.MessageLevel.Warning)

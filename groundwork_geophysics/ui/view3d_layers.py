@@ -274,16 +274,20 @@ def _interval_colour(text: str, symbol) -> tuple:
     return colour.red(), colour.green(), colour.blue()
 
 
-def _surface_at(provider, profile_id: str, s: float) -> float | None:
-    import numpy as np
+def _surface_line(provider, profile_id: str):
+    """The section's drawn surface (s, z) of a profile, or None."""
     try:
         surface = provider.surface(profile_id)
     except Exception:
         return None
-    if surface is None:
+    return None if surface is None else surface.line
+
+
+def _surface_at(line, s: float) -> float | None:
+    import numpy as np
+    if line is None:
         return None
-    line_s, line_z = surface.line
-    return float(np.interp(s, line_s, line_z))
+    return float(np.interp(s, line[0], line[1]))
 
 
 def _borehole_rows(store, provider, choice: Choice) -> list[tuple]:
@@ -298,6 +302,7 @@ def _borehole_rows(store, provider, choice: Choice) -> list[tuple]:
         except Exception as exc:
             _log(f"3D view: boreholes of '{profile.name}' could not be gathered: {exc}")
             continue
+        line = None
         for point in [] if items is None else items.points:
             if point.kind != "borehole":
                 continue
@@ -306,7 +311,10 @@ def _borehole_rows(store, provider, choice: Choice) -> list[tuple]:
             if key in seen:
                 continue
             seen.add(key)
-            surface = _surface_at(provider, profile.id, point.s)
+            surface = None
+            if point.z_top is None:                 # only then is the drawn surface needed
+                line = _surface_line(provider, profile.id) if line is None else line
+                surface = _surface_at(line, point.s)
             for iv in borehole_intervals(point, surface, _interval_colour):
                 rows.append((profile.id, point.label, point.layer_id, iv))
     return rows
@@ -336,16 +344,21 @@ def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
     return layer
 
 
-def sync(store, provider, project: QgsProject, create: bool = False) -> dict[str, QgsVectorLayer]:
+def sync(store, provider, project: QgsProject, create: bool = False,
+         boreholes: bool = True) -> dict[str, QgsVectorLayer]:
     """Fill the 3D layers for the project's choice: a layer is created only when ``create``
     (the user asked), and removed when its part of the choice is empty. Ids that no longer
-    exist are ignored; a model that cannot be read is left out (and logged)."""
+    exist are ignored; a model that cannot be read is left out (and logged). Without
+    ``boreholes`` (only a section style changed) the borehole layer is left as it is."""
     choice = read_choice(project)
     out = {}
     models = _sync_models(store, provider, project, choice, create)
     if models is not None:
         out["models"] = models
-    boreholes = _sync_boreholes(store, provider, project, choice, create)
-    if boreholes is not None:
-        out["boreholes"] = boreholes
+    if boreholes:
+        layer = _sync_boreholes(store, provider, project, choice, create)
+    else:
+        layer = layers_3d(project).get("boreholes")
+    if layer is not None:
+        out["boreholes"] = layer
     return out
