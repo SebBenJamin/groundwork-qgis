@@ -104,3 +104,14 @@ def test_a_profile_without_real_heights_says_why_it_cannot_be_shown(store):
     assert p1.flags() & p1.flags().ItemIsEnabled
     assert not p2.flags() & p2.flags().ItemIsEnabled
     assert p2.toolTip(0) == LOCAL_TIP and "reference height" in LOCAL_TIP.lower()
+
+
+def test_the_look_is_offered_and_kept(store):
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice(frozenset({"m1"}), frozenset(), "pictures"))
+    assert dialog.pictures.isChecked() and not dialog.layers.isChecked()
+    assert dialog.choice().look == "pictures"
+    dialog.layers.setChecked(True)
+    assert dialog.choice() == Choice(frozenset({"m1"}), frozenset(), "layers")
+    assert View3dDialog(store, Choice()).layers.isChecked()

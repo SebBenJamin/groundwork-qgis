@@ -4,8 +4,8 @@ all of them."""
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QLabel, QTreeWidget,
-                                 QTreeWidgetItem, QVBoxLayout)
+from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QRadioButton,
+                                 QTreeWidget, QTreeWidgetItem, QVBoxLayout)
 
 from ..core.dataset_types import type_label
 from .help import add_help_button
@@ -19,6 +19,13 @@ BOREHOLES = "Boreholes"
 BOREHOLES_TIP = "The boreholes this profile's section shows, at their map position"
 LOCAL_TIP = ("This profile has no real heights, so it has no place in 3D. Give it a "
              "reference height in the section panel first.")
+LOOK_LABEL = "Show models as"
+LAYERS_TEXT = "Layers"
+LAYERS_TIP = ("Cells, point clouds and contour lines, following each model's display in the "
+              "section: style them in QGIS and identify their values")
+PICTURES_TEXT = "Section pictures (3D Tiles)"
+PICTURES_TIP = ("Each model exactly as its section draws it, labels included; no values on "
+                "Identify, and the look follows the section panel")
 _KIND, _ID = Qt.ItemDataRole.UserRole, Qt.ItemDataRole.UserRole + 1
 
 
@@ -52,6 +59,16 @@ class View3dDialog(QDialog):
             if profile.id in local:
                 top.setDisabled(True)
                 top.setToolTip(0, LOCAL_TIP)
+        self.layers = QRadioButton(LAYERS_TEXT)
+        self.layers.setToolTip(LAYERS_TIP)
+        self.pictures = QRadioButton(PICTURES_TEXT)
+        self.pictures.setToolTip(PICTURES_TIP)
+        (self.pictures if choice.look == "pictures" else self.layers).setChecked(True)
+        look = QHBoxLayout()
+        look.addWidget(QLabel(LOOK_LABEL))
+        look.addWidget(self.layers)
+        look.addWidget(self.pictures)
+        look.addStretch(1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         add_help_button(buttons, "view3d")
@@ -60,6 +77,7 @@ class View3dDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
         layout.addWidget(self.tree, 1)
+        layout.addLayout(look)
         layout.addWidget(buttons)
 
     @staticmethod
@@ -81,4 +99,5 @@ class View3dDialog(QDialog):
                 if item.checkState(0) != Qt.CheckState.Checked:
                     continue
                 (models if item.data(0, _KIND) == "model" else boreholes).add(item.data(0, _ID))
-        return Choice(frozenset(models), frozenset(boreholes))
+        return Choice(frozenset(models), frozenset(boreholes),
+                      "pictures" if self.pictures.isChecked() else "layers")

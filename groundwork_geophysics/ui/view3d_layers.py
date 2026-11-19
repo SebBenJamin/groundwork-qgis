@@ -32,6 +32,10 @@ MODELS_NAME = "Models in 3D"
 BOREHOLES_NAME = "Boreholes in 3D"
 CONTOURS_NAME = "Contours in 3D"
 SMOOTH_GROUP = "Smooth models in 3D"
+PICTURES_GROUP = "Section pictures in 3D"
+#: how ticked models are shown: as layers (cells, point clouds, contour lines) or as
+#: pictures of their section (3D Tiles)
+LOOKS = ("layers", "pictures")
 ENTRY = "view3d"
 _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "boreholes", ... "cloud"
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
@@ -59,21 +63,25 @@ _FILLED = "groundworkFilled"            # Qt property: this layer object was fil
 class Choice:
     models: frozenset = field(default_factory=frozenset)       # dataset ids
     boreholes: frozenset = field(default_factory=frozenset)    # profile ids
+    look: str = "layers"                                        # one of LOOKS
 
 
 def read_choice(project: QgsProject) -> Choice:
     text = project.readEntry(SCOPE, ENTRY, "")[0]
     try:
         data = json.loads(text) if text else {}
+        look = str(data.get("look", LOOKS[0]))
         return Choice(frozenset(str(i) for i in data.get("models", [])),
-                      frozenset(str(i) for i in data.get("boreholes", [])))
+                      frozenset(str(i) for i in data.get("boreholes", [])),
+                      look if look in LOOKS else LOOKS[0])
     except (ValueError, AttributeError, TypeError):
         return Choice()
 
 
 def write_choice(project: QgsProject, choice: Choice) -> None:
     project.writeEntry(SCOPE, ENTRY, json.dumps({"models": sorted(choice.models),
-                                                 "boreholes": sorted(choice.boreholes)}))
+                                                 "boreholes": sorted(choice.boreholes),
+                                                 "look": choice.look}))
 
 
 def layers_3d(project: QgsProject) -> dict[str, QgsVectorLayer]:
@@ -91,6 +99,14 @@ def clouds_3d(project: QgsProject) -> dict:
     from qgis.core import QgsPointCloudLayer
     return {layer.customProperty(_DATASET): layer for layer in project.mapLayers().values()
             if isinstance(layer, QgsPointCloudLayer) and layer.customProperty(_FLAG) == "cloud"}
+
+
+def pictures_3d(project: QgsProject) -> dict:
+    """The section pictures (3D Tiles) in the project by dataset id."""
+    from qgis.core import QgsTiledSceneLayer
+    return {layer.customProperty(_DATASET): layer for layer in project.mapLayers().values()
+            if isinstance(layer, QgsTiledSceneLayer)
+            and layer.customProperty(_FLAG) == "picture"}
 
 
 def cloud_folder(store) -> Path:
@@ -449,14 +465,23 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
 
 #: curtain files this session moved a cloud away from, deleted once nothing holds them
 _stale: set[Path] = set()
-_OWN_NAME = re.compile(r".+-[0-9a-f]{10}\.las$")     # <dataset id>-<signature>.las
+#: <dataset id>-<signature>.las (a cloud) or .json (a picture's tileset)
+_OWN_NAME = re.compile(r".+-[0-9a-f]{10}\.(las|json)$")
+
+
+def _companions(path: Path) -> set:
+    """A curtain file with the files that belong to it: QGIS's index of a cloud, the glTF
+    of a tileset."""
+    if path.suffix == ".las":
+        return {path, path.with_name(path.name[:-4] + ".copc.laz")}
+    return {path, path.with_suffix(".glb")}
 
 
 def _let_go(path: Path) -> None:
-    """Mark a curtain file the plugin wrote (and QGIS's index of it) for deletion; never a
+    """Mark a curtain file the plugin wrote (and what belongs to it) for deletion; never a
     file it did not write."""
     if _OWN_NAME.match(path.name):
-        _stale.update({path, path.with_name(path.name[:-4] + ".copc.laz")})
+        _stale.update(_companions(path))
 
 
 def _delete_stale(in_use: set) -> None:
@@ -514,19 +539,177 @@ def _sync_clouds(store, provider, project, gathered, may_create, retry, topo_of)
                 _drop_cloud(project, layer)
             retry(f"cloud:{did}")               # comes back by itself once it has points
             continue
-        _stale.discard(path)
-        _stale.discard(path.with_name(path.name[:-4] + ".copc.laz"))
+        _stale.difference_update(_companions(path))
         if layer is None:
             layer = _new_cloud(project, path, d.name or d.id, did)
         else:
             _let_go(Path(layer.source()))
             layer.setDataSource(str(path), layer.name(), "pdal")    # the user's style stays
         out[did] = layer
-    in_use = {Path(la.source()) for la in clouds_3d(project).values()}
-    _delete_stale(in_use | {p.with_name(p.name[:-4] + ".copc.laz") for p in in_use})
-    group = project.layerTreeRoot().findGroup(SMOOTH_GROUP)
+    _drop_empty_group(project, SMOOTH_GROUP)
+    return out
+
+
+def _drop_empty_group(project: QgsProject, name: str) -> None:
+    group = project.layerTreeRoot().findGroup(name)
     if group is not None and not group.children():
         group.parent().removeChildNode(group)
+
+
+# -- section pictures (3D Tiles) -------------------------------------------------------------
+def _picture_file(layer) -> Path | None:
+    """The tileset file a picture layer shows ("url=file:///…/x.json")."""
+    from qgis.PyQt.QtCore import QUrl
+    source = layer.source()
+    url = source[4:] if source.startswith("url=") else source
+    local = QUrl(url).toLocalFile()
+    return Path(local) if local else None
+
+
+def _picture_signature(section_layer, profile, topo) -> str:
+    """A short stable fingerprint of what a picture shows: everything the section draws."""
+    from ..section import picture
+    style = section_layer.style
+    h = hashlib.sha1(_cloud_signature(section_layer, profile, topo).encode())
+    h.update(repr((style.mode, style.contour_step, tuple(style.contour_major),
+                   tuple(style.contour_minor), style.opacity, picture.PX_PER_M,
+                   picture.MAX_PIXELS, picture.LABEL_SHARE, 1)).encode())
+    return h.hexdigest()[:10]
+
+
+def _png(image) -> bytes:
+    from qgis.PyQt.QtCore import QBuffer, QByteArray, QIODevice
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    buffer.close()
+    return bytes(data)
+
+
+def _alpha(image) -> np.ndarray:
+    raw = np.frombuffer(image.constBits().asstring(image.sizeInBytes()), np.uint8)
+    rows = raw.reshape(image.height(), image.bytesPerLine())
+    return rows[:, :image.width() * 4].reshape(image.height(), image.width(), 4)[..., 3]
+
+
+def _write_picture(path: Path, store, project, profile, section_layer, topo) -> bool:
+    """The model's section picture as a tileset at ``path`` (and its glTF beside it); False
+    when nothing is painted."""
+    from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,
+                           QgsVector3D)
+
+    from ..core.tiles3d import enu_axes, glb, tileset
+    from ..core.view3d import bend_chainages, picture_strip
+    from ..section.picture import section_pictures
+    bends = bend_chainages(profile.chainage)
+    raw = []
+    for pic in section_pictures(section_layer, topo):
+        alpha = _alpha(pic.image)
+        if not alpha.any():
+            continue
+        sz, tris = picture_strip(alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
+        raw.append((sz, tris, _png(pic.image)))
+    if not raw:
+        return False
+    sz = np.vstack([r[0] for r in raw])
+    xy = np.atleast_2d(profile.chainage.to_xy(sz[:, 0])).reshape(-1, 2)
+    to_ecef = QgsCoordinateTransform(QgsCoordinateReferenceSystem(store.crs_authid),
+                                     QgsCoordinateReferenceSystem("EPSG:4978"), project)
+    ecef = np.array([[q.x(), q.y(), q.z()] for q in
+                     (to_ecef.transform(QgsVector3D(float(x), float(y), float(z)))
+                      for (x, y), z in zip(xy, sz[:, 1]))])
+    origin = ecef.mean(axis=0)
+    east, north, up = enu_axes(origin)
+    local = ecef - origin
+    enu = np.column_stack([local @ east, local @ north, local @ up])
+    gltf = np.column_stack([enu[:, 0], enu[:, 2], -enu[:, 1]])          # glTF is y-up
+    pieces, start = [], 0
+    for psz, tris, png in raw:
+        end = start + len(psz)
+        pieces.append((gltf[start:end], psz[:, 2:4], tris, png))
+        start = end
+    lo, hi = enu.min(axis=0), enu.max(axis=0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    model = path.with_suffix(".glb")
+    for target, data in ((model, glb(pieces)),
+                         (path, json.dumps(tileset(model.name, east, north, up, origin,
+                                                   (lo + hi) / 2,
+                                                   np.maximum((hi - lo) / 2, 0.5)),
+                                           indent=1).encode())):
+        part = target.with_name(target.name + ".part")
+        part.write_bytes(data)
+        part.replace(target)
+    return True
+
+
+def _new_picture(project: QgsProject, path: Path, name: str, dataset_id: str):
+    from qgis.core import QgsTiledSceneLayer
+    layer = QgsTiledSceneLayer(f"url={path.as_uri()}", name, "cesiumtiles")
+    layer.setCustomProperty(_FLAG, "picture")
+    layer.setCustomProperty(_DATASET, dataset_id)
+    try:
+        from qgis._3d import QgsTiledSceneLayer3DRenderer
+        layer.setRenderer3D(QgsTiledSceneLayer3DRenderer())
+    except ImportError:                             # a QGIS built without 3D
+        pass
+    project.addMapLayer(layer, False)
+    group = plugin_group(project.layerTreeRoot())
+    (group.findGroup(PICTURES_GROUP) or group.addGroup(PICTURES_GROUP)).addLayer(layer)
+    return layer
+
+
+def _drop_picture(project, layer) -> None:
+    path = _picture_file(layer)
+    if path is not None:
+        _let_go(path)
+    project.removeMapLayer(layer.id())
+
+
+def _sync_pictures(store, project, gathered, may_create, retry, topo_of) -> dict:
+    wanted = {d.id: (p, d, la) for p, d, la in gathered if _shown(la)}
+    existing = pictures_3d(project)
+    for did, layer in existing.items():
+        if did not in wanted:
+            _drop_picture(project, layer)
+    folder = cloud_folder(store)
+    out = {}
+    for did, (profile, d, section_layer) in wanted.items():
+        layer = existing.get(did)
+        allowed = may_create(f"picture:{did}")
+        if layer is None and not allowed:
+            continue                            # e.g. the user removed it
+        topo = topo_of(profile.id)
+        failed = False
+        try:
+            path = folder / f"{did}-{_picture_signature(section_layer, profile, topo)}.json"
+            if layer is not None and layer.isValid() and _picture_file(layer) == path \
+                    and path.exists():
+                out[did] = layer
+                continue
+            # the same signature always gives the same files: ones already there are reused
+            painted = (path.exists() and path.with_suffix(".glb").exists()) or \
+                _write_picture(path, store, project, profile, section_layer, topo)
+        except Exception as exc:
+            _log(f"3D view: '{d.name or d.id}' could not be shown as a picture: {exc}")
+            painted, failed = False, True
+        if not painted:
+            if not failed:
+                _log(f"3D view: '{d.name or d.id}' has nothing to show as a picture")
+            if layer is not None:
+                _drop_picture(project, layer)
+            retry(f"picture:{did}")
+            continue
+        _stale.difference_update(_companions(path))
+        if layer is None:
+            layer = _new_picture(project, path, d.name or d.id, did)
+        else:
+            old = _picture_file(layer)
+            if old is not None:
+                _let_go(old)
+            layer.setDataSource(f"url={path.as_uri()}", layer.name(), "cesiumtiles")
+        out[did] = layer
+    _drop_empty_group(project, PICTURES_GROUP)
     return out
 
 
@@ -707,6 +890,9 @@ def shown_summary(layers: dict) -> str:
         parts.append(f"{loc.toString(n)} smooth model{'' if n == 1 else 's'}")
     if "contours" in layers:
         parts.append(f"{loc.toString(layers['contours'].featureCount())} contour lines")
+    if layers.get("pictures"):
+        n = len(layers["pictures"])
+        parts.append(f"{loc.toString(n)} section picture{'' if n == 1 else 's'}")
     if "boreholes" in layers:
         parts.append(f"{loc.toString(layers['boreholes'].featureCount())} borehole intervals")
     if not parts:
@@ -740,18 +926,27 @@ def sync(store, provider, project: QgsProject, create: bool = False,
         return topos[profile_id]
 
     out = {}
-    models = _sync_models(store, project, gathered,
+    pictures_look = choice.look == "pictures"
+    as_layers = [] if pictures_look else gathered
+    models = _sync_models(store, project, as_layers,
                           may_create("models") if any(not _shown(la) or _as_cells(la)
-                                                      for _p, _d, la in gathered) else create)
+                                                      for _p, _d, la in as_layers) else create)
     if models is not None:
         out["models"] = models
-    clouds = _sync_clouds(store, provider, project, gathered, may_create, needs.discard,
+    clouds = _sync_clouds(store, provider, project, as_layers, may_create, needs.discard,
                           topo_of)
     if clouds:
         out["clouds"] = clouds
-    contours = _sync_contours(store, project, gathered, may_create, topo_of)
+    contours = _sync_contours(store, project, as_layers, may_create, topo_of)
     if contours is not None:
         out["contours"] = contours
+    pictures = _sync_pictures(store, project, gathered if pictures_look else [], may_create,
+                              needs.discard, topo_of)
+    if pictures:
+        out["pictures"] = pictures
+    in_use = {Path(la.source()) for la in clouds_3d(project).values()}
+    in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
+    _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
     project.setProperty(_NEEDS, "\n".join(sorted(needs)))
     layer = layers_3d(project).get("boreholes")
     if not boreholes and layer is not None:

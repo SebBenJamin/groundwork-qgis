@@ -596,3 +596,101 @@ def test_a_new_project_does_not_inherit_what_the_last_one_showed(setup, fake_ifa
         plug.unload()
         prj.clear()
         prj.setProperty("groundwork3dNeeds", None)
+
+
+# -- section pictures (3D Tiles) as the other look -----------------------------------------
+def _choose_pictures(prj, models=(), boreholes=()):
+    from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
+    write_choice(prj, Choice(frozenset(models), frozenset(boreholes), "pictures"))
+
+
+def test_the_look_round_trips_with_the_choice(setup):
+    from groundwork_geophysics.ui.view3d_layers import read_choice
+    _st, _p, _provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    assert read_choice(prj).look == "pictures"
+    _choose(prj, ["d"])
+    assert read_choice(prj).look == "layers"
+
+
+def test_pictures_are_one_tiled_scene_per_model_and_nothing_else(setup):
+    from qgis.core import QgsTiledSceneLayer
+
+    from groundwork_geophysics.ui.view3d_layers import (PICTURES_GROUP, cloud_folder,
+                                                        shown_summary, sync)
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth+contours")
+    _choose_pictures(prj, ["d"])
+    out = sync(st, provider, prj, create=True)
+    picture = out["pictures"]["d"]
+    assert isinstance(picture, QgsTiledSceneLayer) and picture.isValid()
+    assert picture.name() == "Model d"
+    assert {"models", "clouds", "contours"}.isdisjoint(out)
+    files = sorted(f.suffix for f in cloud_folder(st).iterdir())
+    assert files == [".glb", ".json"]
+    assert prj.layerTreeRoot().findLayer(picture.id()).parent().name() == PICTURES_GROUP
+    assert "1 section picture" in shown_summary(out)
+
+
+def test_the_picture_hangs_under_the_profile_line(setup):
+    import json
+    import struct
+
+    from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject,
+                           QgsVector3D)
+
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose_pictures(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    folder = cloud_folder(st)
+    tileset = json.loads(next(folder.glob("*.json")).read_text())
+    data = next(folder.glob("*.glb")).read_bytes()
+    jlen = struct.unpack_from("<I", data, 12)[0]
+    doc = json.loads(data[20:20 + jlen])
+    acc = doc["accessors"][doc["meshes"][0]["primitives"][0]["attributes"]["POSITION"]]
+    view = doc["bufferViews"][acc["bufferView"]]
+    start = 20 + jlen + 8 + view["byteOffset"]
+    pos = np.frombuffer(data[start:start + view["byteLength"]], np.float32).reshape(-1, 3)
+    t = np.array(tileset["root"]["transform"]).reshape(4, 4).T
+    east, up, south = pos[:, 0], pos[:, 1], pos[:, 2]            # glTF is y-up
+    ecef = (t @ np.column_stack([east, -south, up, np.ones(len(pos))]).T).T[:, :3]
+    back = QgsCoordinateTransform(QgsCoordinateReferenceSystem("EPSG:4978"),
+                                  QgsCoordinateReferenceSystem(CRS), QgsProject.instance())
+    pts = np.array([[q.x(), q.y(), q.z()] for q in
+                    (back.transform(QgsVector3D(*map(float, e))) for e in ecef)])
+    s, offset = p.chainage.project(pts[:, :2])
+    assert np.abs(offset).max() < 0.05                          # on the line, to a few cm
+    mesh = provider.layers(p.id)[0].mesh
+    _s0, _s1, z0, z1 = mesh.bounds()
+    assert pts[:, 2].min() >= z0 - 0.5 and pts[:, 2].max() <= z1 + 5.0
+
+
+def test_a_style_change_redraws_the_picture_in_the_same_layer(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose_pictures(prj, ["d"])
+    picture = sync(st, provider, prj, create=True)["pictures"]["d"]
+    old = picture.source()
+    _mode(provider, p, "smooth+contours")
+    again = sync(st, provider, prj)["pictures"]["d"]
+    sync(st, provider, prj)
+    assert again is picture and again.isValid() and again.source() != old
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder
+    assert len(list(cloud_folder(st).glob("*.json"))) == 1     # the old one let go
+
+
+def test_back_to_layers_removes_the_pictures(setup):
+    from groundwork_geophysics.ui.view3d_layers import (PICTURES_GROUP, cloud_folder,
+                                                        pictures_3d, sync)
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    _choose(prj, ["d"])
+    out = sync(st, provider, prj, create=True)
+    sync(st, provider, prj)
+    assert not pictures_3d(prj) and out["models"].featureCount() > 0
+    assert not list(cloud_folder(st).glob("*.json"))
+    assert prj.layerTreeRoot().findGroup(PICTURES_GROUP) is None
