@@ -125,18 +125,21 @@ def _has_3d() -> bool:
 
 
 def _symbol_3d(geometry_type, rgb):
-    """A 3D symbol at the feature's own heights in colour ``rgb``: lines as tubes,
-    polygons flat (seen from both sides), points as spheres."""
+    """A 3D symbol at the feature's own heights in colour ``rgb``: lines as lines (a few
+    pixels wide), polygons flat (seen from both sides), points as spheres."""
     from qgis._3d import (QgsLine3DSymbol, QgsPhongMaterialSettings, QgsPoint3DSymbol,
-                          QgsPolygon3DSymbol)
+                          QgsPolygon3DSymbol, QgsSimpleLineMaterialSettings)
     from qgis.core import Qgis
     material = QgsPhongMaterialSettings()
     material.setDiffuse(QColor(*rgb))
     material.setAmbient(QColor(*rgb))
     if geometry_type == QgsWkbTypes.GeometryType.LineGeometry:
         symbol = QgsLine3DSymbol()
-        symbol.setRenderAsSimpleLines(False)
-        symbol.setWidth(0.5)
+        # simple lines keep the drawn depth; a wide (buffered) line lies flat at height 0
+        symbol.setRenderAsSimpleLines(True)
+        symbol.setWidth(3.0)                        # pixels
+        material = QgsSimpleLineMaterialSettings()
+        material.setAmbient(QColor(*rgb))
     elif geometry_type == QgsWkbTypes.GeometryType.PolygonGeometry:
         symbol = QgsPolygon3DSymbol()
         symbol.setExtrusionHeight(0.0)

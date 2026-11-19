@@ -26,7 +26,7 @@ The curtains and boreholes are two layers in the Groundwork group, **Models in 3
 The **stations** stand as small spheres at their surveyed height, in the outline colour of their map symbol; stations without a height are left out.
 
 
-The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as tubes, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. A new entity takes its 2D colour when it is drawn; if you recolour an entity later, recolour it in **3D View** too. The 3D style is an ordinary QGIS style: change it in the layer's properties → **3D View**.
+The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as lines a few pixels wide, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. A new entity takes its 2D colour when it is drawn; if you recolour an entity later, recolour it in **3D View** too. The 3D style is an ordinary QGIS style: change it in the layer's properties → **3D View**.
 
 ## Working with the layers
 

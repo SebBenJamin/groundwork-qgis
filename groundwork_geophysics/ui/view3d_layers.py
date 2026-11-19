@@ -120,14 +120,21 @@ def _style_boreholes(layer: QgsVectorLayer) -> None:
                                                QgsProperty.fromField("color"))
     layer.setRenderer(QgsSingleSymbolRenderer(line))
     try:
-        from qgis._3d import QgsLine3DSymbol, QgsVectorLayer3DRenderer
+        from qgis._3d import (QgsAbstractMaterialSettings, QgsLine3DSymbol,
+                              QgsSimpleLineMaterialSettings, QgsVectorLayer3DRenderer)
     except ImportError:                         # a QGIS built without 3D
         return
     symbol = QgsLine3DSymbol()
     symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
-    symbol.setRenderAsSimpleLines(False)
-    symbol.setWidth(1.0)                       # metres: a column you can see beside a curtain
-    symbol.setMaterialSettings(_colour_material())
+    # simple lines keep each vertex's height; a wide (buffered) line lies flat at height 0,
+    # which turns a vertical borehole into a disc at sea level
+    symbol.setRenderAsSimpleLines(True)
+    symbol.setWidth(6.0)                       # pixels: a column you can see beside a curtain
+    material = QgsSimpleLineMaterialSettings()
+    props = material.dataDefinedProperties()
+    props.setProperty(QgsAbstractMaterialSettings.Property.Ambient, QgsProperty.fromField("color"))
+    material.setDataDefinedProperties(props)
+    symbol.setMaterialSettings(material)
     renderer = QgsVectorLayer3DRenderer(symbol)
     _one_chunk(renderer)
     layer.setRenderer3D(renderer)

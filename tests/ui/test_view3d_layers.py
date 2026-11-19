@@ -328,3 +328,23 @@ def test_a_profile_without_real_heights_stays_out_of_3d(qgis_app, tmp_path):
     _choose(prj, ["m"], [p.id])
     layers = sync(st, provider, prj, create=True)
     assert all(layer.featureCount() == 0 for layer in layers.values())
+
+
+def test_boreholes_are_drawn_as_lines_at_their_own_heights(setup):
+    """QGIS lays a buffered (wide) 3D line flat at height 0, so a vertical borehole became a
+    disc at sea level; lines drawn as "simple lines" keep each vertex's height."""
+    from qgis._3d import QgsAbstractMaterialSettings, QgsLine3DSymbol
+    from qgis.core import Qgis
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, boreholes=[p.id])
+    lyr = sync(st, provider, prj, create=True)["boreholes"]
+    symbol = sip.cast(lyr.renderer3D().symbol(), QgsLine3DSymbol)
+    assert symbol.renderAsSimpleLines()
+    assert symbol.altitudeClamping() == Qgis.AltitudeClamping.Absolute
+    material = symbol.materialSettings()
+    assert material.type() == "simpleline"
+    prop = material.dataDefinedProperties().property(QgsAbstractMaterialSettings.Property.Ambient)
+    assert prop.isActive() and prop.field() == "color"

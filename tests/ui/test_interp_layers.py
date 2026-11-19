@@ -256,3 +256,19 @@ def test_without_qgis_3d_the_layers_still_open(qgis_app, interp_store, monkeypat
     assert len(layers) == 5 and layers["interp_lines_3d"].renderer3D() is None
     assert ensure_3d_styles(interp_store, prj) == 0
     prj.clear()
+
+
+def test_interpretation_lines_keep_their_heights_in_3d(qgis_app, interp_store):
+    """A buffered 3D line lies flat at height 0; simple lines keep the drawn depth."""
+    from qgis._3d import QgsLine3DSymbol
+    from qgis.core import QgsWkbTypes
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.interp_layers import _symbol_3d
+    symbol = sip.cast(_symbol_3d(QgsWkbTypes.GeometryType.LineGeometry, (10, 20, 30)),
+                      QgsLine3DSymbol)
+    assert symbol.renderAsSimpleLines()
+    material = symbol.materialSettings()
+    assert material.type() == "simpleline"
+    c = material.ambient()
+    assert (c.red(), c.green(), c.blue()) == (10, 20, 30)
