@@ -103,3 +103,97 @@ def test_cells_the_section_leaves_out_are_left_out_of_the_curtain():
     rgba = np.array([[10, 20, 30, 0], [158, 1, 66, 255]], dtype=np.uint8)   # NaN: alpha 0
     cells = curtain_cells(_mesh(), L_SHAPE, rgba, None)
     assert [c.value for c in cells] == [3000.0]
+
+
+# -- the smooth field as points and lines (smooth / contours modes) -------------------------
+def _grid_mesh():
+    """20 x 10 quads over s 0..20, z 30..50; values 10..1000 rising with s, coverage
+    falling with depth."""
+    s = np.linspace(0.0, 20.0, 21)
+    z = np.linspace(30.0, 50.0, 11)
+    S, Z = np.meshgrid(s, z)
+    verts = np.column_stack([S.ravel(), Z.ravel()])
+    cells, values, coverage = [], [], []
+    for j in range(10):
+        for i in range(20):
+            a = j * 21 + i
+            cells.append([a, a + 1, a + 22, a + 21])
+            values.append(10 ** (1 + 2 * (i + 0.5) / 20))
+            coverage.append(float(j))                  # deeper rows: lower coverage
+    return SectionMesh(verts, np.array(cells), np.array(values), "resistivity", "ohm.m",
+                       coverage=np.array(coverage))
+
+
+def _style(**kw):
+    from types import SimpleNamespace
+
+    from groundwork_geophysics.core.colors import ColorScale
+    base = dict(scale=ColorScale("Spectral_r", 10.0, 1000.0, True), grid_cell=None,
+                fade_mode="blank", contour_step=None, contour_major=(), contour_minor=())
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+STRAIGHT = Chainage(np.array([[500.0, 1000.0], [503.0, 1004.0], [506.0, 1008.0],
+                              [509.0, 1012.0], [512.0, 1016.0]]))     # 20 m north-east
+
+
+def _on_line(xyz, line=STRAIGHT):
+    """Distance of each point from the straight line through ``line``'s ends."""
+    a, b = line.xy[0], line.xy[-1]
+    d = (b - a) / np.hypot(*(b - a))
+    rel = xyz[:, :2] - a
+    return np.abs(rel[:, 0] * d[1] - rel[:, 1] * d[0])
+
+
+def test_the_field_is_the_sections_grid_and_leaves_out_above_ground():
+    from groundwork_geophysics.core.view3d import field_grid
+    topo = (np.array([0.0, 20.0]), np.array([45.0, 45.0]))
+    grid = field_grid(_grid_mesh(), topo, _style(), None)
+    S, Z = np.meshgrid(grid.s, grid.z)
+    assert not np.isfinite(grid.values[Z > 45.0 + 1e-6]).any()
+    assert np.isfinite(grid.values[Z < 44.0]).any()
+
+
+def test_faded_nodes_are_left_out():
+    from groundwork_geophysics.core.view3d import field_grid
+    mesh = _grid_mesh()
+    full = np.isfinite(field_grid(mesh, None, _style(), None).values).sum()
+    faded = np.isfinite(field_grid(mesh, None, _style(), 5.0).values).sum()
+    assert 0 < faded < full
+
+
+def test_points_stand_under_the_line_in_the_section_colour():
+    from groundwork_geophysics.core.view3d import field_grid, field_points
+    style = _style()
+    grid = field_grid(_grid_mesh(), None, style, None)
+    pts = field_points(grid, STRAIGHT, style.scale)
+    assert len(pts.value) > 100
+    assert _on_line(pts.xyz).max() < 1e-6
+    assert (pts.rgb == style.scale.rgba(pts.value)[:, :3]).all()
+    assert pts.xyz[:, 2].min() >= 30.0 - 1e-9 and pts.xyz[:, 2].max() <= 50.0 + 1e-9
+
+
+def test_points_are_thinned_to_the_spacing():
+    from groundwork_geophysics.core.view3d import field_grid, field_points
+    style = _style()
+    grid = field_grid(_grid_mesh(), None, style, None)
+    spacing = 4 * float(grid.s[1] - grid.s[0])
+    dense = field_points(grid, STRAIGHT, style.scale, spacing=0.0)
+    thin = field_points(grid, STRAIGHT, style.scale, spacing=spacing)
+    assert len(dense.value) == np.isfinite(grid.values).sum()
+    along = np.unique(np.round(np.hypot(*(thin.xyz[:, :2] - STRAIGHT.xy[0]).T), 9))
+    across = np.unique(np.round(thin.xyz[:, 2], 9))
+    assert np.diff(along).min() >= spacing - 1e-6
+    assert np.diff(across).min() >= spacing - 1e-6
+    assert len(thin.value) < len(dense.value) / 4
+
+
+def test_contours_lie_under_the_line():
+    from groundwork_geophysics.core.view3d import field_contours, field_grid
+    style = _style()
+    grid = field_grid(_grid_mesh(), None, style, None)
+    lines = field_contours(grid, STRAIGHT, style.scale, [30.0, 100.0, 300.0])
+    assert {level for level, _ in lines} == {30.0, 100.0, 300.0}
+    for _level, xyz in lines:
+        assert xyz.shape[1] == 3 and _on_line(xyz).max() < 1e-6

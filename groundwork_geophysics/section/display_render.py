@@ -18,7 +18,7 @@ from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 
 from ..core.gridding import (FADE_ALPHA, contour_levels, contour_lines, coverage_alpha,
                              default_threshold, fade_band, grid_model, grid_shape,
-                             soft_coverage_alpha)
+                             next_to_empty, soft_coverage_alpha)
 
 CONTOUR_PEN_MM = 0.25
 CONTOUR_MINOR_PEN_MM = 0.13          # typed minor levels: thinner, no label
@@ -64,15 +64,7 @@ def _key(layer, topo, shape):
             st.fade_coverage, st.coverage_threshold, st.fade_mode)
 
 
-def _next_to_empty(grid, mesh) -> np.ndarray:
-    """Nodes next to a node outside the mesh or in a cell without a value: their pixel
-    would reach half a grid cell into it, so they are left out (the field stops just short
-    of empty space instead of overshooting into it). The ground is handled by the clip."""
-    cell = grid.cell
-    empty = (cell == -1) | ((cell >= 0) & ~np.isfinite(mesh.values[np.maximum(cell, 0)]))
-    pad = np.pad(empty, 1, constant_values=True)
-    near = pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]
-    return near & ~empty
+_next_to_empty = next_to_empty            # the section and the 3D view share it
 
 
 def _field_image(grid, rgba) -> tuple[QImage, QRectF]:

@@ -1,14 +1,70 @@
 """Geometry for the QGIS 3D view (pure NumPy): a model's cells as vertical rings standing
-under the profile line, and a borehole's log intervals as vertical segments at its map
-position. Colours come in from the section's colour scale and interval style."""
+under the profile line, its smooth field as points and its contour lines as 3D lines there,
+and a borehole's log intervals as vertical segments at its map position. Colours come in
+from the section's colour scale and interval style."""
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
-from .gridding import default_threshold
+from .gridding import (FADE_ALPHA, Grid, contour_lines, default_threshold, fade_band,
+                       grid_model, grid_shape, next_to_empty, soft_coverage_alpha)
+
+
+@dataclass(frozen=True)
+class FieldPoints:
+    xyz: np.ndarray             # (n, 3) map position and elevation
+    rgb: np.ndarray             # (n, 3) uint8, the section colour
+    value: np.ndarray           # (n,) the model value
+
+
+def field_grid(mesh, topo, style, threshold: float | None) -> Grid:
+    """The section's smooth grid of ``mesh`` (as the panel draws it in smooth mode), with nan
+    where the section shows nothing: next to empty space and, with ``threshold`` (the fade
+    is on), where the soft fade makes a node faint or blank. ``style``: its ``scale``,
+    ``grid_cell`` and ``fade_mode``."""
+    shape = grid_shape(mesh, style.grid_cell)
+    grid = grid_model(mesh, topo, shape, style.scale.log, fill_to_ground=True)
+    drop = next_to_empty(grid, mesh)
+    if threshold is not None and getattr(mesh, "coverage", None) is not None:
+        cov = grid_model(mesh, topo, shape, False, values=mesh.coverage, fill_to_ground=True)
+        alpha = soft_coverage_alpha(cov.values, threshold, style.fade_mode,
+                                    fade_band(mesh.coverage))
+        floor = 0.0 if style.fade_mode == "blank" else FADE_ALPHA
+        drop |= alpha < (floor + 1.0) / 2
+    return replace(grid, values=np.where(drop, np.nan, grid.values))
+
+
+def field_points(grid: Grid, chainage, scale, spacing: float = 0.05) -> FieldPoints:
+    """The grid's drawn nodes as points under ``chainage``'s line, thinned so they are at
+    least ``spacing`` apart along and across; nan values (and values <= 0 on a log scale)
+    are left out."""
+    ds = float(grid.s[1] - grid.s[0]) if len(grid.s) > 1 else 1.0
+    dz = float(grid.z[1] - grid.z[0]) if len(grid.z) > 1 else 1.0
+    step_s = max(1, int(math.ceil(spacing / ds - 1e-9))) if spacing > 0 else 1
+    step_z = max(1, int(math.ceil(spacing / dz - 1e-9))) if spacing > 0 else 1
+    s, z = grid.s[::step_s], grid.z[::step_z]
+    values = grid.values[::step_z, ::step_s]
+    keep = np.isfinite(values)
+    if scale.log:
+        keep &= values > 0
+    S, Z = np.meshgrid(s, z)
+    v = values[keep]
+    xy = np.atleast_2d(chainage.to_xy(S[keep])).reshape(-1, 2)
+    return FieldPoints(np.column_stack([xy, Z[keep]]),
+                       np.asarray(scale.rgba(v))[:, :3].astype(np.uint8), v.astype(float))
+
+
+def field_contours(grid: Grid, chainage, scale, levels) -> list[tuple[float, np.ndarray]]:
+    """(level, (k, 3) x/y/z) per contour polyline of the grid, under ``chainage``'s line."""
+    out = []
+    for level, lines in contour_lines(grid, levels, scale.log):
+        for line in lines:
+            xy = np.atleast_2d(chainage.to_xy(line[:, 0])).reshape(-1, 2)
+            out.append((level, np.column_stack([xy, line[:, 1]])))
+    return out
 
 
 @dataclass(frozen=True)
