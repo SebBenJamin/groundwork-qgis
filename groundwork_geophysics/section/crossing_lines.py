@@ -14,7 +14,7 @@ from ..ui import project_actions
 
 def own_layer_ids(store, project) -> set[str]:
     """Ids of the store's own layers in ``project``: profiles, stations, interpretation,
-    field notes."""
+    field notes, derived electrodes and the Show in 3D layers."""
     from ..ui.field_note_layers import field_note_layers
     from ..ui.interp_layers import interp_layers
     own = list(project_actions.store_layers(store, project).values())
@@ -24,6 +24,8 @@ def own_layer_ids(store, project) -> set[str]:
     derived = derived_layer(project)
     if derived is not None:
         own.append(derived)
+    from ..ui.view3d_layers import layers_3d
+    own += list(layers_3d(project).values())
     return {layer.id() for layer in own}
 
 

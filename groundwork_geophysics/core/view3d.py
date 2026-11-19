@@ -51,6 +51,8 @@ def curtain_cells(mesh, chainage, rgba, threshold: float | None) -> list[Curtain
         resolved = cut is None or not math.isfinite(cov) or cov >= cut
         if threshold is not None and not resolved:
             continue
+        if colours.shape[1] > 3 and colours[i][3] == 0:
+            continue                        # the section leaves it out (no value, clear)
         ring = [(float(xy[k, 0]), float(xy[k, 1]), float(z[k])) for k in cell if k >= 0]
         ring.append(ring[0])
         r, g, b = (int(c) for c in colours[i][:3])

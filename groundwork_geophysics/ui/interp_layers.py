@@ -112,6 +112,18 @@ def sync_categories(layer: QgsVectorLayer, features) -> None:
 LAYERS_3D = ("interp_lines_3d", "interp_polygons_3d", "interp_points_3d")
 
 
+#: custom property: the layer got its 3D style (so one the user removed is not given again)
+STYLED_3D = "groundwork/3d_style_given"
+
+
+def _has_3d() -> bool:
+    try:
+        import qgis._3d  # noqa: F401
+    except ImportError:                         # a QGIS built without 3D
+        return False
+    return True
+
+
 def _symbol_3d(geometry_type, rgb):
     """A 3D symbol at the feature's own heights in colour ``rgb``: lines as tubes,
     polygons flat (seen from both sides), points as spheres."""
@@ -141,9 +153,12 @@ def _symbol_3d(geometry_type, rgb):
 def default_3d(layer: QgsVectorLayer) -> None:
     """One 3D category per entity, in its 2D category's colour (kept in step by
     ``sync_categories``)."""
+    if not _has_3d():
+        return
     from qgis._3d import QgsCategorized3DRenderer
     renderer = QgsCategorized3DRenderer("feature_id", [])
     layer.setRenderer3D(renderer)
+    layer.setCustomProperty(STYLED_3D, True)
     sync_3d(layer)
 
 
@@ -154,7 +169,7 @@ def sync_3d(layer: QgsVectorLayer) -> None:
     r3d = layer.renderer3D()
     r2d = layer.renderer()
     if (r3d is None or r3d.type() != "categorized" or r3d.classAttribute() != "feature_id"
-            or not isinstance(r2d, QgsCategorizedSymbolRenderer)):
+            or not isinstance(r2d, QgsCategorizedSymbolRenderer) or not _has_3d()):
         return
     from qgis._3d import Qgs3DRendererCategory
     r3d = r3d.clone()
@@ -173,10 +188,14 @@ def sync_3d(layer: QgsVectorLayer) -> None:
 
 def ensure_3d_styles(store: ProjectStore, project: QgsProject) -> int:
     """Give the 3D interpretation layers of an older project their 3D style, once: only a
-    layer without any 3D renderer gets it. Returns how many did."""
+    layer that never had it and has no 3D renderer of the user's gets it (a style the user
+    removed stays removed). Returns how many did."""
+    if not _has_3d():
+        return 0
     changed = 0
     for name, layer in interp_layers(store, project).items():
-        if name in LAYERS_3D and layer.renderer3D() is None:
+        if (name in LAYERS_3D and layer.renderer3D() is None
+                and not layer.customProperty(STYLED_3D)):
             default_3d(layer)
             changed += 1
     return changed

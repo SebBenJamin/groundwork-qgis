@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from qgis.core import (Qgis, QgsFeature, QgsFeatureRequest, QgsFillSymbol, QgsGeometry,
+from qgis.core import (Qgis, QgsFeature, QgsFillSymbol, QgsGeometry,
                        QgsLineString, QgsLineSymbol, QgsMessageLog, QgsPoint, QgsPolygon,
                        QgsProject, QgsProperty, QgsSingleSymbolRenderer, QgsSymbolLayer,
                        QgsVectorLayer)
@@ -36,8 +36,9 @@ _MODEL_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id
 _BOREHOLE_FIELDS = ("&field=profile_id:string&field=borehole:string&field=layer:string"
                     "&field=top:double&field=bottom:double&field=text:string"
                     "&field=color:string")
-#: layer id -> {dataset id: signature of what its cells were made from}
+#: layer id -> {dataset id: (signature of what its cells were made from, their feature ids)}
 _built: dict[str, dict] = {}
+_FILLED = "groundworkFilled"            # Qt property: this layer object was filled
 
 
 @dataclass(frozen=True)
@@ -95,11 +96,14 @@ def _one_chunk(renderer) -> None:
 
 
 def _style_models(layer: QgsVectorLayer) -> None:
-    from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
     fill = QgsFillSymbol.createSimple({"outline_style": "no"})
     fill.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.FillColor,
                                                QgsProperty.fromField("color"))
     layer.setRenderer(QgsSingleSymbolRenderer(fill))
+    try:
+        from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    except ImportError:                         # a QGIS built without 3D
+        return
     symbol = QgsPolygon3DSymbol()
     symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
     symbol.setExtrusionHeight(0.0)
@@ -111,11 +115,14 @@ def _style_models(layer: QgsVectorLayer) -> None:
 
 
 def _style_boreholes(layer: QgsVectorLayer) -> None:
-    from qgis._3d import QgsLine3DSymbol, QgsVectorLayer3DRenderer
     line = QgsLineSymbol.createSimple({})
     line.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.StrokeColor,
                                                QgsProperty.fromField("color"))
     layer.setRenderer(QgsSingleSymbolRenderer(line))
+    try:
+        from qgis._3d import QgsLine3DSymbol, QgsVectorLayer3DRenderer
+    except ImportError:                         # a QGIS built without 3D
+        return
     symbol = QgsLine3DSymbol()
     symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
     symbol.setRenderAsSimpleLines(False)
@@ -152,25 +159,35 @@ def _layer(store, project, kind: str, wanted: bool, create: bool) -> QgsVectorLa
     return layer
 
 
-def _edit(layer: QgsVectorLayer, drop_ids, features) -> None:
+def _edit(layer: QgsVectorLayer, drop_ids, features) -> list[int]:
+    """Delete ``drop_ids`` and add ``features`` through the provider (by id, so a filter on
+    the layer never hides a feature from it); the ids of the added features."""
     provider = layer.dataProvider()
     if drop_ids:
         provider.deleteFeatures(list(drop_ids))
+    added = []
     if features:
-        provider.addFeatures(features)
+        ok, out = provider.addFeatures(features)
+        added = [f.id() for f in out] if ok else []
     layer.updateExtents()
     layer.triggerRepaint()
     try:
         layer.trigger3DUpdate()
     except AttributeError:
         pass
+    return added
 
 
-def _ids_where(layer: QgsVectorLayer, field_name: str, value: str) -> list[int]:
-    request = QgsFeatureRequest().setFilterExpression(
-        f"\"{field_name}\" = '{value.replace(chr(39), chr(39) * 2)}'")
-    request.setFlags(QgsFeatureRequest.Flag.NoGeometry)
-    return [f.id() for f in layer.getFeatures(request)]
+def _fresh(layer: QgsVectorLayer) -> dict:
+    """The layer's build record; a new one (and an emptied layer) when this layer object was
+    never filled in this session, e.g. a memory layer read back empty from a project file.
+    The mark is a Qt property, which a project file does not keep."""
+    built = _built.get(layer.id())
+    if built is None or not layer.property(_FILLED):
+        layer.dataProvider().truncate()
+        layer.setProperty(_FILLED, True)
+        built = _built[layer.id()] = {}
+    return built
 
 
 # -- models ---------------------------------------------------------------------------------
@@ -222,41 +239,55 @@ def _chosen_models(store, choice: Choice) -> list[tuple]:
     return out
 
 
+def _drop(layer, built: dict, dataset_id: str) -> None:
+    entry = built.pop(dataset_id, None)
+    if entry is not None:
+        _edit(layer, entry[1], [])
+
+
+def _is_local(provider, profile_id: str) -> bool:
+    try:
+        return bool(provider.is_local(profile_id))
+    except Exception:
+        return False
+
+
 def _sync_models(store, provider, project, choice: Choice, create: bool):
     chosen = _chosen_models(store, choice)
     layer = _layer(store, project, "models", bool(chosen), create)
     if layer is None:
         return None
-    built = _built.get(layer.id())
-    if built is None or (layer.featureCount() == 0 and built):
-        built = _built[layer.id()] = {}
-        layer.dataProvider().truncate()
-    by_profile: dict[str, list] = {}
+    built = _fresh(layer)
+    by_profile: dict[str, dict] = {}
     for profile, d in chosen:
         if profile.id not in by_profile:
-            try:
-                by_profile[profile.id] = {la.dataset.id: la for la in provider.layers(profile.id)}
-            except Exception as exc:
-                _log(f"3D view: profile '{profile.name}' could not be built: {exc}")
-                by_profile[profile.id] = {}
+            by_profile[profile.id] = {}
+            if not _is_local(provider, profile.id):        # no real heights: not in 3D
+                try:
+                    by_profile[profile.id] = {la.dataset.id: la
+                                              for la in provider.layers(profile.id)}
+                except Exception as exc:
+                    _log(f"3D view: profile '{profile.name}' could not be built: {exc}")
         section_layer = by_profile[profile.id].get(d.id)
         if section_layer is None or section_layer.mesh is None:
-            if d.id in built:
-                _edit(layer, _ids_where(layer, "dataset_id", d.id), [])
-                built.pop(d.id)
+            _drop(layer, built, d.id)
             if section_layer is not None and section_layer.error:
                 _log(f"3D view: '{d.name or d.id}' left out: {section_layer.error}")
             continue
-        signature = _signature(section_layer, profile)
-        if built.get(d.id) == signature:
+        signature = (_signature(section_layer, profile), profile.name, d.name)
+        if d.id in built and built[d.id][0] == signature:
             continue
-        drop = _ids_where(layer, "dataset_id", d.id) if d.id in built else []
-        _edit(layer, drop, _model_features(layer, profile, d, section_layer))
-        built[d.id] = signature
+        try:
+            features = _model_features(layer, profile, d, section_layer)
+        except Exception as exc:
+            _log(f"3D view: '{d.name or d.id}' could not be shown: {exc}")
+            _drop(layer, built, d.id)
+            continue
+        old = built[d.id][1] if d.id in built else []
+        built[d.id] = (signature, _edit(layer, old, features))
     wanted = {d.id for _p, d in chosen}
     for gone in [i for i in built if i not in wanted]:
-        _edit(layer, _ids_where(layer, "dataset_id", gone), [])
-        built.pop(gone)
+        _drop(layer, built, gone)
     return layer
 
 
@@ -290,15 +321,15 @@ def _surface_at(line, s: float) -> float | None:
     return float(np.interp(s, line[0], line[1]))
 
 
-def _borehole_rows(store, provider, choice: Choice) -> list[tuple]:
+def _borehole_rows(store, provider, project, choice: Choice) -> list[tuple]:
     from ..core.context import borehole_key
     from ..core.view3d import borehole_intervals
     rows, seen = [], set()
     for profile in store.profiles():
-        if profile.id not in choice.boreholes:
-            continue
+        if profile.id not in choice.boreholes or _is_local(provider, profile.id):
+            continue                                # a local section shows no boreholes
         try:
-            items = provider.context(profile.id)
+            items = provider.drawn_context(profile.id)
         except Exception as exc:
             _log(f"3D view: boreholes of '{profile.name}' could not be gathered: {exc}")
             continue
@@ -315,21 +346,24 @@ def _borehole_rows(store, provider, choice: Choice) -> list[tuple]:
             if point.z_top is None:                 # only then is the drawn surface needed
                 line = _surface_line(provider, profile.id) if line is None else line
                 surface = _surface_at(line, point.s)
+            source = project.mapLayer(point.layer_id) if point.layer_id else None
+            name = source.name() if source is not None else ""
             for iv in borehole_intervals(point, surface, _interval_colour):
-                rows.append((profile.id, point.label, point.layer_id, iv))
+                rows.append((profile.id, point.label, name, iv))
     return rows
 
 
 def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
     known = {p.id for p in store.profiles()}
     wanted = bool(choice.boreholes & known)
-    rows = _borehole_rows(store, provider, choice) if wanted else []
     layer = _layer(store, project, "boreholes", wanted, create)
     if layer is None:
         return None
+    rows = _borehole_rows(store, provider, project, choice)
     signature = [(pid, label, lid, iv) for pid, label, lid, iv in rows]
-    built = _built.setdefault(layer.id(), {})
-    if built.get("rows") == signature and layer.featureCount() == len(rows):
+    built = _fresh(layer)
+    built["hidden"] = _hidden(store, choice)
+    if built.get("rows") == signature:
         return layer
     features = []
     for pid, label, lid, iv in rows:
@@ -344,6 +378,17 @@ def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
     return layer
 
 
+def _hidden(store, choice: Choice) -> tuple:
+    """The boreholes hidden in the ticked profiles' sections (what a redraw may change)."""
+    out = []
+    for pid in sorted(choice.boreholes):
+        try:
+            out.append((pid, tuple(sorted(store.hidden_boreholes(pid)))))
+        except Exception:
+            continue
+    return tuple(out)
+
+
 def sync(store, provider, project: QgsProject, create: bool = False,
          boreholes: bool = True) -> dict[str, QgsVectorLayer]:
     """Fill the 3D layers for the project's choice: a layer is created only when ``create``
@@ -355,10 +400,12 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     models = _sync_models(store, provider, project, choice, create)
     if models is not None:
         out["models"] = models
-    if boreholes:
+    layer = layers_3d(project).get("boreholes")
+    if not boreholes and layer is not None:
+        # a redraw: of the boreholes, only hiding or showing one in a section can change
+        boreholes = _built.get(layer.id(), {}).get("hidden") != _hidden(store, choice)
+    if boreholes or layer is None:
         layer = _sync_boreholes(store, provider, project, choice, create)
-    else:
-        layer = layers_3d(project).get("boreholes")
     if layer is not None:
         out["boreholes"] = layer
     return out

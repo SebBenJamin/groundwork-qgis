@@ -210,7 +210,9 @@ def test_the_layers_keep_their_place_when_the_project_comes_back(setup):
     st, p, provider, prj = setup
     _choose(prj, ["d"], [p.id])
     first = sync(st, provider, prj, create=True)
-    first["models"].dataProvider().truncate()      # as a memory layer read from a project
+    # as a memory layer read back from a project file: empty, a new object without the mark
+    first["models"].dataProvider().truncate()
+    first["models"].setProperty("groundworkFilled", None)
     again = sync(st, provider, prj)
     assert again["models"].id() == first["models"].id()
     assert again["models"].featureCount() > 0 and set(layers_3d(prj)) == {"models", "boreholes"}
@@ -240,3 +242,89 @@ def test_a_style_only_refill_leaves_the_boreholes_alone(setup):
     provider.notify_changed()
     assert sync(st, provider, prj, boreholes=False)["boreholes"].featureCount() == 2
     assert sync(st, provider, prj)["boreholes"] is lyr and lyr.featureCount() == 0
+
+
+def _two_models(st, p, provider, prj, tmp_path):
+    _model(st, p, tmp_path, did="e")
+    provider.notify_changed()
+    _choose(prj, ["d", "e"])
+
+
+def test_a_filter_on_the_layer_never_leaves_stale_cells(setup, tmp_path):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _two_models(st, p, provider, prj, tmp_path)
+    lyr = sync(st, provider, prj, create=True)["models"]
+    n = lyr.featureCount()
+    lyr.setSubsetString("\"dataset_id\" = 'e'")
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    sync(st, provider, prj)
+    _choose(prj, ["d"])
+    sync(st, provider, prj)
+    lyr.setSubsetString("")
+    assert lyr.featureCount() == n // 2
+    assert {f["dataset_id"] for f in lyr.getFeatures()} == {"d"}
+
+
+def test_one_failing_model_does_not_stop_the_others(setup, tmp_path, monkeypatch):
+    from groundwork_geophysics.ui import view3d_layers
+    st, p, provider, prj = setup
+    _two_models(st, p, provider, prj, tmp_path)
+    real = view3d_layers._model_features
+
+    def flaky(layer, profile, dataset, section_layer):
+        if dataset.id == "e":
+            raise RuntimeError("broken")
+        return real(layer, profile, dataset, section_layer)
+    monkeypatch.setattr(view3d_layers, "_model_features", flaky)
+    lyr = view3d_layers.sync(st, provider, prj, create=True)["models"]
+    assert {f["dataset_id"] for f in lyr.getFeatures()} == {"d"}
+
+
+def test_hiding_a_borehole_in_the_section_takes_it_out_of_3d(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, boreholes=[p.id])
+    lyr = sync(st, provider, prj, create=True)["boreholes"]
+    provider.set_boreholes_hidden(p.id, [("bh", "B1")], True)
+    sync(st, provider, prj, boreholes=False)               # a redraw, as the plugin does
+    assert lyr.featureCount() == 0
+    provider.set_boreholes_hidden(p.id, [("bh", "B1")], False)
+    sync(st, provider, prj, boreholes=False)
+    assert lyr.featureCount() == 2
+
+
+def test_the_borehole_layer_field_names_the_layer(setup):
+    from qgis.core import QgsVectorLayer
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    bh = QgsVectorLayer("Point?crs=EPSG:25832", "Cores 2024", "memory")
+    prj.addMapLayer(bh)
+    provider.context_source = lambda profile: ContextItems(
+        points=[replace(_borehole(), layer_id=bh.id())])
+    provider.notify_changed()
+    _choose(prj, boreholes=[p.id])
+    lyr = sync(st, provider, prj, create=True)["boreholes"]
+    assert {f["layer"] for f in lyr.getFeatures()} == {"Cores 2024"}
+
+
+def test_a_profile_without_real_heights_stays_out_of_3d(qgis_app, tmp_path):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st = ProjectStore.create(tmp_path / "l.gpkg", CRS)
+    p = profile_from_polyline("Local", CRS, np.array([[0.0, 0.0], [60.0, 0.0]]))
+    st.save_profile(p)
+    src = tmp_path / "m.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("m", p.id, "", "ert_model", str(src), mt, sha, "r2_res_dat",
+                            {"z_kind": "depth"}, {}, name="Depth model"))
+    provider, prj = SectionDataProvider(st), QgsProject()
+    provider.context_source = lambda profile: ContextItems(points=[_borehole()])
+    assert provider.is_local(p.id)
+    _choose(prj, ["m"], [p.id])
+    layers = sync(st, provider, prj, create=True)
+    assert all(layer.featureCount() == 0 for layer in layers.values())

@@ -378,7 +378,15 @@ class WorkbenchPlugin:
         if self.store is None:
             return
         project = QgsProject.instance()
-        dialog = View3dDialog(self.store, read_choice(project), parent=self.iface.mainWindow())
+        local = set()
+        for profile in self.store.profiles():
+            try:
+                if self.provider.is_local(profile.id):
+                    local.add(profile.id)
+            except Exception:
+                continue
+        dialog = View3dDialog(self.store, read_choice(project), local=local,
+                              parent=self.iface.mainWindow())
         if not dialog.exec():
             return
         choice = dialog.choice()

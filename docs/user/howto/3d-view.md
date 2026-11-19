@@ -8,7 +8,8 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
 - a **model** stands as a curtain under its profile: one vertical cell per model cell, at its real elevation, coloured as in the section;
 - **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as columns at their real map position, from the collar down, each interval in its colour from the section;
-- ticking a profile ticks all of it.
+- ticking a profile ticks all of it;
+- a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md).
 
 Nothing is shown in 3D until you ask. Untick a model or a profile's boreholes to take them out again.
 
@@ -22,7 +23,7 @@ The curtains and boreholes are two layers in the Groundwork group, **Models in 3
 
 ## The interpretation in 3D
 
-The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as tubes, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. New entities get their 3D colour as they are drawn. The 3D style is an ordinary QGIS style: change it in the layer's properties → **3D View**.
+The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as tubes, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. A new entity takes its 2D colour when it is drawn; if you recolour an entity later, recolour it in **3D View** too. The 3D style is an ordinary QGIS style: change it in the layer's properties → **3D View**.
 
 ## Working with the layers
 

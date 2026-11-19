@@ -17,13 +17,16 @@ INTRO = ("Tick what to show in the 3D view: models stand as curtains under their
          "Views → New 3D Map View.")
 BOREHOLES = "Boreholes"
 BOREHOLES_TIP = "The boreholes this profile's section shows, at their map position"
+LOCAL_TIP = ("This profile has no real heights, so it has no place in 3D. Give it a "
+             "reference height in the section panel first.")
 _KIND, _ID = Qt.ItemDataRole.UserRole, Qt.ItemDataRole.UserRole + 1
 
 
 class View3dDialog(QDialog):
-    """The store's profiles with their models and boreholes; ``choice()`` gives the ticks."""
+    """The store's profiles with their models and boreholes; ``choice()`` gives the ticks.
+    Profiles in ``local`` (no real heights) are listed greyed out, saying why."""
 
-    def __init__(self, store, choice: Choice, parent=None):
+    def __init__(self, store, choice: Choice, local=(), parent=None):
         super().__init__(parent)
         self.setWindowTitle(TITLE)
         intro = QLabel(INTRO)
@@ -46,6 +49,9 @@ class View3dDialog(QDialog):
             child.setToolTip(0, BOREHOLES_TIP)
             self.tree.addTopLevelItem(top)
             top.setExpanded(True)
+            if profile.id in local:
+                top.setDisabled(True)
+                top.setToolTip(0, LOCAL_TIP)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         add_help_button(buttons, "view3d")

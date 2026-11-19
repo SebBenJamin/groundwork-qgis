@@ -218,11 +218,41 @@ def test_older_projects_get_the_3d_style_once_and_a_users_own_is_kept(qgis_app, 
 
     prj = QgsProject()
     layers = add_interp_layers(interp_store, prj)
+    from groundwork_geophysics.ui.interp_layers import STYLED_3D
     layers["interp_polygons_3d"].setRenderer3D(None)                 # as before 0.14
+    layers["interp_polygons_3d"].removeCustomProperty(STYLED_3D)
     own = QgsVectorLayer3DRenderer(QgsLine3DSymbol())
     layers["interp_lines_3d"].setRenderer3D(own)                     # the user's
     assert ensure_3d_styles(interp_store, prj) == 1
     assert layers["interp_polygons_3d"].renderer3D().type() == "categorized"
     assert layers["interp_lines_3d"].renderer3D().type() == "vector"
+    assert ensure_3d_styles(interp_store, prj) == 0
+    prj.clear()
+
+
+def test_a_3d_style_the_user_removed_stays_removed(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, ensure_3d_styles
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    layers["interp_lines_3d"].setRenderer3D(None)                    # "No symbols"
+    assert ensure_3d_styles(interp_store, prj) == 0
+    assert layers["interp_lines_3d"].renderer3D() is None
+    prj.clear()
+
+
+def test_without_qgis_3d_the_layers_still_open(qgis_app, interp_store, monkeypatch):
+    import sys
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, ensure_3d_styles
+
+    monkeypatch.setitem(sys.modules, "qgis._3d", None)               # a build without 3D
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    assert len(layers) == 5 and layers["interp_lines_3d"].renderer3D() is None
     assert ensure_3d_styles(interp_store, prj) == 0
     prj.clear()

@@ -94,3 +94,13 @@ def test_the_menu_entry_waits_for_a_groundwork_project(qgis_app, fake_iface):
         assert "Groundwork project" in action.toolTip()
     finally:
         plugin.unload()
+
+
+def test_a_profile_without_real_heights_says_why_it_cannot_be_shown(store):
+    from groundwork_geophysics.ui.view3d_dialog import LOCAL_TIP, View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    d = View3dDialog(store, Choice(), local={"p2"})
+    p1, p2 = d.tree.topLevelItem(0), d.tree.topLevelItem(1)
+    assert p1.flags() & p1.flags().ItemIsEnabled
+    assert not p2.flags() & p2.flags().ItemIsEnabled
+    assert p2.toolTip(0) == LOCAL_TIP and "reference height" in LOCAL_TIP.lower()

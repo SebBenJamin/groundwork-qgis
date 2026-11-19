@@ -134,3 +134,17 @@ def test_field_note_layers_are_own_layers(project, store_with_model):
     add_field_note_layers(st, project)
     notes = field_note_layers(st, project)
     assert notes and {layer.id() for layer in notes.values()} <= own_layer_ids(st, project)
+
+
+def test_the_3d_layers_are_own_layers(project, store_with_model):
+    """Review of the 3D view: "Boreholes in 3D" was offered as a crossing-line layer."""
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.view3d_layers import Choice, layers_3d, sync, write_choice
+    st, p, _ = store_with_model
+    provider = SectionDataProvider(st)
+    model = next(d.id for d in st.datasets(p.id) if d.kind.endswith("_model"))
+    write_choice(project, Choice(frozenset({model}), frozenset({p.id})))
+    sync(st, provider, project, create=True)
+    made = layers_3d(project)
+    assert made and {layer.id() for layer in made.values()} <= own_layer_ids(st, project)

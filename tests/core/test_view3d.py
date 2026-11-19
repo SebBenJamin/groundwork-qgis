@@ -97,3 +97,9 @@ def test_a_borehole_without_intervals_but_a_total_depth_is_one_segment():
 
 def test_a_borehole_without_map_position_is_left_out():
     assert borehole_intervals(_borehole(x=None, y=None), None, _colour) == []
+
+
+def test_cells_the_section_leaves_out_are_left_out_of_the_curtain():
+    rgba = np.array([[10, 20, 30, 0], [158, 1, 66, 255]], dtype=np.uint8)   # NaN: alpha 0
+    cells = curtain_cells(_mesh(), L_SHAPE, rgba, None)
+    assert [c.value for c in cells] == [3000.0]
