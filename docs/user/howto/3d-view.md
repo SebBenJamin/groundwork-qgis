@@ -35,9 +35,9 @@ The **point clouds** are files: they are written to a folder next to the Groundw
 At the bottom of **Show in 3D…**, **Show models as** offers two looks for all ticked models:
 
 - **Layers** (the default): cells, point clouds and contour lines as above. You can style them in QGIS and **Identify** their values.
-- **Section pictures (3D Tiles)**: each model exactly as its section draws it, in whatever display it has there, contour labels included, as a picture on a curtain under its profile. One layer per model in the group **Section pictures in 3D**. Change the model's display, colour scale or fade in the section panel and its picture is drawn again. There are no values on Identify, and the look can't be restyled in QGIS: it is the section's.
+- **Section pictures (3D Tiles)**: each model exactly as its section draws it, in whatever display it has there, contour labels included, as a picture on a curtain under its profile. The picture is opaque, on the section panel's background colour: a faded or see-through model looks as it does in the panel, not see-through in 3D. One layer per model in the group **Section pictures in 3D**. Change the model's display, colour scale or fade in the section panel and its picture is drawn again. There are no values on Identify, and the look can't be restyled in QGIS: it is the section's.
 
-The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per model) in the same folder as the point clouds. Long profiles are drawn coarser, so a picture never gets too heavy for the graphics card.
+The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per model) in the same folder as the point clouds. Long profiles are drawn coarser, so that a picture stays a reasonable size; still, drawing the pictures takes a few seconds (a busy cursor shows it), and every picture layer also costs the 2D map a moment when it redraws.
 
 ## Opening a 3D map view
 
@@ -54,7 +54,7 @@ The interpretation lines, polygons and points (3D) stand at the depth you drew t
 
 ## Pointing in 3D shows the place in the section
 
-Move the mouse over a curtain, a borehole column or a point cloud in the 3D view: when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section. Over anything else, or off the 3D view, the cursor hides. The section never switches profile by itself: open the profile you want to follow first.
+Move the mouse over a curtain, a section picture, a borehole column or a point cloud in the 3D view (with no mouse button held): when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section. Over anything else, or off the 3D view, the cursor hides. It only follows while the section panel is open with a profile in it. The section never switches profile by itself: open the profile you want to follow first.
 
 ## Working with the layers
 

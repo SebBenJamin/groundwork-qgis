@@ -557,12 +557,22 @@ def _drop_empty_group(project: QgsProject, name: str) -> None:
 
 
 # -- section pictures (3D Tiles) -------------------------------------------------------------
+def _picture_source(path: Path) -> str:
+    """A tileset's layer source, through QGIS's own encoding (a "#" in a folder name is not
+    taken for a URL fragment)."""
+    from qgis.core import QgsProviderRegistry
+    return QgsProviderRegistry.instance().encodeUri("cesiumtiles", {"path": str(path)})
+
+
 def _picture_file(layer) -> Path | None:
-    """The tileset file a picture layer shows ("url=file:///…/x.json")."""
+    """The tileset file a picture layer shows (also an older "url=file:///…" source)."""
+    from qgis.core import QgsProviderRegistry
     from qgis.PyQt.QtCore import QUrl
     source = layer.source()
-    url = source[4:] if source.startswith("url=") else source
-    local = QUrl(url).toLocalFile()
+    if source.startswith("url="):
+        local = QUrl(source[4:]).toLocalFile()
+    else:
+        local = QgsProviderRegistry.instance().decodeUri("cesiumtiles", source).get("path")
     return Path(local) if local else None
 
 
@@ -582,15 +592,9 @@ def _png(image) -> bytes:
     data = QByteArray()
     buffer = QBuffer(data)
     buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    image.save(buffer, "PNG")
+    image.save(buffer, "PNG", 50)              # quicker than the default, about as small
     buffer.close()
     return bytes(data)
-
-
-def _alpha(image) -> np.ndarray:
-    raw = np.frombuffer(image.constBits().asstring(image.sizeInBytes()), np.uint8)
-    rows = raw.reshape(image.height(), image.bytesPerLine())
-    return rows[:, :image.width() * 4].reshape(image.height(), image.width(), 4)[..., 3]
 
 
 def _write_picture(path: Path, store, project, profile, section_layer, topo) -> bool:
@@ -605,10 +609,9 @@ def _write_picture(path: Path, store, project, profile, section_layer, topo) -> 
     bends = bend_chainages(profile.chainage)
     raw = []
     for pic in section_pictures(section_layer, topo):
-        alpha = _alpha(pic.image)
-        if not alpha.any():
+        if not pic.alpha.any():
             continue
-        sz, tris = picture_strip(alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
+        sz, tris = picture_strip(pic.alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
         raw.append((sz, tris, _png(pic.image)))
     if not raw:
         return False
@@ -643,9 +646,19 @@ def _write_picture(path: Path, store, project, profile, section_layer, topo) -> 
     return True
 
 
+def _busy(work, *args):
+    """``work(*args)`` under a busy cursor: painting a picture takes a moment."""
+    from qgis.PyQt.QtGui import QGuiApplication
+    QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+    try:
+        return work(*args)
+    finally:
+        QGuiApplication.restoreOverrideCursor()
+
+
 def _new_picture(project: QgsProject, path: Path, name: str, dataset_id: str):
     from qgis.core import QgsTiledSceneLayer
-    layer = QgsTiledSceneLayer(f"url={path.as_uri()}", name, "cesiumtiles")
+    layer = QgsTiledSceneLayer(_picture_source(path), name, "cesiumtiles")
     layer.setCustomProperty(_FLAG, "picture")
     layer.setCustomProperty(_DATASET, dataset_id)
     try:
@@ -689,7 +702,7 @@ def _sync_pictures(store, project, gathered, may_create, retry, topo_of) -> dict
                 continue
             # the same signature always gives the same files: ones already there are reused
             painted = (path.exists() and path.with_suffix(".glb").exists()) or \
-                _write_picture(path, store, project, profile, section_layer, topo)
+                _busy(_write_picture, path, store, project, profile, section_layer, topo)
         except Exception as exc:
             _log(f"3D view: '{d.name or d.id}' could not be shown as a picture: {exc}")
             painted, failed = False, True
@@ -707,7 +720,7 @@ def _sync_pictures(store, project, gathered, may_create, retry, topo_of) -> dict
             old = _picture_file(layer)
             if old is not None:
                 _let_go(old)
-            layer.setDataSource(f"url={path.as_uri()}", layer.name(), "cesiumtiles")
+            layer.setDataSource(_picture_source(path), layer.name(), "cesiumtiles")
         out[did] = layer
     _drop_empty_group(project, PICTURES_GROUP)
     return out

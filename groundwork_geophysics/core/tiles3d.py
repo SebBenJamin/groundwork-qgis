@@ -15,10 +15,11 @@ _LINEAR, _LINEAR_MIPMAP_LINEAR, _CLAMP = 9729, 9987, 33071
 
 
 def glb(pieces) -> bytes:
-    """A binary glTF 2.0: one mesh with a textured, unlit, alpha-blended primitive per piece
+    """A binary glTF 2.0: one mesh with a textured, unlit, opaque primitive per piece
     ``(positions (n, 3), uvs (n, 2), triangles (m, 3), png bytes)`` (positions in glTF's
     y-up axes). Every triangle is also written reversed, so the strip shows from both sides
-    in a viewer that ignores ``doubleSided``."""
+    (QGIS hides back faces of a tiled scene); the material is single-sided, or a viewer
+    that honours ``doubleSided`` would draw each face twice."""
     parts, views, accessors, prims, materials, textures, images = [], [], [], [], [], [], []
     offset = 0
 
@@ -53,7 +54,7 @@ def glb(pieces) -> bytes:
         materials.append({"pbrMetallicRoughness": {"baseColorTexture": {"index": k},
                                                    "metallicFactor": 0.0,
                                                    "roughnessFactor": 1.0},
-                          "doubleSided": True, "alphaMode": "BLEND",
+                          "doubleSided": False, "alphaMode": "OPAQUE",
                           "extensions": {"KHR_materials_unlit": {}}})
         prims.append({"attributes": {"POSITION": a, "TEXCOORD_0": a + 1}, "indices": a + 2,
                       "material": k, "mode": 4})

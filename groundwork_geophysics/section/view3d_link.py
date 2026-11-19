@@ -8,11 +8,14 @@ import numpy as np
 from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY,
                        QgsProject)
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import QEvent, QObject, QPoint, QTimer
+from qgis.PyQt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 
 #: a hit counts when it is this close to the profile's line: max(1 m, 1 % of its length)
 TOLERANCE_M, TOLERANCE_SHARE = 1.0, 0.01
 CAST_MS = 66                         # at most about 15 rays a second
+#: degrees around the ray a point of a point cloud may lie (QGIS's identify tool uses 0.5;
+#: the default 0 misses every point)
+ANGLE_DEGREES = 0.5
 POLL_MS = 1000                       # how often newly opened 3D views are looked for
 
 
@@ -62,6 +65,8 @@ class View3dLink(QObject):
     def eventFilter(self, obj, event):
         etype = event.type()
         if etype == QEvent.Type.MouseMove:
+            if event.buttons() != Qt.MouseButton.NoButton or not self._can_show():
+                return False                     # turning the view, or nowhere to show it
             pos = event.position()
             self._pending = (obj, QPoint(int(pos.x()), int(pos.y())))
             if not self._cast.isActive():
@@ -78,15 +83,22 @@ class View3dLink(QObject):
         if pending is None:
             return
         canvas, point = pending
-        if sip.isdeleted(canvas):
+        if sip.isdeleted(canvas) or not self._can_show():
             return
         try:
             from qgis._3d import QgsRayCastContext
             context = QgsRayCastContext()
+            context.setAngleThreshold(ANGLE_DEGREES)
             hits = list(canvas.castRay(point, context).allHits())
         except Exception:                        # no 3D, or the scene is not ready
             return
         self._show(min(hits, key=lambda h: h.distance()) if hits else None)
+
+    def _can_show(self) -> bool:
+        """A ray is worth casting: the panel is shown with a profile open."""
+        dock = self.dock
+        return (not sip.isdeleted(dock) and dock.isVisible() and dock.provider is not None
+                and dock.current_profile() is not None)
 
     def _show(self, hit) -> None:
         if sip.isdeleted(self.dock):

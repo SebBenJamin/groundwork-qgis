@@ -1,6 +1,8 @@
 """Section pictures for the 3D view: one model painted by the section's own drawing code
 (cells, smooth field, contour lines and labels, its opacity and coverage fade) over its own
-extent, as the panel shows it. Long pictures come in pieces a graphics card can take."""
+extent, as the panel shows it, on the panel's background colour: QGIS draws a tiled scene's
+textures opaque, so a see-through texel would show black. Long pictures come in pieces a
+graphics card can take."""
 from __future__ import annotations
 
 import math
@@ -12,14 +14,16 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QImage, QPainter, QTransform
 
 PX_PER_M = 100                  # pixels per metre, along and across
-MAX_PIXELS = 32_000_000         # per model: long lines get coarser instead of heavier
+MAX_PIXELS = 8_000_000          # per model: long lines get coarser instead of heavier
+#: (each picture is held by the graphics card, and decoded again for every 2D map redraw)
 MAX_PX = 8192                   # the longest side of one piece
 LABEL_SHARE = 1 / 25            # contour label text height as a share of the picture height
 
 
 @dataclass
 class Picture:
-    image: QImage               # row 0 at z1, column 0 at s0
+    image: QImage               # opaque (RGB), row 0 at z1, column 0 at s0
+    alpha: np.ndarray           # (rows, columns) where the section painted something, 0-255
     s0: float
     s1: float
     z0: float
@@ -55,8 +59,27 @@ def section_pictures(layer, topo) -> list[Picture]:
     label_px = LABEL_SHARE * (z1 - z0) * ppm
     out = []
     for a, b in zip(cuts[:-1], cuts[1:]):
-        out.append(Picture(_paint(drawing, a, b, z0, z1, ppm, label_px / LABEL_MM),
-                           float(a), float(b), z0, z1))
+        painted = _paint(drawing, a, b, z0, z1, ppm, label_px / LABEL_MM)
+        out.append(Picture(_flatten(painted), _alpha(painted), float(a), float(b), z0, z1))
+    return out
+
+
+def _alpha(image: QImage) -> np.ndarray:
+    raw = np.frombuffer(image.constBits().asstring(image.sizeInBytes()), np.uint8)
+    rows = raw.reshape(image.height(), image.bytesPerLine())
+    return rows[:, :image.width() * 4].reshape(image.height(), image.width(), 4)[..., 3].copy()
+
+
+def _flatten(image: QImage) -> QImage:
+    """``image`` on the colour the section panel is drawn on, without transparency."""
+    from qgis.PyQt.QtGui import QGuiApplication, QPalette
+    out = QImage(image.size(), QImage.Format.Format_RGB888)
+    out.fill(QGuiApplication.palette().color(QPalette.ColorRole.Base))
+    painter = QPainter(out)
+    try:
+        painter.drawImage(0, 0, image)
+    finally:
+        painter.end()
     return out
 
 

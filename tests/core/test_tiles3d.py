@@ -48,7 +48,9 @@ def test_every_triangle_is_also_there_reversed_so_both_sides_show():
     indices = doc["accessors"][doc["meshes"][0]["primitives"][0]["indices"]]
     assert indices["count"] == 2 * tris.size
     material = doc["materials"][0]
-    assert material["doubleSided"] and material["alphaMode"] == "BLEND"
+    # opaque (QGIS ignores texture alpha anyway); single-sided, as the reversed triangles
+    # already make both sides: a viewer honouring doubleSided would draw each face twice
+    assert not material["doubleSided"] and material["alphaMode"] == "OPAQUE"
 
 
 def test_the_east_north_up_frame_is_orthonormal_and_up_points_away_from_the_centre():

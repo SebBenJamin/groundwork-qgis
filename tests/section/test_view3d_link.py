@@ -57,17 +57,20 @@ def _canvas(hits):
     from qgis.PyQt.QtGui import QWindow
 
     class FakeCanvas(QWindow):                       # what castRay needs of a 3D map view
+        contexts = []
+
         def castRay(self, point, context):
+            self.contexts.append(context)
             return _Result(hits)
     return FakeCanvas()
 
 
-def _move(canvas):
+def _move(canvas, held=False):
     from qgis.PyQt.QtCore import QCoreApplication, QEvent, QPointF, Qt
     from qgis.PyQt.QtGui import QMouseEvent
+    buttons = Qt.MouseButton.LeftButton if held else Qt.MouseButton.NoButton
     event = QMouseEvent(QEvent.Type.MouseMove, QPointF(5, 5), QPointF(5, 5),
-                        Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
-                        Qt.KeyboardModifier.NoModifier)
+                        Qt.MouseButton.NoButton, buttons, Qt.KeyboardModifier.NoModifier)
     QCoreApplication.sendEvent(canvas, event)
 
 
@@ -122,4 +125,48 @@ def test_a_qgis_without_3d_views_is_fine(qgis_app, store_with_model, make_dock):
     st, _p, _ = store_with_model
     link = View3dLink(object(), make_dock(st))       # an iface without mapCanvases3D
     link.poll()
+    link.unload()
+
+
+def _iface(canvas):
+    class Iface:
+        def mapCanvases3D(self):
+            return [canvas]
+    return Iface()
+
+
+def test_rays_find_point_clouds_too(qgis_app, store_with_model, make_dock):
+    """QGIS skips every point of a cloud with the default angle tolerance (0); its own
+    identify tool uses half a degree."""
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    canvas = _canvas([])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _move(canvas)
+    link.cast_now()
+    assert canvas.contexts and canvas.contexts[-1].angleThreshold() == pytest.approx(0.5)
+    link.unload()
+
+
+def test_no_rays_while_nothing_can_be_shown(qgis_app, store_with_model, make_dock):
+    """Rays cost the 3D view time: none while the panel is hidden or has no profile open,
+    and none while a button is held (the user turns or pans the 3D view)."""
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    canvas = _canvas([])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _move(canvas)                                    # no profile open
+    link.cast_now()
+    dock.open_profile(p.id)
+    _move(canvas, held=True)                         # turning the view
+    link.cast_now()
+    dock.hide()
+    _move(canvas)                                    # the panel is hidden
+    link.cast_now()
+    assert canvas.contexts == []
     link.unload()

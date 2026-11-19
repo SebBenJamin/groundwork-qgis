@@ -694,3 +694,22 @@ def test_back_to_layers_removes_the_pictures(setup):
     assert not pictures_3d(prj) and out["models"].featureCount() > 0
     assert not list(cloud_folder(st).glob("*.json"))
     assert prj.layerTreeRoot().findGroup(PICTURES_GROUP) is None
+
+
+def test_a_folder_name_with_a_hash_still_gives_a_valid_picture(qgis_app, tmp_path):
+    """The tileset path goes through QGIS's own URI encoding: a "#" is not a URL fragment."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_layers import pictures_3d, sync
+    folder = tmp_path / "survey #3"
+    folder.mkdir()
+    st = ProjectStore.create(folder / "p.gpkg", CRS)
+    p = profile_from_polyline("P1", CRS, np.array([[0.0, 0.0], [60.0, 0.0]]))
+    st.save_profile(p)
+    _model(st, p, folder)
+    provider = SectionDataProvider(st)
+    prj = QgsProject()
+    _choose_pictures(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    picture = pictures_3d(prj)["d"]
+    assert picture.isValid()
