@@ -185,11 +185,14 @@ def station_radius(store: ProjectStore) -> float:
     0.4 m without stations."""
     import numpy as np
     gaps = []
-    for profile in store.profiles():
-        for s in store.station_sets(profile.id):
-            xy = np.asarray(s.xyz, float)[:, :2]
-            if len(xy) > 1:
-                gaps.append(np.hypot(*np.diff(xy, axis=0).T))
+    try:
+        for profile in store.profiles():
+            for s in store.station_sets(profile.id):
+                xy = np.asarray(s.xyz, float)[:, :2]
+                if len(xy) > 1:
+                    gaps.append(np.hypot(*np.diff(xy, axis=0).T))
+    except Exception:                           # e.g. a store not yet updated: the default
+        return 0.4
     gaps = np.concatenate(gaps) if gaps else np.array([])
     gaps = gaps[gaps > 0]
     if not gaps.size:
