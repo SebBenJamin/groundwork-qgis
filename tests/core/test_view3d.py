@@ -60,12 +60,11 @@ def test_a_model_without_coverage_is_all_resolved():
 
 class _Symbol:
     def __init__(self, rgb):
-        self._rgb = rgb
+        self.rgb = rgb
 
-    def color(self):
-        from types import SimpleNamespace
-        r, g, b = self._rgb
-        return SimpleNamespace(red=lambda: r, green=lambda: g, blue=lambda: b)
+
+def _colour(text, symbol):
+    return symbol.rgb if symbol is not None else {"clay": (128, 128, 128), "": (5, 6, 7)}[text]
 
 
 def _borehole(**kw):
@@ -78,7 +77,7 @@ def _borehole(**kw):
 
 
 def test_intervals_stand_at_the_borehole_from_its_collar_down():
-    out = borehole_intervals(_borehole(), None, (128, 128, 128))
+    out = borehole_intervals(_borehole(), None, _colour)
     assert [(i.x, i.y, i.z_top, i.z_bottom, i.text) for i in out] == [
         (501.0, 7002.0, 60.0, 58.0, "sand"), (501.0, 7002.0, 58.0, 54.5, "clay")]
     assert out[0].rgb == (230, 200, 80) and out[1].rgb == (128, 128, 128)
@@ -86,15 +85,15 @@ def test_intervals_stand_at_the_borehole_from_its_collar_down():
 
 
 def test_without_a_collar_height_the_surface_is_used_else_nothing():
-    assert borehole_intervals(_borehole(z_top=None), 70.0, (0, 0, 0))[0].z_top == 70.0
-    assert borehole_intervals(_borehole(z_top=None), None, (0, 0, 0)) == []
+    assert borehole_intervals(_borehole(z_top=None), 70.0, _colour)[0].z_top == 70.0
+    assert borehole_intervals(_borehole(z_top=None), None, _colour) == []
 
 
 def test_a_borehole_without_intervals_but_a_total_depth_is_one_segment():
-    out = borehole_intervals(_borehole(log=[], total_depth=12.0), None, (5, 6, 7))
+    out = borehole_intervals(_borehole(log=[], total_depth=12.0), None, _colour)
     assert [(i.z_top, i.z_bottom, i.rgb, i.text) for i in out] == [(60.0, 48.0, (5, 6, 7), "")]
-    assert borehole_intervals(_borehole(log=[]), None, (5, 6, 7)) == []
+    assert borehole_intervals(_borehole(log=[]), None, _colour) == []
 
 
 def test_a_borehole_without_map_position_is_left_out():
-    assert borehole_intervals(_borehole(x=None, y=None), None, (0, 0, 0)) == []
+    assert borehole_intervals(_borehole(x=None, y=None), None, _colour) == []

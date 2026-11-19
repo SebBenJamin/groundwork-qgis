@@ -58,26 +58,19 @@ def curtain_cells(mesh, chainage, rgba, threshold: float | None) -> list[Curtain
     return out
 
 
-def _rgb(symbol, default: tuple) -> tuple:
-    if symbol is None:
-        return default
-    c = symbol.color()
-    return int(c.red()), int(c.green()), int(c.blue())
-
-
-def borehole_intervals(point, surface_z: float | None,
-                       empty_rgb: tuple) -> list[BoreholeInterval]:
+def borehole_intervals(point, surface_z: float | None, colour_of) -> list[BoreholeInterval]:
     """``point``'s log intervals (a gathered borehole) as vertical segments at its map
-    position, from its collar height (else ``surface_z``) down. A borehole without
-    intervals but with a total depth is one segment of ``empty_rgb``; one without a map
-    position or any height gives nothing."""
+    position, from its collar height (else ``surface_z``) down. ``colour_of(text, symbol)``
+    gives an interval's (r, g, b) as the section draws it. A borehole without intervals but
+    with a total depth is one segment (``colour_of("", None)``); one without a map position
+    or any height gives nothing."""
     x, y = getattr(point, "x", None), getattr(point, "y", None)
     collar = point.z_top if point.z_top is not None else surface_z
     if x is None or y is None or collar is None or not math.isfinite(collar):
         return []
-    rows = [(iv.top, iv.bottom, iv.text, _rgb(iv.symbol, empty_rgb)) for iv in point.log]
+    rows = [(iv.top, iv.bottom, iv.text, colour_of(iv.text, iv.symbol)) for iv in point.log]
     if not rows and point.total_depth:
-        rows = [(0.0, float(point.total_depth), "", empty_rgb)]
+        rows = [(0.0, float(point.total_depth), "", colour_of("", None))]
     return [BoreholeInterval(float(x), float(y), collar - top, collar - bottom, top, bottom,
-                             text, rgb)
+                             text, tuple(rgb))
             for top, bottom, text, rgb in rows if bottom > top]
