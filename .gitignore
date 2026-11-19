@@ -13,3 +13,5 @@ spikes/
 # GeoPackage side files while QGIS has a file open
 *.gpkg-wal
 *.gpkg-shm
+# point-cloud curtains the 3D view writes beside a Groundwork file
+*_groundwork_3d/

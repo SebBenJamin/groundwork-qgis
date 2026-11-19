@@ -255,21 +255,43 @@ def _sphere_radius(layer: QgsVectorLayer) -> float | None:
 def fit_station_spheres(store: ProjectStore, project: QgsProject) -> bool:
     """Size the stations' spheres to the stations there are now (a new project's layer was
     styled before any were imported); only while the 3D style is still the plugin's, never
-    a radius the user set. True when it changed them."""
+    a radius the user set. Only the radius changes: a colour or rule of the user's stays.
+    True when it changed them; never raises."""
     layer = store_layers(store, project).get("stations")
     if layer is None:
         return False
     given = layer.customProperty(STATION_RADIUS)
     try:
         current = _sphere_radius(layer)
-    except ImportError:                         # a QGIS built without 3D
+        if given is None or current is None or abs(current - float(given)) > 1e-9:
+            return False
+        wanted = station_radius(store)
+        if abs(wanted - current) <= 1e-9:
+            return False
+        _set_sphere_radius(layer, wanted)
+    except Exception:                           # no 3D in this QGIS, or an odd style: leave it
         return False
-    if given is None or current is None or abs(current - float(given)) > 1e-9:
-        return False
-    wanted = station_radius(store)
-    if abs(wanted - current) <= 1e-9:
-        return False
-    return style_stations_3d(layer, wanted)
+    layer.setCustomProperty(STATION_RADIUS, float(wanted))
+    return True
+
+
+def _set_sphere_radius(layer: QgsVectorLayer, radius: float) -> None:
+    """The stations' one-rule sphere style with only its radius changed."""
+    from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
+    from qgis.PyQt import sip
+    rule = sip.cast(layer.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()[0]
+    old = sip.cast(rule.symbol(), QgsPoint3DSymbol)
+    symbol = QgsPoint3DSymbol()
+    symbol.setShape(old.shape())
+    props = dict(old.shapeProperties())
+    props["radius"] = float(radius)
+    symbol.setShapeProperties(props)
+    symbol.setAltitudeClamping(old.altitudeClamping())
+    symbol.setMaterialSettings(old.materialSettings().clone())
+    root = QgsRuleBased3DRenderer.Rule(None)
+    root.appendChild(QgsRuleBased3DRenderer.Rule(symbol, rule.filterExpression(),
+                                                 rule.description()))
+    layer.setRenderer3D(QgsRuleBased3DRenderer(root))
 
 
 def ensure_station_3d(store: ProjectStore, project: QgsProject) -> int:

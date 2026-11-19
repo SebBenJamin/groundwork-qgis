@@ -110,3 +110,39 @@ def test_show_in_3d_fits_the_spheres_to_stations_imported_later(project, tmp_pat
     style_stations_3d(stations, 1.0)
     stations.setCustomProperty("groundwork/station_radius", None)  # as the user's own style
     assert not fit_station_spheres(st, project) and radius() == pytest.approx(1.0)
+
+
+def test_fitting_the_spheres_keeps_the_users_colour(project, tmp_path):
+    import numpy as np
+    from qgis._3d import (QgsPhongMaterialSettings, QgsPoint3DSymbol,
+                          QgsRuleBased3DRenderer)
+    from qgis.core import Qgis
+    from qgis.PyQt import sip
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import (HAS_HEIGHT, add_store_layers,
+                                                          fit_station_spheres)
+    st = ProjectStore.create(tmp_path / "s.gpkg", "EPSG:25832")
+    stations = add_store_layers(st, project)["stations"]          # 0.4, no stations yet
+    symbol = QgsPoint3DSymbol()                                   # the user's red, same size
+    symbol.setShape(Qgis.Point3DShape.Sphere)
+    symbol.setShapeProperties({"radius": 0.4})
+    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor("red"))
+    symbol.setMaterialSettings(material)
+    root = QgsRuleBased3DRenderer.Rule(None)
+    root.appendChild(QgsRuleBased3DRenderer.Rule(symbol, HAS_HEIGHT, "mine"))
+    stations.setRenderer3D(QgsRuleBased3DRenderer(root))
+    xyz = np.column_stack([np.arange(11) * 0.5, np.zeros(11), np.full(11, 100.0)])
+    p, s = profile_from_stations("P", "EPSG:25832", xyz)
+    st.save_profile(p)
+    st.save_station_set(s)
+    assert fit_station_spheres(st, project)
+    rule = _rule(stations)
+    fitted = sip.cast(rule.symbol(), QgsPoint3DSymbol)
+    assert fitted.shapeProperties()["radius"] == pytest.approx(0.15)
+    assert fitted.materialSettings().diffuse().name() == QColor("red").name()
+    assert rule.description() == "mine"

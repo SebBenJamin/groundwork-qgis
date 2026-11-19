@@ -19,7 +19,7 @@ from .section.dock import SectionDock
 from .section.map_link import MapLink
 from .section.profile_source import register_source, unregister_source
 from .section.style_watch import StyleWatch
-from .ui import derived_layers, project_actions
+from .ui import derived_layers, project_actions, view3d_layers
 from .ui.context_dialog import read_settings
 from .section.field_notes_render import note_looks
 from .ui.field_note_layers import ensure_note_layers, migrate_note_styles
@@ -215,6 +215,7 @@ class WorkbenchPlugin:
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
         self._close_borehole_viewer()          # it follows the old store's data
+        view3d_layers.forget_shown(QgsProject.instance())   # a new store starts afresh
         old = derived_layers.derived_layer(QgsProject.instance())
         if old is not None:                    # the old store's electrodes
             QgsProject.instance().removeMapLayer(old.id())
@@ -356,7 +357,6 @@ class WorkbenchPlugin:
     def _sync_3d(self, create: bool = False, boreholes: bool = True) -> dict:
         """Refill the Show in 3D layers (created only when the user asks); never raises out
         of opening or a notification."""
-        from .ui import view3d_layers
         if self.provider is None or self._syncing_3d:
             return {}
         self._syncing_3d = True
@@ -374,7 +374,6 @@ class WorkbenchPlugin:
 
     def show_in_3d(self):
         """Show in 3D…: pick the models and boreholes; the layers follow the choice."""
-        from .ui import view3d_layers
         from .ui.view3d_dialog import View3dDialog
         from .ui.view3d_layers import read_choice, write_choice
         if self.store is None:

@@ -481,3 +481,94 @@ def test_the_message_counts_cells_smooth_models_lines_and_intervals(setup):
     assert "1 smooth model" in text and "contour lines" in text
     assert "borehole intervals" in text and "model cells" not in text
     assert shown_summary({}) == "nothing that could be built"
+
+
+# -- final review: files, removed layers, retries, projects ---------------------------------
+def test_the_users_own_files_beside_the_store_are_never_deleted(setup):
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder, sync
+    st, p, provider, prj = setup
+    folder = cloud_folder(st)
+    folder.mkdir()
+    own = [folder / "scan.las", folder / "scan.copc.laz", folder / "drone.las.part"]
+    for f in own:
+        f.write_bytes(b"theirs")
+    _choose(prj, ["d"])
+    sync(st, provider, prj, create=True)          # cells: no cloud at all
+    _mode(provider, p, "smooth")
+    sync(st, provider, prj, create=True)
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    sync(st, provider, prj)
+    assert all(f.exists() for f in own)
+
+
+def test_a_cloud_removed_by_hand_stays_removed(setup):
+    from groundwork_geophysics.ui.view3d_layers import clouds_3d, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    sync(st, provider, prj)                       # a redraw while it is there
+    prj.removeMapLayer(cloud.id())
+    sync(st, provider, prj)                       # a redraw
+    assert not clouds_3d(prj)
+
+
+def test_a_model_with_nothing_to_show_gets_its_cloud_once_it_has(setup, monkeypatch):
+    from groundwork_geophysics.ui import view3d_layers
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    real = view3d_layers._write_cloud
+    monkeypatch.setattr(view3d_layers, "_write_cloud", lambda *a: 0)    # all faded, say
+    assert not view3d_layers.sync(st, provider, prj, create=True).get("clouds")
+    monkeypatch.setattr(view3d_layers, "_write_cloud", real)
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    assert view3d_layers.sync(st, provider, prj)["clouds"]["d"].isValid()
+
+
+def test_going_back_to_an_earlier_scale_reuses_its_file(setup):
+    import os
+    import shutil as sh
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    first = Path(sync(st, provider, prj, create=True)["clouds"]["d"].source())
+    keep = first.with_name("held.bak")
+    sh.copy2(first, keep)
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    sync(st, provider, prj)
+    if not first.exists():                        # as if QGIS still held it open
+        sh.copy2(keep, first)
+    stamp = os.stat(first).st_mtime_ns
+    provider.set_style("d", style)
+    cloud = sync(st, provider, prj)["clouds"]["d"]
+    assert Path(cloud.source()) == first and cloud.isValid()
+    assert os.stat(first).st_mtime_ns == stamp    # not written again
+
+
+def test_a_new_project_does_not_inherit_what_the_last_one_showed(setup, fake_iface):
+    """What the last sync showed is kept on the project object, which QGIS reuses for the
+    next project: opening a store starts afresh, so it never adds a layer by itself."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics import classFactory
+    from groundwork_geophysics.ui.view3d_layers import layers_3d
+    st, _p, _provider, _prj = setup
+    prj = QgsProject.instance()
+    prj.clear()
+    _choose(prj, ["d"])
+    prj.setProperty("groundwork3dNeeds", "")      # the last project showed nothing
+    plug = classFactory(fake_iface)
+    plug.initGui()
+    try:
+        plug.set_store(st)
+        assert "models" not in layers_3d(prj)
+    finally:
+        plug.unload()
+        prj.clear()
+        prj.setProperty("groundwork3dNeeds", None)

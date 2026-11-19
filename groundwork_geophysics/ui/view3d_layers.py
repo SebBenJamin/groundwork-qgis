@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -34,7 +35,6 @@ SMOOTH_GROUP = "Smooth models in 3D"
 ENTRY = "view3d"
 _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "boreholes", ... "cloud"
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
-_SIGNATURE = f"{LEGACY_ID}/view3d_signature"
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
@@ -427,66 +427,93 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
     return layer
 
 
-def _remove_files(folder: Path, keep: set) -> None:
-    """Delete the curtain files (and QGIS's indexes of them) in ``folder`` that no cloud
-    uses; a file QGIS still holds open is left for a later sync."""
-    if not folder.is_dir():
-        return
-    for path in folder.iterdir():
-        name = path.name
-        if not name.endswith((".las", ".copc.laz", ".part")):
-            continue
-        base = name.split(".", 1)[0]
-        if base in keep:
+#: curtain files this session moved a cloud away from, deleted once nothing holds them
+_stale: set[Path] = set()
+_OWN_NAME = re.compile(r".+-[0-9a-f]{10}\.las$")     # <dataset id>-<signature>.las
+
+
+def _let_go(path: Path) -> None:
+    """Mark a curtain file the plugin wrote (and QGIS's index of it) for deletion; never a
+    file it did not write."""
+    if _OWN_NAME.match(path.name):
+        _stale.update({path, path.with_name(path.name[:-4] + ".copc.laz")})
+
+
+def _delete_stale(in_use: set) -> None:
+    """Delete the curtain files let go of that no cloud uses; a file QGIS still holds open
+    stays marked for a later sync."""
+    for path in list(_stale):
+        if path in in_use:
+            _stale.discard(path)
             continue
         try:
-            path.unlink()
+            path.unlink(missing_ok=True)
+            _stale.discard(path)
         except OSError:
             pass
 
 
-def _sync_clouds(store, provider, project, gathered, may_create, topo_of) -> dict:
+def _drop_cloud(project, layer) -> None:
+    _let_go(Path(layer.source()))
+    project.removeMapLayer(layer.id())
+
+
+def _sync_clouds(store, provider, project, gathered, may_create, retry, topo_of) -> dict:
     wanted = {d.id: (p, d, la) for p, d, la in gathered
               if _shown(la) and la.style.mode in _SMOOTH}
     existing = clouds_3d(project)
     for did, layer in existing.items():
         if did not in wanted:
-            project.removeMapLayer(layer.id())
+            _drop_cloud(project, layer)
     folder = cloud_folder(store)
     out = {}
     for did, (profile, d, section_layer) in wanted.items():
         layer = existing.get(did)
-        if layer is None and not may_create(f"cloud:{did}"):
-            continue
+        allowed = may_create(f"cloud:{did}")       # noted for every cloud shown
+        if layer is None and not allowed:
+            continue                            # e.g. the user removed it
         topo = topo_of(profile.id)
+        failed = False
         try:
             signature = _cloud_signature(section_layer, profile, topo)
             path = folder / f"{did}-{signature}.las"
-            if (layer is not None and layer.isValid() and path.exists()
-                    and Path(layer.source()) == path):
+            if layer is not None and layer.isValid() and Path(layer.source()) == path \
+                    and path.exists():
                 out[did] = layer
                 continue
-            count = _write_cloud(path, store, profile, section_layer, topo)
+            # the same signature always gives the same file: one already there is reused
+            count = 1 if path.exists() else _write_cloud(path, store, profile,
+                                                         section_layer, topo)
         except Exception as exc:
             _log(f"3D view: '{d.name or d.id}' could not be shown smooth: {exc}")
-            continue
+            count, failed = 0, True
         if not count:
-            _log(f"3D view: '{d.name or d.id}' has nothing to show smooth")
+            if not failed:
+                _log(f"3D view: '{d.name or d.id}' has nothing to show smooth")
             if layer is not None:
-                project.removeMapLayer(layer.id())
+                _drop_cloud(project, layer)
+            retry(f"cloud:{did}")               # comes back by itself once it has points
             continue
+        _stale.discard(path)
+        _stale.discard(path.with_name(path.name[:-4] + ".copc.laz"))
         if layer is None:
             layer = _new_cloud(project, path, d.name or d.id, did)
         else:
+            _let_go(Path(layer.source()))
             layer.setDataSource(str(path), layer.name(), "pdal")    # the user's style stays
-        layer.setCustomProperty(_SIGNATURE, signature)
         out[did] = layer
-    _remove_files(folder, {Path(la.source()).name.split(".", 1)[0]
-                           for la in clouds_3d(project).values()})
+    in_use = {Path(la.source()) for la in clouds_3d(project).values()}
+    _delete_stale(in_use | {p.with_name(p.name[:-4] + ".copc.laz") for p in in_use})
     group = project.layerTreeRoot().findGroup(SMOOTH_GROUP)
     if group is not None and not group.children():
         group.parent().removeChildNode(group)
     return out
+
+
+def forget_shown(project: QgsProject) -> None:
+    """Start afresh for a newly opened store: QGIS reuses its project object, so what the
+    last project showed must not count as "before" (it would add layers by itself)."""
+    project.setProperty(_NEEDS, None)
 
 
 def _contour_features(layer, profile, dataset, section_layer, topo) -> list[QgsFeature]:
@@ -683,7 +710,8 @@ def sync(store, provider, project: QgsProject, create: bool = False,
                                                       for _p, _d, la in gathered) else create)
     if models is not None:
         out["models"] = models
-    clouds = _sync_clouds(store, provider, project, gathered, may_create, topo_of)
+    clouds = _sync_clouds(store, provider, project, gathered, may_create, needs.discard,
+                          topo_of)
     if clouds:
         out["clouds"] = clouds
     contours = _sync_contours(store, project, gathered, may_create, topo_of)
