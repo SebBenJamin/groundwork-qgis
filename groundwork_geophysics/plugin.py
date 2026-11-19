@@ -7,7 +7,7 @@ from pathlib import Path
 from qgis.core import (Qgis, QgsApplication, QgsCoordinateReferenceSystem, QgsMessageLog,
                        QgsProject)
 from qgis.gui import QgsProjectionSelectionDialog
-from qgis.PyQt.QtCore import QLocale, Qt, QTimer
+from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox
 
@@ -374,6 +374,7 @@ class WorkbenchPlugin:
 
     def show_in_3d(self):
         """Show in 3D…: pick the models and boreholes; the layers follow the choice."""
+        from .ui import view3d_layers
         from .ui.view3d_dialog import View3dDialog
         from .ui.view3d_layers import read_choice, write_choice
         if self.store is None:
@@ -396,15 +397,8 @@ class WorkbenchPlugin:
         if not choice.models and not choice.boreholes:
             self._info("Nothing is shown in 3D.")
             return
-        parts = []
-        if "models" in layers:
-            parts.append(f"{QLocale().toString(layers['models'].featureCount())} model cells")
-        if "boreholes" in layers:
-            parts.append(f"{QLocale().toString(layers['boreholes'].featureCount())} borehole "
-                         f"intervals")
-        shown = " and ".join(parts) if parts else "nothing that could be built"
-        self._info(f"Shown in 3D: {shown}. Open a 3D map view with View → 3D Map Views → "
-                   f"New 3D Map View.")
+        self._info(f"Shown in 3D: {view3d_layers.shown_summary(layers)}. Open a 3D map view "
+                   f"with View → 3D Map Views → New 3D Map View.")
 
     def _project_write(self, *_):
         derived_layers.save_style(QgsProject.instance())

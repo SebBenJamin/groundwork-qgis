@@ -348,3 +348,136 @@ def test_boreholes_are_drawn_as_lines_at_their_own_heights(setup):
     assert material.type() == "simpleline"
     prop = material.dataDefinedProperties().property(QgsAbstractMaterialSettings.Property.Ambient)
     assert prop.isActive() and prop.field() == "color"
+
+
+# -- curtains follow the section's mode: smooth = point cloud, contours = 3D lines ------------
+def _mode(provider, p, mode, did="d", **kw):
+    provider.layers(p.id)                         # the style exists once the model is read
+    provider.set_style(did, replace(provider.style(did), mode=mode, **kw))
+
+
+def test_a_cells_model_stays_cells(setup):
+    from groundwork_geophysics.ui.view3d_layers import clouds_3d, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    out = sync(st, provider, prj, create=True)
+    assert out["models"].featureCount() > 0
+    assert not out.get("clouds") and not clouds_3d(prj) and "contours" not in out
+
+
+def test_a_smooth_model_is_a_point_cloud(setup):
+    from qgis.core import QgsPointCloudLayer
+
+    from groundwork_geophysics.ui.view3d_layers import SMOOTH_GROUP, cloud_folder, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    out = sync(st, provider, prj, create=True)
+    assert "models" not in out                    # no cells for a smooth model
+    cloud = out["clouds"]["d"]
+    assert isinstance(cloud, QgsPointCloudLayer) and cloud.isValid()
+    assert cloud.pointCount() > 0 and cloud.name() == "Model d"
+    assert Path(cloud.source()).parent == cloud_folder(st)
+    assert cloud.renderer().type() == "rgb"
+    assert prj.layerTreeRoot().findLayer(cloud.id()).parent().name() == SMOOTH_GROUP
+
+
+def test_smooth_and_contours_gives_both_in_the_sections_contour_colour(setup):
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.section.display_render import CONTOUR_DARKER
+    from groundwork_geophysics.ui.view3d_layers import CONTOURS_NAME, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth+contours")
+    _choose(prj, ["d"])
+    out = sync(st, provider, prj, create=True)
+    lines = out["contours"]
+    assert out["clouds"]["d"].isValid()
+    assert lines.name() == CONTOURS_NAME and lines.featureCount() > 0
+    f = next(lines.getFeatures())
+    assert f["dataset_id"] == "d" and f.geometry().constGet().is3D()
+    rgb = provider.style("d").scale.rgba([f["level"]])[0][:3]
+    assert f["color"] == QColor(*(int(c) for c in rgb)).darker(CONTOUR_DARKER).name()
+
+
+def test_contours_alone_are_lines_only(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "contours")
+    _choose(prj, ["d"])
+    out = sync(st, provider, prj, create=True)
+    assert out["contours"].featureCount() > 0
+    assert not out.get("clouds") and "models" not in out
+
+
+def test_switching_back_to_cells_removes_the_cloud(setup):
+    from qgis.core import QgsPointCloudLayer
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    path = Path(sync(st, provider, prj, create=True)["clouds"]["d"].source())
+    _mode(provider, p, "cells")
+    out = sync(st, provider, prj)                 # a redraw, not the dialog
+    sync(st, provider, prj)                       # a file still held is removed next time
+    assert not out.get("clouds")
+    assert not [la for la in prj.mapLayers().values() if isinstance(la, QgsPointCloudLayer)]
+    assert out["models"].featureCount() > 0      # the cells come back by themselves
+    assert not path.exists()
+
+
+def test_a_scale_change_rewrites_the_file_and_keeps_the_users_style(setup):
+    from qgis.core import QgsPointCloudAttributeByRampRenderer
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    old = Path(cloud.source())
+    ramp = QgsPointCloudAttributeByRampRenderer()
+    ramp.setAttribute("Value")
+    cloud.setRenderer(ramp)                       # the user's own style
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    again = sync(st, provider, prj)["clouds"]["d"]
+    sync(st, provider, prj)
+    assert again is cloud and again.isValid()
+    assert Path(again.source()) != old and not old.exists()
+    assert again.renderer().type() == "ramp"
+
+
+def test_unticking_removes_cloud_and_lines(setup):
+    from groundwork_geophysics.ui.view3d_layers import SMOOTH_GROUP, clouds_3d, layers_3d, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth+contours")
+    _choose(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    _choose(prj, [])
+    sync(st, provider, prj)
+    assert not clouds_3d(prj) and "contours" not in layers_3d(prj)
+    assert prj.layerTreeRoot().findGroup(SMOOTH_GROUP) is None
+
+
+def test_a_missing_file_is_rebuilt(setup, tmp_path):
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    cloud.setDataSource(str(tmp_path / "gone.las"), cloud.name(), "pdal")   # as if deleted
+    assert not cloud.isValid()
+    sync(st, provider, prj)
+    assert cloud.isValid() and Path(cloud.source()).parent == cloud_folder(st)
+
+
+def test_the_message_counts_cells_smooth_models_lines_and_intervals(setup):
+    from groundwork_geophysics.ui.view3d_layers import shown_summary, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth+contours")
+    _choose(prj, ["d"], [p.id])
+    text = shown_summary(sync(st, provider, prj, create=True))
+    assert "1 smooth model" in text and "contour lines" in text
+    assert "borehole intervals" in text and "model cells" not in text
+    assert shown_summary({}) == "nothing that could be built"
