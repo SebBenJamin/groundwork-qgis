@@ -235,6 +235,7 @@ class WorkbenchPlugin:
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
             ensure_3d_styles(store, project)            # before 0.14: no 3D style
+            project_actions.ensure_station_3d(store, project)
             ensure_note_layers(store, project)          # notes always have a layer to style
             migrate_note_styles(store, project)
             self.provider.note_looks = partial(note_looks, store, project)

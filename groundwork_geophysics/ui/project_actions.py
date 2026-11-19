@@ -174,6 +174,53 @@ def style_layer(layer: QgsVectorLayer, name: str) -> None:
     layer.setLabelsEnabled(enabled)
 
 
+#: the stations' 3D style leaves out stations without a surveyed height (z is NaN)
+HAS_HEIGHT = "z($geometry) IS NOT NULL"
+
+
+def style_stations_3d(layer: QgsVectorLayer) -> bool:
+    """Small spheres at the stations' surveyed heights, in the outline colour of their 2D
+    symbol (a white fill would vanish against the 3D view's light sky); stations without
+    a height are left out. Marks the layer so the style is given once. False without 3D."""
+    try:
+        from qgis._3d import (QgsPhongMaterialSettings, QgsPoint3DSymbol,
+                              QgsRuleBased3DRenderer)
+    except ImportError:                         # a QGIS built without 3D
+        return False
+    from qgis.core import Qgis, QgsRenderContext
+
+    from .interp_layers import STYLED_3D
+    symbols = layer.renderer().symbols(QgsRenderContext()) if layer.renderer() else []
+    colour = symbols[0].color() if symbols else None
+    first = symbols[0].symbolLayer(0) if symbols and symbols[0].symbolLayerCount() else None
+    if first is not None and hasattr(first, "strokeColor"):
+        colour = first.strokeColor()
+    symbol = QgsPoint3DSymbol()
+    symbol.setShape(Qgis.Point3DShape.Sphere)
+    symbol.setShapeProperties({"radius": 0.4})
+    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    material = QgsPhongMaterialSettings()
+    if colour is not None:
+        material.setDiffuse(colour)
+        material.setAmbient(colour)
+    symbol.setMaterialSettings(material)
+    root = QgsRuleBased3DRenderer.Rule(None)
+    root.appendChild(QgsRuleBased3DRenderer.Rule(symbol, HAS_HEIGHT, "Stations with a height"))
+    layer.setRenderer3D(QgsRuleBased3DRenderer(root))
+    layer.setCustomProperty(STYLED_3D, True)
+    return True
+
+
+def ensure_station_3d(store: ProjectStore, project: QgsProject) -> int:
+    """Give an older project's stations their 3D style, once (not when the user removed
+    it or set their own). Returns 1 when it did."""
+    from .interp_layers import STYLED_3D
+    layer = store_layers(store, project).get("stations")
+    if layer is None or layer.renderer3D() is not None or layer.customProperty(STYLED_3D):
+        return 0
+    return int(style_stations_3d(layer))
+
+
 def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
     """Add the store's layers to the "Groundwork" group unless already there."""
     have = store_layers(store, project)
@@ -186,6 +233,8 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
         if not layer.isValid():
             raise ValueError(f"QGIS cannot load layer {name!r} from {store.path}")
         style_layer(layer, name)
+        if name == "stations":
+            style_stations_3d(layer)
         project.addMapLayer(layer, False)
         group.addLayer(layer)
         have[name] = layer

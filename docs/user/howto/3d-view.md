@@ -21,7 +21,10 @@ The curtains and boreholes are two layers in the Groundwork group, **Models in 3
 2. In the view's settings (the wrench) → **Terrain**, switch the terrain **off** to start with. The curtains hang below the ground surface, and an opaque terrain hides them. With a DEM as terrain, lower its opacity or look from below.
 3. Turn the view with the middle mouse button or Ctrl + drag; zoom with the wheel.
 
-## The interpretation in 3D
+## Stations and the interpretation in 3D
+
+The **stations** stand as small spheres at their surveyed height, in the outline colour of their map symbol; stations without a height are left out.
+
 
 The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as tubes, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. A new entity takes its 2D colour when it is drawn; if you recolour an entity later, recolour it in **3D View** too. The 3D style is an ordinary QGIS style: change it in the layer's properties → **3D View**.
 
