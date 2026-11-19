@@ -176,12 +176,32 @@ def style_layer(layer: QgsVectorLayer, name: str) -> None:
 
 #: the stations' 3D style leaves out stations without a surveyed height (z is NaN)
 HAS_HEIGHT = "z($geometry) IS NOT NULL"
+STATION_RADIUS = "groundwork/station_radius"   # the radius the plugin gave the spheres
 
 
-def style_stations_3d(layer: QgsVectorLayer) -> bool:
-    """Small spheres at the stations' surveyed heights, in the outline colour of their 2D
-    symbol (a white fill would vanish against the 3D view's light sky); stations without
-    a height are left out. Marks the layer so the style is given once. False without 3D."""
+def station_radius(store: ProjectStore) -> float:
+    """Sphere radius for the stations in 3D: 0.3 x the median distance between neighbouring
+    stations (so 0.5 m electrodes and 5 m geophones both stay apart), within 0.05-2 m;
+    0.4 m without stations."""
+    import numpy as np
+    gaps = []
+    for profile in store.profiles():
+        for s in store.station_sets(profile.id):
+            xy = np.asarray(s.xyz, float)[:, :2]
+            if len(xy) > 1:
+                gaps.append(np.hypot(*np.diff(xy, axis=0).T))
+    gaps = np.concatenate(gaps) if gaps else np.array([])
+    gaps = gaps[gaps > 0]
+    if not gaps.size:
+        return 0.4
+    return float(np.clip(0.3 * np.median(gaps), 0.05, 2.0))
+
+
+def style_stations_3d(layer: QgsVectorLayer, radius: float = 0.4) -> bool:
+    """Small spheres (``radius`` m) at the stations' surveyed heights, in the outline colour
+    of their 2D symbol (a white fill would vanish against the 3D view's light sky);
+    stations without a height are left out. Marks the layer so the style is given once.
+    False without 3D."""
     try:
         from qgis._3d import (QgsPhongMaterialSettings, QgsPoint3DSymbol,
                               QgsRuleBased3DRenderer)
@@ -197,7 +217,7 @@ def style_stations_3d(layer: QgsVectorLayer) -> bool:
         colour = first.strokeColor()
     symbol = QgsPoint3DSymbol()
     symbol.setShape(Qgis.Point3DShape.Sphere)
-    symbol.setShapeProperties({"radius": 0.4})
+    symbol.setShapeProperties({"radius": float(radius)})
     symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
     material = QgsPhongMaterialSettings()
     if colour is not None:
@@ -208,7 +228,45 @@ def style_stations_3d(layer: QgsVectorLayer) -> bool:
     root.appendChild(QgsRuleBased3DRenderer.Rule(symbol, HAS_HEIGHT, "Stations with a height"))
     layer.setRenderer3D(QgsRuleBased3DRenderer(root))
     layer.setCustomProperty(STYLED_3D, True)
+    layer.setCustomProperty(STATION_RADIUS, float(radius))
     return True
+
+
+def _sphere_radius(layer: QgsVectorLayer) -> float | None:
+    """The radius of the stations' 3D spheres when the 3D style is the plugin's own."""
+    renderer = layer.renderer3D()
+    if renderer is None or renderer.type() != "rulebased":
+        return None
+    from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
+    from qgis.PyQt import sip
+    children = sip.cast(renderer, QgsRuleBased3DRenderer).rootRule().children()
+    if len(children) != 1 or children[0].symbol() is None:
+        return None
+    symbol = sip.cast(children[0].symbol(), QgsPoint3DSymbol)
+    try:
+        return float(symbol.shapeProperties()["radius"])
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+
+
+def fit_station_spheres(store: ProjectStore, project: QgsProject) -> bool:
+    """Size the stations' spheres to the stations there are now (a new project's layer was
+    styled before any were imported); only while the 3D style is still the plugin's, never
+    a radius the user set. True when it changed them."""
+    layer = store_layers(store, project).get("stations")
+    if layer is None:
+        return False
+    given = layer.customProperty(STATION_RADIUS)
+    try:
+        current = _sphere_radius(layer)
+    except ImportError:                         # a QGIS built without 3D
+        return False
+    if given is None or current is None or abs(current - float(given)) > 1e-9:
+        return False
+    wanted = station_radius(store)
+    if abs(wanted - current) <= 1e-9:
+        return False
+    return style_stations_3d(layer, wanted)
 
 
 def ensure_station_3d(store: ProjectStore, project: QgsProject) -> int:
@@ -218,7 +276,7 @@ def ensure_station_3d(store: ProjectStore, project: QgsProject) -> int:
     layer = store_layers(store, project).get("stations")
     if layer is None or layer.renderer3D() is not None or layer.customProperty(STYLED_3D):
         return 0
-    return int(style_stations_3d(layer))
+    return int(style_stations_3d(layer, station_radius(store)))
 
 
 def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsVectorLayer]:
@@ -234,7 +292,7 @@ def add_store_layers(store: ProjectStore, project: QgsProject) -> dict[str, QgsV
             raise ValueError(f"QGIS cannot load layer {name!r} from {store.path}")
         style_layer(layer, name)
         if name == "stations":
-            style_stations_3d(layer)
+            style_stations_3d(layer, station_radius(store))
         project.addMapLayer(layer, False)
         group.addLayer(layer)
         have[name] = layer

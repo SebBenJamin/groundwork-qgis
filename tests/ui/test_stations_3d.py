@@ -62,3 +62,51 @@ def test_older_projects_get_it_once_and_a_removed_one_stays_removed(project, sto
     assert ensure_station_3d(st, project) == 1 and stations.renderer3D() is not None
     stations.setRenderer3D(None)                              # the user's "No symbols"
     assert ensure_station_3d(st, project) == 0 and stations.renderer3D() is None
+
+
+def test_the_sphere_size_follows_the_station_spacing(project, tmp_path):
+    """Spheres 0.4 m across merged into one tube on 0.5 m electrode spacing: the radius is
+    0.3 x the median spacing of neighbouring stations."""
+    import numpy as np
+    from qgis._3d import QgsPoint3DSymbol
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import add_store_layers, station_radius
+    st = ProjectStore.create(tmp_path / "s.gpkg", "EPSG:25832")
+    xyz = np.column_stack([np.arange(11) * 0.5, np.zeros(11), np.full(11, 100.0)])
+    p, s = profile_from_stations("P", "EPSG:25832", xyz)
+    st.save_profile(p)
+    st.save_station_set(s)
+    assert station_radius(st) == pytest.approx(0.15)
+    stations = add_store_layers(st, project)["stations"]
+    symbol = sip.cast(_rule(stations).symbol(), QgsPoint3DSymbol)
+    assert symbol.shapeProperties()["radius"] == pytest.approx(0.15)
+
+
+def test_show_in_3d_fits_the_spheres_to_stations_imported_later(project, tmp_path):
+    """A new project gets its stations layer before any data: Show in 3D fits the spheres
+    to the stations then, but never changes a radius the user set."""
+    import numpy as np
+    from qgis._3d import QgsPoint3DSymbol
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import (add_store_layers, fit_station_spheres,
+                                                          style_stations_3d)
+    st = ProjectStore.create(tmp_path / "s.gpkg", "EPSG:25832")
+    stations = add_store_layers(st, project)["stations"]          # no stations yet: 0.4
+    xyz = np.column_stack([np.arange(11) * 0.5, np.zeros(11), np.full(11, 100.0)])
+    p, s = profile_from_stations("P", "EPSG:25832", xyz)
+    st.save_profile(p)
+    st.save_station_set(s)
+
+    def radius():
+        return sip.cast(_rule(stations).symbol(), QgsPoint3DSymbol).shapeProperties()["radius"]
+
+    assert fit_station_spheres(st, project) and radius() == pytest.approx(0.15)
+    style_stations_3d(stations, 1.0)
+    stations.setCustomProperty("groundwork/station_radius", None)  # as the user's own style
+    assert not fit_station_spheres(st, project) and radius() == pytest.approx(1.0)

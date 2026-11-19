@@ -393,6 +393,7 @@ class WorkbenchPlugin:
             return
         choice = dialog.choice()
         write_choice(project, choice)
+        project_actions.fit_station_spheres(self.store, project)   # stations imported since
         layers = self._sync_3d(create=True)
         if not choice.models and not choice.boreholes:
             self._info("Nothing is shown in 3D.")
