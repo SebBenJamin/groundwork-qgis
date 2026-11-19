@@ -188,9 +188,12 @@ def test_boreholes_stand_at_their_map_position_one_feature_per_interval(setup):
     assert lyr.name() == BOREHOLES_NAME and lyr.providerType() == "memory"
     rows = sorted((f["text"], f["top"], f["bottom"]) for f in lyr.getFeatures())
     assert rows == [("clay", 3.0, 8.0), ("sand", 0.0, 3.0)]
-    geom = next(f for f in lyr.getFeatures() if f["text"] == "sand").geometry().constGet()
-    pts = [(v.x(), v.y(), v.z()) for v in geom.vertices()]
-    assert pts == [(10.0, 2.0, 100.0), (10.0, 2.0, 97.0)]
+    sand = next(f for f in lyr.getFeatures() if f["text"] == "sand")
+    # a round column: its base at the interval's bottom, extruded up by its thickness
+    assert {v.z() for v in sand.geometry().constGet().vertices()} == {97.0}
+    centre = sand.geometry().centroid().asPoint()
+    assert (centre.x(), centre.y()) == pytest.approx((10.0, 2.0), abs=1e-6)
+    assert sand["height"] == pytest.approx(3.0)
     assert lyr.renderer3D() is not None
 
 
@@ -229,7 +232,8 @@ def test_a_borehole_without_collar_height_starts_at_the_sections_surface(setup):
     _choose(prj, boreholes=[p.id])
     lyr = sync(st, provider, prj, create=True)["boreholes"]
     line_s, line_z = provider.surface(p.id).line
-    top = max(v.z() for f in lyr.getFeatures() for v in f.geometry().constGet().vertices())
+    top = max(min(v.z() for v in f.geometry().constGet().vertices()) + f["height"]
+              for f in lyr.getFeatures())
     assert top == pytest.approx(float(np.interp(10.0, line_s, line_z)))
 
 
@@ -330,24 +334,44 @@ def test_a_profile_without_real_heights_stays_out_of_3d(qgis_app, tmp_path):
     assert all(layer.featureCount() == 0 for layer in layers.values())
 
 
-def test_boreholes_are_drawn_as_lines_at_their_own_heights(setup):
-    """QGIS lays a buffered (wide) 3D line flat at height 0, so a vertical borehole became a
-    disc at sea level; lines drawn as "simple lines" keep each vertex's height."""
-    from qgis._3d import QgsAbstractMaterialSettings, QgsLine3DSymbol
-    from qgis.core import Qgis
+def test_boreholes_are_columns_you_can_see_and_identify(setup):
+    """Simple 3D lines are thin and cannot be identified in the 3D view: each interval is a
+    round column (a polygon extruded by the interval's thickness), shaded like the
+    curtains, 0.6 x the station spacing across."""
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.core import Qgis, QgsAbstract3DSymbol
     from qgis.PyQt import sip
 
+    from groundwork_geophysics.ui.project_actions import station_radius
     from groundwork_geophysics.ui.view3d_layers import sync
     st, p, provider, prj = setup
     _choose(prj, boreholes=[p.id])
     lyr = sync(st, provider, prj, create=True)["boreholes"]
-    symbol = sip.cast(lyr.renderer3D().symbol(), QgsLine3DSymbol)
-    assert symbol.renderAsSimpleLines()
+    symbol = sip.cast(lyr.renderer3D().symbol(), QgsPolygon3DSymbol)
     assert symbol.altitudeClamping() == Qgis.AltitudeClamping.Absolute
-    material = symbol.materialSettings()
-    assert material.type() == "simpleline"
-    prop = material.dataDefinedProperties().property(QgsAbstractMaterialSettings.Property.Ambient)
-    assert prop.isActive() and prop.field() == "color"
+    prop = symbol.dataDefinedProperties().property(QgsAbstract3DSymbol.Property.ExtrusionHeight)
+    assert prop.isActive() and prop.field() == "height"
+    f = next(lyr.getFeatures())
+    centre = f.geometry().centroid().asPoint()
+    radius = max(((v.x() - centre.x()) ** 2 + (v.y() - centre.y()) ** 2) ** 0.5
+                 for v in f.geometry().constGet().vertices())
+    assert radius == pytest.approx(2 * station_radius(st), rel=1e-6)
+
+
+def test_a_borehole_layer_saved_as_lines_becomes_columns(setup):
+    """A project saved while boreholes were lines comes back with columns."""
+    from qgis.core import QgsVectorLayer, QgsWkbTypes
+
+    from groundwork_geophysics.ui.view3d_layers import layers_3d, sync
+    st, p, provider, prj = setup
+    old = QgsVectorLayer(f"LineStringZ?crs={CRS}", "Boreholes in 3D", "memory")
+    old.setCustomProperty("geophysics_workbench/view3d", "boreholes")
+    prj.addMapLayer(old)
+    assert layers_3d(prj).get("boreholes") is old
+    _choose(prj, boreholes=[p.id])
+    lyr = sync(st, provider, prj)["boreholes"]
+    assert lyr.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry
+    assert lyr.featureCount() == 2
 
 
 # -- curtains follow the section's mode: smooth = point cloud, contours = 3D lines ------------

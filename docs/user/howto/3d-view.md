@@ -7,7 +7,7 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 **Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see and press **OK**:
 
 - a **model** stands as a curtain under its profile, at its real elevation, drawn the way its section draws it (see below);
-- **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as columns at their real map position, from the collar down, each interval in its colour from the section;
+- **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing;
 - ticking a profile ticks all of it;
 - a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md).
 
@@ -34,7 +34,7 @@ The **point clouds** are files: they are written to a folder next to the Groundw
 
 1. **View → 3D Map Views → New 3D Map View.**
 2. In the view's settings (the wrench) → **Terrain**, switch the terrain **off** to start with. The curtains hang below the ground surface, and an opaque terrain hides them. With a DEM as terrain, lower its opacity or look from below.
-3. For the point clouds, switch on **eye-dome lighting** (the eye button in the 3D view's toolbar, or the view's settings): without it, a point cloud looks flat and dark.
+3. For the point clouds, switch on **eye-dome lighting** in the point cloud's **Layer Properties → 3D View**: without it, a point cloud looks flat and dark.
 4. Turn the view with the middle mouse button or Ctrl + drag; zoom with the wheel.
 
 ## Stations and the interpretation in 3D
@@ -49,6 +49,6 @@ The interpretation lines, polygons and points (3D) stand at the depth you drew t
 - **Only the resolved part:** filter **Models in 3D** with `"resolved" = 1`. When the section fades low coverage, the cells below the threshold are left out of the curtain anyway.
 - **Style a smooth curtain by value:** in the point cloud's properties → **Symbology**, choose **Attribute by Ramp** on **Log10Value** (or **Value** on a linear scale) and a colour ramp; the 3D view follows the 2D style. Your style stays when the curtain is rebuilt.
 - The point size is in the point cloud's **3D View** properties.
-- A borehole interval has its **top** and **bottom** depth and its **text**.
-- **Qgis2threejs** reads the same layers: choose **Polygon** for the cells, **Line** for the boreholes and contour lines, with the height from the Z values, and the point clouds as point clouds.
+- **Identify** a borehole interval in the 3D view: its **borehole**, **top** and **bottom** depth and its **text**.
+- **Qgis2threejs** reads the same layers: choose **Polygon** for the cells, **Polygon** extruded by the **height** field for the boreholes and **Line** for the contour lines, with the height from the Z values, and the point clouds as point clouds.
 - A very large model (hundreds of thousands of cells) makes the 3D view slow in **Cells**; show it **Smooth** or show fewer models at once.

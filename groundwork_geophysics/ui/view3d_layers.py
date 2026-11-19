@@ -21,12 +21,12 @@ import numpy as np
 from qgis.core import (Qgis, QgsFeature, QgsFillSymbol, QgsGeometry,
                        QgsLineString, QgsLineSymbol, QgsMessageLog, QgsPoint, QgsPolygon,
                        QgsProject, QgsProperty, QgsSingleSymbolRenderer, QgsSymbolLayer,
-                       QgsVectorLayer)
+                       QgsVectorLayer, QgsWkbTypes)
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
 from ..ids import LEGACY_ID
-from .project_actions import SCOPE, plugin_group
+from .project_actions import SCOPE, plugin_group, station_radius
 
 MODELS_NAME = "Models in 3D"
 BOREHOLES_NAME = "Boreholes in 3D"
@@ -47,7 +47,7 @@ _MODEL_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id
                  "&field=resolved:integer&field=color:string")
 _BOREHOLE_FIELDS = ("&field=profile_id:string&field=borehole:string&field=layer:string"
                     "&field=top:double&field=bottom:double&field=text:string"
-                    "&field=color:string")
+                    "&field=color:string&field=height:double")
 _CONTOUR_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id:string"
                    "&field=dataset:string&field=level:double&field=color:string")
 #: layer id -> {dataset id: (signature of what its cells were made from, their feature ids)}
@@ -142,7 +142,27 @@ def _style_models(layer: QgsVectorLayer) -> None:
 
 
 def _style_boreholes(layer: QgsVectorLayer) -> None:
-    _style_lines(layer, 6.0)                   # pixels: a column you can see beside a curtain
+    """Each interval a round column in its colour: the base extruded by the "height" field
+    (a polygon, so the 3D view can identify it; lines cannot be picked there)."""
+    fill = QgsFillSymbol.createSimple({"outline_style": "no"})
+    fill.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.FillColor,
+                                               QgsProperty.fromField("color"))
+    layer.setRenderer(QgsSingleSymbolRenderer(fill))
+    try:
+        from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    except ImportError:                         # a QGIS built without 3D
+        return
+    from qgis.core import QgsAbstract3DSymbol
+    symbol = QgsPolygon3DSymbol()
+    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    props = symbol.dataDefinedProperties()
+    props.setProperty(QgsAbstract3DSymbol.Property.ExtrusionHeight,
+                      QgsProperty.fromField("height"))
+    symbol.setDataDefinedProperties(props)
+    symbol.setMaterialSettings(_colour_material())
+    renderer = QgsVectorLayer3DRenderer(symbol)
+    _one_chunk(renderer)
+    layer.setRenderer3D(renderer)
 
 
 def _style_contours(layer: QgsVectorLayer) -> None:
@@ -176,7 +196,7 @@ def _style_lines(layer: QgsVectorLayer, width: float) -> None:
 
 
 _KINDS = {"models": ("PolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models),
-          "boreholes": ("LineStringZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
+          "boreholes": ("PolygonZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
           "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours)}
 
 
@@ -625,14 +645,29 @@ def _borehole_rows(store, provider, project, choice: Choice) -> list[tuple]:
     return rows
 
 
+def _disc(x: float, y: float, z: float, radius: float, sides: int = 16) -> QgsPolygon:
+    """A flat round base at height ``z``: extruded upward, a borehole interval's column."""
+    a = np.linspace(0.0, 2 * np.pi, sides + 1)
+    a[-1] = 0.0                                     # closed exactly
+    ring = QgsLineString((x + radius * np.cos(a)).tolist(), (y + radius * np.sin(a)).tolist(),
+                         [float(z)] * (sides + 1))
+    return QgsPolygon(ring)
+
+
 def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
     known = {p.id for p in store.profiles()}
     wanted = bool(choice.boreholes & known)
+    old = layers_3d(project).get("boreholes")
+    if old is not None and old.geometryType() != QgsWkbTypes.GeometryType.PolygonGeometry:
+        _built.pop(old.id(), None)                  # saved while boreholes were lines
+        project.removeMapLayer(old.id())
+        create = True
     layer = _layer(store, project, "boreholes", wanted, create)
     if layer is None:
         return None
     rows = _borehole_rows(store, provider, project, choice)
-    signature = [(pid, label, lid, iv) for pid, label, lid, iv in rows]
+    radius = 2 * station_radius(store)
+    signature = [(pid, label, lid, iv) for pid, label, lid, iv in rows] + [radius]
     built = _fresh(layer)
     built["hidden"] = _hidden(store, choice)
     if built.get("rows") == signature:
@@ -640,9 +675,9 @@ def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
     features = []
     for pid, label, lid, iv in rows:
         f = QgsFeature(layer.fields())
-        f.setGeometry(QgsGeometry(QgsLineString([QgsPoint(iv.x, iv.y, iv.z_top),
-                                                 QgsPoint(iv.x, iv.y, iv.z_bottom)])))
-        f.setAttributes([pid, label, lid, iv.top, iv.bottom, iv.text, QColor(*iv.rgb).name()])
+        f.setGeometry(QgsGeometry(_disc(iv.x, iv.y, iv.z_bottom, radius)))
+        f.setAttributes([pid, label, lid, iv.top, iv.bottom, iv.text, QColor(*iv.rgb).name(),
+                         float(iv.z_top - iv.z_bottom)])
         features.append(f)
     layer.dataProvider().truncate()
     _edit(layer, [], features)
