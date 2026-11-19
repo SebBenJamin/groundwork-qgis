@@ -16,7 +16,8 @@ from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QKeySequence, QPen, QShortcut
-from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
+from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsEllipseItem,
+                                 QGraphicsLineItem,
                                  QToolTip,
                                  QHBoxLayout, QLabel, QMenu, QSizePolicy, QSplitter,
                                  QToolButton,
@@ -108,6 +109,7 @@ class SectionDock(QDockWidget):
         self._topo = None
         self._coverage = None                   # (min, max) station chainage, with _topo
         self._cursor_s = None
+        self._cursor_z = None                   # elevation of a cursor from the 3D view
         self._click_pos = None
         self.details_popup = None               # details with an "Open in borehole viewer" link
 
@@ -157,6 +159,14 @@ class SectionDock(QDockWidget):
         self.guide_line.setZValue(1000)
         self.guide_line.hide()
         self.canvas.scene().addItem(self.guide_line)
+        # where the 3D view's mouse points: a small ring on the guide, in its pen
+        self.cursor_marker = QGraphicsEllipseItem(-5.0, -5.0, 10.0, 10.0)
+        ring = QPen(pen)
+        ring.setStyle(Qt.PenStyle.SolidLine)
+        self.cursor_marker.setPen(ring)
+        self.cursor_marker.setZValue(1001)
+        self.cursor_marker.hide()
+        self.canvas.scene().addItem(self.cursor_marker)
 
         self.layer_list = LayerList()
         self.readout = _Readout()
@@ -724,12 +734,14 @@ class SectionDock(QDockWidget):
         beyond = cover is not None and not cover[0] <= s <= cover[1]
         self.readout.setText(format_readout(s, z, depth, xy, hits, beyond, extra))
 
-    def show_cursor(self, s: float | None) -> None:
-        """Vertical guide at forward chainage ``s``; ``None`` hides it."""
+    def show_cursor(self, s: float | None, z: float | None = None) -> None:
+        """Vertical guide at forward chainage ``s``, with a marker at elevation ``z`` when
+        given (the 3D view's mouse); ``None`` hides it."""
         self._cursor_s = None if s is None or self._profile is None else float(s)
+        self._cursor_z = None if self._cursor_s is None or z is None else float(z)
         self._update_guide()
         if self._cursor_s is not None:
-            self._show_readout(self._cursor_s)
+            self._show_readout(self._cursor_s, self._cursor_z)
 
     def cursor_chainage(self) -> float | None:
         return self._cursor_s
@@ -739,6 +751,7 @@ class SectionDock(QDockWidget):
         d = self.canvas.visibleDistanceRange()
         if s is None or not d.lower() <= s <= d.upper():
             self.guide_line.hide()
+            self.cursor_marker.hide()
             return
         area = self.canvas.plotArea()
         e = self.canvas.visibleElevationRange()
@@ -747,6 +760,13 @@ class SectionDock(QDockWidget):
             QgsProfilePoint(s, (e.lower() + e.upper()) / 2)).x()
         self.guide_line.setLine(QLineF(x, area.top(), x, area.bottom()))
         self.guide_line.show()
+        z = self._cursor_z
+        if z is None or not e.lower() <= z <= e.upper():
+            self.cursor_marker.hide()
+            return
+        at = self.canvas.plotPointToCanvasPoint(QgsProfilePoint(s, z))
+        self.cursor_marker.setPos(at.x(), at.y())
+        self.cursor_marker.show()
 
     def profile_menu(self):
         """Right-click menu of the profile list: rename or delete the open profile. The menu

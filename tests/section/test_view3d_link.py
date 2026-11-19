@@ -1,0 +1,125 @@
+"""The 3D view's mouse moves the section's cursor: a curtain hit under the mouse in a QGIS 3D
+map view becomes chainage and elevation on the open profile."""
+import numpy as np
+import pytest
+
+from groundwork_geophysics.core.chainage import Chainage
+
+
+def test_a_point_on_the_line_gives_chainage_and_elevation():
+    from groundwork_geophysics.section.view3d_link import section_point
+    line = Chainage(np.array([[0.0, 0.0], [50.0, 0.0]]))
+    assert section_point((10.0, 0.2, 97.5), line) == pytest.approx((10.0, 97.5))
+
+
+def test_a_point_off_the_line_or_beyond_its_ends_gives_nothing():
+    from groundwork_geophysics.section.view3d_link import section_point
+    line = Chainage(np.array([[0.0, 0.0], [50.0, 0.0]]))
+    assert section_point((10.0, 3.0, 97.5), line) is None       # 3 m away, 1 m allowed
+    assert section_point((60.0, 0.0, 97.5), line) is None       # past the end
+
+
+def test_the_dock_shows_the_elevation_on_its_guide(qgis_app, store_with_model, make_dock):
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    dock.show_cursor(25.0, 99.0)
+    assert dock.cursor_chainage() == 25.0
+    assert dock.cursor_marker.isVisible()
+    assert "z = 99" in dock.readout.text()
+    dock.show_cursor(25.0)                          # the map's hover: no elevation
+    assert not dock.cursor_marker.isVisible()
+    dock.show_cursor(None)
+    assert not dock.cursor_marker.isVisible() and dock.cursor_chainage() is None
+
+
+class _Hit:
+    def __init__(self, xyz, distance):
+        from qgis.core import QgsVector3D
+        self._p, self._d = QgsVector3D(*xyz), distance
+
+    def mapCoordinates(self):
+        return self._p
+
+    def distance(self):
+        return self._d
+
+
+class _Result:
+    def __init__(self, hits):
+        self._hits = hits
+
+    def allHits(self):
+        return self._hits
+
+
+def _canvas(hits):
+    from qgis.PyQt.QtGui import QWindow
+
+    class FakeCanvas(QWindow):                       # what castRay needs of a 3D map view
+        def castRay(self, point, context):
+            return _Result(hits)
+    return FakeCanvas()
+
+
+def _move(canvas):
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent, QPointF, Qt
+    from qgis.PyQt.QtGui import QMouseEvent
+    event = QMouseEvent(QEvent.Type.MouseMove, QPointF(5, 5), QPointF(5, 5),
+                        Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                        Qt.KeyboardModifier.NoModifier)
+    QCoreApplication.sendEvent(canvas, event)
+
+
+def test_the_mouse_over_a_curtain_moves_the_section_cursor(qgis_app, store_with_model,
+                                                           make_dock):
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent
+
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    x, y = (float(v) for v in p.chainage.to_xy(20.0))
+    near, far = _Hit((x, y, 98.0), 5.0), _Hit((x, y, 90.0), 9.0)
+    canvas = _canvas([far, near])
+
+    class Iface:
+        def mapCanvases3D(self):
+            return [canvas]
+    link = View3dLink(Iface(), dock)
+    link.poll()                                      # picks up the open 3D view
+    _move(canvas)
+    link.cast_now()                                  # the throttled ray, at once
+    assert dock.cursor_chainage() == pytest.approx(20.0, abs=1e-6)
+    assert "z = 98" in dock.readout.text()           # the nearest hit
+    QCoreApplication.sendEvent(canvas, QEvent(QEvent.Type.Leave))
+    assert dock.cursor_chainage() is None
+    link.unload()
+
+
+def test_without_a_hit_on_the_open_profile_the_cursor_hides(qgis_app, store_with_model,
+                                                            make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    dock.show_cursor(10.0, 99.0)
+    canvas = _canvas([_Hit((1000.0, 1000.0, 98.0), 5.0)])      # another profile's curtain
+
+    class Iface:
+        def mapCanvases3D(self):
+            return [canvas]
+    link = View3dLink(Iface(), dock)
+    link.poll()
+    _move(canvas)
+    link.cast_now()
+    assert dock.cursor_chainage() is None
+    link.unload()
+
+
+def test_a_qgis_without_3d_views_is_fine(qgis_app, store_with_model, make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, _p, _ = store_with_model
+    link = View3dLink(object(), make_dock(st))       # an iface without mapCanvases3D
+    link.poll()
+    link.unload()

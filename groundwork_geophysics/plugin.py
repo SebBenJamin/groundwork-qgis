@@ -17,6 +17,7 @@ from .section.crossing_lines import own_layer_ids
 from .section.data import SectionDataProvider
 from .section.dock import SectionDock
 from .section.map_link import MapLink
+from .section.view3d_link import View3dLink
 from .section.profile_source import register_source, unregister_source
 from .section.style_watch import StyleWatch
 from .ui import derived_layers, project_actions, view3d_layers
@@ -49,6 +50,7 @@ class WorkbenchPlugin:
         self._context_logged: set[tuple[str, str]] = set()
         self.dock: SectionDock | None = None
         self.map_link: MapLink | None = None
+        self.view3d_link: View3dLink | None = None
         self.pick_action = None
         self.new_profile_action = None
         self.add_data_action = None
@@ -96,6 +98,7 @@ class WorkbenchPlugin:
         self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         self.dock.hide()
         self.map_link = MapLink(self.iface, self.dock)
+        self.view3d_link = View3dLink(self.iface, self.dock)   # the 3D view's mouse
         self.add_action("New Groundwork Project…", self.new_workbench_project)
         self.add_action("Open Groundwork Project…", self.open_workbench_project)
         self.menu.addSeparator()
@@ -170,6 +173,9 @@ class WorkbenchPlugin:
         if self.map_link is not None:
             self.map_link.unload()
             self.map_link = None
+        if self.view3d_link is not None:
+            self.view3d_link.unload()
+            self.view3d_link = None
         if self.dock is not None:
             self.dock.set_provider(None)                 # detach the source before unregistering
             self.iface.removeDockWidget(self.dock)

@@ -43,6 +43,10 @@ The **stations** stand as small spheres at their surveyed height, in the outline
 
 The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as lines a few pixels wide, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. A new entity takes its 2D colour when it is drawn; if you recolour an entity later, recolour it in **3D View** too. The 3D style is an ordinary QGIS style: change it in the layer's properties → **3D View**.
 
+## Pointing in 3D shows the place in the section
+
+Move the mouse over a curtain, a borehole column or a point cloud in the 3D view: when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section. Over anything else, or off the 3D view, the cursor hides. The section never switches profile by itself: open the profile you want to follow first.
+
 ## Working with the layers
 
 - **Identify** a cell: **value**, **coverage** and **resolved** (0 or 1). Identify a point of a smooth curtain: its **Value** (and **Log10Value**).
