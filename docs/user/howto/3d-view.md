@@ -30,6 +30,15 @@ The colour scale and the coverage fade follow too: the faded part is left out of
 
 The **point clouds** are files: they are written to a folder next to the Groundwork file, named after it with **_3d** at the end (for `site_groundwork.gpkg`: `site_groundwork_3d`). They are made from your models whenever needed, and the plugin only ever deletes the files it wrote there. If the folder is missing when you open the project (deleted, or not copied along), QGIS asks about the unavailable layers: choose to keep them, and the curtains are written again once the project is open. The first time QGIS opens a point cloud it builds an index of it (a progress bar in the status bar), and the points show when that is done.
 
+## Section pictures instead of layers
+
+At the bottom of **Show in 3D…**, **Show models as** offers two looks for all ticked models:
+
+- **Layers** (the default): cells, point clouds and contour lines as above. You can style them in QGIS and **Identify** their values.
+- **Section pictures (3D Tiles)**: each model exactly as its section draws it, in whatever display it has there, contour labels included, as a picture on a curtain under its profile. One layer per model in the group **Section pictures in 3D**. Change the model's display, colour scale or fade in the section panel and its picture is drawn again. There are no values on Identify, and the look can't be restyled in QGIS: it is the section's.
+
+The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per model) in the same folder as the point clouds. Long profiles are drawn coarser, so a picture never gets too heavy for the graphics card.
+
 ## Opening a 3D map view
 
 1. **View → 3D Map Views → New 3D Map View.**
