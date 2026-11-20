@@ -41,6 +41,8 @@ NAMES_NAME = "Profile names in 3D"
 #: a profile's name floats this far above the start of its ground line: a share of the
 #: profile's length, at least NAME_LIFT_M
 NAME_LIFT_SHARE, NAME_LIFT_M = 0.03, 1.0
+#: the height of a name's capitals: a share of the profile's length, within limits (m)
+NAME_HEIGHT_SHARE, NAME_HEIGHT_MIN, NAME_HEIGHT_MAX = 0.025, 0.5, 25.0
 SMOOTH_GROUP = "Smooth models in 3D"
 PICTURES_GROUP = "Section pictures in 3D"
 #: how a ticked model stands in 3D: as its section shows it (cells, a point cloud or contour
@@ -70,6 +72,7 @@ _BOREHOLE_FIELDS = ("&field=profile_id:string&field=borehole:string&field=layer:
 _CONTOUR_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id:string"
                    "&field=dataset:string&field=level:double&field=color:string")
 _GROUND_FIELDS = "&field=profile_id:string&field=profile:string"
+_NAMES_FIELDS = _GROUND_FIELDS + "&field=color:string"
 #: a section picture's 2D visibility ends at this scale (1:1): the 2D map would decode its
 #: textures on every redraw to draw nothing useful; the 3D view ignores scale ranges
 PICTURE_2D_SCALE = 1.0
@@ -249,10 +252,27 @@ def _style_contours(layer: QgsVectorLayer) -> None:
 
 
 def _style_names(layer: QgsVectorLayer) -> None:
-    """Kept out of the 2D map (it labels the profiles already); the 3D look, a billboard
-    with each profile's name, is set by ``_sync_names``."""
+    """Lettering in its "color" field's colour, flat, each copy seen only from its own side;
+    kept out of the 2D map (it labels the profiles already)."""
     layer.setScaleBasedVisibility(True)
     layer.setMinimumScale(PICTURE_2D_SCALE)
+    fill = QgsFillSymbol.createSimple({"outline_style": "no"})
+    fill.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.FillColor,
+                                               QgsProperty.fromField("color"))
+    layer.setRenderer(QgsSingleSymbolRenderer(fill))
+    try:
+        from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    except ImportError:                         # a QGIS built without 3D
+        return
+    symbol = QgsPolygon3DSymbol()
+    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    symbol.setExtrusionHeight(0.0)
+    symbol.setAddBackFaces(False)
+    symbol.setCullingMode(Qgs3DTypes.CullingMode.Back)
+    symbol.setMaterialSettings(_colour_material())
+    renderer = QgsVectorLayer3DRenderer(symbol)
+    _one_chunk(renderer)
+    layer.setRenderer3D(renderer)
 
 
 def _style_ground(layer: QgsVectorLayer) -> None:
@@ -298,7 +318,7 @@ _KINDS = {"models": ("MultiPolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models)
           "boreholes": ("PolygonZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
           "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours),
           "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground),
-          "names": ("PointZ", _GROUND_FIELDS, NAMES_NAME, _style_names)}
+          "names": ("MultiPolygonZ", _NAMES_FIELDS, NAMES_NAME, _style_names)}
 
 
 def _create(store, project: QgsProject, kind: str) -> QgsVectorLayer:
@@ -1005,9 +1025,9 @@ def _sync_ground(store, project, rows, may_create):
 
 
 # -- profile names --------------------------------------------------------------------------
-def _name_marker(store, project):
-    """A font marker in the look of the map's profile labels (font, size, colours)."""
-    from qgis.core import QgsFontMarkerSymbolLayer, QgsMarkerSymbol, QgsTextFormat
+def _name_look(store, project) -> tuple[str, str]:
+    """(font family, colour) of the map's profile labels."""
+    from qgis.core import QgsTextFormat
 
     from .project_actions import store_layers
     fmt = QgsTextFormat()
@@ -1017,85 +1037,100 @@ def _name_marker(store, project):
             fmt = profiles.labeling().settings().format()
     except Exception:                               # rule-based or odd labelling: defaults
         pass
-    text = QgsFontMarkerSymbolLayer(fmt.font().family(), "", fmt.size() * 25.4 / 72)
-    text.setColor(fmt.color())
-    buffer = fmt.buffer()
-    if buffer.enabled():
-        text.setStrokeColor(buffer.color())
-        text.setStrokeWidth(buffer.size())
-    return QgsMarkerSymbol([text])
+    return fmt.font().family(), fmt.color().name()
 
 
-def _named(template, name: str):
-    """A billboard 3D symbol showing ``name`` in ``template``'s look (a marker symbol whose
-    font markers get the name)."""
-    from qgis._3d import QgsPoint3DSymbol
-    marker = template.clone()
-    for i in range(marker.symbolLayerCount()):
-        layer = marker.symbolLayer(i)
-        if layer.layerType() == "FontMarker":
-            layer.setCharacter(name)
-    symbol = QgsPoint3DSymbol()
-    symbol.setShape(Qgis.Point3DShape.Billboard)
-    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
-    symbol.setBillboardSymbol(marker)
-    # the symbol now owns the marker, but the binding leaves Python owning it too: hand it
-    # over, or Python frees it under QGIS's feet
-    from qgis.PyQt import sip
-    sip.transferto(marker, None)
-    return symbol
+def lettering(text: str, family: str, height: float) -> list:
+    """``text`` in ``family`` as triangles in metres, each [(u, v)] x 3 counter-clockwise,
+    the capitals ``height`` tall, the baseline at v = 0, starting at u = 0. Letters with
+    holes (a, e, o) keep them: the outlines are combined even-odd and triangulated here (QGIS
+    leaves gaps when it triangulates an upright polygon with holes itself)."""
+    from qgis.core import QgsGeometry, QgsPointXY
+    from qgis.PyQt.QtGui import QFont, QFontMetricsF, QPainterPath
+    if not text.strip():
+        return []
+    font = QFont(family)
+    font.setPointSizeF(100.0)
+    path = QPainterPath()
+    path.addText(0.0, 0.0, font, text)
+    shape = None
+    for outline in path.toSubpathPolygons():
+        if outline.count() < 3:
+            continue
+        g = QgsGeometry.fromPolygonXY([[QgsPointXY(q.x(), -q.y()) for q in outline]])
+        if not g.isGeosValid():
+            g = g.makeValid()
+        shape = g if shape is None else shape.symDifference(g)
+    if shape is None or shape.isEmpty():
+        return []
+    scale = height / max(QFontMetricsF(font).capHeight(), 1e-6)
+    left = shape.boundingBox().xMinimum()
+    triangulated = shape.constrainedDelaunayTriangulation()     # keep it: constGet borrows
+    triangles = triangulated.constGet()
+    out = []
+    for i in range(triangles.numGeometries()):
+        ring = triangles.geometryN(i).exteriorRing()
+        pts = [((ring.xAt(k) - left) * scale, ring.yAt(k) * scale) for k in range(3)]
+        (ax, ay), (bx, by), (cx, cy) = pts
+        if (bx - ax) * (cy - ay) - (cx - ax) * (by - ay) < 0:
+            pts = pts[::-1]                         # counter-clockwise
+        out.append(pts)
+    return out
 
 
-def _name_template(layer, store, project):
-    """The look of the names: the billboard of the layer's first rule (a style the user
-    changed stays), else the map's profile labels."""
-    renderer = layer.renderer3D()
-    if renderer is not None and renderer.type() == "rulebased":
-        from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
-        from qgis.PyQt import sip
-        rules = sip.cast(renderer, QgsRuleBased3DRenderer).rootRule().children()
-        if rules and rules[0].symbol() is not None:
-            symbol = rules[0].symbol().clone()
-            if symbol.type() == "point":
-                billboard = sip.cast(symbol, QgsPoint3DSymbol).billboardSymbol()
-                if billboard is not None:
-                    return billboard.clone()
-    return _name_marker(store, project)
+def _name_geometry(profile, start, text: str, family: str):
+    """The name as two copies of upright lettering above ``start`` (x, y, ground z) along
+    the profile's first leg: one reads from the right of the line, the mirrored one from
+    its left (each faces its own side; back faces are hidden)."""
+    from qgis.core import QgsMultiPolygon
+    length = profile.chainage.length
+    height = float(np.clip(NAME_HEIGHT_SHARE * length, NAME_HEIGHT_MIN, NAME_HEIGHT_MAX))
+    base = float(start[2]) + max(NAME_LIFT_M, NAME_LIFT_SHARE * length)
+    xy = profile.chainage.xy
+    d = (xy[1] - xy[0]) / max(float(np.hypot(*(xy[1] - xy[0]))), 1e-12)
+    triangles = lettering(text, family, height)
+    width = max((u for tri in triangles for u, _v in tri), default=0.0)
+    out = QgsMultiPolygon()
+    for mirrored in (False, True):
+        for tri in triangles:
+            ring = []
+            for u, v in tri + tri[:1]:
+                a = width - u if mirrored else u
+                ring.append(QgsPoint(float(start[0] + a * d[0]), float(start[1] + a * d[1]),
+                                     base + v))
+            out.addGeometry(QgsPolygon(QgsLineString(ring)))
+    return out
 
 
 def _sync_names(store, project, rows, may_create):
-    """Each profile of ``rows`` (``_ground_rows``) as a point a little above the start of
-    its ground line, shown in 3D as a billboard with its name, in "Profile names in 3D"."""
-    layer = _layer(store, project, "names", bool(rows), may_create("names") if rows else False)
+    """Each profile of ``rows`` (``_ground_rows``) with its name as upright lettering a
+    little above the start of its ground line, in "Profile names in 3D"."""
+    old = layers_3d(project).get("names")
+    if old is not None and old.geometryType() != QgsWkbTypes.GeometryType.PolygonGeometry:
+        _built.pop(old.id(), None)                  # made as billboards before 0.14
+        project.removeMapLayer(old.id())
+        rows_wanted = bool(rows)
+        may_create("names")
+        layer = _layer(store, project, "names", rows_wanted, rows_wanted)
+    else:
+        layer = _layer(store, project, "names", bool(rows),
+                       may_create("names") if rows else False)
     if layer is None:
         return None
-    signature = [(profile.id, profile.name, xyz[0].tobytes()) for profile, xyz in rows]
+    family, colour = _name_look(store, project)
+    signature = [(profile.id, profile.name, xyz[0].tobytes(), family, colour)
+                 for profile, xyz in rows]
     built = _fresh(layer)
     if built.get("rows") == signature:
         return layer
     features = []
     for profile, xyz in rows:
-        x, y, z = (float(v) for v in xyz[0])
-        lift = max(NAME_LIFT_M, NAME_LIFT_SHARE * profile.chainage.length)
         f = QgsFeature(layer.fields())
-        f.setGeometry(QgsGeometry(QgsPoint(x, y, z + lift)))
-        f.setAttributes([profile.id, profile.name])
+        f.setGeometry(QgsGeometry(_name_geometry(profile, xyz[0], profile.name, family)))
+        f.setAttributes([profile.id, profile.name, colour])
         features.append(f)
     layer.dataProvider().truncate()
     _edit(layer, [], features)
-    try:
-        # one rule per profile: QGIS 4's categorized 3D renderer needs a categorized 2D style
-        # (its properties page crashes QGIS without one)
-        from qgis._3d import QgsRuleBased3DRenderer
-        template = _name_template(layer, store, project)
-        root = QgsRuleBased3DRenderer.Rule(None)
-        for profile, _xyz in rows:
-            quoted = profile.id.replace("'", "''")
-            root.appendChild(QgsRuleBased3DRenderer.Rule(
-                _named(template, profile.name), f"\"profile_id\" = '{quoted}'", profile.name))
-        layer.setRenderer3D(QgsRuleBased3DRenderer(root))
-    except ImportError:                             # a QGIS built without 3D
-        pass
     built["rows"] = signature
     return layer
 

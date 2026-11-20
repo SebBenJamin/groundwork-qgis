@@ -1070,74 +1070,85 @@ def test_a_picture_the_user_shows_in_2d_again_stays_so(setup):
     assert not picture.hasScaleBasedVisibility()
 
 
-# -- profile names in 3D: a billboard per profile, above its start ---------------------------
-def _name_marker(layer, index=0):
-    """(QgsPoint3DSymbol, its font marker layer) of a names layer's rule ``index``: a
-    rule-based 3D renderer, one rule per profile (QGIS 4's categorized 3D renderer needs a
-    categorized 2D style, or its properties page crashes QGIS)."""
-    from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
-    from qgis.PyQt import sip
-    r3d = layer.renderer3D()
-    assert r3d.type() == "rulebased"
-    rules = sip.cast(r3d, QgsRuleBased3DRenderer).rootRule().children()
-    clone = rules[index].symbol().clone()
-    _NAMES_KEEP.append(clone)
-    symbol = sip.cast(clone, QgsPoint3DSymbol)
-    marker = symbol.billboardSymbol()
-    return symbol, marker.symbolLayer(0)
+# -- profile names in 3D: upright lettering above each profile's start -----------------------
+def _triangles(feature):
+    """(n, 3, 3) the name's triangles (each part of the multipolygon a triangle)."""
+    geom = feature.geometry().constGet()
+    out = []
+    for i in range(geom.numGeometries()):
+        ring = geom.geometryN(i).exteriorRing()
+        out.append([(ring.xAt(k), ring.yAt(k), ring.zAt(k)) for k in range(3)])
+    return np.asarray(out)
 
 
-_NAMES_KEEP = []
-
-
-def test_each_profile_name_floats_above_its_start(setup):
-    from qgis.core import Qgis
+def test_each_profile_name_stands_as_lettering_above_its_start(setup):
+    """Billboards with text do not show in QGIS 4.2's 3D view: the name is real geometry,
+    triangles in an upright plane along the profile, a little above its start."""
+    from qgis.core import QgsWkbTypes
 
     from groundwork_geophysics.ui.view3d_layers import NAMES_NAME, sync
     st, p, provider, prj = setup
     _choose(prj, ["d"])
     names = sync(st, provider, prj, create=True)["names"]
     assert names.name() == NAMES_NAME and names.featureCount() == 1
+    assert names.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry
     f = next(names.getFeatures())
     assert f["profile"] == "P1"
-    pt = f.geometry().constGet()
-    x0, y0 = (float(v) for v in p.chainage.to_xy(0.0))
+    tri = _triangles(f)
+    assert len(tri) > 4
     s, z = provider.surface(p.id).line
-    assert (pt.x(), pt.y()) == pytest.approx((x0, y0))
-    assert pt.z() > float(np.interp(0.0, s, z))
-    symbol, text = _name_marker(names)
-    assert symbol.shape() == Qgis.Point3DShape.Billboard
-    assert text.layerType() == "FontMarker" and text.character() == "P1"
-    from qgis._3d import QgsRuleBased3DRenderer
-    from qgis.PyQt import sip
-    rule = sip.cast(names.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()[0]
-    assert rule.filterExpression() == f"\"profile_id\" = '{p.id}'"
+    assert tri[..., 2].min() > float(np.interp(0.0, s, z))          # above the ground
+    assert np.allclose(tri[..., 1], 0.0, atol=1e-6)                 # in the line's plane (y = 0)
+    assert tri[..., 0].min() >= -1e-6                               # from the start along it
     assert not names.isInScaleRange(1000.0)          # the map labels the profiles already
 
 
-def test_a_renamed_profile_shows_its_new_name_in_the_users_look(setup):
-    from qgis.PyQt.QtGui import QColor
+def test_the_name_reads_from_both_sides(setup):
+    """Two copies, one mirrored, facing opposite sides (back faces hidden): each side sees
+    the name the right way round."""
+    from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol
+    from qgis.PyQt import sip
 
     from groundwork_geophysics.ui.view3d_layers import sync
     st, p, provider, prj = setup
     _choose(prj, ["d"])
     names = sync(st, provider, prj, create=True)["names"]
-    from qgis._3d import QgsRuleBased3DRenderer
-    from qgis.PyQt import sip
-    clone = names.renderer3D().clone()
-    _NAMES_KEEP.append(clone)                         # the cast wrapper does not own it
-    r3d = sip.cast(clone, QgsRuleBased3DRenderer)
-    symbol, text = _name_marker(names)
-    text.setColor(QColor("#c00000"))                  # the user's own colour
-    r3d.rootRule().children()[0].setSymbol(symbol.clone())
-    names.setRenderer3D(r3d.clone())
-    p.name = "Line 7"
+    tri = _triangles(next(names.getFeatures()))
+    # the line runs east (x) at y = 0: a triangle's turn in (x, z) says which side it faces
+    a, b, c = tri[:, 0], tri[:, 1], tri[:, 2]
+    turn = (b[:, 0] - a[:, 0]) * (c[:, 2] - a[:, 2]) - (c[:, 0] - a[:, 0]) * (b[:, 2] - a[:, 2])
+    assert (turn > 0).sum() == (turn < 0).sum() > 0
+    symbol = sip.cast(names.renderer3D().symbol(), QgsPolygon3DSymbol)
+    assert not symbol.addBackFaces() and symbol.cullingMode() == Qgs3DTypes.CullingMode.Back
+
+
+def test_a_renamed_profile_gets_its_new_name(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    names = sync(st, provider, prj, create=True)["names"]
+    before = len(_triangles(next(names.getFeatures())))
+    p.name = "Line 77"
     st.save_profile(p)
     provider.notify_changed()
     sync(st, provider, prj)
-    _symbol, text = _name_marker(names)
-    assert text.character() == "Line 7" and text.color().name() == "#c00000"
-    assert next(names.getFeatures())["profile"] == "Line 7"
+    f = next(names.getFeatures())
+    assert f["profile"] == "Line 77" and len(_triangles(f)) != before
+
+
+def test_a_names_layer_saved_as_points_becomes_lettering(setup):
+    from qgis.core import QgsVectorLayer, QgsWkbTypes
+
+    from groundwork_geophysics.ui.view3d_layers import layers_3d, sync
+    st, p, provider, prj = setup
+    old = QgsVectorLayer(f"PointZ?crs={CRS}", "Profile names in 3D", "memory")
+    old.setCustomProperty("geophysics_workbench/view3d", "names")
+    prj.addMapLayer(old)
+    _choose(prj, ["d"])
+    sync(st, provider, prj)
+    names = layers_3d(prj)["names"]
+    assert names.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry
+    assert names.featureCount() == 1
 
 
 # -- a kind of 3D layer new in an update comes by itself; one the user removed stays away ----
