@@ -112,3 +112,94 @@ def test_contours_are_drawn_into_the_picture(qgis_app, store_with_model):
     smooth = section_pictures(*_layer(provider, p, "smooth"))[0].image
     both = section_pictures(*_layer(provider, p, "smooth+contours"))[0].image
     assert smooth.size() == both.size() and smooth != both
+
+
+# -- several models of a profile in one picture, and its interpretation -----------------------
+def _shifted(layer, ds):
+    from dataclasses import replace as dc_replace
+    return dc_replace(layer, mesh=layer.mesh.with_x(lambda x: x + ds))
+
+
+def _cell_centre(layer, i=None):
+    mesh = layer.mesh
+    i = len(mesh.cells) // 2 if i is None else i
+    s, z = mesh.vertices[[k for k in mesh.cells[i] if k >= 0]].mean(axis=0)
+    return i, float(s), float(z)
+
+
+def test_several_models_share_one_picture_over_their_joint_extent(qgis_app, store_with_model):
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.picture import section_pictures
+    st, p, _ = store_with_model
+    provider = SectionDataProvider(st)
+    first, topo = _layer(provider, p, "cells")
+    second = _shifted(first, 30.0)
+    pictures = section_pictures([first, second], None)
+    s0, s1, _z0, _z1 = first.mesh.bounds()
+    assert pictures[0].s0 == pytest.approx(s0) and pictures[-1].s1 == pytest.approx(s1 + 30.0)
+    i, s, z = _cell_centre(second)
+    want = second.style.scale.rgba([second.mesh.values[i]])[0]
+    picture = next(pic for pic in pictures if pic.s0 <= s <= pic.s1)
+    assert _pixel(picture, s, z)[:3] == pytest.approx(tuple(int(c) for c in want[:3]), abs=3)
+
+
+def test_the_later_model_is_drawn_over_the_earlier_one_with_its_opacity(qgis_app,
+                                                                       store_with_model):
+    """Stacked as the section draws them: bottom first, each with its own opacity."""
+    from dataclasses import replace as dc_replace
+
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.picture import section_pictures
+    st, p, _ = store_with_model
+    provider = SectionDataProvider(st)
+    first, topo = _layer(provider, p, "cells")
+    over = dc_replace(first, style=dc_replace(first.style, opacity=0.5),
+                      mesh=dc_replace(first.mesh, values=first.mesh.values[::-1].copy()))
+    picture = section_pictures([first, over], None)[0]
+    i, s, z = _cell_centre(first)
+    below = first.style.scale.rgba([first.mesh.values[i]])[0][:3]
+    above = first.style.scale.rgba([over.mesh.values[i]])[0][:3]
+    blend = tuple(0.5 * int(a) + 0.5 * int(b) for a, b in zip(above, below))
+    assert _pixel(picture, s, z)[:3] == pytest.approx(blend, abs=4)
+    alone = section_pictures(first, None)[0]                     # one layer still works
+    assert _pixel(alone, s, z)[:3] == pytest.approx(tuple(int(c) for c in below), abs=3)
+
+
+def _green_polygon(s0, s1, z0, z1):
+    from qgis.core import QgsFillSymbol
+
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece
+    piece = InterpPiece("pc", "v", "f1", "prof", "polygon",
+                        [(s0, z1), (s1, z1), (s1, z0), (s0, z0)])
+    symbol = QgsFillSymbol.createSimple({"color": "0,200,0,255", "outline_style": "no"})
+    return [piece], {"f1": InterpFeature("f1", "v", name="")}, {"pc": symbol}
+
+
+def test_the_interpretation_is_painted_over_the_models(qgis_app, store_with_model):
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.picture import section_pictures
+    st, p, _ = store_with_model
+    provider = SectionDataProvider(st)
+    layer, topo = _layer(provider, p, "cells")
+    _i, s, z = _cell_centre(layer)
+    interp = _green_polygon(s - 2, s + 2, z - 1, z + 1)
+    picture = section_pictures([layer], topo, interp)[0]
+    assert _pixel(picture, s, z)[:3] == pytest.approx((0, 200, 0), abs=3)
+    plain = section_pictures([layer], topo)[0]
+    assert _pixel(plain, s, z)[:3] != pytest.approx((0, 200, 0), abs=3)
+
+
+def test_an_interpretation_past_the_models_widens_the_picture(qgis_app, store_with_model):
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.picture import section_pictures
+    st, p, _ = store_with_model
+    provider = SectionDataProvider(st)
+    layer, topo = _layer(provider, p, "cells")
+    s0, s1, z0, _z1 = layer.mesh.bounds()
+    interp = _green_polygon(s1 - 1, s1 + 4, z0 - 3, z0 + 1)
+    pictures = section_pictures([layer], topo, interp)
+    assert pictures[-1].s1 == pytest.approx(s1 + 4) and pictures[0].z0 == pytest.approx(z0 - 3)
+    picture = pictures[-1]
+    assert _pixel(picture, s1 + 2, z0 - 2)[:3] == pytest.approx((0, 200, 0), abs=3)
+    rows = picture.image.height()
+    assert picture.alpha[int(rows * 0.99), -2] == 255             # painted: shown in 3D

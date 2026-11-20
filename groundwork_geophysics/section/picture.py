@@ -1,8 +1,9 @@
-"""Section pictures for the 3D view: one model painted by the section's own drawing code
-(cells, smooth field, contour lines and labels, its opacity and coverage fade) over its own
-extent, as the panel shows it, on the panel's background colour: QGIS draws a tiled scene's
-textures opaque, so a see-through texel would show black. Long pictures come in pieces a
-graphics card can take."""
+"""Section pictures for the 3D view: a profile's models painted by the section's own drawing
+code (cells, smooth field, contour lines and labels, each model's opacity and coverage fade,
+stacked bottom first as the panel stacks them) over their joint extent, optionally with the
+interpretation over them as the panel draws it, on the panel's background colour: QGIS draws
+a tiled scene's textures opaque, so a see-through texel would show black. Long pictures come
+in pieces a graphics card can take."""
 from __future__ import annotations
 
 import math
@@ -50,16 +51,33 @@ def extent(mesh, topo) -> tuple[float, float, float, float]:
     return s0, s1, z0, z1
 
 
-def section_pictures(layer, topo) -> list[Picture]:
-    """``layer`` (a section layer with a mesh) as the panel draws it, in pieces."""
+def joint_extent(layers, topo, pieces=()) -> tuple[float, float, float, float]:
+    """(s0, s1, z0, z1) of several models' pictures together, widened to the interpretation
+    ``pieces`` drawn over them."""
+    boxes = [extent(layer.mesh, topo) for layer in layers]
+    for piece in pieces:
+        v = np.asarray(piece.vertices, float).reshape(-1, 2)
+        if len(v):
+            boxes.append((v[:, 0].min(), v[:, 0].max(), v[:, 1].min(), v[:, 1].max()))
+    return (float(min(b[0] for b in boxes)), float(max(b[1] for b in boxes)),
+            float(min(b[2] for b in boxes)), float(max(b[3] for b in boxes)))
+
+
+def section_pictures(layers, topo, interpretation=None) -> list[Picture]:
+    """``layers`` (one section layer with a mesh, or a profile's several, bottom first) as
+    the panel draws them, in pieces; ``interpretation`` (pieces, features, symbols as in the
+    section's snapshot) is painted over them, names included."""
     from .display_render import LABEL_MM, build_drawing
-    drawing = build_drawing(layer, topo)
-    s0, s1, z0, z1 = extent(layer.mesh, topo)
+    layers = list(layers) if isinstance(layers, (list, tuple)) else [layers]
+    drawings = [build_drawing(layer, topo) for layer in layers]
+    pieces = list(interpretation[0]) if interpretation else []
+    s0, s1, z0, z1 = joint_extent(layers, topo, pieces)
     ppm, cuts = layout(s0, s1, z0, z1)
     label_px = LABEL_SHARE * (z1 - z0) * ppm
     out = []
     for a, b in zip(cuts[:-1], cuts[1:]):
-        painted = _paint(drawing, a, b, z0, z1, ppm, label_px / LABEL_MM)
+        painted = _paint(drawings, interpretation if pieces else None, a, b, z0, z1, ppm,
+                         label_px / LABEL_MM)
         out.append(Picture(_flatten(painted), _alpha(painted), float(a), float(b), z0, z1))
     return out
 
@@ -83,7 +101,7 @@ def _flatten(image: QImage) -> QImage:
     return out
 
 
-def _paint(drawing, s0, s1, z0, z1, ppm: float, px_per_mm: float) -> QImage:
+def _paint(drawings, interpretation, s0, s1, z0, z1, ppm: float, px_per_mm: float) -> QImage:
     from .profile_source import paint_layers
     w = max(2, min(MAX_PX, round((s1 - s0) * ppm)))
     h = max(2, min(MAX_PX, round((z1 - z0) * ppm)))
@@ -96,7 +114,11 @@ def _paint(drawing, s0, s1, z0, z1, ppm: float, px_per_mm: float) -> QImage:
         wt = QTransform(sx, 0.0, 0.0, -sz, -s0 * sx, z1 * sz)
         rc = QgsRenderContext.fromQPainter(painter)
         rc.setScaleFactor(px_per_mm)
-        paint_layers(painter, [drawing], wt, rc)
+        paint_layers(painter, drawings, wt, rc)
+        if interpretation is not None:
+            from .interp_render import draw_interpretation
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            draw_interpretation(painter, rc, wt, *interpretation)
     finally:
         painter.end()
     return image
