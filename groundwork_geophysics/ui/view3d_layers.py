@@ -37,12 +37,10 @@ MODELS_NAME = "Models in 3D"
 BOREHOLES_NAME = "Boreholes in 3D"
 CONTOURS_NAME = "Contours in 3D"
 GROUND_NAME = "Ground in 3D"
-NAMES_NAME = "Profile names in 3D"
+NAMES_GROUP = "Profile names in 3D"
 #: a profile's name floats this far above the start of its ground line: a share of the
 #: profile's length, at least NAME_LIFT_M
 NAME_LIFT_SHARE, NAME_LIFT_M = 0.03, 1.0
-#: the height of a name's capitals: a share of the profile's length, within limits (m)
-NAME_HEIGHT_SHARE, NAME_HEIGHT_MIN, NAME_HEIGHT_MAX = 0.025, 0.5, 25.0
 SMOOTH_GROUP = "Smooth models in 3D"
 PICTURES_GROUP = "Section pictures in 3D"
 #: how a ticked model stands in 3D: as its section shows it (cells, a point cloud or contour
@@ -72,7 +70,6 @@ _BOREHOLE_FIELDS = ("&field=profile_id:string&field=borehole:string&field=layer:
 _CONTOUR_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id:string"
                    "&field=dataset:string&field=level:double&field=color:string")
 _GROUND_FIELDS = "&field=profile_id:string&field=profile:string"
-_NAMES_FIELDS = _GROUND_FIELDS + "&field=color:string"
 #: a section picture's 2D visibility ends at this scale (1:1): the 2D map would decode its
 #: textures on every redraw to draw nothing useful; the 3D view ignores scale ranges
 PICTURE_2D_SCALE = 1.0
@@ -251,30 +248,6 @@ def _style_contours(layer: QgsVectorLayer) -> None:
     _style_lines(layer, 2.0)
 
 
-def _style_names(layer: QgsVectorLayer) -> None:
-    """Lettering in its "color" field's colour, flat, each copy seen only from its own side;
-    kept out of the 2D map (it labels the profiles already)."""
-    layer.setScaleBasedVisibility(True)
-    layer.setMinimumScale(PICTURE_2D_SCALE)
-    fill = QgsFillSymbol.createSimple({"outline_style": "no"})
-    fill.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.FillColor,
-                                               QgsProperty.fromField("color"))
-    layer.setRenderer(QgsSingleSymbolRenderer(fill))
-    try:
-        from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
-    except ImportError:                         # a QGIS built without 3D
-        return
-    symbol = QgsPolygon3DSymbol()
-    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
-    symbol.setExtrusionHeight(0.0)
-    symbol.setAddBackFaces(False)
-    symbol.setCullingMode(Qgs3DTypes.CullingMode.Back)
-    symbol.setMaterialSettings(_colour_material())
-    renderer = QgsVectorLayer3DRenderer(symbol)
-    _one_chunk(renderer)
-    layer.setRenderer3D(renderer)
-
-
 def _style_ground(layer: QgsVectorLayer) -> None:
     from ..section.profile_source import GROUND_COLOUR
     _style_lines(layer, 2.0, QColor(GROUND_COLOUR))
@@ -317,8 +290,9 @@ def _style_lines(layer: QgsVectorLayer, width: float, colour: QColor | None = No
 _KINDS = {"models": ("MultiPolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models),
           "boreholes": ("PolygonZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
           "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours),
-          "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground),
-          "names": ("MultiPolygonZ", _NAMES_FIELDS, NAMES_NAME, _style_names)}
+          "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground)}
+#: the kinds the project's "made" record knows (a kind new in an update comes by itself)
+_MADE_KINDS = set(_KINDS) | {"names"}
 
 
 def _create(store, project: QgsProject, kind: str) -> QgsVectorLayer:
@@ -1025,114 +999,104 @@ def _sync_ground(store, project, rows, may_create):
 
 
 # -- profile names --------------------------------------------------------------------------
-def _name_look(store, project) -> tuple[str, str]:
-    """(font family, colour) of the map's profile labels."""
+def names_3d(project: QgsProject) -> dict:
+    """The profile names in 3D (one annotation layer per profile) by profile id."""
+    from qgis.core import QgsAnnotationLayer
+    return {layer.customProperty(_PROFILE): layer for layer in project.mapLayers().values()
+            if isinstance(layer, QgsAnnotationLayer) and layer.customProperty(_FLAG) == "name"
+            and layer.customProperty(_PROFILE)}
+
+
+def _name_format(store, project):
+    """The text format of the map's profile labels (QGIS's default without labels)."""
     from qgis.core import QgsTextFormat
 
     from .project_actions import store_layers
-    fmt = QgsTextFormat()
     profiles = store_layers(store, project).get("profiles")
     try:
         if profiles is not None and profiles.labeling() is not None:
-            fmt = profiles.labeling().settings().format()
+            return QgsTextFormat(profiles.labeling().settings().format())
     except Exception:                               # rule-based or odd labelling: defaults
         pass
-    return fmt.font().family(), fmt.color().name()
+    return QgsTextFormat()
 
 
-def lettering(text: str, family: str, height: float) -> list:
-    """``text`` in ``family`` as triangles in metres, each [(u, v)] x 3 counter-clockwise,
-    the capitals ``height`` tall, the baseline at v = 0, starting at u = 0. Letters with
-    holes (a, e, o) keep them: the outlines are combined even-odd and triangulated here (QGIS
-    leaves gaps when it triangulates an upright polygon with holes itself)."""
-    from qgis.core import QgsGeometry, QgsPointXY
-    from qgis.PyQt.QtGui import QFont, QFontMetricsF, QPainterPath
-    if not text.strip():
-        return []
-    font = QFont(family)
-    font.setPointSizeF(100.0)
-    path = QPainterPath()
-    path.addText(0.0, 0.0, font, text)
-    shape = None
-    for outline in path.toSubpathPolygons():
-        if outline.count() < 3:
-            continue
-        g = QgsGeometry.fromPolygonXY([[QgsPointXY(q.x(), -q.y()) for q in outline]])
-        if not g.isGeosValid():
-            g = g.makeValid()
-        shape = g if shape is None else shape.symDifference(g)
-    if shape is None or shape.isEmpty():
-        return []
-    scale = height / max(QFontMetricsF(font).capHeight(), 1e-6)
-    left = shape.boundingBox().xMinimum()
-    triangulated = shape.constrainedDelaunayTriangulation()     # keep it: constGet borrows
-    triangles = triangulated.constGet()
-    out = []
-    for i in range(triangles.numGeometries()):
-        ring = triangles.geometryN(i).exteriorRing()
-        pts = [((ring.xAt(k) - left) * scale, ring.yAt(k) * scale) for k in range(3)]
-        (ax, ay), (bx, by), (cx, cy) = pts
-        if (bx - ax) * (cy - ay) - (cx - ax) * (by - ay) < 0:
-            pts = pts[::-1]                         # counter-clockwise
-        out.append(pts)
-    return out
-
-
-def _name_geometry(profile, start, text: str, family: str):
-    """The name as two copies of upright lettering above ``start`` (x, y, ground z) along
-    the profile's first leg: one reads from the right of the line, the mirrored one from
-    its left (each faces its own side; back faces are hidden)."""
-    from qgis.core import QgsMultiPolygon
-    length = profile.chainage.length
-    height = float(np.clip(NAME_HEIGHT_SHARE * length, NAME_HEIGHT_MIN, NAME_HEIGHT_MAX))
-    base = float(start[2]) + max(NAME_LIFT_M, NAME_LIFT_SHARE * length)
-    xy = profile.chainage.xy
-    d = (xy[1] - xy[0]) / max(float(np.hypot(*(xy[1] - xy[0]))), 1e-12)
-    triangles = lettering(text, family, height)
-    width = max((u for tri in triangles for u, _v in tri), default=0.0)
-    out = QgsMultiPolygon()
-    for mirrored in (False, True):
-        for tri in triangles:
-            ring = []
-            for u, v in tri + tri[:1]:
-                a = width - u if mirrored else u
-                ring.append(QgsPoint(float(start[0] + a * d[0]), float(start[1] + a * d[1]),
-                                     base + v))
-            out.addGeometry(QgsPolygon(QgsLineString(ring)))
-    return out
-
-
-def _sync_names(store, project, rows, may_create):
-    """Each profile of ``rows`` (``_ground_rows``) with its name as upright lettering a
-    little above the start of its ground line, in "Profile names in 3D"."""
-    old = layers_3d(project).get("names")
-    if old is not None and old.geometryType() != QgsWkbTypes.GeometryType.PolygonGeometry:
-        _built.pop(old.id(), None)                  # made as billboards before 0.14
-        project.removeMapLayer(old.id())
-        rows_wanted = bool(rows)
-        may_create("names")
-        layer = _layer(store, project, "names", rows_wanted, rows_wanted)
-    else:
-        layer = _layer(store, project, "names", bool(rows),
-                       may_create("names") if rows else False)
-    if layer is None:
-        return None
-    family, colour = _name_look(store, project)
-    signature = [(profile.id, profile.name, xyz[0].tobytes(), family, colour)
-                 for profile, xyz in rows]
-    built = _fresh(layer)
-    if built.get("rows") == signature:
-        return layer
-    features = []
-    for profile, xyz in rows:
-        f = QgsFeature(layer.fields())
-        f.setGeometry(QgsGeometry(_name_geometry(profile, xyz[0], profile.name, family)))
-        f.setAttributes([profile.id, profile.name, colour])
-        features.append(f)
-    layer.dataProvider().truncate()
-    _edit(layer, [], features)
-    built["rows"] = signature
+def _new_name(store, project: QgsProject, profile_id: str, name: str, fmt):
+    """An annotation layer for one profile's name, drawn in 3D by QGIS's annotation 3D
+    renderer in the map labels' format; kept out of the 2D map (it labels the profiles)."""
+    from qgis.core import QgsAnnotationLayer, QgsCoordinateReferenceSystem
+    layer = QgsAnnotationLayer(name, QgsAnnotationLayer.LayerOptions(project.transformContext()))
+    layer.setCrs(QgsCoordinateReferenceSystem(store.crs_authid))
+    layer.setCustomProperty(_FLAG, "name")
+    layer.setCustomProperty(_PROFILE, profile_id)
+    layer.setScaleBasedVisibility(True)
+    layer.setMinimumScale(PICTURE_2D_SCALE)
+    try:
+        from qgis._3d import QgsAnnotationLayer3DRenderer
+        renderer = QgsAnnotationLayer3DRenderer()
+        renderer.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+        renderer.setTextFormat(fmt)
+        layer.setRenderer3D(renderer)
+    except ImportError:                             # a QGIS built without 3D
+        pass
+    project.addMapLayer(layer, False)
+    group = plugin_group(project.layerTreeRoot())
+    (group.findGroup(NAMES_GROUP) or group.addGroup(NAMES_GROUP)).addLayer(layer)
     return layer
+
+
+def _fill_name(layer, name: str, x: float, y: float, z: float, fmt) -> None:
+    """One text item ``name`` at (x, y), drawn at height ``z``; nothing is set that is
+    already so (a text format the user gave the 3D view stays)."""
+    from qgis.core import QgsAnnotationPointTextItem, QgsPointXY
+    items = list(layer.items().values())
+    item = items[0] if len(items) == 1 else None
+    if (item is None or not isinstance(item, QgsAnnotationPointTextItem) or item.text() != name
+            or abs(item.point().x() - x) > 1e-6 or abs(item.point().y() - y) > 1e-6):
+        layer.clear()
+        new = QgsAnnotationPointTextItem(name, QgsPointXY(x, y))
+        new.setFormat(fmt)
+        layer.addItem(new)
+    if layer.name() != name:
+        layer.setName(name)
+    renderer = layer.renderer3D()
+    if renderer is not None and renderer.type() == "annotation" \
+            and abs(renderer.zOffset() - z) > 1e-6:
+        renderer = renderer.clone()
+        renderer.setZOffset(z)
+        layer.setRenderer3D(renderer)
+
+
+def _sync_names(store, project, rows, may_create) -> dict:
+    """Each profile of ``rows`` (``_ground_rows``) with its name a little above the start
+    of its ground line, as QGIS draws text annotations in 3D. An annotation layer draws all
+    its items at one height, so each profile has its own, in "Profile names in 3D"."""
+    replaced = False
+    for layer in list(project.mapLayers().values()):
+        if isinstance(layer, QgsVectorLayer) and layer.customProperty(_FLAG) == "names":
+            _built.pop(layer.id(), None)            # made as lettering before 0.14
+            project.removeMapLayer(layer.id())
+            replaced = True
+    wanted = {profile.id: (profile, xyz) for profile, xyz in rows}
+    existing = names_3d(project)
+    for pid, layer in existing.items():
+        if pid not in wanted:
+            project.removeMapLayer(layer.id())
+    fmt = _name_format(store, project) if wanted else None
+    out = {}
+    for pid, (profile, xyz) in wanted.items():
+        layer = existing.get(pid)
+        allowed = may_create(f"names:{pid}")
+        if layer is None and not (allowed or replaced):
+            continue                                # e.g. the user removed it
+        x, y, z = (float(v) for v in xyz[0])
+        height = z + max(NAME_LIFT_M, NAME_LIFT_SHARE * profile.chainage.length)
+        if layer is None:
+            layer = _new_name(store, project, pid, profile.name, fmt)
+        _fill_name(layer, profile.name, x, y, height, fmt)
+        out[pid] = layer
+    _drop_empty_group(project, NAMES_GROUP)
+    return out
 
 
 # -- boreholes ------------------------------------------------------------------------------
@@ -1326,13 +1290,14 @@ def sync(store, provider, project: QgsProject, create: bool = False,
         made = set(json.loads(text)) if text else None
     except (TypeError, ValueError):
         made = None
-    known = (made or set()) | set(layers_3d(project))
+    known = (made or set()) | set(layers_3d(project)) | ({"names"} if names_3d(project) else set())
 
     def may_create(kind: str) -> bool:
         needs.add(kind)
         # a kind this project never had (one added by an update) comes by itself; a project
         # without the record (made before it) waits for OK, as it always did
-        new_kind = made is not None and kind in _KINDS and kind not in known
+        base = kind.split(":")[0]
+        new_kind = made is not None and base in _MADE_KINDS and base not in known
         return create or new_kind or (before is not None and kind not in before.split("\n"))
 
     topos: dict = {}
@@ -1371,13 +1336,13 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     if ground is not None:
         out["ground"] = ground
     names = _sync_names(store, project, rows, may_create)
-    if names is not None:
+    if names:
         out["names"] = names
     in_use = {Path(la.source()) for la in clouds_3d(project).values()}
     in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
     _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
     project.setProperty(_NEEDS, "\n".join(sorted(needs)))
-    now = known | set(layers_3d(project))
+    now = known | set(layers_3d(project)) | ({"names"} if names_3d(project) else set())
     if now != made:
         project.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(now)))
     layer = layers_3d(project).get("boreholes")

@@ -219,7 +219,7 @@ def test_the_layers_keep_their_place_when_the_project_comes_back(setup):
     again = sync(st, provider, prj)
     assert again["models"].id() == first["models"].id()
     assert again["models"].featureCount() > 0
-    assert set(layers_3d(prj)) == {"models", "boreholes", "ground", "names"}
+    assert set(layers_3d(prj)) == {"models", "boreholes", "ground"}
 
 
 def test_a_borehole_without_collar_height_starts_at_the_sections_surface(setup):
@@ -1070,91 +1070,83 @@ def test_a_picture_the_user_shows_in_2d_again_stays_so(setup):
     assert not picture.hasScaleBasedVisibility()
 
 
-# -- profile names in 3D: upright lettering above each profile's start -----------------------
-def _triangles(feature):
-    """(n, 3, 3) the name's triangles (each part of the multipolygon a triangle)."""
-    geom = feature.geometry().constGet()
-    out = []
-    for i in range(geom.numGeometries()):
-        ring = geom.geometryN(i).exteriorRing()
-        out.append([(ring.xAt(k), ring.yAt(k), ring.zAt(k)) for k in range(3)])
-    return np.asarray(out)
+# -- profile names in 3D: a text annotation per profile (QGIS's own 3D text) -----------------
+def _name_item(layer):
+    from qgis.core import QgsAnnotationPointTextItem
+    items = list(layer.items().values())
+    assert len(items) == 1 and isinstance(items[0], QgsAnnotationPointTextItem)
+    return items[0]
 
 
-def test_each_profile_name_stands_as_lettering_above_its_start(setup):
-    """Billboards with text do not show in QGIS 4.2's 3D view: the name is real geometry,
-    triangles in an upright plane along the profile, a little above its start."""
-    from qgis.core import QgsWkbTypes
+def test_each_profile_name_is_a_text_annotation_above_its_start(setup):
+    """QGIS 4 draws text annotations in 3D (QgsAnnotationLayer3DRenderer), but all items of a
+    layer at one height: one annotation layer per profile, at its start's height."""
+    from qgis.core import Qgis, QgsAnnotationLayer
 
-    from groundwork_geophysics.ui.view3d_layers import NAMES_NAME, sync
+    from groundwork_geophysics.ui.view3d_layers import NAMES_GROUP, NAME_LIFT_M, sync
     st, p, provider, prj = setup
     _choose(prj, ["d"])
-    names = sync(st, provider, prj, create=True)["names"]
-    assert names.name() == NAMES_NAME and names.featureCount() == 1
-    assert names.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry
-    f = next(names.getFeatures())
-    assert f["profile"] == "P1"
-    tri = _triangles(f)
-    assert len(tri) > 4
+    name = sync(st, provider, prj, create=True)["names"][p.id]
+    assert isinstance(name, QgsAnnotationLayer) and name.name() == "P1"
+    item = _name_item(name)
+    assert item.text() == "P1"
+    x0, y0 = (float(v) for v in p.chainage.to_xy(0.0))
+    assert (item.point().x(), item.point().y()) == pytest.approx((x0, y0))
+    r3d = name.renderer3D()
+    assert r3d.type() == "annotation" and r3d.altitudeClamping() == Qgis.AltitudeClamping.Absolute
     s, z = provider.surface(p.id).line
-    assert tri[..., 2].min() > float(np.interp(0.0, s, z))          # above the ground
-    assert np.allclose(tri[..., 1], 0.0, atol=1e-6)                 # in the line's plane (y = 0)
-    assert tri[..., 0].min() >= -1e-6                               # from the start along it
-    assert not names.isInScaleRange(1000.0)          # the map labels the profiles already
-
-
-def test_the_name_reads_from_both_sides(setup):
-    """Two copies, one mirrored, facing opposite sides (back faces hidden): each side sees
-    the name the right way round."""
-    from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol
-    from qgis.PyQt import sip
-
-    from groundwork_geophysics.ui.view3d_layers import sync
-    st, p, provider, prj = setup
-    _choose(prj, ["d"])
-    names = sync(st, provider, prj, create=True)["names"]
-    tri = _triangles(next(names.getFeatures()))
-    # the line runs east (x) at y = 0: a triangle's turn in (x, z) says which side it faces
-    a, b, c = tri[:, 0], tri[:, 1], tri[:, 2]
-    turn = (b[:, 0] - a[:, 0]) * (c[:, 2] - a[:, 2]) - (c[:, 0] - a[:, 0]) * (b[:, 2] - a[:, 2])
-    assert (turn > 0).sum() == (turn < 0).sum() > 0
-    symbol = sip.cast(names.renderer3D().symbol(), QgsPolygon3DSymbol)
-    assert not symbol.addBackFaces() and symbol.cullingMode() == Qgs3DTypes.CullingMode.Back
+    lift = max(NAME_LIFT_M, 0.03 * p.chainage.length)
+    assert r3d.zOffset() == pytest.approx(float(np.interp(0.0, s, z)) + lift)
+    assert prj.layerTreeRoot().findLayer(name.id()).parent().name() == NAMES_GROUP
+    assert not name.isInScaleRange(1000.0)           # the map labels the profiles already
 
 
 def test_a_renamed_profile_gets_its_new_name(setup):
     from groundwork_geophysics.ui.view3d_layers import sync
     st, p, provider, prj = setup
     _choose(prj, ["d"])
-    names = sync(st, provider, prj, create=True)["names"]
-    before = len(_triangles(next(names.getFeatures())))
+    name = sync(st, provider, prj, create=True)["names"][p.id]
     p.name = "Line 77"
     st.save_profile(p)
     provider.notify_changed()
-    sync(st, provider, prj)
-    f = next(names.getFeatures())
-    assert f["profile"] == "Line 77" and len(_triangles(f)) != before
+    again = sync(st, provider, prj)["names"][p.id]
+    assert again is name and _name_item(name).text() == "Line 77" and name.name() == "Line 77"
 
 
-def test_a_names_layer_saved_as_points_becomes_lettering(setup):
-    from qgis.core import QgsVectorLayer, QgsWkbTypes
-
-    from groundwork_geophysics.ui.view3d_layers import layers_3d, sync
+def test_a_name_removed_by_hand_stays_removed_and_unticking_removes_it(setup):
+    from groundwork_geophysics.ui.view3d_layers import NAMES_GROUP, names_3d, sync
     st, p, provider, prj = setup
-    old = QgsVectorLayer(f"PointZ?crs={CRS}", "Profile names in 3D", "memory")
+    _choose(prj, ["d"])
+    name = sync(st, provider, prj, create=True)["names"][p.id]
+    sync(st, provider, prj)
+    prj.removeMapLayer(name.id())
+    sync(st, provider, prj)
+    assert not names_3d(prj)
+    sync(st, provider, prj, create=True)                 # OK in Show in 3D brings it back
+    assert p.id in names_3d(prj)
+    _choose(prj, [])
+    sync(st, provider, prj)
+    assert not names_3d(prj) and prj.layerTreeRoot().findGroup(NAMES_GROUP) is None
+
+
+def test_names_made_as_lettering_are_replaced(setup):
+    from qgis.core import QgsVectorLayer
+
+    from groundwork_geophysics.ui.view3d_layers import names_3d, sync
+    st, p, provider, prj = setup
+    old = QgsVectorLayer(f"MultiPolygonZ?crs={CRS}", "Profile names in 3D", "memory")
     old.setCustomProperty("geophysics_workbench/view3d", "names")
     prj.addMapLayer(old)
+    old_id = old.id()
     _choose(prj, ["d"])
     sync(st, provider, prj)
-    names = layers_3d(prj)["names"]
-    assert names.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry
-    assert names.featureCount() == 1
+    assert old_id not in prj.mapLayers() and p.id in names_3d(prj)
 
 
 # -- a kind of 3D layer new in an update comes by itself; one the user removed stays away ----
 def test_a_kind_of_layer_new_in_an_update_comes_when_the_project_opens(setup):
-    """A project made before an update knows no "Profile names in 3D": opening it adds the
-    new kind (its user never removed it), while the kinds it had stay as they were."""
+    """A project made before an update knows no "Ground in 3D": opening it adds the new
+    kind (its user never removed it), while the kinds it had stay as they were."""
     import json
 
     from groundwork_geophysics.ui.view3d_layers import ENTRY_MADE, forget_shown, layers_3d, sync
@@ -1162,12 +1154,12 @@ def test_a_kind_of_layer_new_in_an_update_comes_when_the_project_opens(setup):
     st, p, provider, prj = setup
     _choose(prj, ["d"])
     sync(st, provider, prj, create=True)
-    prj.removeMapLayer(layers_3d(prj)["names"].id())      # as before the update ...
+    prj.removeMapLayer(layers_3d(prj)["ground"].id())     # as before the update ...
     made = set(json.loads(prj.readEntry(SCOPE, ENTRY_MADE, "[]")[0]))
-    prj.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(made - {"names"})))   # ... unknown
+    prj.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(made - {"ground"})))  # ... unknown
     forget_shown(prj)                                     # the project is opened again
     sync(st, provider, prj)
-    assert "names" in layers_3d(prj)
+    assert "ground" in layers_3d(prj)
 
 
 def test_a_kind_the_user_removed_stays_removed_when_the_project_opens(setup):
@@ -1175,8 +1167,8 @@ def test_a_kind_the_user_removed_stays_removed_when_the_project_opens(setup):
     st, p, provider, prj = setup
     _choose(prj, ["d"])
     sync(st, provider, prj, create=True)
-    prj.removeMapLayer(layers_3d(prj)["names"].id())      # the user's choice
+    prj.removeMapLayer(layers_3d(prj)["ground"].id())     # the user's choice
     forget_shown(prj)
     sync(st, provider, prj)
     sync(st, provider, prj)
-    assert "names" not in layers_3d(prj)
+    assert "ground" not in layers_3d(prj)
