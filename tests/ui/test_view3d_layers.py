@@ -218,7 +218,8 @@ def test_the_layers_keep_their_place_when_the_project_comes_back(setup):
     first["models"].setProperty("groundworkFilled", None)
     again = sync(st, provider, prj)
     assert again["models"].id() == first["models"].id()
-    assert again["models"].featureCount() > 0 and set(layers_3d(prj)) == {"models", "boreholes"}
+    assert again["models"].featureCount() > 0
+    assert set(layers_3d(prj)) == {"models", "boreholes", "ground"}
 
 
 def test_a_borehole_without_collar_height_starts_at_the_sections_surface(setup):
@@ -608,7 +609,7 @@ def test_a_new_project_does_not_inherit_what_the_last_one_showed(setup, fake_ifa
     plug.initGui()
     try:
         plug.set_store(st)
-        assert "models" not in layers_3d(prj)
+        assert not layers_3d(prj)
     finally:
         plug.unload()
         prj.clear()
@@ -929,3 +930,141 @@ def test_the_box_of_section_pictures_comes_from_their_models(setup):
     xmin, _ymin, xmax, _ymax, zmin, zmax = shown_box(st, provider, prj)
     s0, s1, z0, z1 = provider.layers(p.id)[0].mesh.bounds()
     assert (xmin, xmax, zmin, zmax) == pytest.approx((s0, s1, z0, z1), abs=0.01)
+
+
+# -- the ground line ----------------------------------------------------------------------
+def _ground_points(layer, profile_id):
+    f = next(f for f in layer.getFeatures() if f["profile_id"] == profile_id)
+    return np.array([(v.x(), v.y(), v.z()) for v in f.geometry().constGet().vertices()])
+
+
+def test_a_ticked_profile_shows_the_sections_ground_line(setup):
+    from qgis.core import QgsWkbTypes
+
+    from groundwork_geophysics.ui.view3d_layers import GROUND_NAME, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    ground = sync(st, provider, prj, create=True)["ground"]
+    assert ground.name() == GROUND_NAME and ground.providerType() == "memory"
+    assert ground.readOnly() and ground.wkbType() == QgsWkbTypes.Type.LineStringZ
+    (f,) = list(ground.getFeatures())
+    assert f["profile_id"] == p.id and f["profile"] == "P1"
+    s, z = provider.surface(p.id).line
+    xy = p.chainage.to_xy(np.asarray(s))
+    assert np.allclose(_ground_points(ground, p.id), np.column_stack([xy, z]), atol=1e-6)
+
+
+def test_ticked_boreholes_bring_their_profiles_ground_line_too(setup, tmp_path):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    q = profile_from_polyline("P2", CRS, np.array([[0.0, 20.0], [60.0, 20.0]]))
+    st.save_profile(q)
+    _model(st, q, tmp_path, did="e")
+    provider.notify_changed()
+    _choose(prj, boreholes=[p.id])
+    ground = sync(st, provider, prj, create=True)["ground"]
+    assert [f["profile_id"] for f in ground.getFeatures()] == [p.id]   # P2: nothing ticked
+    _choose(prj, ["e"], [p.id])
+    sync(st, provider, prj)
+    assert sorted(f["profile"] for f in ground.getFeatures()) == ["P1", "P2"]
+
+
+def test_the_ground_line_is_a_simple_3d_line_in_the_sections_ground_colour(setup):
+    from qgis._3d import QgsLine3DSymbol, QgsSimpleLineMaterialSettings
+    from qgis.core import Qgis
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.section.profile_source import GROUND_COLOUR
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    ground = sync(st, provider, prj, create=True)["ground"]
+    assert ground.renderer().symbol().color() == GROUND_COLOUR
+    symbol = sip.cast(ground.renderer3D().symbol(), QgsLine3DSymbol)
+    assert symbol.renderAsSimpleLines()
+    assert symbol.altitudeClamping() == Qgis.AltitudeClamping.Absolute
+    material = sip.cast(symbol.materialSettings(), QgsSimpleLineMaterialSettings)
+    assert material.ambient() == GROUND_COLOUR
+
+
+def test_the_ground_line_follows_the_rules_of_the_other_layers(setup):
+    from groundwork_geophysics.section.crossing_lines import own_layer_ids
+    from groundwork_geophysics.ui.view3d_layers import layers_3d, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    assert "ground" not in sync(st, provider, prj)              # never without being asked
+    ground = sync(st, provider, prj, create=True)["ground"]
+    assert ground.id() in own_layer_ids(st, prj)
+    prj.removeMapLayer(ground.id())                             # removed by hand
+    assert "ground" not in sync(st, provider, prj)              # a redraw keeps it removed
+    ground = sync(st, provider, prj, create=True)["ground"]     # OK in Show in 3D brings it
+    _choose(prj, [])
+    sync(st, provider, prj)
+    assert "ground" not in layers_3d(prj)
+
+
+def test_the_ground_line_follows_the_profile_and_comes_back_with_the_project(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    ground = sync(st, provider, prj, create=True)["ground"]
+    assert _ground_points(ground, p.id)[:, 1] == pytest.approx(0.0)
+    moved = replace(p, xy=p.xy + np.array([0.0, 5.0]))
+    st.save_profile(moved)
+    provider.notify_changed()
+    assert sync(st, provider, prj)["ground"] is ground
+    assert _ground_points(ground, p.id)[:, 1] == pytest.approx(5.0)
+    # as a memory layer read back from a project file: empty, without the mark
+    ground.dataProvider().truncate()
+    ground.setProperty("groundworkFilled", None)
+    sync(st, provider, prj)
+    assert ground.featureCount() == 1
+
+
+def test_a_profile_without_real_heights_has_no_ground_line(qgis_app, tmp_path):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st = ProjectStore.create(tmp_path / "l.gpkg", CRS)
+    p = profile_from_polyline("Local", CRS, np.array([[0.0, 0.0], [60.0, 0.0]]))
+    st.save_profile(p)
+    src = tmp_path / "m.dat"
+    shutil.copy(FIXTURES / "ert" / "f001_res.dat", src)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("m", p.id, "", "ert_model", str(src), mt, sha, "r2_res_dat",
+                            {"z_kind": "depth"}, {}, name="Depth model"))
+    provider, prj = SectionDataProvider(st), QgsProject()
+    _choose(prj, ["m"], [p.id])
+    assert "ground" not in sync(st, provider, prj, create=True)
+
+
+def test_the_message_counts_the_ground_lines(setup):
+    from groundwork_geophysics.ui.view3d_layers import shown_summary, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    assert shown_summary(sync(st, provider, prj, create=True)).endswith("and 1 ground line")
+
+
+# -- section pictures stay out of the 2D map ----------------------------------------------
+def test_a_section_picture_is_drawn_in_3d_only(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    picture = sync(st, provider, prj, create=True)["pictures"][p.id]
+    assert picture.renderer3D() is not None
+    # its scale range ends at 1:1, so the 2D map never draws (or decodes) it; the 3D view
+    # does not look at scale ranges
+    assert picture.hasScaleBasedVisibility()
+    assert not any(picture.isInScaleRange(s) for s in (10.0, 1_000.0, 1e5, 1e8))
+
+
+def test_a_picture_the_user_shows_in_2d_again_stays_so(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    picture = sync(st, provider, prj, create=True)["pictures"][p.id]
+    picture.setScaleBasedVisibility(False)
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    assert sync(st, provider, prj)["pictures"][p.id] is picture     # drawn again
+    assert not picture.hasScaleBasedVisibility()

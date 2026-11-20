@@ -8,6 +8,7 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
 - a **model** stands as a curtain under its profile, at its real elevation: **As in the Section** (the default) draws it the way its section draws it, **Point Cloud** and **Section Picture** are explained below;
 - **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing (or as wide as you set under **Sizes**, see below);
+- every profile with something ticked also shows its **ground line**, the line its section draws as the ground surface, in the section's ground colour (black), in the layer **Ground in 3D**: with the terrain switched off, it shows where each profile runs and how high its ground lies;
 - ticking a profile ticks all of it;
 - a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md).
 
@@ -34,7 +35,7 @@ A curtain follows the model's **display** in the section panel, and changes when
 
 The colour scale and the coverage fade follow too: the faded part is left out of the curtain.
 
-**Models in 3D**, **Contours in 3D** and **Boreholes in 3D** are temporary layers: they are not stored in the Groundwork file and are rebuilt from your models when you open the project.
+**Models in 3D**, **Contours in 3D**, **Boreholes in 3D** and **Ground in 3D** are temporary layers: they are not stored in the Groundwork file and are rebuilt from your models when you open the project.
 
 The 3D layers are kept up to date only while a 3D map view is open: with none open, a change in the section panel (display, colour scale, fade, data) only marks them as out of date, so no point clouds or pictures are written that nobody sees. They catch up as soon as a 3D map view opens, or when you press **OK** in **Show in 3D…**. If you look at them in **Qgis2threejs** instead (it has no QGIS 3D map view), press **OK** in **Show in 3D…** to bring them up to date before you export.
 
@@ -50,7 +51,9 @@ The **point clouds** are files: they are written to a folder next to the Groundw
 
 With **Section pictures show the interpretation** ticked, each picture also shows the profile's interpretation over the models, exactly as the section panel draws it: fills, hatches, transparency, line styles and names. The picture is drawn again when you edit the interpretation or change its style (Symbology). Station and borehole names stay out of the picture. The interpretation's own 3D layers still stand in front of the picture; switch them off in the Layers panel if you only want the picture.
 
-The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per profile) in the same folder as the point clouds. Long profiles are drawn coarser, so that a picture stays a reasonable size; still, drawing the pictures takes a few seconds (a busy cursor shows it), and every picture layer also costs the 2D map a moment when it redraws.
+The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per profile) in the same folder as the point clouds. Long profiles are drawn coarser, so that a picture stays a reasonable size; still, drawing the pictures takes a few seconds (a busy cursor shows it).
+
+The picture layers are shown in the 3D view only, not in the 2D map: there a picture would show nothing useful and still slow down every redraw of the map. So their **scale-dependent visibility** ends at 1:1, and the Layers panel shows them greyed out; that is expected, and the 3D view is not affected by it. To see a picture in the 2D map all the same, untick **Scale Dependent Visibility** in its **Layer Properties → Rendering**; a picture you switched on that way stays so when it is drawn again.
 
 ## Opening a 3D map view
 
@@ -82,5 +85,5 @@ A **click** does: click (left button, without dragging) on the curtain, section 
 - **Style a smooth curtain by value:** in the point cloud's properties → **Symbology**, choose **Attribute by Ramp** on **Log10Value** (or **Value** on a linear scale) and a colour ramp; the 3D view follows the 2D style. Your style stays when the curtain is rebuilt.
 - The point size is in the point cloud's **3D View** properties.
 - **Identify** a borehole interval in the 3D view: its **borehole**, **top** and **bottom** depth and its **text**.
-- **Qgis2threejs** reads the same layers: choose **Polygon** for the cells, **Polygon** extruded by the **height** field for the boreholes and **Line** for the contour lines, with the height from the Z values, and the point clouds as point clouds.
+- **Qgis2threejs** reads the same layers: choose **Polygon** for the cells, **Polygon** extruded by the **height** field for the boreholes and **Line** for the contour lines and the ground lines, with the height from the Z values, and the point clouds as point clouds.
 - A very large model (hundreds of thousands of cells) makes the 3D view slow in **Cells**; show it **Smooth** or show fewer models at once.

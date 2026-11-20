@@ -33,6 +33,8 @@ _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z 
 _MM = Qgis.RenderUnit.Millimeters
 #: drawn over models beyond the station coverage: white at 55 %, marked but readable
 BEYOND_COLOUR = QColor(255, 255, 255, 140)
+#: the section's ground line (also the colour of the ground line in the 3D view)
+GROUND_COLOUR = QColor(0, 0, 0)
 #: thin line through the measured station heights when the models hang from the DEM
 MEASURED_COLOUR = QColor(70, 70, 70)
 
@@ -312,7 +314,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         topo = self.snapshot.topo
         if topo is None or len(topo[0]) < 2:
             return
-        pen = QPen(QColor(0, 0, 0), max(1.0, rc.convertToPainterUnits(0.26, _MM)))
+        pen = QPen(GROUND_COLOUR, max(1.0, rc.convertToPainterUnits(0.26, _MM)))
         pen.setCosmetic(True)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)

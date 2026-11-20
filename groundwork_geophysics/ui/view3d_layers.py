@@ -7,7 +7,8 @@ is a point cloud, contours are lines), as a point cloud whatever the section sho
 its profile's section picture (3D Tiles: the profile's picture models in one picture, as the
 section stacks them, optionally with the interpretation). "Boreholes in 3D" holds one round
 column per log interval of the boreholes the ticked profiles' sections show, at their map
-position. The choice lives in
+position. "Ground in 3D" holds the section's ground line of every profile with something
+ticked, so the profiles stay readable with the terrain off. The choice lives in
 the project (entry ``view3d``); the layers are refilled from it whenever the data, the
 section's colour scale or its fade change, and when the store is opened. Their styles (2D
 and 3D) are written once when a layer is created and are the user's afterwards; they travel
@@ -35,6 +36,7 @@ from .project_actions import SCOPE, plugin_group, station_radius
 MODELS_NAME = "Models in 3D"
 BOREHOLES_NAME = "Boreholes in 3D"
 CONTOURS_NAME = "Contours in 3D"
+GROUND_NAME = "Ground in 3D"
 SMOOTH_GROUP = "Smooth models in 3D"
 PICTURES_GROUP = "Section pictures in 3D"
 #: how a ticked model stands in 3D: as its section shows it (cells, a point cloud or contour
@@ -60,6 +62,10 @@ _BOREHOLE_FIELDS = ("&field=profile_id:string&field=borehole:string&field=layer:
                     "&field=color:string&field=height:double")
 _CONTOUR_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id:string"
                    "&field=dataset:string&field=level:double&field=color:string")
+_GROUND_FIELDS = "&field=profile_id:string&field=profile:string"
+#: a section picture's 2D visibility ends at this scale (1:1): the 2D map would decode its
+#: textures on every redraw to draw nothing useful; the 3D view ignores scale ranges
+PICTURE_2D_SCALE = 1.0
 #: layer id -> {dataset id: (signature of what its cells were made from, their feature ids)}
 _built: dict[str, dict] = {}
 _FILLED = "groundworkFilled"            # Qt property: this layer object was filled
@@ -126,11 +132,12 @@ def auto_station_size(store) -> float:
 
 
 def layers_3d(project: QgsProject) -> dict[str, QgsVectorLayer]:
-    """The 3D vector layers in the project by kind ("models", "boreholes", "contours")."""
+    """The 3D vector layers in the project by kind ("models", "boreholes", "contours",
+    "ground")."""
     out = {}
     for layer in project.mapLayers().values():
         kind = layer.customProperty(_FLAG) if isinstance(layer, QgsVectorLayer) else None
-        if kind in ("models", "boreholes", "contours"):
+        if kind in _KINDS:
             out[kind] = layer
     return out
 
@@ -234,10 +241,19 @@ def _style_contours(layer: QgsVectorLayer) -> None:
     _style_lines(layer, 2.0)
 
 
-def _style_lines(layer: QgsVectorLayer, width: float) -> None:
+def _style_ground(layer: QgsVectorLayer) -> None:
+    from ..section.profile_source import GROUND_COLOUR
+    _style_lines(layer, 2.0, QColor(GROUND_COLOUR))
+
+
+def _style_lines(layer: QgsVectorLayer, width: float, colour: QColor | None = None) -> None:
+    """Lines in their "color" field's colour, or all in ``colour``; in 3D as simple lines."""
     line = QgsLineSymbol.createSimple({})
-    line.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.StrokeColor,
-                                               QgsProperty.fromField("color"))
+    if colour is None:
+        line.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.StrokeColor,
+                                                   QgsProperty.fromField("color"))
+    else:
+        line.setColor(colour)
     layer.setRenderer(QgsSingleSymbolRenderer(line))
     try:
         from qgis._3d import (QgsAbstractMaterialSettings, QgsLine3DSymbol,
@@ -251,9 +267,13 @@ def _style_lines(layer: QgsVectorLayer, width: float) -> None:
     symbol.setRenderAsSimpleLines(True)
     symbol.setWidth(width)                     # pixels
     material = QgsSimpleLineMaterialSettings()
-    props = material.dataDefinedProperties()
-    props.setProperty(QgsAbstractMaterialSettings.Property.Ambient, QgsProperty.fromField("color"))
-    material.setDataDefinedProperties(props)
+    if colour is None:
+        props = material.dataDefinedProperties()
+        props.setProperty(QgsAbstractMaterialSettings.Property.Ambient,
+                          QgsProperty.fromField("color"))
+        material.setDataDefinedProperties(props)
+    else:
+        material.setAmbient(colour)
     symbol.setMaterialSettings(material)
     renderer = QgsVectorLayer3DRenderer(symbol)
     _one_chunk(renderer)
@@ -262,7 +282,8 @@ def _style_lines(layer: QgsVectorLayer, width: float) -> None:
 
 _KINDS = {"models": ("MultiPolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models),
           "boreholes": ("PolygonZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
-          "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours)}
+          "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours),
+          "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground)}
 
 
 def _create(store, project: QgsProject, kind: str) -> QgsVectorLayer:
@@ -764,6 +785,10 @@ def _new_picture(project: QgsProject, path: Path, name: str, profile_id: str):
     layer = QgsTiledSceneLayer(_picture_source(path), name, "cesiumtiles")
     layer.setCustomProperty(_FLAG, "picture")
     layer.setCustomProperty(_PROFILE, profile_id)
+    # kept out of the 2D map, which would decode the picture on every redraw (QGIS's 3D
+    # view does not look at scale ranges); the user may switch it on again, it stays theirs
+    layer.setScaleBasedVisibility(True)
+    layer.setMinimumScale(PICTURE_2D_SCALE)
     try:
         from qgis._3d import QgsTiledSceneLayer3DRenderer
         layer.setRenderer3D(QgsTiledSceneLayer3DRenderer())
@@ -916,6 +941,55 @@ def _sync_contours(store, project, chosen, may_create, topo_of):
     return layer
 
 
+# -- the ground line -------------------------------------------------------------------------
+def _ground_rows(store, provider, profile_ids: set, topo_of) -> list[tuple]:
+    """(profile, xyz) of the section's ground line of each of ``profile_ids`` with real
+    heights."""
+    rows = []
+    for profile in store.profiles():
+        if profile.id not in profile_ids or _is_local(provider, profile.id):
+            continue
+        line = topo_of(profile.id)
+        if line is None:
+            continue
+        s, z = (np.asarray(a, dtype=float) for a in line)
+        ok = np.isfinite(s) & np.isfinite(z)
+        if ok.sum() < 2:
+            continue
+        try:
+            xy = np.atleast_2d(profile.chainage.to_xy(s[ok])).reshape(-1, 2)
+        except (ValueError, IndexError) as exc:
+            _log(f"3D view: the ground line of '{profile.name}' could not be shown: {exc}")
+            continue
+        rows.append((profile, np.column_stack([xy, z[ok]])))
+    return rows
+
+
+def _sync_ground(store, provider, project, profile_ids: set, may_create, topo_of):
+    """The ground line of every profile in ``profile_ids`` (those with something ticked)
+    with real heights, in "Ground in 3D"."""
+    rows = _ground_rows(store, provider, profile_ids, topo_of)
+    layer = _layer(store, project, "ground", bool(rows),
+                   may_create("ground") if rows else False)
+    if layer is None:
+        return None
+    signature = [(profile.id, profile.name, xyz.tobytes()) for profile, xyz in rows]
+    built = _fresh(layer)
+    if built.get("rows") == signature:
+        return layer
+    features = []
+    for profile, xyz in rows:
+        f = QgsFeature(layer.fields())
+        f.setGeometry(QgsGeometry(QgsLineString(xyz[:, 0].tolist(), xyz[:, 1].tolist(),
+                                                xyz[:, 2].tolist())))
+        f.setAttributes([profile.id, profile.name])
+        features.append(f)
+    layer.dataProvider().truncate()
+    _edit(layer, [], features)
+    built["rows"] = signature
+    return layer
+
+
 # -- boreholes ------------------------------------------------------------------------------
 def _interval_colour(text: str, symbol) -> tuple:
     """The colour the section draws an interval in: its class's fill, the outline of a
@@ -1045,6 +1119,9 @@ def shown_summary(layers: dict) -> str:
         parts.append(f"{loc.toString(n)} section picture{'' if n == 1 else 's'}")
     if "boreholes" in layers:
         parts.append(f"{loc.toString(layers['boreholes'].featureCount())} borehole intervals")
+    if "ground" in layers:
+        n = layers["ground"].featureCount()
+        parts.append(f"{loc.toString(n)} ground line{'' if n == 1 else 's'}")
     if not parts:
         return "nothing that could be built"
     return ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
@@ -1089,7 +1166,8 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     its section draws it (cells in "Models in 3D", a smooth one as a point cloud of its own,
     contours in "Contours in 3D"), as a point cloud, or in its profile's section picture
     (``out["clouds"]``: dataset id -> cloud layer; ``out["pictures"]``: profile id ->
-    picture layer). A layer is created when
+    picture layer), with the ground line of every profile that shows something. A layer is
+    created when
     ``create`` (the user asked) or when a model's mode newly needs it, never just because the
     project was opened; it is removed when nothing needs it any more. Ids that no longer
     exist are ignored; a model that cannot be read is left out (and logged). Without
@@ -1133,6 +1211,10 @@ def sync(store, provider, project: QgsProject, create: bool = False,
                               may_create, needs.discard, topo_of)
     if pictures:
         out["pictures"] = pictures
+    ticked = {p.id for p, _d, _la in gathered} | set(choice.boreholes)
+    ground = _sync_ground(store, provider, project, ticked, may_create, topo_of)
+    if ground is not None:
+        out["ground"] = ground
     in_use = {Path(la.source()) for la in clouds_3d(project).values()}
     in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
     _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
