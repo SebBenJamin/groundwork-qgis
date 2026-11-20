@@ -37,6 +37,10 @@ MODELS_NAME = "Models in 3D"
 BOREHOLES_NAME = "Boreholes in 3D"
 CONTOURS_NAME = "Contours in 3D"
 GROUND_NAME = "Ground in 3D"
+NAMES_NAME = "Profile names in 3D"
+#: a profile's name floats this far above the start of its ground line: a share of the
+#: profile's length, at least NAME_LIFT_M
+NAME_LIFT_SHARE, NAME_LIFT_M = 0.03, 1.0
 SMOOTH_GROUP = "Smooth models in 3D"
 PICTURES_GROUP = "Section pictures in 3D"
 #: how a ticked model stands in 3D: as its section shows it (cells, a point cloud or contour
@@ -241,6 +245,13 @@ def _style_contours(layer: QgsVectorLayer) -> None:
     _style_lines(layer, 2.0)
 
 
+def _style_names(layer: QgsVectorLayer) -> None:
+    """Kept out of the 2D map (it labels the profiles already); the 3D look, a billboard
+    with each profile's name, is set by ``_sync_names``."""
+    layer.setScaleBasedVisibility(True)
+    layer.setMinimumScale(PICTURE_2D_SCALE)
+
+
 def _style_ground(layer: QgsVectorLayer) -> None:
     from ..section.profile_source import GROUND_COLOUR
     _style_lines(layer, 2.0, QColor(GROUND_COLOUR))
@@ -283,7 +294,8 @@ def _style_lines(layer: QgsVectorLayer, width: float, colour: QColor | None = No
 _KINDS = {"models": ("MultiPolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models),
           "boreholes": ("PolygonZ", _BOREHOLE_FIELDS, BOREHOLES_NAME, _style_boreholes),
           "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours),
-          "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground)}
+          "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground),
+          "names": ("PointZ", _GROUND_FIELDS, NAMES_NAME, _style_names)}
 
 
 def _create(store, project: QgsProject, kind: str) -> QgsVectorLayer:
@@ -965,10 +977,9 @@ def _ground_rows(store, provider, profile_ids: set, topo_of) -> list[tuple]:
     return rows
 
 
-def _sync_ground(store, provider, project, profile_ids: set, may_create, topo_of):
-    """The ground line of every profile in ``profile_ids`` (those with something ticked)
-    with real heights, in "Ground in 3D"."""
-    rows = _ground_rows(store, provider, profile_ids, topo_of)
+def _sync_ground(store, project, rows, may_create):
+    """The ground line of every profile in ``rows`` (``_ground_rows``: those with something
+    ticked and real heights), in "Ground in 3D"."""
     layer = _layer(store, project, "ground", bool(rows),
                    may_create("ground") if rows else False)
     if layer is None:
@@ -986,6 +997,99 @@ def _sync_ground(store, provider, project, profile_ids: set, may_create, topo_of
         features.append(f)
     layer.dataProvider().truncate()
     _edit(layer, [], features)
+    built["rows"] = signature
+    return layer
+
+
+# -- profile names --------------------------------------------------------------------------
+def _name_marker(store, project):
+    """A font marker in the look of the map's profile labels (font, size, colours)."""
+    from qgis.core import QgsFontMarkerSymbolLayer, QgsMarkerSymbol, QgsTextFormat
+
+    from .project_actions import store_layers
+    fmt = QgsTextFormat()
+    profiles = store_layers(store, project).get("profiles")
+    try:
+        if profiles is not None and profiles.labeling() is not None:
+            fmt = profiles.labeling().settings().format()
+    except Exception:                               # rule-based or odd labelling: defaults
+        pass
+    text = QgsFontMarkerSymbolLayer(fmt.font().family(), "", fmt.size() * 25.4 / 72)
+    text.setColor(fmt.color())
+    buffer = fmt.buffer()
+    if buffer.enabled():
+        text.setStrokeColor(buffer.color())
+        text.setStrokeWidth(buffer.size())
+    return QgsMarkerSymbol([text])
+
+
+def _named(template, name: str):
+    """A billboard 3D symbol showing ``name`` in ``template``'s look (a marker symbol whose
+    font markers get the name)."""
+    from qgis._3d import QgsPoint3DSymbol
+    marker = template.clone()
+    for i in range(marker.symbolLayerCount()):
+        layer = marker.symbolLayer(i)
+        if layer.layerType() == "FontMarker":
+            layer.setCharacter(name)
+    symbol = QgsPoint3DSymbol()
+    symbol.setShape(Qgis.Point3DShape.Billboard)
+    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    symbol.setBillboardSymbol(marker)
+    # the symbol now owns the marker, but the binding leaves Python owning it too: hand it
+    # over, or Python frees it under QGIS's feet
+    from qgis.PyQt import sip
+    sip.transferto(marker, None)
+    return symbol
+
+
+def _name_template(layer, store, project):
+    """The look of the names: the billboard of the layer's first category (a style the
+    user changed stays), else the map's profile labels."""
+    renderer = layer.renderer3D()
+    if renderer is not None and renderer.type() == "categorized":
+        from qgis._3d import QgsPoint3DSymbol
+        from qgis.PyQt import sip
+        categories = renderer.categories()
+        if categories:
+            symbol = categories[0].symbol().clone()
+            if symbol is not None and symbol.type() == "point":
+                billboard = sip.cast(symbol, QgsPoint3DSymbol).billboardSymbol()
+                if billboard is not None:
+                    return billboard.clone()
+    return _name_marker(store, project)
+
+
+def _sync_names(store, project, rows, may_create):
+    """Each profile of ``rows`` (``_ground_rows``) as a point a little above the start of
+    its ground line, shown in 3D as a billboard with its name, in "Profile names in 3D"."""
+    layer = _layer(store, project, "names", bool(rows), may_create("names") if rows else False)
+    if layer is None:
+        return None
+    signature = [(profile.id, profile.name, xyz[0].tobytes()) for profile, xyz in rows]
+    built = _fresh(layer)
+    if built.get("rows") == signature:
+        return layer
+    features = []
+    for profile, xyz in rows:
+        x, y, z = (float(v) for v in xyz[0])
+        lift = max(NAME_LIFT_M, NAME_LIFT_SHARE * profile.chainage.length)
+        f = QgsFeature(layer.fields())
+        f.setGeometry(QgsGeometry(QgsPoint(x, y, z + lift)))
+        f.setAttributes([profile.id, profile.name])
+        features.append(f)
+    layer.dataProvider().truncate()
+    _edit(layer, [], features)
+    try:
+        from qgis._3d import Qgs3DRendererCategory, QgsCategorized3DRenderer
+        template = _name_template(layer, store, project)
+        renderer = QgsCategorized3DRenderer("profile_id", [])
+        for profile, _xyz in rows:
+            renderer.addCategory(Qgs3DRendererCategory(profile.id, _named(template, profile.name)))
+        _one_chunk(renderer)
+        layer.setRenderer3D(renderer)
+    except ImportError:                             # a QGIS built without 3D
+        pass
     built["rows"] = signature
     return layer
 
@@ -1212,9 +1316,13 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     if pictures:
         out["pictures"] = pictures
     ticked = {p.id for p, _d, _la in gathered} | set(choice.boreholes)
-    ground = _sync_ground(store, provider, project, ticked, may_create, topo_of)
+    rows = _ground_rows(store, provider, ticked, topo_of)
+    ground = _sync_ground(store, project, rows, may_create)
     if ground is not None:
         out["ground"] = ground
+    names = _sync_names(store, project, rows, may_create)
+    if names is not None:
+        out["names"] = names
     in_use = {Path(la.source()) for la in clouds_3d(project).values()}
     in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
     _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())

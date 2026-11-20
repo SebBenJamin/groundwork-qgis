@@ -9,6 +9,7 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 - a **model** stands as a curtain under its profile, at its real elevation: **As in the Section** (the default) draws it the way its section draws it, **Point Cloud** and **Section Picture** are explained below;
 - **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing (or as wide as you set under **Sizes**, see below);
 - every profile with something ticked also shows its **ground line**, the line its section draws as the ground surface, in the section's ground colour (black), in the layer **Ground in 3D**: with the terrain switched off, it shows where each profile runs and how high its ground lies;
+- each such profile's **name** floats a little above the start of its ground line, always facing you, in the layer **Profile names in 3D**. It takes the font, size and colours of the profile labels on the map; to give it another look, change the symbol in its layer properties → **3D View** (the names follow renamed profiles and keep that look). The map labels the profiles already, so this layer stays out of the 2D map;
 - ticking a profile ticks all of it;
 - a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md).
 
@@ -35,7 +36,7 @@ A curtain follows the model's **display** in the section panel, and changes when
 
 The colour scale and the coverage fade follow too: the faded part is left out of the curtain.
 
-**Models in 3D**, **Contours in 3D**, **Boreholes in 3D** and **Ground in 3D** are temporary layers: they are not stored in the Groundwork file and are rebuilt from your models when you open the project.
+**Models in 3D**, **Contours in 3D**, **Boreholes in 3D**, **Ground in 3D** and **Profile names in 3D** are temporary layers: they are not stored in the Groundwork file and are rebuilt from your models when you open the project.
 
 The 3D layers are kept up to date only while a 3D map view is open: with none open, a change in the section panel (display, colour scale, fade, data) only marks them as out of date, so no point clouds or pictures are written that nobody sees. They catch up as soon as a 3D map view opens, or when you press **OK** in **Show in 3D…**. If you look at them in **Qgis2threejs** instead (it has no QGIS 3D map view), press **OK** in **Show in 3D…** to bring them up to date before you export.
 

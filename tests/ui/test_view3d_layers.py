@@ -219,7 +219,7 @@ def test_the_layers_keep_their_place_when_the_project_comes_back(setup):
     again = sync(st, provider, prj)
     assert again["models"].id() == first["models"].id()
     assert again["models"].featureCount() > 0
-    assert set(layers_3d(prj)) == {"models", "boreholes", "ground"}
+    assert set(layers_3d(prj)) == {"models", "boreholes", "ground", "names"}
 
 
 def test_a_borehole_without_collar_height_starts_at_the_sections_surface(setup):
@@ -1068,3 +1068,61 @@ def test_a_picture_the_user_shows_in_2d_again_stays_so(setup):
     provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
     assert sync(st, provider, prj)["pictures"][p.id] is picture     # drawn again
     assert not picture.hasScaleBasedVisibility()
+
+
+# -- profile names in 3D: a billboard per profile, above its start ---------------------------
+def _name_marker(layer, index=0):
+    """(QgsPoint3DSymbol, its font marker layer) of a names layer's category ``index``."""
+    from qgis._3d import QgsPoint3DSymbol
+    from qgis.PyQt import sip
+    categories = layer.renderer3D().categories()
+    clone = categories[index].symbol().clone()
+    _NAMES_KEEP.append(clone)
+    symbol = sip.cast(clone, QgsPoint3DSymbol)
+    marker = symbol.billboardSymbol()
+    return symbol, marker.symbolLayer(0)
+
+
+_NAMES_KEEP = []
+
+
+def test_each_profile_name_floats_above_its_start(setup):
+    from qgis.core import Qgis
+
+    from groundwork_geophysics.ui.view3d_layers import NAMES_NAME, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    names = sync(st, provider, prj, create=True)["names"]
+    assert names.name() == NAMES_NAME and names.featureCount() == 1
+    f = next(names.getFeatures())
+    assert f["profile"] == "P1"
+    pt = f.geometry().constGet()
+    x0, y0 = (float(v) for v in p.chainage.to_xy(0.0))
+    s, z = provider.surface(p.id).line
+    assert (pt.x(), pt.y()) == pytest.approx((x0, y0))
+    assert pt.z() > float(np.interp(0.0, s, z))
+    symbol, text = _name_marker(names)
+    assert symbol.shape() == Qgis.Point3DShape.Billboard
+    assert text.layerType() == "FontMarker" and text.character() == "P1"
+    assert not names.isInScaleRange(1000.0)          # the map labels the profiles already
+
+
+def test_a_renamed_profile_shows_its_new_name_in_the_users_look(setup):
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    names = sync(st, provider, prj, create=True)["names"]
+    r3d = names.renderer3D().clone()
+    symbol, text = _name_marker(names)
+    text.setColor(QColor("#c00000"))                  # the user's own colour
+    r3d.updateCategorySymbol(0, symbol.clone())
+    names.setRenderer3D(r3d)
+    p.name = "Line 7"
+    st.save_profile(p)
+    provider.notify_changed()
+    sync(st, provider, prj)
+    _symbol, text = _name_marker(names)
+    assert text.character() == "Line 7" and text.color().name() == "#c00000"
+    assert next(names.getFeatures())["profile"] == "Line 7"
