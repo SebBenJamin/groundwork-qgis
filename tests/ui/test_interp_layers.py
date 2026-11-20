@@ -381,3 +381,37 @@ def test_3d_lines_take_the_2d_width(qgis_app, interp_store):
     s3d = sip.cast(clone, QgsLine3DSymbol)
     assert s3d.width() == pytest.approx(96 / 25.4, rel=0.01)
     prj.clear()
+
+
+def test_restyling_from_2d_resets_every_3d_category_and_style(qgis_app, interp_store):
+    """Show in 3D's "Restyle the interpretation from 2D": a 3D category the user restyled
+    follows its 2D style again, and a layer whose 3D style was replaced or removed gets the
+    categorized one back."""
+    from qgis._3d import (QgsLine3DSymbol, QgsPhongMaterialSettings, QgsPolygon3DSymbol,
+                          QgsVectorLayer3DRenderer)
+    from qgis.core import Qgis
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui.interp_layers import interp_layers, restyle_from_2d
+    prj, polys = _poly_layer(interp_store)
+    r3d = polys.renderer3D().clone()
+    own = QgsPolygon3DSymbol()
+    own.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor("#123456"))
+    own.setMaterialSettings(material)
+    r3d.updateCategorySymbol(0, own)
+    polys.setRenderer3D(r3d)
+    layers = interp_layers(interp_store, prj)
+    layers["interp_lines_3d"].setRenderer3D(QgsVectorLayer3DRenderer(QgsLine3DSymbol()))
+    layers["interp_points_3d"].setRenderer3D(None)
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#123456"
+    assert restyle_from_2d(interp_store, prj) == 3
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#ff0000"
+    for name in ("interp_lines_3d", "interp_points_3d"):
+        r = layers[name].renderer3D()
+        assert r is not None and r.type() == "categorized"
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#00ff00"   # follows again
+    prj.clear()

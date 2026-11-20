@@ -414,15 +414,26 @@ class WorkbenchPlugin:
             return
         choice = dialog.choice()
         write_choice(project, choice)
-        project_actions.fit_station_spheres(self.store, project)   # stations imported since
+        # the chosen size, or one fitting the stations imported since
+        project_actions.fit_station_spheres(self.store, project,
+                                            (choice.station_size or 0) / 2 or None)
+        restyled = ""
+        if dialog.restyle_interpretation():
+            from .ui import interp_layers as interp_module
+            if interp_module.restyle_from_2d(self.store, project):
+                restyled = " The interpretation's 3D style follows its 2D style again."
         layers = self._sync_3d(create=True)
         if not choice.models and not choice.boreholes:
-            self._info("Nothing is shown in 3D.")
+            self._info(f"Nothing is shown in 3D.{restyled}")
             return
         summary = f"Shown in 3D: {view3d_layers.shown_summary(layers)}"
         if not layers:
-            self._info(f"{summary}.")
+            self._info(f"{summary}.{restyled}")
             return
+        self._show_3d_view(project, summary, restyled)
+
+    def _show_3d_view(self, project, summary: str, restyled: str) -> None:
+        """Open (or use) a 3D map view on what is shown, and say so."""
         try:
             box = view3d_layers.shown_box(self.store, self.provider, project)
         except Exception:
@@ -431,15 +442,15 @@ class WorkbenchPlugin:
         if self.view3d_link is not None:
             self.view3d_link.poll()              # the 3D mouse follows a new view at once
         if view == view3d_view.ALREADY_OPEN:
-            self._info(f"{summary}, in the open 3D map view.")
+            text = f"{summary}, in the open 3D map view."
         elif view == view3d_view.READY:
-            self._info(f"{summary}, in a new 3D map view.")
+            text = f"{summary}, in a new 3D map view."
         elif view == view3d_view.OPENED:
-            self._info(f"{summary}, in a new 3D map view. If the curtains are hidden, switch "
-                       f"its terrain off in the view's settings.")
+            text = (f"{summary}, in a new 3D map view. If the curtains are hidden, switch its "
+                    f"terrain off in the view's settings.")
         else:
-            self._info(f"{summary}. Open a 3D map view with View → 3D Map Views → "
-                       f"New 3D Map View.")
+            text = f"{summary}. Open a 3D map view with View → 3D Map Views → New 3D Map View."
+        self._info(text + restyled)
 
     def _project_write(self, *_):
         derived_layers.save_style(QgsProject.instance())

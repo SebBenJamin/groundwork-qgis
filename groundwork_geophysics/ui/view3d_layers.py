@@ -1,9 +1,13 @@
 """Show in 3D: the models and boreholes the user ticked, as two temporary layers for QGIS's
 3D view (and Qgis2threejs), never stored in the GeoPackage.
 
-"Models in 3D" holds one vertical 3D polygon per model cell under its profile, coloured as
-the section draws it; "Boreholes in 3D" one vertical 3D line per log interval of the
-boreholes the ticked profiles' sections show, at their map position. The choice lives in
+Each ticked model stands as its section shows it ("Models in 3D" holds one vertical 3D
+polygon per model cell under its profile, coloured as the section draws it; a smooth model
+is a point cloud, contours are lines), as a point cloud whatever the section shows, or in
+its profile's section picture (3D Tiles: the profile's picture models in one picture, as the
+section stacks them, optionally with the interpretation). "Boreholes in 3D" holds one round
+column per log interval of the boreholes the ticked profiles' sections show, at their map
+position. The choice lives in
 the project (entry ``view3d``); the layers are refilled from it whenever the data, the
 section's colour scale or its fade change, and when the store is opened. Their styles (2D
 and 3D) are written once when a layer is created and are the user's afterwards; they travel
@@ -33,12 +37,14 @@ BOREHOLES_NAME = "Boreholes in 3D"
 CONTOURS_NAME = "Contours in 3D"
 SMOOTH_GROUP = "Smooth models in 3D"
 PICTURES_GROUP = "Section pictures in 3D"
-#: how ticked models are shown: as layers (cells, point clouds, contour lines) or as
-#: pictures of their section (3D Tiles)
-LOOKS = ("layers", "pictures")
+#: how a ticked model stands in 3D: as its section shows it (cells, a point cloud or contour
+#: lines, by its display there), as a point cloud whatever the section shows (with the
+#: section's contour lines when it shows them), or in its profile's section picture
+REPRESENTATIONS = ("section", "cloud", "picture")
 ENTRY = "view3d"
 _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "boreholes", ... "cloud"
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
+_PROFILE = f"{LEGACY_ID}/view3d_profile"   # a section picture's profile id
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
@@ -63,25 +69,60 @@ _FILLED = "groundworkFilled"            # Qt property: this layer object was fil
 class Choice:
     models: frozenset = field(default_factory=frozenset)       # dataset ids
     boreholes: frozenset = field(default_factory=frozenset)    # profile ids
-    look: str = "layers"                                        # one of LOOKS
+    #: dataset id -> "cloud" or "picture"; a model not in it stands as its section shows it
+    looks: dict = field(default_factory=dict, hash=False)
+    interpretation: bool = False        # the section pictures show the interpretation
+    borehole_width: float | None = None     # the columns' diameter (m); None: automatic
+    station_size: float | None = None       # the station spheres' diameter (m); None: automatic
+
+    def __post_init__(self):
+        looks = {str(k): v for k, v in dict(self.looks or {}).items()
+                 if v in REPRESENTATIONS[1:]}
+        object.__setattr__(self, "looks", looks)
+
+    def look_of(self, dataset_id: str) -> str:
+        """The dataset's representation, one of ``REPRESENTATIONS``."""
+        return self.looks.get(dataset_id, REPRESENTATIONS[0])
+
+
+def _size(value) -> float | None:
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return None
+    return size if np.isfinite(size) and size > 0 else None
 
 
 def read_choice(project: QgsProject) -> Choice:
     text = project.readEntry(SCOPE, ENTRY, "")[0]
     try:
         data = json.loads(text) if text else {}
-        look = str(data.get("look", LOOKS[0]))
-        return Choice(frozenset(str(i) for i in data.get("models", [])),
-                      frozenset(str(i) for i in data.get("boreholes", [])),
-                      look if look in LOOKS else LOOKS[0])
+        models = frozenset(str(i) for i in data.get("models", []))
+        looks = data.get("looks")
+        if not isinstance(looks, dict):          # saved before a look per model
+            looks = {m: "picture" for m in models} if data.get("look") == "pictures" else {}
+        return Choice(models, frozenset(str(i) for i in data.get("boreholes", [])), looks,
+                      bool(data.get("interpretation", False)),
+                      _size(data.get("borehole_width")), _size(data.get("station_size")))
     except (ValueError, AttributeError, TypeError):
         return Choice()
 
 
 def write_choice(project: QgsProject, choice: Choice) -> None:
-    project.writeEntry(SCOPE, ENTRY, json.dumps({"models": sorted(choice.models),
-                                                 "boreholes": sorted(choice.boreholes),
-                                                 "look": choice.look}))
+    project.writeEntry(SCOPE, ENTRY, json.dumps({
+        "models": sorted(choice.models), "boreholes": sorted(choice.boreholes),
+        "looks": dict(sorted(choice.looks.items())), "interpretation": choice.interpretation,
+        "borehole_width": choice.borehole_width, "station_size": choice.station_size}))
+
+
+def auto_borehole_width(store) -> float:
+    """The borehole columns' diameter (m) without a chosen width: from the station spacing."""
+    return 4 * station_radius(store)
+
+
+def auto_station_size(store) -> float:
+    """The station spheres' diameter (m) without a chosen size: from the station spacing."""
+    return 2 * station_radius(store)
 
 
 def layers_3d(project: QgsProject) -> dict[str, QgsVectorLayer]:
@@ -101,12 +142,17 @@ def clouds_3d(project: QgsProject) -> dict:
             if isinstance(layer, QgsPointCloudLayer) and layer.customProperty(_FLAG) == "cloud"}
 
 
-def pictures_3d(project: QgsProject) -> dict:
-    """The section pictures (3D Tiles) in the project by dataset id."""
+def _picture_layers(project: QgsProject) -> list:
     from qgis.core import QgsTiledSceneLayer
-    return {layer.customProperty(_DATASET): layer for layer in project.mapLayers().values()
+    return [layer for layer in project.mapLayers().values()
             if isinstance(layer, QgsTiledSceneLayer)
-            and layer.customProperty(_FLAG) == "picture"}
+            and layer.customProperty(_FLAG) == "picture"]
+
+
+def pictures_3d(project: QgsProject) -> dict:
+    """The section pictures (3D Tiles) in the project by profile id."""
+    return {layer.customProperty(_PROFILE): layer for layer in _picture_layers(project)
+            if layer.customProperty(_PROFILE)}
 
 
 def cloud_folder(store) -> Path:
@@ -369,8 +415,8 @@ def _as_cells(section_layer) -> bool:
     return section_layer.style.mode not in _SMOOTH + _LINES
 
 
-def _sync_models(store, project, gathered, create: bool):
-    chosen = [(p, d, la) for p, d, la in gathered if not _shown(la) or _as_cells(la)]
+def _sync_models(store, project, chosen, create: bool):
+    """The cells of ``chosen`` (those shown as cells) in "Models in 3D"."""
     old = layers_3d(project).get("models")
     if old is not None and not QgsWkbTypes.isMultiType(old.wkbType()):
         _built.pop(old.id(), None)                  # saved while cells were one face
@@ -516,9 +562,9 @@ def _drop_cloud(project, layer) -> None:
     project.removeMapLayer(layer.id())
 
 
-def _sync_clouds(store, provider, project, gathered, may_create, retry, topo_of) -> dict:
-    wanted = {d.id: (p, d, la) for p, d, la in gathered
-              if _shown(la) and la.style.mode in _SMOOTH}
+def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -> dict:
+    """A point cloud for each of ``chosen`` (shown models standing as a cloud)."""
+    wanted = {d.id: (p, d, la) for p, d, la in chosen}
     existing = clouds_3d(project)
     for did, layer in existing.items():
         if did not in wanted:
@@ -589,14 +635,48 @@ def _picture_file(layer) -> Path | None:
     return Path(local) if local else None
 
 
-def _picture_signature(section_layer, profile, topo) -> str:
-    """A short stable fingerprint of what a picture shows: everything the section draws."""
+def _symbol_text(symbol) -> str:
+    from qgis.core import QgsSymbolLayerUtils
+    try:
+        return QgsSymbolLayerUtils.symbolProperties(symbol)
+    except Exception:                            # never let a fingerprint stop a picture
+        return repr(symbol)
+
+
+def _interp_signature(interpretation) -> str:
+    """A fingerprint of the interpretation a picture paints: its pieces in drawing order,
+    their names, symbols (the 2D style) and the attributes that drive them."""
+    if not interpretation:
+        return ""
+    pieces, features, symbols = interpretation
+    h = hashlib.sha1()
+    for piece in pieces:
+        feat = features.get(piece.feature_id)
+        h.update(repr((piece.id, piece.kind, [(float(s), float(z)) for s, z in piece.vertices],
+                       None if feat is None else feat.name)).encode())
+        entry = symbols.get(piece.id)
+        if entry is None:
+            continue
+        symbol, feature = entry if isinstance(entry, tuple) else (entry, None)
+        h.update(_symbol_text(symbol).encode())
+        if feature is not None:
+            h.update(repr(feature.attributes()).encode())
+    return h.hexdigest()
+
+
+def _picture_signature(layers, profile, topo, interpretation=None) -> str:
+    """A short stable fingerprint of what a profile's picture shows: everything the section
+    draws of its models (in their order) and, when painted in, the interpretation."""
     from ..section import picture
-    style = section_layer.style
-    h = hashlib.sha1(_cloud_signature(section_layer, profile, topo).encode())
-    h.update(repr((style.mode, style.contour_step, tuple(style.contour_major),
-                   tuple(style.contour_minor), style.opacity, picture.PX_PER_M,
-                   picture.MAX_PIXELS, picture.LABEL_SHARE, 1)).encode())
+    h = hashlib.sha1()
+    for section_layer in layers:
+        style = section_layer.style
+        h.update(_cloud_signature(section_layer, profile, topo).encode())
+        h.update(repr((section_layer.dataset.id, style.mode, style.contour_step,
+                       tuple(style.contour_major), tuple(style.contour_minor),
+                       style.opacity)).encode())
+    h.update(repr((picture.PX_PER_M, picture.MAX_PIXELS, picture.LABEL_SHARE, 2)).encode())
+    h.update(_interp_signature(interpretation).encode())
     return h.hexdigest()[:10]
 
 
@@ -610,9 +690,11 @@ def _png(image) -> bytes:
     return bytes(data)
 
 
-def _write_picture(path: Path, store, project, profile, section_layer, topo) -> bool:
-    """The model's section picture as a tileset at ``path`` (and its glTF beside it); False
-    when nothing is painted."""
+def _write_picture(path: Path, store, project, profile, layers, topo,
+                   interpretation=None) -> bool:
+    """The profile's section picture of ``layers`` (bottom first; with ``interpretation``
+    over them) as a tileset at ``path`` (and its glTF beside it); False when nothing is
+    painted."""
     from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                            QgsVector3D)
 
@@ -622,7 +704,7 @@ def _write_picture(path: Path, store, project, profile, section_layer, topo) -> 
     bends = bend_chainages(profile.chainage)
     gap = curtain_gap(profile.chainage.length)
     raw = []
-    for pic in section_pictures(section_layer, topo):
+    for pic in section_pictures(layers, topo, interpretation):
         if not pic.alpha.any():
             continue
         sz, tris = picture_strip(pic.alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
@@ -677,11 +759,11 @@ def _busy(work, *args):
         QGuiApplication.restoreOverrideCursor()
 
 
-def _new_picture(project: QgsProject, path: Path, name: str, dataset_id: str):
+def _new_picture(project: QgsProject, path: Path, name: str, profile_id: str):
     from qgis.core import QgsTiledSceneLayer
     layer = QgsTiledSceneLayer(_picture_source(path), name, "cesiumtiles")
     layer.setCustomProperty(_FLAG, "picture")
-    layer.setCustomProperty(_DATASET, dataset_id)
+    layer.setCustomProperty(_PROFILE, profile_id)
     try:
         from qgis._3d import QgsTiledSceneLayer3DRenderer
         layer.setRenderer3D(QgsTiledSceneLayer3DRenderer())
@@ -700,49 +782,81 @@ def _drop_picture(project, layer) -> None:
     project.removeMapLayer(layer.id())
 
 
-def _sync_pictures(store, project, gathered, may_create, retry, topo_of) -> dict:
-    wanted = {d.id: (p, d, la) for p, d, la in gathered if _shown(la)}
+def _interpretation(provider, profile_id: str):
+    """(pieces, features, symbols) of the interpretation the section draws on the profile
+    (the version it shows; a compared version and crossing marks stay out), or None."""
+    try:
+        snap = provider.snapshot(profile_id)
+    except Exception as exc:
+        _log(f"3D view: the interpretation of a section picture could not be gathered: {exc}")
+        return None
+    if not snap.interpretation:
+        return None
+    return snap.interpretation, snap.interp_features, snap.interp_symbols
+
+
+def _section_order(provider, profile_id: str, layers: list) -> list:
+    """``layers`` in the order the section draws them (bottom first)."""
+    try:
+        order = {la.dataset.id: i for i, la in enumerate(provider.layers(profile_id))}
+    except Exception:
+        return layers
+    return sorted(layers, key=lambda la: order.get(la.dataset.id, len(order)))
+
+
+def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_create, retry,
+                   topo_of) -> dict:
+    """One section picture per profile of the ``chosen`` models (shown ones), all of them in
+    it as the section stacks them; with ``interpretation``, the profile's interpretation
+    painted over them. By profile id."""
+    wanted: dict = {}
+    for profile, _d, section_layer in chosen:
+        if _shown(section_layer):
+            wanted.setdefault(profile.id, (profile, []))[1].append(section_layer)
     existing = pictures_3d(project)
-    for did, layer in existing.items():
-        if did not in wanted:
-            _drop_picture(project, layer)
+    for layer in _picture_layers(project):
+        pid = layer.customProperty(_PROFILE)
+        if pid not in wanted or existing.get(pid) is not layer:
+            _drop_picture(project, layer)           # also one saved per model, before 0.14
     folder = cloud_folder(store)
     out = {}
-    for did, (profile, d, section_layer) in wanted.items():
-        layer = existing.get(did)
-        allowed = may_create(f"picture:{did}")
+    for pid, (profile, layers) in wanted.items():
+        layer = existing.get(pid)
+        allowed = may_create(f"picture:{pid}")
         if layer is None and not allowed:
             continue                            # e.g. the user removed it
-        topo = topo_of(profile.id)
+        topo = topo_of(pid)
+        layers = _section_order(provider, pid, layers)
         failed = False
         try:
-            path = folder / f"{did}-{_picture_signature(section_layer, profile, topo)}.json"
+            interp = _interpretation(provider, pid) if interpretation else None
+            path = folder / f"{pid}-{_picture_signature(layers, profile, topo, interp)}.json"
             if layer is not None and layer.isValid() and _picture_file(layer) == path \
                     and path.exists():
-                out[did] = layer
+                out[pid] = layer
                 continue
             # the same signature always gives the same files: ones already there are reused
             painted = (path.exists() and path.with_suffix(".glb").exists()) or \
-                _busy(_write_picture, path, store, project, profile, section_layer, topo)
+                _busy(_write_picture, path, store, project, profile, layers, topo, interp)
         except Exception as exc:
-            _log(f"3D view: '{d.name or d.id}' could not be shown as a picture: {exc}")
+            _log(f"3D view: the section picture of '{profile.name}' could not be drawn: {exc}")
             painted, failed = False, True
         if not painted:
             if not failed:
-                _log(f"3D view: '{d.name or d.id}' has nothing to show as a picture")
+                _log(f"3D view: the section picture of '{profile.name}' has nothing to show")
             if layer is not None:
                 _drop_picture(project, layer)
-            retry(f"picture:{did}")
+            retry(f"picture:{pid}")
             continue
         _stale.difference_update(_companions(path))
         if layer is None:
-            layer = _new_picture(project, path, d.name or d.id, did)
+            layer = _new_picture(project, path, profile.name, pid)
         else:
             old = _picture_file(layer)
             if old is not None:
                 _let_go(old)
             layer.setDataSource(_picture_source(path), layer.name(), "cesiumtiles")
-        out[did] = layer
+        out[pid] = layer
     _drop_empty_group(project, PICTURES_GROUP)
     return out
 
@@ -773,9 +887,11 @@ def _contour_features(layer, profile, dataset, section_layer, topo) -> list[QgsF
     return out
 
 
-def _sync_contours(store, project, gathered, may_create, topo_of):
-    chosen = [(p, d, la) for p, d, la in gathered if _shown(la) and la.style.mode in _LINES]
-    layer = _layer(store, project, "contours", bool(chosen), may_create("contours"))
+def _sync_contours(store, project, chosen, may_create, topo_of):
+    """The contour lines of ``chosen`` (shown models with the section's lines)."""
+    # noted only while lines are needed: a model switched to contours later gets its layer
+    layer = _layer(store, project, "contours", bool(chosen),
+                   may_create("contours") if chosen else False)
     if layer is None:
         return None
     built = _fresh(layer)
@@ -883,7 +999,7 @@ def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
     if layer is None:
         return None
     rows = _borehole_rows(store, provider, project, choice)
-    radius = 2 * station_radius(store)
+    radius = (choice.borehole_width or auto_borehole_width(store)) / 2
     signature = [(pid, label, lid, iv) for pid, label, lid, iv in rows] + [radius]
     built = _fresh(layer)
     built["hidden"] = _hidden(store, choice)
@@ -914,14 +1030,14 @@ def _hidden(store, choice: Choice) -> tuple:
 
 
 def shown_summary(layers: dict) -> str:
-    """What ``sync`` put into 3D, in words: "1 234 model cells, 2 smooth models, …"."""
+    """What ``sync`` put into 3D, in words: "1 234 model cells, 2 point clouds, …"."""
     from qgis.PyQt.QtCore import QLocale
     loc, parts = QLocale(), []
     if "models" in layers:
         parts.append(f"{loc.toString(layers['models'].featureCount())} model cells")
     if layers.get("clouds"):
         n = len(layers["clouds"])
-        parts.append(f"{loc.toString(n)} smooth model{'' if n == 1 else 's'}")
+        parts.append(f"{loc.toString(n)} point cloud{'' if n == 1 else 's'}")
     if "contours" in layers:
         parts.append(f"{loc.toString(layers['contours'].featureCount())} contour lines")
     if layers.get("pictures"):
@@ -969,9 +1085,11 @@ def shown_box(store, provider, project: QgsProject) -> tuple | None:
 
 def sync(store, provider, project: QgsProject, create: bool = False,
          boreholes: bool = True) -> dict:
-    """Fill the 3D layers for the project's choice, each model as its section draws it:
-    cells in "Models in 3D", a smooth one as a point cloud of its own, contours in
-    "Contours in 3D" (``out["clouds"]``: dataset id -> cloud layer). A layer is created when
+    """Fill the 3D layers for the project's choice, each model in its representation: as
+    its section draws it (cells in "Models in 3D", a smooth one as a point cloud of its own,
+    contours in "Contours in 3D"), as a point cloud, or in its profile's section picture
+    (``out["clouds"]``: dataset id -> cloud layer; ``out["pictures"]``: profile id ->
+    picture layer). A layer is created when
     ``create`` (the user asked) or when a model's mode newly needs it, never just because the
     project was opened; it is removed when nothing needs it any more. Ids that no longer
     exist are ignored; a model that cannot be read is left out (and logged). Without
@@ -993,22 +1111,26 @@ def sync(store, provider, project: QgsProject, create: bool = False,
         return topos[profile_id]
 
     out = {}
-    pictures_look = choice.look == "pictures"
-    as_layers = [] if pictures_look else gathered
-    models = _sync_models(store, project, as_layers,
-                          may_create("models") if any(not _shown(la) or _as_cells(la)
-                                                      for _p, _d, la in as_layers) else create)
+    look = {d.id: choice.look_of(d.id) for _p, d, _la in gathered}
+    cells = [(p, d, la) for p, d, la in gathered
+             if look[d.id] == "section" and (not _shown(la) or _as_cells(la))]
+    smooth = [(p, d, la) for p, d, la in gathered if _shown(la) and (
+        look[d.id] == "cloud" or (look[d.id] == "section" and la.style.mode in _SMOOTH))]
+    lines = [(p, d, la) for p, d, la in gathered
+             if _shown(la) and look[d.id] != "picture" and la.style.mode in _LINES]
+    pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture"]
+    models = _sync_models(store, project, cells, may_create("models") if cells else create)
     if models is not None:
         out["models"] = models
-    clouds = _sync_clouds(store, provider, project, as_layers, may_create, needs.discard,
+    clouds = _sync_clouds(store, provider, project, smooth, may_create, needs.discard,
                           topo_of)
     if clouds:
         out["clouds"] = clouds
-    contours = _sync_contours(store, project, as_layers, may_create, topo_of)
+    contours = _sync_contours(store, project, lines, may_create, topo_of)
     if contours is not None:
         out["contours"] = contours
-    pictures = _sync_pictures(store, project, gathered if pictures_look else [], may_create,
-                              needs.discard, topo_of)
+    pictures = _sync_pictures(store, provider, project, pictured, choice.interpretation,
+                              may_create, needs.discard, topo_of)
     if pictures:
         out["pictures"] = pictures
     in_use = {Path(la.source()) for la in clouds_3d(project).values()}

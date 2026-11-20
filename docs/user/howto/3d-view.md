@@ -4,12 +4,18 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
 ## Show in 3D
 
-**Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see and press **OK**:
+**Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see, choose under **Show As** how each model stands there, and press **OK**:
 
-- a **model** stands as a curtain under its profile, at its real elevation, drawn the way its section draws it (see below);
-- **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing;
+- a **model** stands as a curtain under its profile, at its real elevation: **As in the Section** (the default) draws it the way its section draws it, **Point Cloud** and **Section Picture** are explained below;
+- **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing (or as wide as you set under **Sizes**, see below);
 - ticking a profile ticks all of it;
 - a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md).
+
+Below the list:
+
+- **Section pictures show the interpretation** paints the interpretation into the section pictures (see below);
+- **Restyle the interpretation from 2D** gives the interpretation's 3D style back to its 2D style when you press **OK** (see [Stations and the interpretation in 3D](#stations-and-the-interpretation-in-3d)); it is a one-off and is unticked again the next time;
+- **Sizes** (click to open): the **Borehole column width** and the **Station sphere size**, both diameters in metres. **Auto** sizes them from the distance between the stations; the tooltip says how big that is. The clear button next to a size goes back to **Auto**.
 
 Nothing is shown in 3D until you ask. Untick a model or a profile's boreholes to take them out again.
 
@@ -34,14 +40,17 @@ The 3D layers are kept up to date only while a 3D map view is open: with none op
 
 The **point clouds** are files: they are written to a folder next to the Groundwork file, named after it with **_3d** at the end (for `site_groundwork.gpkg`: `site_groundwork_3d`). They are made from your models whenever needed, and the plugin only ever deletes the files it wrote there. If the folder is missing when you open the project (deleted, or not copied along), QGIS asks about the unavailable layers: choose to keep them, and the curtains are written again once the project is open. The first time QGIS opens a point cloud it builds an index of it (a progress bar in the status bar), and the points show when that is done.
 
-## Section pictures instead of layers
+## Point clouds and section pictures
 
-At the bottom of **Show in 3D…**, **Show models as** offers two looks for all ticked models:
+**Show As** in **Show in 3D…** sets each model's look on its own, so one profile can have a section picture next to another profile's point cloud:
 
-- **Layers** (the default): cells, point clouds and contour lines as above. You can style them in QGIS and **Identify** their values.
-- **Section pictures (3D Tiles)**: each model exactly as its section draws it, in whatever display it has there, contour labels included, as a picture on a curtain under its profile. The picture is opaque, on the section panel's background colour: a faded or see-through model looks as it does in the panel, not see-through in 3D. One layer per model in the group **Section pictures in 3D**. Change the model's display, colour scale or fade in the section panel and its picture is drawn again. There are no values on Identify, and the look can't be restyled in QGIS: it is the section's.
+- **As in the Section** (the default): cells, a point cloud or contour lines, following the model's display in the section as above. You can style them in QGIS and **Identify** their values.
+- **Point Cloud**: the model's smooth field as a point cloud, whatever the section shows (also when it shows cells), with the contour lines when the section shows contours. Style and identify it as above.
+- **Section Picture**: the model exactly as its section draws it, in whatever display it has there, contour labels included, as a picture on a curtain under its profile. All models of a profile set to **Section Picture** are painted into **one** picture, stacked as the section stacks them (each with its opacity), so they never flicker in the same plane. One layer per profile, named after the profile, in the group **Section pictures in 3D**. The picture is opaque, on the section panel's background colour: a faded or see-through model looks as it does in the panel, not see-through in 3D. Change a model's display, colour scale or fade in the section panel and the picture is drawn again. There are no values on Identify, and the look can't be restyled in QGIS: it is the section's.
 
-The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per model) in the same folder as the point clouds. Long profiles are drawn coarser, so that a picture stays a reasonable size; still, drawing the pictures takes a few seconds (a busy cursor shows it), and every picture layer also costs the 2D map a moment when it redraws.
+With **Section pictures show the interpretation** ticked, each picture also shows the profile's interpretation over the models, exactly as the section panel draws it: fills, hatches, transparency, line styles and names. The picture is drawn again when you edit the interpretation or change its style (Symbology). Station and borehole names stay out of the picture. The interpretation's own 3D layers still stand in front of the picture; switch them off in the Layers panel if you only want the picture.
+
+The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per profile) in the same folder as the point clouds. Long profiles are drawn coarser, so that a picture stays a reasonable size; still, drawing the pictures takes a few seconds (a busy cursor shows it), and every picture layer also costs the 2D map a moment when it redraws.
 
 ## Opening a 3D map view
 
@@ -54,9 +63,9 @@ The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per model) in th
 
 ## Stations and the interpretation in 3D
 
-The **stations** stand as small spheres at their surveyed height, in the outline colour of their map symbol, sized to the distance between them; stations without a height are left out.
+The **stations** stand as small spheres at their surveyed height, in the outline colour of their map symbol, sized to the distance between them or to the **Station sphere size** set in **Show in 3D…**; stations without a height are left out. A size you set in the stations' own **3D View** properties is yours: **Show in 3D…** no longer changes it.
 
-The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as lines a few pixels wide, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. They follow their 2D style (Symbology), also when you change it: the colour, the fill's transparency and the outline. A hatched or patterned fill shows in its colour, half see-through, and a fill switched off shows only the outline: QGIS's 3D view can't draw patterns on upright polygons. Lines take their width. If an entity should look different in 3D, restyle it in the layer's properties → **3D View**: an entity you restyled there no longer follows its 2D style.
+The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as lines a few pixels wide, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. They follow their 2D style (Symbology), also when you change it: the colour, the fill's transparency and the outline. A hatched or patterned fill shows in its colour, half see-through, and a fill switched off shows only the outline: QGIS's 3D view can't draw patterns on upright polygons. Lines take their width. If an entity should look different in 3D, restyle it in the layer's properties → **3D View**: an entity you restyled there no longer follows its 2D style. To make every entity follow its 2D style again (also after you replaced or removed a layer's 3D style), tick **Restyle the interpretation from 2D** in **Show in 3D…** and press **OK**.
 
 The interpretation lies in the same plane as its profile's curtain. So that it never flickers with the curtain or hides behind it, cells and section pictures are drawn as two faces, each standing a little behind the plane as seen from its side (5 to 50 cm, depending on the profile's length): from either side, the interpretation is in front. Point clouds are drawn as they are.
 

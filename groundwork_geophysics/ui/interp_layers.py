@@ -310,6 +310,27 @@ def ensure_3d_styles(store: ProjectStore, project: QgsProject) -> int:
     return changed
 
 
+def restyle_from_2d(store: ProjectStore, project: QgsProject) -> int:
+    """Show in 3D's "Restyle the interpretation from 2D": every entity's 3D style follows its
+    2D style again, also one the user restyled in 3D; a layer whose categorized 3D style was
+    replaced or removed gets it back. Returns how many layers were restyled."""
+    if not _has_3d():
+        return 0
+    changed = 0
+    for name, layer in interp_layers(store, project).items():
+        if name not in LAYERS_3D:
+            continue
+        r3d = layer.renderer3D()
+        layer.removeCustomProperty(SYMBOLS_3D)          # every 3D category counts as ours
+        if r3d is None or r3d.type() != "categorized" or r3d.classAttribute() != "feature_id":
+            default_3d(layer)
+        else:
+            sync_3d(layer)
+        follow_2d(layer)
+        changed += 1
+    return changed
+
+
 #: a reference to the 0.7 field ``letter`` in a saved style: quoted in an expression (plain
 #: or XML-escaped) or as an attribute value (``fieldName="letter"``, ``attr="letter"``)
 _LETTER_REF = re.compile(r'(&quot;|")letter(&quot;|")')

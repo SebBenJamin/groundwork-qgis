@@ -130,3 +130,41 @@ def test_a_project_opened_with_a_3d_view_open_is_filled(plugin, store_with_model
     views.append(_canvas())
     plug.set_store(store_with_model[0])
     assert calls == [False]
+
+
+def test_ok_sizes_the_station_spheres_as_chosen(plugin, store_with_model, monkeypatch):
+    from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
+    from qgis.core import QgsProject
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.project_actions import add_store_layers
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    plug, iface, views, calls, shown = plugin
+    st = store_with_model[0]
+    stations = add_store_layers(st, QgsProject.instance())["stations"]
+    plug.set_store(st)
+    monkeypatch.setattr(View3dDialog, "exec", lambda self: 1)
+    monkeypatch.setattr(View3dDialog, "choice",
+                        lambda self: Choice(frozenset({"d1"}), station_size=0.5))
+    plug.show_in_3d()
+    rule = sip.cast(stations.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()[0]
+    assert sip.cast(rule.symbol(), QgsPoint3DSymbol).shapeProperties()["radius"] == \
+        pytest.approx(0.25)
+
+
+def test_ok_restyles_the_interpretation_from_2d_when_ticked(plugin, store_with_model,
+                                                           monkeypatch):
+    from groundwork_geophysics.ui import interp_layers
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    plug, iface, views, calls, shown = plugin
+    plug.set_store(store_with_model[0])
+    restyled = []
+    monkeypatch.setattr(interp_layers, "restyle_from_2d",
+                        lambda store, project: restyled.append(store) or 3)
+    _press_ok(monkeypatch)
+    plug.show_in_3d()
+    assert restyled == []
+    monkeypatch.setattr(View3dDialog, "restyle_interpretation", lambda self: True)
+    plug.show_in_3d()
+    assert restyled == [store_with_model[0]] and "follows its 2D style" in shown[-1]

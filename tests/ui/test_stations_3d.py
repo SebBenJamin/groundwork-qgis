@@ -146,3 +146,31 @@ def test_fitting_the_spheres_keeps_the_users_colour(project, tmp_path):
     assert fitted.shapeProperties()["radius"] == pytest.approx(0.15)
     assert fitted.materialSettings().diffuse().name() == QColor("red").name()
     assert rule.description() == "mine"
+
+
+def test_the_spheres_take_the_size_chosen_in_show_in_3d(project, tmp_path):
+    """The chosen size is a diameter; only the plugin's own style is resized, and Auto (no
+    size) goes back to the station spacing."""
+    import numpy as np
+    from qgis._3d import QgsPoint3DSymbol
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.core.model import profile_from_stations
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import (add_store_layers, fit_station_spheres,
+                                                          style_stations_3d)
+    st = ProjectStore.create(tmp_path / "s.gpkg", "EPSG:25832")
+    stations = add_store_layers(st, project)["stations"]
+    xyz = np.column_stack([np.arange(11) * 0.5, np.zeros(11), np.full(11, 100.0)])
+    p, s = profile_from_stations("P", "EPSG:25832", xyz)
+    st.save_profile(p)
+    st.save_station_set(s)
+
+    def radius():
+        return sip.cast(_rule(stations).symbol(), QgsPoint3DSymbol).shapeProperties()["radius"]
+
+    assert fit_station_spheres(st, project, 0.25) and radius() == pytest.approx(0.25)
+    assert fit_station_spheres(st, project) and radius() == pytest.approx(0.15)   # Auto
+    style_stations_3d(stations, 1.0)
+    stations.setCustomProperty("groundwork/station_radius", None)  # as the user's own style
+    assert not fit_station_spheres(st, project, 0.25) and radius() == pytest.approx(1.0)

@@ -252,11 +252,13 @@ def _sphere_radius(layer: QgsVectorLayer) -> float | None:
         return None
 
 
-def fit_station_spheres(store: ProjectStore, project: QgsProject) -> bool:
-    """Size the stations' spheres to the stations there are now (a new project's layer was
-    styled before any were imported); only while the 3D style is still the plugin's, never
-    a radius the user set. Only the radius changes: a colour or rule of the user's stays.
-    True when it changed them; never raises."""
+def fit_station_spheres(store: ProjectStore, project: QgsProject,
+                        radius: float | None = None) -> bool:
+    """Size the stations' spheres to ``radius`` (m; the size chosen in Show in 3D), or to
+    the stations there are now (a new project's layer was styled before any were imported);
+    only while the 3D style is still the plugin's, never a radius the user set. Only the
+    radius changes: a colour or rule of the user's stays. True when it changed them; never
+    raises."""
     layer = store_layers(store, project).get("stations")
     if layer is None:
         return False
@@ -265,7 +267,7 @@ def fit_station_spheres(store: ProjectStore, project: QgsProject) -> bool:
         current = _sphere_radius(layer)
         if given is None or current is None or abs(current - float(given)) > 1e-9:
             return False
-        wanted = station_radius(store)
+        wanted = float(radius) if radius else station_radius(store)
         if abs(wanted - current) <= 1e-9:
             return False
         _set_sphere_radius(layer, wanted)

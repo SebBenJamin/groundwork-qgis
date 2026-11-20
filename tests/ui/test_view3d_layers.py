@@ -43,9 +43,9 @@ def setup(qgis_app, tmp_path):
     return st, p, provider, QgsProject()
 
 
-def _choose(prj, models=(), boreholes=()):
+def _choose(prj, models=(), boreholes=(), **kw):
     from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
-    write_choice(prj, Choice(frozenset(models), frozenset(boreholes)))
+    write_choice(prj, Choice(frozenset(models), frozenset(boreholes), **kw))
 
 
 def test_choice_round_trips_through_the_project(setup):
@@ -358,6 +358,23 @@ def test_boreholes_are_columns_you_can_see_and_identify(setup):
     assert radius == pytest.approx(2 * station_radius(st), rel=1e-6)
 
 
+def test_the_borehole_columns_take_the_width_chosen(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+
+    def radius(layer):
+        f = next(layer.getFeatures())
+        centre = f.geometry().centroid().asPoint()
+        return max(((v.x() - centre.x()) ** 2 + (v.y() - centre.y()) ** 2) ** 0.5
+                   for v in f.geometry().constGet().vertices())
+
+    _choose(prj, boreholes=[p.id], borehole_width=1.5)        # the diameter
+    lyr = sync(st, provider, prj, create=True)["boreholes"]
+    assert radius(lyr) == pytest.approx(0.75, rel=1e-6)
+    _choose(prj, boreholes=[p.id], borehole_width=3.0)
+    assert radius(sync(st, provider, prj)["boreholes"]) == pytest.approx(1.5, rel=1e-6)
+
+
 def test_a_borehole_layer_saved_as_lines_becomes_columns(setup):
     """A project saved while boreholes were lines comes back with columns."""
     from qgis.core import QgsVectorLayer, QgsWkbTypes
@@ -502,7 +519,7 @@ def test_the_message_counts_cells_smooth_models_lines_and_intervals(setup):
     _mode(provider, p, "smooth+contours")
     _choose(prj, ["d"], [p.id])
     text = shown_summary(sync(st, provider, prj, create=True))
-    assert "1 smooth model" in text and "contour lines" in text
+    assert "1 point cloud" in text and "contour lines" in text
     assert "borehole intervals" in text and "model cells" not in text
     assert shown_summary({}) == "nothing that could be built"
 
@@ -598,22 +615,70 @@ def test_a_new_project_does_not_inherit_what_the_last_one_showed(setup, fake_ifa
         prj.setProperty("groundwork3dNeeds", None)
 
 
-# -- section pictures (3D Tiles) as the other look -----------------------------------------
-def _choose_pictures(prj, models=(), boreholes=()):
-    from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
-    write_choice(prj, Choice(frozenset(models), frozenset(boreholes), "pictures"))
-
-
-def test_the_look_round_trips_with_the_choice(setup):
-    from groundwork_geophysics.ui.view3d_layers import read_choice
+# -- a representation per model -----------------------------------------------------------
+def test_the_representations_and_options_round_trip_with_the_choice(setup):
+    from groundwork_geophysics.ui.view3d_layers import Choice, read_choice
     _st, _p, _provider, prj = setup
-    _choose_pictures(prj, ["d"])
-    assert read_choice(prj).look == "pictures"
+    _choose(prj, ["d", "e"], looks={"d": "picture", "e": "cloud"}, interpretation=True,
+            borehole_width=1.5, station_size=0.25)
+    choice = read_choice(prj)
+    assert choice == Choice(frozenset({"d", "e"}), frozenset(), {"d": "picture", "e": "cloud"},
+                            True, 1.5, 0.25)
+    assert choice.look_of("d") == "picture" and choice.look_of("x") == "section"
     _choose(prj, ["d"])
-    assert read_choice(prj).look == "layers"
+    assert read_choice(prj) == Choice(frozenset({"d"}))
+    assert read_choice(prj).borehole_width is None and not read_choice(prj).interpretation
 
 
-def test_pictures_are_one_tiled_scene_per_model_and_nothing_else(setup):
+def test_an_older_choice_of_pictures_gives_every_model_a_picture(setup):
+    import json
+
+    from groundwork_geophysics.ui.project_actions import SCOPE
+    from groundwork_geophysics.ui.view3d_layers import ENTRY, read_choice
+    _st, _p, _provider, prj = setup
+    prj.writeEntry(SCOPE, ENTRY, json.dumps({"models": ["d", "e"], "boreholes": [],
+                                             "look": "pictures"}))
+    choice = read_choice(prj)
+    assert choice.look_of("d") == choice.look_of("e") == "picture"
+    prj.writeEntry(SCOPE, ENTRY, json.dumps({"models": ["d"], "look": "layers",
+                                             "looks": {"d": "nonsense"}}))
+    assert read_choice(prj).look_of("d") == "section"
+
+
+def test_a_point_cloud_whatever_the_section_shows(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "cells")
+    _choose(prj, ["d"], looks={"d": "cloud"})
+    out = sync(st, provider, prj, create=True)
+    assert out["clouds"]["d"].isValid() and out["clouds"]["d"].pointCount() > 0
+    assert {"models", "contours", "pictures"}.isdisjoint(out)
+    _mode(provider, p, "contours")                    # with the section's contour lines
+    out = sync(st, provider, prj)
+    assert out["clouds"]["d"].isValid() and out["contours"].featureCount() > 0
+
+
+def test_models_of_different_representations_mix(setup, tmp_path):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _model(st, p, tmp_path, did="e")
+    _model(st, p, tmp_path, did="f")
+    provider.notify_changed()
+    _mode(provider, p, "cells", did="d")
+    _mode(provider, p, "cells", did="e")
+    _mode(provider, p, "smooth", did="f")
+    _choose(prj, ["d", "e", "f"], looks={"e": "picture"})
+    out = sync(st, provider, prj, create=True)
+    assert {f["dataset_id"] for f in out["models"].getFeatures()} == {"d"}
+    assert set(out["clouds"]) == {"f"} and set(out["pictures"]) == {p.id}
+
+
+# -- section pictures (3D Tiles), one per profile -------------------------------------------
+def _choose_pictures(prj, models=(), boreholes=(), **kw):
+    _choose(prj, models, boreholes, looks={m: "picture" for m in models}, **kw)
+
+
+def test_pictures_are_one_tiled_scene_per_profile_and_nothing_else(setup):
     from qgis.core import QgsTiledSceneLayer
 
     from groundwork_geophysics.ui.view3d_layers import (PICTURES_GROUP, cloud_folder,
@@ -622,9 +687,9 @@ def test_pictures_are_one_tiled_scene_per_model_and_nothing_else(setup):
     _mode(provider, p, "smooth+contours")
     _choose_pictures(prj, ["d"])
     out = sync(st, provider, prj, create=True)
-    picture = out["pictures"]["d"]
+    picture = out["pictures"][p.id]
     assert isinstance(picture, QgsTiledSceneLayer) and picture.isValid()
-    assert picture.name() == "Model d"
+    assert picture.name() == "P1"
     assert {"models", "clouds", "contours"}.isdisjoint(out)
     files = sorted(f.suffix for f in cloud_folder(st).iterdir())
     assert files == [".glb", ".json"]
@@ -673,17 +738,83 @@ def test_a_style_change_redraws_the_picture_in_the_same_layer(setup):
     st, p, provider, prj = setup
     _mode(provider, p, "smooth")
     _choose_pictures(prj, ["d"])
-    picture = sync(st, provider, prj, create=True)["pictures"]["d"]
+    picture = sync(st, provider, prj, create=True)["pictures"][p.id]
     old = picture.source()
     _mode(provider, p, "smooth+contours")
-    again = sync(st, provider, prj)["pictures"]["d"]
+    again = sync(st, provider, prj)["pictures"][p.id]
     sync(st, provider, prj)
     assert again is picture and again.isValid() and again.source() != old
     from groundwork_geophysics.ui.view3d_layers import cloud_folder
     assert len(list(cloud_folder(st).glob("*.json"))) == 1     # the old one let go
 
 
-def test_back_to_layers_removes_the_pictures(setup):
+def test_two_models_of_a_profile_are_one_picture(setup, tmp_path):
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder, pictures_3d, sync
+    st, p, provider, prj = setup
+    _model(st, p, tmp_path, did="e")
+    provider.notify_changed()
+    _choose_pictures(prj, ["d"])
+    first = sync(st, provider, prj, create=True)["pictures"][p.id]
+    one = first.source()
+    _choose_pictures(prj, ["d", "e"])
+    out = sync(st, provider, prj, create=True)
+    sync(st, provider, prj)
+    assert list(out["pictures"]) == [p.id] and out["pictures"][p.id] is first
+    assert first.source() != one and len(pictures_3d(prj)) == 1
+    assert len(list(cloud_folder(st).glob("*.json"))) == 1     # the old one let go
+    assert len(list(cloud_folder(st).glob("*.glb"))) == 1
+
+
+def _interp_piece(provider, p, name="K", line=False):
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    st = provider.store
+    s0, s1, z0, z1 = provider.layers(p.id)[0].mesh.bounds()
+    sm, zm = (s0 + s1) / 2, (z0 + z1) / 2
+    vertices = [(sm - 5, zm), (sm + 5, zm - 2)] if line else \
+        [(sm - 5, zm + 1), (sm + 5, zm + 1), (sm + 5, zm - 1), (sm - 5, zm - 1)]
+    st.ensure_interpretation()
+    v = st.current_version()
+    f = InterpFeature(new_id(), v.id, type="clay", name=name)
+    st.save_feature(f)
+    st.save_piece(InterpPiece(new_id(), v.id, f.id, p.id, "line" if line else "polygon",
+                              vertices))
+    provider.notify_redraw()
+    return f
+
+
+def test_the_picture_shows_the_interpretation_only_when_asked(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    picture = sync(st, provider, prj, create=True)["pictures"][p.id]
+    plain = picture.source()
+    _interp_piece(provider, p)
+    assert sync(st, provider, prj)["pictures"][p.id].source() == plain     # not asked
+    _choose_pictures(prj, ["d"], interpretation=True)
+    with_it = sync(st, provider, prj)["pictures"][p.id].source()
+    assert with_it != plain
+    _interp_piece(provider, p, name="L", line=True)                        # another edit
+    assert sync(st, provider, prj)["pictures"][p.id].source() != with_it
+
+
+def test_the_picture_follows_the_interpretations_2d_style(setup):
+    from qgis.core import QgsFillSymbol, QgsSingleSymbolRenderer, QgsVectorLayer
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _interp_piece(provider, p)
+    polygons = QgsVectorLayer(f"PolygonZ?crs={CRS}&field=feature_id:string&field=name:string",
+                              "polygons", "memory")
+    polygons.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "red"})))
+    provider.interp_layers = lambda: {"interp_polygons_3d": polygons}
+    _choose_pictures(prj, ["d"], interpretation=True)
+    red = sync(st, provider, prj, create=True)["pictures"][p.id].source()
+    polygons.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "blue"})))
+    provider.notify_redraw()
+    assert sync(st, provider, prj)["pictures"][p.id].source() != red
+
+
+def test_back_to_the_section_look_removes_the_pictures(setup):
     from groundwork_geophysics.ui.view3d_layers import (PICTURES_GROUP, cloud_folder,
                                                         pictures_3d, sync)
     st, p, provider, prj = setup
@@ -712,7 +843,7 @@ def test_a_folder_name_with_a_hash_still_gives_a_valid_picture(qgis_app, tmp_pat
     prj = QgsProject()
     _choose_pictures(prj, ["d"])
     sync(st, provider, prj, create=True)
-    picture = pictures_3d(prj)["d"]
+    picture = pictures_3d(prj)[p.id]
     assert picture.isValid()
 
 

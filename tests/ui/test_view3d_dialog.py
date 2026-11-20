@@ -106,12 +106,87 @@ def test_a_profile_without_real_heights_says_why_it_cannot_be_shown(store):
     assert p2.toolTip(0) == LOCAL_TIP and "reference height" in LOCAL_TIP.lower()
 
 
-def test_the_look_is_offered_and_kept(store):
+def _combo(dialog, dataset_id):
+    from groundwork_geophysics.ui.view3d_dialog import _ID
+    tree = dialog.tree
+    for i in range(tree.topLevelItemCount()):
+        top = tree.topLevelItem(i)
+        for k in range(top.childCount()):
+            if top.child(k).data(0, _ID) == dataset_id:
+                return tree.itemWidget(top.child(k), 1)
+    return None
+
+
+def test_each_model_has_its_representation_and_boreholes_none(store):
     from groundwork_geophysics.ui.view3d_dialog import View3dDialog
     from groundwork_geophysics.ui.view3d_layers import Choice
-    dialog = View3dDialog(store, Choice(frozenset({"m1"}), frozenset(), "pictures"))
-    assert dialog.pictures.isChecked() and not dialog.layers.isChecked()
-    assert dialog.choice().look == "pictures"
-    dialog.layers.setChecked(True)
-    assert dialog.choice() == Choice(frozenset({"m1"}), frozenset(), "layers")
-    assert View3dDialog(store, Choice()).layers.isChecked()
+    dialog = View3dDialog(store, Choice(frozenset({"m1"}), frozenset(), {"m1": "picture"}))
+    combo = _combo(dialog, "m1")
+    assert [combo.itemText(i) for i in range(combo.count())] == [
+        "As in the Section", "Point Cloud", "Section Picture"]
+    assert combo.currentData() == "picture" and combo.toolTip()
+    assert all(combo.itemData(i, 3) for i in range(combo.count()))      # a tooltip each
+    assert dialog.choice().looks == {"m1": "picture"}
+    combo.setCurrentIndex(combo.findData("cloud"))
+    assert dialog.choice().looks == {"m1": "cloud"}
+    combo.setCurrentIndex(combo.findData("section"))
+    assert dialog.choice() == Choice(frozenset({"m1"}))
+    assert _combo(dialog, "p1") is None                                   # Boreholes
+    assert _combo(View3dDialog(store, Choice()), "m1").currentData() == "section"
+    assert not dialog.tree.isHeaderHidden()
+
+
+def test_a_local_profiles_representation_is_disabled_too(store):
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    assert not _combo(View3dDialog(store, Choice(), local={"p1"}), "m1").isEnabled()
+
+
+def test_pictures_show_the_interpretation_when_ticked(store):
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice())
+    assert not dialog.interpretation.isChecked() and dialog.interpretation.toolTip()
+    dialog.interpretation.setChecked(True)
+    assert dialog.choice().interpretation
+    assert View3dDialog(store, Choice(interpretation=True)).interpretation.isChecked()
+
+
+def test_sizes_are_auto_or_metres_and_say_the_auto_value(store):
+    from qgis.PyQt.QtCore import QLocale
+
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import (Choice, auto_borehole_width,
+                                                        auto_station_size)
+    dialog = View3dDialog(store, Choice())
+    assert dialog.sizes.isCollapsed()
+    for spin, auto in ((dialog.borehole_width, auto_borehole_width(store)),
+                       (dialog.station_size, auto_station_size(store))):
+        assert spin.text() == "Auto" and spin.suffix() == " m"
+        assert f"Auto: {QLocale().toString(auto, 'f', 2)} m" in spin.toolTip()
+    assert dialog.choice().borehole_width is None and dialog.choice().station_size is None
+    dialog.borehole_width.setValue(1.5)
+    dialog.station_size.setValue(0.25)
+    choice = dialog.choice()
+    assert (choice.borehole_width, choice.station_size) == (1.5, 0.25)
+    again = View3dDialog(store, choice)
+    assert (again.borehole_width.value(), again.station_size.value()) == (1.5, 0.25)
+    again.borehole_width.clear()                                   # back to Auto
+    assert again.choice().borehole_width is None
+
+
+def test_restyling_the_interpretation_is_asked_for_each_time(store):
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice())
+    assert not dialog.restyle_interpretation() and dialog.restyle.toolTip()
+    dialog.restyle.setChecked(True)
+    assert dialog.restyle_interpretation()
+
+
+def test_the_dialog_fits_a_laptop_screen(store):
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice())
+    hint = dialog.sizeHint()
+    assert hint.height() <= 580 and hint.width() <= 1000
