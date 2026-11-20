@@ -255,6 +255,15 @@ def sync_3d(layer: QgsVectorLayer) -> None:
     categories_2d = r2d.categories()        # the copies own the symbols: keep them alive
     wanted = {c.value(): c for c in categories_2d}
     changed = False
+    if r3d.sourceSymbol() is None:
+        # QGIS's 3D style page clones this without checking: without it, selecting the
+        # layer (with the styling panel on 3D) or opening its properties crashes QGIS
+        from qgis.PyQt import sip
+        source = _symbol_3d(geometry, DEFAULT_RGB)
+        r3d.setSourceSymbol(source)
+        if sip.ispyowned(source):           # the binding may not hand it over itself
+            sip.transferto(source, None)
+        changed = True
     categories_3d = r3d.categories()
     for i in reversed(range(len(categories_3d))):
         if categories_3d[i].value() not in wanted:

@@ -415,3 +415,27 @@ def test_restyling_from_2d_resets_every_3d_category_and_style(qgis_app, interp_s
     _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
     assert _symbol3d(polys).materialSettings().diffuse().name() == "#00ff00"   # follows again
     prj.clear()
+
+
+def test_the_3d_renderer_has_the_source_symbol_qgis_needs(qgis_app, interp_store):
+    """QGIS's 3D style page clones the categorized renderer's source symbol without checking
+    for one: a renderer without it crashed QGIS when the layer was selected or its
+    properties opened. New layers get one, and so does a layer saved without it."""
+    from qgis._3d import QgsCategorized3DRenderer
+    from qgis.core import QgsProject
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.interp_layers import (LAYERS_3D, add_interp_layers,
+                                                        ensure_3d_styles)
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    for name in LAYERS_3D:
+        r3d = sip.cast(layers[name].renderer3D(), QgsCategorized3DRenderer)
+        assert r3d.sourceSymbol() is not None, name
+    polys = layers["interp_polygons_3d"]
+    bare = QgsCategorized3DRenderer("feature_id", [])      # as saved before this fix
+    polys.setRenderer3D(bare)
+    ensure_3d_styles(interp_store, prj)
+    r3d = sip.cast(polys.renderer3D(), QgsCategorized3DRenderer)
+    assert r3d.sourceSymbol() is not None
+    prj.clear()
