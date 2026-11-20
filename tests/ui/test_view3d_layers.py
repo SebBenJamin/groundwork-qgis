@@ -1072,11 +1072,15 @@ def test_a_picture_the_user_shows_in_2d_again_stays_so(setup):
 
 # -- profile names in 3D: a billboard per profile, above its start ---------------------------
 def _name_marker(layer, index=0):
-    """(QgsPoint3DSymbol, its font marker layer) of a names layer's category ``index``."""
-    from qgis._3d import QgsPoint3DSymbol
+    """(QgsPoint3DSymbol, its font marker layer) of a names layer's rule ``index``: a
+    rule-based 3D renderer, one rule per profile (QGIS 4's categorized 3D renderer needs a
+    categorized 2D style, or its properties page crashes QGIS)."""
+    from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
     from qgis.PyQt import sip
-    categories = layer.renderer3D().categories()
-    clone = categories[index].symbol().clone()
+    r3d = layer.renderer3D()
+    assert r3d.type() == "rulebased"
+    rules = sip.cast(r3d, QgsRuleBased3DRenderer).rootRule().children()
+    clone = rules[index].symbol().clone()
     _NAMES_KEEP.append(clone)
     symbol = sip.cast(clone, QgsPoint3DSymbol)
     marker = symbol.billboardSymbol()
@@ -1104,6 +1108,10 @@ def test_each_profile_name_floats_above_its_start(setup):
     symbol, text = _name_marker(names)
     assert symbol.shape() == Qgis.Point3DShape.Billboard
     assert text.layerType() == "FontMarker" and text.character() == "P1"
+    from qgis._3d import QgsRuleBased3DRenderer
+    from qgis.PyQt import sip
+    rule = sip.cast(names.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()[0]
+    assert rule.filterExpression() == f"\"profile_id\" = '{p.id}'"
     assert not names.isInScaleRange(1000.0)          # the map labels the profiles already
 
 
@@ -1114,11 +1122,15 @@ def test_a_renamed_profile_shows_its_new_name_in_the_users_look(setup):
     st, p, provider, prj = setup
     _choose(prj, ["d"])
     names = sync(st, provider, prj, create=True)["names"]
-    r3d = names.renderer3D().clone()
+    from qgis._3d import QgsRuleBased3DRenderer
+    from qgis.PyQt import sip
+    clone = names.renderer3D().clone()
+    _NAMES_KEEP.append(clone)                         # the cast wrapper does not own it
+    r3d = sip.cast(clone, QgsRuleBased3DRenderer)
     symbol, text = _name_marker(names)
     text.setColor(QColor("#c00000"))                  # the user's own colour
-    r3d.updateCategorySymbol(0, symbol.clone())
-    names.setRenderer3D(r3d)
+    r3d.rootRule().children()[0].setSymbol(symbol.clone())
+    names.setRenderer3D(r3d.clone())
     p.name = "Line 7"
     st.save_profile(p)
     provider.notify_changed()
@@ -1126,3 +1138,34 @@ def test_a_renamed_profile_shows_its_new_name_in_the_users_look(setup):
     _symbol, text = _name_marker(names)
     assert text.character() == "Line 7" and text.color().name() == "#c00000"
     assert next(names.getFeatures())["profile"] == "Line 7"
+
+
+# -- a kind of 3D layer new in an update comes by itself; one the user removed stays away ----
+def test_a_kind_of_layer_new_in_an_update_comes_when_the_project_opens(setup):
+    """A project made before an update knows no "Profile names in 3D": opening it adds the
+    new kind (its user never removed it), while the kinds it had stay as they were."""
+    import json
+
+    from groundwork_geophysics.ui.view3d_layers import ENTRY_MADE, forget_shown, layers_3d, sync
+    from groundwork_geophysics.ui.project_actions import SCOPE
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    prj.removeMapLayer(layers_3d(prj)["names"].id())      # as before the update ...
+    made = set(json.loads(prj.readEntry(SCOPE, ENTRY_MADE, "[]")[0]))
+    prj.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(made - {"names"})))   # ... unknown
+    forget_shown(prj)                                     # the project is opened again
+    sync(st, provider, prj)
+    assert "names" in layers_3d(prj)
+
+
+def test_a_kind_the_user_removed_stays_removed_when_the_project_opens(setup):
+    from groundwork_geophysics.ui.view3d_layers import forget_shown, layers_3d, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    prj.removeMapLayer(layers_3d(prj)["names"].id())      # the user's choice
+    forget_shown(prj)
+    sync(st, provider, prj)
+    sync(st, provider, prj)
+    assert "names" not in layers_3d(prj)

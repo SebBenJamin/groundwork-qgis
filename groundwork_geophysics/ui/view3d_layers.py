@@ -48,6 +48,9 @@ PICTURES_GROUP = "Section pictures in 3D"
 #: section's contour lines when it shows them), or in its profile's section picture
 REPRESENTATIONS = ("section", "cloud", "picture")
 ENTRY = "view3d"
+#: project entry: the kinds of 3D layer the plugin has made in this project (a kind new in an
+#: update is made when needed; one the user removed is not made again by itself)
+ENTRY_MADE = "view3d_made"
 _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "boreholes", ... "cloud"
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
 _PROFILE = f"{LEGACY_ID}/view3d_profile"   # a section picture's profile id
@@ -1044,16 +1047,16 @@ def _named(template, name: str):
 
 
 def _name_template(layer, store, project):
-    """The look of the names: the billboard of the layer's first category (a style the
-    user changed stays), else the map's profile labels."""
+    """The look of the names: the billboard of the layer's first rule (a style the user
+    changed stays), else the map's profile labels."""
     renderer = layer.renderer3D()
-    if renderer is not None and renderer.type() == "categorized":
-        from qgis._3d import QgsPoint3DSymbol
+    if renderer is not None and renderer.type() == "rulebased":
+        from qgis._3d import QgsPoint3DSymbol, QgsRuleBased3DRenderer
         from qgis.PyQt import sip
-        categories = renderer.categories()
-        if categories:
-            symbol = categories[0].symbol().clone()
-            if symbol is not None and symbol.type() == "point":
+        rules = sip.cast(renderer, QgsRuleBased3DRenderer).rootRule().children()
+        if rules and rules[0].symbol() is not None:
+            symbol = rules[0].symbol().clone()
+            if symbol.type() == "point":
                 billboard = sip.cast(symbol, QgsPoint3DSymbol).billboardSymbol()
                 if billboard is not None:
                     return billboard.clone()
@@ -1081,13 +1084,16 @@ def _sync_names(store, project, rows, may_create):
     layer.dataProvider().truncate()
     _edit(layer, [], features)
     try:
-        from qgis._3d import Qgs3DRendererCategory, QgsCategorized3DRenderer
+        # one rule per profile: QGIS 4's categorized 3D renderer needs a categorized 2D style
+        # (its properties page crashes QGIS without one)
+        from qgis._3d import QgsRuleBased3DRenderer
         template = _name_template(layer, store, project)
-        renderer = QgsCategorized3DRenderer("profile_id", [])
+        root = QgsRuleBased3DRenderer.Rule(None)
         for profile, _xyz in rows:
-            renderer.addCategory(Qgs3DRendererCategory(profile.id, _named(template, profile.name)))
-        _one_chunk(renderer)
-        layer.setRenderer3D(renderer)
+            quoted = profile.id.replace("'", "''")
+            root.appendChild(QgsRuleBased3DRenderer.Rule(
+                _named(template, profile.name), f"\"profile_id\" = '{quoted}'", profile.name))
+        layer.setRenderer3D(QgsRuleBased3DRenderer(root))
     except ImportError:                             # a QGIS built without 3D
         pass
     built["rows"] = signature
@@ -1280,10 +1286,19 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     gathered = _gather(store, provider, choice)
     before = project.property(_NEEDS)
     needs: set[str] = set()
+    try:
+        text = project.readEntry(SCOPE, ENTRY_MADE, "")[0]
+        made = set(json.loads(text)) if text else None
+    except (TypeError, ValueError):
+        made = None
+    known = (made or set()) | set(layers_3d(project))
 
     def may_create(kind: str) -> bool:
         needs.add(kind)
-        return create or (before is not None and kind not in before.split("\n"))
+        # a kind this project never had (one added by an update) comes by itself; a project
+        # without the record (made before it) waits for OK, as it always did
+        new_kind = made is not None and kind in _KINDS and kind not in known
+        return create or new_kind or (before is not None and kind not in before.split("\n"))
 
     topos: dict = {}
 
@@ -1327,6 +1342,9 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
     _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
     project.setProperty(_NEEDS, "\n".join(sorted(needs)))
+    now = known | set(layers_3d(project))
+    if now != made:
+        project.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(now)))
     layer = layers_3d(project).get("boreholes")
     if not boreholes and layer is not None:
         # a redraw: of the boreholes, only hiding or showing one in a section can change
