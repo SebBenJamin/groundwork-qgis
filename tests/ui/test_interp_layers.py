@@ -272,3 +272,112 @@ def test_interpretation_lines_keep_their_heights_in_3d(qgis_app, interp_store):
     assert material.type() == "simpleline"
     c = material.ambient()
     assert (c.red(), c.green(), c.blue()) == (10, 20, 30)
+
+
+# -- the 3D interpretation carries its 2D style as far as QGIS 3D can --------------------------
+def _poly_layer(interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+    prj = QgsProject()
+    return prj, add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+
+
+def _restyle(layer, change):
+    """Change the first 2D category's symbol as Layer Properties would (setRenderer)."""
+    r2d = layer.renderer().clone()
+    categories = r2d.categories()                       # keep the copies alive
+    symbol = categories[0].symbol().clone()
+    change(symbol)
+    r2d.updateCategorySymbol(0, symbol)
+    layer.setRenderer(r2d)
+
+
+_KEEP = []          # clones behind sip.cast wrappers: the wrapper does not own them
+
+
+def _symbol3d(layer):
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.PyQt import sip
+    categories = layer.renderer3D().categories()
+    clone = categories[0].symbol().clone()
+    _KEEP.append(clone)
+    return sip.cast(clone, QgsPolygon3DSymbol)
+
+
+def test_3d_polygons_carry_the_2d_transparency_and_outline(qgis_app, interp_store):
+    from qgis.PyQt.QtGui import QColor
+    prj, polys = _poly_layer(interp_store)
+
+    def change(symbol):
+        fill = symbol.symbolLayer(0)
+        fill.setFillColor(QColor(200, 100, 50, 128))
+        fill.setStrokeColor(QColor(0, 0, 255))
+        fill.setStrokeWidth(0.5)                         # mm
+        symbol.setOpacity(0.8)
+    _restyle(polys, change)                              # followed without a call of ours
+    s3d = _symbol3d(polys)
+    material = s3d.materialSettings()
+    assert material.diffuse().name() == "#c86432"
+    assert material.opacity() == pytest.approx(128 / 255 * 0.8, abs=0.01)
+    assert s3d.edgesEnabled() and s3d.edgeColor().name() == "#0000ff"
+    assert s3d.edgeWidth() == pytest.approx(0.5 * 96 / 25.4, rel=0.01)
+    prj.clear()
+
+
+def test_a_hatched_fill_is_its_colour_half_see_through(qgis_app, interp_store):
+    from qgis.PyQt.QtCore import Qt
+    prj, polys = _poly_layer(interp_store)
+    _restyle(polys, lambda s: s.symbolLayer(0).setBrushStyle(Qt.BrushStyle.BDiagPattern))
+    assert _symbol3d(polys).materialSettings().opacity() == pytest.approx(0.5, abs=0.01)
+    prj.clear()
+
+
+def test_an_outline_only_polygon_is_only_its_edges(qgis_app, interp_store):
+    from qgis.PyQt.QtCore import Qt
+    prj, polys = _poly_layer(interp_store)
+    _restyle(polys, lambda s: s.symbolLayer(0).setBrushStyle(Qt.BrushStyle.NoBrush))
+    s3d = _symbol3d(polys)
+    assert s3d.materialSettings().opacity() == pytest.approx(0.0) and s3d.edgesEnabled()
+    prj.clear()
+
+
+def test_a_3d_category_the_user_restyled_is_not_followed(qgis_app, interp_store):
+    from qgis._3d import QgsPhongMaterialSettings
+    from qgis.PyQt.QtGui import QColor
+    prj, polys = _poly_layer(interp_store)
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.core import Qgis
+    r3d = polys.renderer3D().clone()
+    own = QgsPolygon3DSymbol()                           # the user's own 3D style
+    own.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor("#123456"))
+    own.setMaterialSettings(material)
+    r3d.updateCategorySymbol(0, own)
+    polys.setRenderer3D(r3d)
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#123456"
+    prj.clear()
+
+
+def test_3d_lines_take_the_2d_width(qgis_app, interp_store):
+    from qgis._3d import QgsLine3DSymbol
+    from qgis.core import QgsProject
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+    v = interp_store.current_version()
+    f = InterpFeature(new_id(), v.id, type="fault", name="F")
+    interp_store.save_feature(f)
+    interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "line",
+                                        [(10, 0), (20, -5)]))
+    interp_store.rebuild_derived(v.id, {"prof": BENT})
+    prj = QgsProject()
+    lines = add_interp_layers(interp_store, prj)["interp_lines_3d"]
+    _restyle(lines, lambda s: s.setWidth(1.0))           # mm
+    categories = lines.renderer3D().categories()
+    clone = categories[0].symbol().clone()
+    s3d = sip.cast(clone, QgsLine3DSymbol)
+    assert s3d.width() == pytest.approx(96 / 25.4, rel=0.01)
+    prj.clear()

@@ -124,12 +124,63 @@ def _has_3d() -> bool:
     return True
 
 
-def _symbol_3d(geometry_type, rgb):
-    """A 3D symbol at the feature's own heights in colour ``rgb``: lines as lines (a few
-    pixels wide), polygons flat (seen from both sides), points as spheres."""
+#: what the plugin wrote into each 3D category (a hash of the symbol), by category value: a
+#: category that still matches follows the 2D style; one the user restyled in 3D stays
+SYMBOLS_3D = "groundwork/3d_symbols"
+_PX_PER_MM = 96 / 25.4
+
+
+def _px(width: float, unit) -> float:
+    from qgis.core import Qgis
+    if unit == Qgis.RenderUnit.Pixels:
+        return float(width)
+    if unit == Qgis.RenderUnit.Points:
+        return float(width) * 96 / 72
+    return float(width) * _PX_PER_MM               # millimetres (other units: roughly)
+
+
+def look_2d(symbol, geometry_type) -> dict:
+    """What of a 2D symbol the 3D view can show: its colour; for polygons the fill's
+    transparency (colour alpha x symbol opacity; a hatch or pattern half see-through, no fill
+    none) and the outline (colour, width in pixels); for lines the width in pixels."""
+    c = symbol.color()
+    look = {"rgb": (c.red(), c.green(), c.blue()), "opacity": 1.0, "edge": None, "width": 3.0}
+    if geometry_type == QgsWkbTypes.GeometryType.PolygonGeometry:
+        from qgis.PyQt.QtCore import Qt
+        fill = symbol.symbolLayer(0) if symbol.symbolLayerCount() else None
+        alpha = 1.0
+        if fill is not None and fill.layerType() == "SimpleFill":
+            fc = fill.fillColor()
+            look["rgb"] = (fc.red(), fc.green(), fc.blue())
+            style = fill.brushStyle()
+            alpha = (0.0 if style == Qt.BrushStyle.NoBrush
+                     else fc.alphaF() if style == Qt.BrushStyle.SolidPattern else 0.5)
+        elif fill is not None:                      # a pattern, picture or gradient fill
+            alpha = 0.5
+        look["opacity"] = round(alpha * symbol.opacity(), 3)
+        for i in range(symbol.symbolLayerCount()):
+            sl = symbol.symbolLayer(i)
+            if (hasattr(sl, "strokeStyle") and sl.strokeStyle() != Qt.PenStyle.NoPen
+                    and sl.strokeColor().alpha() > 0):
+                sc = sl.strokeColor()
+                look["edge"] = ((sc.red(), sc.green(), sc.blue()),
+                                round(max(1.0, _px(sl.strokeWidth(), sl.strokeWidthUnit())), 2))
+                break
+    elif geometry_type == QgsWkbTypes.GeometryType.LineGeometry:
+        look["width"] = round(max(2.0, _px(symbol.width(), symbol.outputUnit())), 2)
+    return look
+
+
+def _symbol_3d(geometry_type, look):
+    """A 3D symbol at the feature's own heights with ``look`` (``look_2d``, or a plain rgb):
+    lines as lines, polygons flat (seen from both sides, see-through and outlined as in 2D),
+    points as spheres."""
     from qgis._3d import (QgsLine3DSymbol, QgsPhongMaterialSettings, QgsPoint3DSymbol,
                           QgsPolygon3DSymbol, QgsSimpleLineMaterialSettings)
     from qgis.core import Qgis
+    if not isinstance(look, dict):
+        look = {"rgb": tuple(look), "opacity": 1.0, "edge": None, "width": 3.0}
+    rgb = look["rgb"]
     material = QgsPhongMaterialSettings()
     material.setDiffuse(QColor(*rgb))
     material.setAmbient(QColor(*rgb))
@@ -137,13 +188,19 @@ def _symbol_3d(geometry_type, rgb):
         symbol = QgsLine3DSymbol()
         # simple lines keep the drawn depth; a wide (buffered) line lies flat at height 0
         symbol.setRenderAsSimpleLines(True)
-        symbol.setWidth(3.0)                        # pixels
+        symbol.setWidth(float(look["width"]))      # pixels
         material = QgsSimpleLineMaterialSettings()
         material.setAmbient(QColor(*rgb))
     elif geometry_type == QgsWkbTypes.GeometryType.PolygonGeometry:
         symbol = QgsPolygon3DSymbol()
         symbol.setExtrusionHeight(0.0)
         symbol.setAddBackFaces(True)
+        material.setOpacity(float(look["opacity"]))
+        if look["edge"] is not None:
+            edge_rgb, edge_px = look["edge"]
+            symbol.setEdgesEnabled(True)
+            symbol.setEdgeColor(QColor(*edge_rgb))
+            symbol.setEdgeWidth(float(edge_px))
     else:
         symbol = QgsPoint3DSymbol()
         symbol.setShape(Qgis.Point3DShape.Sphere)
@@ -165,28 +222,74 @@ def default_3d(layer: QgsVectorLayer) -> None:
     sync_3d(layer)
 
 
+def _symbol_hash(symbol) -> str:
+    import hashlib
+
+    from qgis.core import QgsReadWriteContext
+    from qgis.PyQt.QtXml import QDomDocument
+    doc = QDomDocument()
+    element = doc.createElement("symbol")
+    doc.appendChild(element)
+    symbol.writeXml(element, QgsReadWriteContext())
+    return hashlib.sha1(doc.toString().encode()).hexdigest()[:16]
+
+
 def sync_3d(layer: QgsVectorLayer) -> None:
-    """Match the 3D categories to the 2D ones: add new entities in their 2D colour, drop
-    deleted ones; a 3D category the user restyled stays, a 3D renderer the user replaced is
-    left alone."""
+    """Match the 3D categories to the 2D ones, in the 2D look (``look_2d``): add new
+    entities, drop deleted ones, and restyle the ones the plugin wrote when the 2D style
+    changed. A 3D category the user restyled stays; a 3D renderer the user replaced is left
+    alone. Nothing is set when nothing changed (the 3D view would rebuild the layer)."""
+    import json
     r3d = layer.renderer3D()
     r2d = layer.renderer()
     if (r3d is None or r3d.type() != "categorized" or r3d.classAttribute() != "feature_id"
             or not isinstance(r2d, QgsCategorizedSymbolRenderer) or not _has_3d()):
         return
     from qgis._3d import Qgs3DRendererCategory
+    try:
+        written = json.loads(layer.customProperty(SYMBOLS_3D) or "null")
+    except (TypeError, ValueError):
+        written = None                       # written before 0.14 recorded it: all ours
+    geometry = layer.geometryType()
     r3d = r3d.clone()
-    wanted = {c.value(): c for c in r2d.categories()}
-    for i in reversed(range(len(r3d.categories()))):
-        if r3d.categories()[i].value() not in wanted:
+    categories_2d = r2d.categories()        # the copies own the symbols: keep them alive
+    wanted = {c.value(): c for c in categories_2d}
+    changed = False
+    categories_3d = r3d.categories()
+    for i in reversed(range(len(categories_3d))):
+        if categories_3d[i].value() not in wanted:
             r3d.deleteCategory(i)
-    have = {c.value() for c in r3d.categories()}
-    for value, cat in wanted.items():
-        if value not in have:
-            c = cat.symbol().color()
-            r3d.addCategory(Qgs3DRendererCategory(
-                value, _symbol_3d(layer.geometryType(), (c.red(), c.green(), c.blue()))))
-    layer.setRenderer3D(r3d)
+            changed = True
+    categories_3d = r3d.categories()
+    index = {c.value(): i for i, c in enumerate(categories_3d)}
+    recorded = {}
+    for value, category in wanted.items():
+        symbol = _symbol_3d(geometry, look_2d(category.symbol(), geometry))
+        digest = _symbol_hash(symbol)
+        if value not in index:
+            r3d.addCategory(Qgs3DRendererCategory(value, symbol))
+            recorded[str(value)] = digest
+            changed = True
+            continue
+        current = _symbol_hash(categories_3d[index[value]].symbol())
+        if written is not None and written.get(str(value)) != current:
+            continue                         # the user's own 3D style
+        if current != digest:
+            r3d.updateCategorySymbol(index[value], symbol)
+            changed = True
+        recorded[str(value)] = digest
+    if changed:
+        layer.setRenderer3D(r3d)
+    layer.setCustomProperty(SYMBOLS_3D, json.dumps(recorded, sort_keys=True))
+
+
+def follow_2d(layer: QgsVectorLayer) -> None:
+    """Restyling the layer in 2D (Symbology) restyles its 3D categories too."""
+    from functools import partial
+    if layer.property("groundworkFollows2d"):
+        return
+    layer.rendererChanged.connect(partial(sync_3d, layer))
+    layer.setProperty("groundworkFollows2d", True)
 
 
 def ensure_3d_styles(store: ProjectStore, project: QgsProject) -> int:
@@ -197,10 +300,13 @@ def ensure_3d_styles(store: ProjectStore, project: QgsProject) -> int:
         return 0
     changed = 0
     for name, layer in interp_layers(store, project).items():
-        if (name in LAYERS_3D and layer.renderer3D() is None
-                and not layer.customProperty(STYLED_3D)):
+        if name not in LAYERS_3D:
+            continue
+        if layer.renderer3D() is None and not layer.customProperty(STYLED_3D):
             default_3d(layer)
             changed += 1
+        follow_2d(layer)
+        sync_3d(layer)                       # a project saved before 0.14: the 2D look
     return changed
 
 
@@ -253,6 +359,7 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
             default_style(layer)
             if name in LAYERS_3D:
                 default_3d(layer)
+                follow_2d(layer)
             sync_categories(layer, store.features(store.current_version().id))
             layer.setReadOnly(True)
         project.addMapLayer(layer, False)
