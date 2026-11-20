@@ -772,3 +772,29 @@ def test_a_picture_is_two_faces_standing_back_from_the_plane(setup):
     assert np.allclose(north[:half] - north[half:], 2 * gap, atol=1e-3)
     indices = doc["accessors"][prim["indices"]]["count"]
     assert indices == 2 * 3 * (half // 2 - 1) * 2       # two triangles per column gap, twice
+
+
+# -- what a new 3D view looks at ----------------------------------------------------------
+def test_the_box_holds_the_shown_curtains_and_boreholes(setup):
+    from groundwork_geophysics.ui.view3d_layers import shown_box, sync
+    st, p, provider, prj = setup
+    assert shown_box(st, provider, prj) is None                 # nothing ticked
+    _choose(prj, ["d"], [p.id])
+    out = sync(st, provider, prj, create=True)
+    xmin, ymin, xmax, ymax, zmin, zmax = shown_box(st, provider, prj)
+    s0, s1, z0, z1 = provider.layers(p.id)[0].mesh.bounds()
+    column = out["boreholes"].extent3D()
+    assert xmin <= s0 + 1e-6 and xmax >= s1 - 1e-6 and xmax - xmin < s1 - s0 + 2.0
+    assert ymin <= 0.0 and ymax == pytest.approx(column.yMaximum())   # the borehole, off the line
+    assert (zmin, zmax) == pytest.approx((min(z0, column.zMinimum()),
+                                          max(z1, column.zMaximum())))
+
+
+def test_the_box_of_section_pictures_comes_from_their_models(setup):
+    from groundwork_geophysics.ui.view3d_layers import shown_box, sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    xmin, _ymin, xmax, _ymax, zmin, zmax = shown_box(st, provider, prj)
+    s0, s1, z0, z1 = provider.layers(p.id)[0].mesh.bounds()
+    assert (xmin, xmax, zmin, zmax) == pytest.approx((s0, s1, z0, z1), abs=0.01)

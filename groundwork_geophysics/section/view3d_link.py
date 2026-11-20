@@ -1,7 +1,9 @@
 """The 3D view's mouse in the section: what the mouse points at in a QGIS 3D map view (a
 curtain, a borehole column, a cloud point) becomes chainage and elevation on the section
 panel's open profile; the panel shows its cursor there and, as for its own mouse, the 2D map
-its marker. One way only: the section's own mouse does not move anything in 3D."""
+its marker. A left click (no drag) on another profile's curtain opens that profile in the
+panel; hovering never switches. One way only: the section's own mouse does not move
+anything in 3D."""
 from __future__ import annotations
 
 import numpy as np
@@ -20,30 +22,57 @@ HOLD_MS = 300
 #: the default 0 misses every point)
 ANGLE_DEGREES = 0.5
 POLL_MS = 1000                       # how often newly opened 3D views are looked for
+#: a press and release of the left button at most this far apart (px) is a click, not a turn
+CLICK_PX = 4
+
+
+def _offset(xyz, chainage) -> tuple[float, float] | None:
+    """(chainage, distance from the line) of the map point ``xyz`` on ``chainage``'s line, or
+    ``None`` when it is off the line (see TOLERANCE_M) or beyond its ends."""
+    try:
+        s, offset = chainage.project(np.array([[float(xyz[0]), float(xyz[1])]]))
+    except ValueError:                           # degenerate geometry
+        return None
+    s, offset = float(s[0]), abs(float(offset[0]))
+    tolerance = max(TOLERANCE_M, TOLERANCE_SHARE * chainage.length)
+    if offset > tolerance or not -1e-9 <= s <= chainage.length + 1e-9:
+        return None
+    return s, offset
 
 
 def section_point(xyz, chainage) -> tuple[float, float] | None:
     """(chainage, elevation) of the map point ``xyz`` on ``chainage``'s line, or ``None``
     when it is off the line (see TOLERANCE_M) or beyond its ends."""
-    try:
-        s, offset = chainage.project(np.array([[float(xyz[0]), float(xyz[1])]]))
-    except ValueError:                           # degenerate geometry
-        return None
-    s, offset = float(s[0]), float(offset[0])
-    tolerance = max(TOLERANCE_M, TOLERANCE_SHARE * chainage.length)
-    if abs(offset) > tolerance or not -1e-9 <= s <= chainage.length + 1e-9:
-        return None
-    return s, float(xyz[2])
+    at = _offset(xyz, chainage)
+    return None if at is None else (at[0], float(xyz[2]))
+
+
+def profile_at(xyz, profiles):
+    """The profile of ``profiles`` whose line the map point ``xyz`` is on (the same rule as
+    ``section_point``), the nearest line when several are close; ``None`` off every line."""
+    best = None
+    for profile in profiles:
+        try:
+            at = _offset(xyz, profile.chainage)
+        except Exception:                        # a profile without a usable line
+            continue
+        if at is not None and (best is None or at[1] < best[0]):
+            best = (at[1], profile)
+    return None if best is None else best[1]
 
 
 class View3dLink(QObject):
-    """Follows the mouse in every open 3D map view of ``iface`` and moves ``dock``'s cursor."""
+    """Follows the mouse in every open 3D map view of ``iface`` and moves ``dock``'s cursor;
+    a click on a curtain opens its profile. ``on_opened`` (if set) is called when a 3D view
+    is seen for the first time."""
 
     def __init__(self, iface, dock):
         super().__init__()
         self.iface, self.dock = iface, dock
+        self.on_opened = None
         self._canvases: list = []
         self._pending: tuple | None = None       # (canvas, QPoint) waiting for a ray
+        self._press: tuple | None = None         # (canvas, QPointF) of a left press
         self._cast = QTimer(self)
         self._cast.setSingleShot(True)
         self._cast.setInterval(CAST_MS)
@@ -64,14 +93,29 @@ class View3dLink(QObject):
             canvases = list(self.iface.mapCanvases3D())
         except (AttributeError, RuntimeError, TypeError):   # no 3D in this QGIS
             return
+        opened = False
         for canvas in canvases:
             if canvas is not None and all(c is not canvas for c in self._canvases):
                 canvas.installEventFilter(self)
                 self._canvases.append(canvas)
+                opened = True
+        if opened and self.on_opened is not None:
+            self.on_opened()
 
     def eventFilter(self, obj, event):
         etype = event.type()
-        if etype == QEvent.Type.MouseMove:
+        if etype == QEvent.Type.MouseButtonPress:
+            left = event.button() == Qt.MouseButton.LeftButton
+            self._press = (obj, event.position()) if left else None
+        elif etype == QEvent.Type.MouseButtonRelease:
+            press, self._press = self._press, None
+            if (event.button() == Qt.MouseButton.LeftButton and press is not None
+                    and press[0] is obj and not self._moved(press[1], event.position())):
+                pos = event.position()
+                self.click_at(obj, QPoint(int(pos.x()), int(pos.y())))
+        elif etype == QEvent.Type.MouseMove:
+            if self._press is not None and self._moved(self._press[1], event.position()):
+                self._press = None               # a drag: turning or panning the view
             if event.buttons() != Qt.MouseButton.NoButton or not self._can_show():
                 return False                     # turning the view, or nowhere to show it
             pos = event.position()
@@ -92,14 +136,50 @@ class View3dLink(QObject):
         canvas, point = pending
         if sip.isdeleted(canvas) or not self._can_show():
             return
+        hits = self._ray(canvas, point)
+        if hits is not None:
+            self._show(min(hits, key=lambda h: h.distance()) if hits else None)
+
+    @staticmethod
+    def _ray(canvas, point) -> list | None:
+        """Everything the ray under ``point`` hits; ``None`` when no ray could be cast."""
         try:
             from qgis._3d import QgsRayCastContext
             context = QgsRayCastContext()
             context.setAngleThreshold(ANGLE_DEGREES)
-            hits = list(canvas.castRay(point, context).allHits())
+            return list(canvas.castRay(point, context).allHits())
         except Exception:                        # no 3D, or the scene is not ready
+            return None
+
+    @staticmethod
+    def _moved(a, b) -> bool:
+        return abs(a.x() - b.x()) > CLICK_PX or abs(a.y() - b.y()) > CLICK_PX
+
+    def click_at(self, canvas, point) -> None:
+        """A click at ``point`` in ``canvas``: open (and show) the profile of the nearest
+        thing hit, when it is not the one open; the panel's cursor goes to the hit."""
+        dock = self.dock
+        if sip.isdeleted(dock) or sip.isdeleted(canvas) or dock.provider is None:
             return
-        self._show(min(hits, key=lambda h: h.distance()) if hits else None)
+        hits = self._ray(canvas, point)
+        if not hits:
+            return
+        hit = min(hits, key=lambda h: h.distance())
+        p = hit.mapCoordinates()
+        x, y = self._to_store(p.x(), p.y())
+        if x is None:
+            return
+        try:
+            profile = profile_at((x, y, p.z()), dock.provider.store.profiles())
+            if profile is None:
+                return
+            if profile.id != dock.current_profile_id() and not dock.open_profile(profile.id):
+                return
+        except Exception:                        # the store cannot be read just now
+            return
+        dock.show()
+        dock.raise_()
+        self._show(hit)
 
     def _can_show(self) -> bool:
         """A ray is worth casting: the panel is shown with a profile open."""
@@ -152,6 +232,7 @@ class View3dLink(QObject):
         return q.x(), q.y()
 
     def unload(self) -> None:
+        self.on_opened = None
         self._poll.stop()
         self._cast.stop()
         self._hold.stop()

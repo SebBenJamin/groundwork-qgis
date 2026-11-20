@@ -934,6 +934,39 @@ def shown_summary(layers: dict) -> str:
     return ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
 
 
+def shown_box(store, provider, project: QgsProject) -> tuple | None:
+    """(xmin, ymin, xmax, ymax, zmin, zmax) in the store's CRS of what the project's choice
+    shows in 3D: the ticked models under their profile lines (in any look) and the borehole
+    columns; ``None`` when nothing is shown. From the models themselves, as a section
+    picture's own extent is in the earth frame and a fresh point cloud has no heights yet."""
+    xs, ys, zs = [], [], []
+    for profile, _d, section_layer in _gather(store, provider, read_choice(project)):
+        if not _shown(section_layer):
+            continue
+        try:
+            s0, s1, z0, z1 = section_layer.mesh.bounds()
+            line = profile.chainage
+            bends = line.xy
+            along = line.project(bends)[0]
+            xy = np.vstack([line.to_xy(np.linspace(s0, s1, 65)),
+                            bends[(along > s0) & (along < s1)]])
+        except (ValueError, IndexError, AttributeError):
+            continue
+        xs += [float(xy[:, 0].min()), float(xy[:, 0].max())]
+        ys += [float(xy[:, 1].min()), float(xy[:, 1].max())]
+        zs += [z0, z1]
+    layer = layers_3d(project).get("boreholes")
+    if layer is not None and layer.featureCount() > 0:
+        box = layer.extent3D()
+        x, y, z = ((box.xMinimum(), box.xMaximum()), (box.yMinimum(), box.yMaximum()),
+                   (box.zMinimum(), box.zMaximum()))
+        if np.isfinite(x + y + z).all():
+            xs, ys, zs = xs + list(x), ys + list(y), zs + list(z)
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs), max(ys), min(zs), max(zs)
+
+
 def sync(store, provider, project: QgsProject, create: bool = False,
          boreholes: bool = True) -> dict:
     """Fill the 3D layers for the project's choice, each model as its section draws it:

@@ -20,7 +20,7 @@ from .section.map_link import MapLink
 from .section.view3d_link import View3dLink
 from .section.profile_source import register_source, unregister_source
 from .section.style_watch import StyleWatch
-from .ui import derived_layers, project_actions, view3d_layers
+from .ui import derived_layers, project_actions, view3d_layers, view3d_view
 from .ui.context_dialog import read_settings
 from .section.field_notes_render import note_looks
 from .ui.field_note_layers import ensure_note_layers, migrate_note_styles
@@ -72,6 +72,7 @@ class WorkbenchPlugin:
         self._syncing_3d = False
         self._view3d_timer = None
         self._view3d_boreholes = False          # the next refill also gathers boreholes
+        self._view3d_stale = False              # a refill waits for a 3D view to open
         self.view3d_action = None
 
     @property
@@ -99,6 +100,7 @@ class WorkbenchPlugin:
         self.dock.hide()
         self.map_link = MapLink(self.iface, self.dock)
         self.view3d_link = View3dLink(self.iface, self.dock)   # the 3D view's mouse
+        self.view3d_link.on_opened = self._view3d_opened
         self.add_action("New Groundwork Project…", self.new_workbench_project)
         self.add_action("Open Groundwork Project…", self.open_workbench_project)
         self.menu.addSeparator()
@@ -236,6 +238,7 @@ class WorkbenchPlugin:
         self._drop_source()
         self._close_gatherer()
         self.provider = None
+        self._view3d_stale = False
         if store is not None:
             self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
@@ -362,11 +365,19 @@ class WorkbenchPlugin:
 
     def _sync_3d(self, create: bool = False, boreholes: bool = True) -> dict:
         """Refill the Show in 3D layers (created only when the user asks); never raises out
-        of opening or a notification."""
+        of opening or a notification. Without ``create`` and with no 3D map view open, it
+        only notes that the layers are out of date: point clouds and pictures are files,
+        rewritten on every style change, and nobody would see them. The next 3D view that
+        opens, or OK in Show in 3D…, brings them up to date."""
         if self.provider is None or self._syncing_3d:
+            return {}
+        if not create and not view3d_view.views_open(self.iface):
+            self._view3d_stale = True
+            self._view3d_boreholes = False      # the waiting refill gathers them anyway
             return {}
         self._syncing_3d = True
         self._view3d_boreholes = False
+        self._view3d_stale = False
         try:
             return view3d_layers.sync(self.provider.store, self.provider,
                                       QgsProject.instance(), create=create,
@@ -377,6 +388,11 @@ class WorkbenchPlugin:
             return {}
         finally:
             self._syncing_3d = False
+
+    def _view3d_opened(self) -> None:
+        """A 3D map view has opened: bring the 3D layers up to date if a refill waits."""
+        if self._view3d_stale:
+            self._sync_3d()
 
     def show_in_3d(self):
         """Show in 3D…: pick the models and boreholes; the layers follow the choice."""
@@ -403,8 +419,27 @@ class WorkbenchPlugin:
         if not choice.models and not choice.boreholes:
             self._info("Nothing is shown in 3D.")
             return
-        self._info(f"Shown in 3D: {view3d_layers.shown_summary(layers)}. Open a 3D map view "
-                   f"with View → 3D Map Views → New 3D Map View.")
+        summary = f"Shown in 3D: {view3d_layers.shown_summary(layers)}"
+        if not layers:
+            self._info(f"{summary}.")
+            return
+        try:
+            box = view3d_layers.shown_box(self.store, self.provider, project)
+        except Exception:
+            box = None
+        view = view3d_view.open_ready_view(self.iface, project, box, self.store.crs_authid)
+        if self.view3d_link is not None:
+            self.view3d_link.poll()              # the 3D mouse follows a new view at once
+        if view == view3d_view.ALREADY_OPEN:
+            self._info(f"{summary}, in the open 3D map view.")
+        elif view == view3d_view.READY:
+            self._info(f"{summary}, in a new 3D map view.")
+        elif view == view3d_view.OPENED:
+            self._info(f"{summary}, in a new 3D map view. If the curtains are hidden, switch "
+                       f"its terrain off in the view's settings.")
+        else:
+            self._info(f"{summary}. Open a 3D map view with View → 3D Map Views → "
+                       f"New 3D Map View.")
 
     def _project_write(self, *_):
         derived_layers.save_style(QgsProject.instance())

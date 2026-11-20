@@ -217,3 +217,134 @@ def test_no_rays_while_nothing_can_be_shown(qgis_app, store_with_model, make_doc
     link.cast_now()
     assert canvas.contexts == []
     link.unload()
+
+
+def _click(canvas, at=(5, 5), to=None, button=None):
+    """Press and release the left button (``to``: released elsewhere, after a drag).
+    Returns what the event filters answered for the release (False: QGIS handles it)."""
+    from qgis.PyQt.QtCore import QCoreApplication, QEvent, QPointF, Qt
+    from qgis.PyQt.QtGui import QMouseEvent
+    left = button or Qt.MouseButton.LeftButton
+    to = to or at
+    for etype, (x, y), held in ((QEvent.Type.MouseButtonPress, at, left),
+                                (QEvent.Type.MouseMove, to, left),
+                                (QEvent.Type.MouseButtonRelease, to, Qt.MouseButton.NoButton)):
+        event = QMouseEvent(etype, QPointF(x, y), QPointF(x, y),
+                            Qt.MouseButton.NoButton if etype == QEvent.Type.MouseMove else left,
+                            held, Qt.KeyboardModifier.NoModifier)
+        QCoreApplication.sendEvent(canvas, event)
+    return event
+
+
+@pytest.fixture
+def two_profiles(store_with_model):
+    """The store with a second profile, P2, 100 m north of P1 and parallel to it."""
+    from groundwork_geophysics.core.model import profile_from_polyline
+    st, p, _ = store_with_model
+    p2 = profile_from_polyline("P2", "EPSG:25832", np.array([[0.0, 100.0], [50.0, 100.0]]))
+    st.save_profile(p2)
+    return st, p, p2
+
+
+def test_a_click_on_another_curtain_opens_its_profile(qgis_app, two_profiles, make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p1, p2 = two_profiles
+    dock = make_dock(st)
+    dock.open_profile(p1.id)
+    canvas = _canvas([_Hit((20.0, 100.3, 97.0), 5.0), _Hit((20.0, 0.0, 97.0), 50.0)])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _move(canvas)                                    # hovering never switches
+    link.cast_now()
+    assert dock.current_profile_id() == p1.id
+    _click(canvas)
+    assert dock.current_profile_id() == p2.id        # the nearest hit's profile
+    assert dock.cursor_chainage() == pytest.approx(20.0, abs=1e-6)
+    link.unload()
+
+
+def test_a_drag_or_another_button_does_not_switch(qgis_app, two_profiles, make_dock):
+    from qgis.PyQt.QtCore import Qt
+
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p1, _p2 = two_profiles
+    dock = make_dock(st)
+    dock.open_profile(p1.id)
+    canvas = _canvas([_Hit((20.0, 100.0, 97.0), 5.0)])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _click(canvas, at=(5, 5), to=(30, 5))           # turning the view
+    _click(canvas, button=Qt.MouseButton.RightButton)
+    assert dock.current_profile_id() == p1.id
+    _click(canvas, at=(5, 5), to=(8, 7))             # a hand that shakes a little
+    assert dock.current_profile_id() != p1.id
+    link.unload()
+
+
+def test_a_click_opens_the_panel_hidden_or_empty(qgis_app, two_profiles, make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, _p1, p2 = two_profiles
+    dock = make_dock(st)
+    dock.hide()                                      # hidden, no profile open
+    canvas = _canvas([_Hit((20.0, 100.0, 97.0), 5.0)])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _click(canvas)
+    assert dock.current_profile_id() == p2.id and dock.isVisible()
+    link.unload()
+
+
+def test_a_click_off_every_profile_or_without_a_project_changes_nothing(
+        qgis_app, two_profiles, make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p1, _p2 = two_profiles
+    dock = make_dock(st)
+    dock.open_profile(p1.id)
+    canvas = _canvas([_Hit((20.0, 50.0, 97.0), 5.0)])          # between the two lines
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    _click(canvas)
+    assert dock.current_profile_id() == p1.id
+    dock.set_provider(None)
+    canvas.contexts.clear()
+    _click(canvas)
+    assert canvas.contexts == []                     # no project: no ray
+    link.unload()
+
+
+def test_the_click_goes_on_to_qgis(qgis_app, two_profiles, make_dock):
+    from qgis.PyQt.QtCore import QEvent, QPointF, Qt
+    from qgis.PyQt.QtGui import QMouseEvent
+
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, p1, _p2 = two_profiles
+    dock = make_dock(st)
+    canvas = _canvas([_Hit((20.0, 100.0, 97.0), 5.0)])
+    link = View3dLink(_iface(canvas), dock)
+    link.poll()
+    left = Qt.MouseButton.LeftButton
+    for etype, held in ((QEvent.Type.MouseButtonPress, left),
+                        (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton)):
+        event = QMouseEvent(etype, QPointF(5, 5), QPointF(5, 5), left, held,
+                            Qt.KeyboardModifier.NoModifier)
+        assert link.eventFilter(canvas, event) is False
+    link.unload()
+
+
+def test_a_newly_seen_3d_view_is_announced_once(qgis_app, store_with_model, make_dock):
+    from groundwork_geophysics.section.view3d_link import View3dLink
+    st, _p, _ = store_with_model
+    canvases, seen = [], []
+
+    class Iface:
+        def mapCanvases3D(self):
+            return list(canvases)
+    link = View3dLink(Iface(), make_dock(st))
+    link.on_opened = lambda: seen.append(1)
+    link.poll()
+    assert seen == []
+    canvases.append(_canvas([]))
+    link.poll()
+    link.poll()
+    assert seen == [1]
+    link.unload()

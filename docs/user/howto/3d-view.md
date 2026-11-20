@@ -13,6 +13,8 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
 Nothing is shown in 3D until you ask. Untick a model or a profile's boreholes to take them out again.
 
+If no 3D map view is open when you press **OK**, a new one opens, ready to look at: the terrain switched off, eye-dome lighting on and the camera on what you ticked, seen at an angle from the long side of the profiles. A 3D map view you already have open is used as it is: its settings and camera are not touched.
+
 ## A curtain looks like its section
 
 A curtain follows the model's **display** in the section panel, and changes when you change it there:
@@ -28,6 +30,8 @@ The colour scale and the coverage fade follow too: the faded part is left out of
 
 **Models in 3D**, **Contours in 3D** and **Boreholes in 3D** are temporary layers: they are not stored in the Groundwork file and are rebuilt from your models when you open the project.
 
+The 3D layers are kept up to date only while a 3D map view is open: with none open, a change in the section panel (display, colour scale, fade, data) only marks them as out of date, so no point clouds or pictures are written that nobody sees. They catch up as soon as a 3D map view opens, or when you press **OK** in **Show in 3D…**. If you look at them in **Qgis2threejs** instead (it has no QGIS 3D map view), press **OK** in **Show in 3D…** to bring them up to date before you export.
+
 The **point clouds** are files: they are written to a folder next to the Groundwork file, named after it with **_3d** at the end (for `site_groundwork.gpkg`: `site_groundwork_3d`). They are made from your models whenever needed, and the plugin only ever deletes the files it wrote there. If the folder is missing when you open the project (deleted, or not copied along), QGIS asks about the unavailable layers: choose to keep them, and the curtains are written again once the project is open. The first time QGIS opens a point cloud it builds an index of it (a progress bar in the status bar), and the points show when that is done.
 
 ## Section pictures instead of layers
@@ -40,6 +44,8 @@ At the bottom of **Show in 3D…**, **Show models as** offers two looks for all 
 The pictures are 3D Tiles (a `.json` tileset and a `.glb` model per model) in the same folder as the point clouds. Long profiles are drawn coarser, so that a picture stays a reasonable size; still, drawing the pictures takes a few seconds (a busy cursor shows it), and every picture layer also costs the 2D map a moment when it redraws.
 
 ## Opening a 3D map view
+
+**Show in 3D…** opens a ready 3D map view when none is open (see above). To open one yourself, or to set up one you already had open:
 
 1. **View → 3D Map Views → New 3D Map View.**
 2. In the view's settings (the wrench) → **Terrain**, switch the terrain **off** to start with. The curtains hang below the ground surface, and an opaque terrain hides them. With a DEM as terrain, lower its opacity or look from below.
@@ -56,7 +62,9 @@ The interpretation lies in the same plane as its profile's curtain. So that it n
 
 ## Pointing in 3D shows the place in the section
 
-Move the mouse over a curtain, a section picture, a borehole column or a point cloud in the 3D view (with no mouse button held): when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section, and the marker on the 2D map moves to the same place on the profile line. Over anything else, or off the 3D view, the cursor hides. It only follows while the section panel is open with a profile in it. The section never switches profile by itself: open the profile you want to follow first.
+Move the mouse over a curtain, a section picture, a borehole column or a point cloud in the 3D view (with no mouse button held): when it belongs to the profile open in the section panel, the panel's cursor moves to that place, with a small ring at its elevation and the readout (chainage, elevation, depth, value) below the section, and the marker on the 2D map moves to the same place on the profile line. Over anything else, or off the 3D view, the cursor hides. It only follows while the section panel is open with a profile in it. Moving the mouse never switches the profile.
+
+A **click** does: click (left button, without dragging) on the curtain, section picture or point cloud of another profile (or a borehole column standing on its line), and the section panel opens that profile, with its cursor at the place you clicked. If the panel was closed, it opens. A drag turns or moves the view as usual and switches nothing, and the click still does whatever QGIS's current 3D tool does (identify, measure and so on).
 
 ## Working with the layers
 
