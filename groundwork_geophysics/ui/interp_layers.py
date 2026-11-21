@@ -266,8 +266,10 @@ def _give_source(renderer, geometry) -> None:
 def sync_3d(layer: QgsVectorLayer) -> None:
     """Match the 3D categories to the 2D ones, in the 2D look (``look_2d``): add new
     entities, drop deleted ones, and restyle the ones the plugin wrote when the 2D style
-    changed. A 3D category the user restyled stays; a 3D renderer the user replaced is left
-    alone. Nothing is set when nothing changed (the 3D view would rebuild the layer)."""
+    changed. Only the per-entity style is followed (2D and 3D categorized by
+    ``feature_id``): a 3D category the user restyled stays, and so does the whole 3D style
+    when either one was replaced. Nothing is set when nothing changed (the 3D view would
+    rebuild the layer)."""
     if not _has_3d():
         return
     r3d = _categorized_3d(layer)
@@ -279,7 +281,8 @@ def sync_3d(layer: QgsVectorLayer) -> None:
     if changed:
         _give_source(r3d, geometry)
     r2d = _categorized_2d(layer)
-    if r3d.classAttribute() == "feature_id" and r2d is not None:
+    # only the per-entity 2D style is followed: one by another field leaves 3D as it is
+    if r3d.classAttribute() == "feature_id" and r2d is not None             and r2d.classAttribute() == "feature_id":
         changed = _follow_categories(layer, r3d, r2d, geometry) or changed
     if changed:
         layer.setRenderer3D(r3d)

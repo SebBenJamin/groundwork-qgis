@@ -550,3 +550,19 @@ def test_the_source_symbol_is_there_whatever_the_2d_style(qgis_app, interp_store
     il.restyle_from_2d(interp_store, prj)
     assert sip.cast(polys.renderer3D(), QgsCategorized3DRenderer).sourceSymbol() is not None
     prj.clear()
+
+
+def test_a_2d_style_by_another_field_leaves_the_3d_style_alone(qgis_app, interp_store):
+    """The 3D style follows the per-entity 2D style only: a 2D style categorized by "type"
+    would give 3D categories 'clay', 'sand' under "feature_id", which match no feature."""
+    from qgis.core import QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsRendererCategory
+    prj, polys = _poly_layer(interp_store)
+    before = [c.value() for c in polys.renderer3D().categories()]
+    assert before
+    polys.setRenderer(QgsCategorizedSymbolRenderer("type", [
+        QgsRendererCategory("clay", QgsFillSymbol.createSimple({}), "clay"),
+        QgsRendererCategory("sand", QgsFillSymbol.createSimple({}), "sand")]))
+    r3d = polys.renderer3D()
+    assert r3d.classAttribute() == "feature_id"
+    assert [c.value() for c in r3d.categories()] == before
+    prj.clear()
