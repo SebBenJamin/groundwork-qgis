@@ -527,3 +527,26 @@ def test_a_renderer_of_another_kind_is_never_taken_for_categorized(qgis_app):
         il.default_style(layer)
         il.default_3d(layer)
     assert wrong == 0
+
+
+def test_the_source_symbol_is_there_whatever_the_2d_style(qgis_app, interp_store):
+    """QGIS's 3D style page dereferences the categorized 3D renderer's source symbol: it is
+    given also when the 2D style is not the per-entity one (e.g. a 0.13 project restyled in
+    2D, upgraded; or "Restyle the interpretation from 2D" with such a style)."""
+    from qgis._3d import QgsCategorized3DRenderer
+    from qgis.core import QgsFillSymbol, QgsSingleSymbolRenderer
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui import interp_layers as il
+    prj, polys = _poly_layer(interp_store)
+    polys.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({})))
+    il.default_3d(polys)
+    r3d = sip.cast(polys.renderer3D(), QgsCategorized3DRenderer)
+    assert r3d.sourceSymbol() is not None
+    polys.setRenderer3D(QgsCategorized3DRenderer("feature_id", []))   # saved without one
+    il.ensure_3d_styles(interp_store, prj)
+    assert sip.cast(polys.renderer3D(), QgsCategorized3DRenderer).sourceSymbol() is not None
+    polys.setRenderer3D(None)
+    il.restyle_from_2d(interp_store, prj)
+    assert sip.cast(polys.renderer3D(), QgsCategorized3DRenderer).sourceSymbol() is not None
+    prj.clear()

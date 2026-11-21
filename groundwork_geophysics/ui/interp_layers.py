@@ -234,6 +234,7 @@ def default_3d(layer: QgsVectorLayer) -> None:
         return
     from qgis._3d import QgsCategorized3DRenderer
     renderer = QgsCategorized3DRenderer("feature_id", [])
+    _give_source(renderer, layer.geometryType())
     layer.setRenderer3D(renderer)
     layer.setCustomProperty(STYLED_3D, True)
     sync_3d(layer)
@@ -251,37 +252,53 @@ def _symbol_hash(symbol) -> str:
     return hashlib.sha1(doc.toString().encode()).hexdigest()[:16]
 
 
+def _give_source(renderer, geometry) -> None:
+    """The categorized 3D renderer's source symbol: QGIS's 3D style page clones it without
+    checking, so without one selecting the layer (with the styling panel on 3D) or opening
+    its properties crashes QGIS."""
+    from qgis.PyQt import sip
+    source = _symbol_3d(geometry, DEFAULT_RGB)
+    renderer.setSourceSymbol(source)
+    if sip.ispyowned(source):                   # the binding may not hand it over itself
+        sip.transferto(source, None)
+
+
 def sync_3d(layer: QgsVectorLayer) -> None:
     """Match the 3D categories to the 2D ones, in the 2D look (``look_2d``): add new
     entities, drop deleted ones, and restyle the ones the plugin wrote when the 2D style
     changed. A 3D category the user restyled stays; a 3D renderer the user replaced is left
     alone. Nothing is set when nothing changed (the 3D view would rebuild the layer)."""
-    import json
     if not _has_3d():
         return
     r3d = _categorized_3d(layer)
-    r2d = _categorized_2d(layer)
-    if r3d is None or r3d.classAttribute() != "feature_id" or r2d is None:
+    if r3d is None:
         return
+    geometry = layer.geometryType()
+    r3d = r3d.clone()
+    changed = r3d.sourceSymbol() is None    # one saved without it: given whatever the 2D
+    if changed:
+        _give_source(r3d, geometry)
+    r2d = _categorized_2d(layer)
+    if r3d.classAttribute() == "feature_id" and r2d is not None:
+        changed = _follow_categories(layer, r3d, r2d, geometry) or changed
+    if changed:
+        layer.setRenderer3D(r3d)
+        handed_over(r3d)
+
+
+def _follow_categories(layer, r3d, r2d, geometry) -> bool:
+    """``sync_3d``'s matching of ``r3d``'s categories (a copy) to ``r2d``'s; True when
+    ``r3d`` changed."""
+    import json
+
     from qgis._3d import Qgs3DRendererCategory
     try:
         written = json.loads(layer.customProperty(SYMBOLS_3D) or "null")
     except (TypeError, ValueError):
         written = None                       # written before 0.14 recorded it: all ours
-    geometry = layer.geometryType()
-    r3d = r3d.clone()
     categories_2d = r2d.categories()        # the copies own the symbols: keep them alive
     wanted = {c.value(): c for c in categories_2d}
     changed = False
-    if r3d.sourceSymbol() is None:
-        # QGIS's 3D style page clones this without checking: without it, selecting the
-        # layer (with the styling panel on 3D) or opening its properties crashes QGIS
-        from qgis.PyQt import sip
-        source = _symbol_3d(geometry, DEFAULT_RGB)
-        r3d.setSourceSymbol(source)
-        if sip.ispyowned(source):           # the binding may not hand it over itself
-            sip.transferto(source, None)
-        changed = True
     categories_3d = r3d.categories()
     for i in reversed(range(len(categories_3d))):
         if categories_3d[i].value() not in wanted:
@@ -305,10 +322,8 @@ def sync_3d(layer: QgsVectorLayer) -> None:
             r3d.updateCategorySymbol(index[value], symbol)
             changed = True
         recorded[str(value)] = digest
-    if changed:
-        layer.setRenderer3D(r3d)
-        handed_over(r3d)
     layer.setCustomProperty(SYMBOLS_3D, json.dumps(recorded, sort_keys=True))
+    return changed
 
 
 def follow_2d(layer: QgsVectorLayer) -> None:
