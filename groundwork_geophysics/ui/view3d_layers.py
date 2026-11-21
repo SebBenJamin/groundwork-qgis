@@ -1310,6 +1310,57 @@ def shown_box(store, provider, project: QgsProject) -> tuple | None:
     return min(xs), min(ys), max(xs), max(ys), min(zs), max(zs)
 
 
+def prune(store, project: QgsProject) -> None:
+    """Take out what ``sync`` would take out because its model or profile is no longer
+    chosen or no longer there, without building or writing anything: with no 3D view open,
+    a deleted model's cloud (drawn in 2D too), picture and cells, or a deleted profile's
+    name, ground line and boreholes, must not stay in the Layers panel and the saved project.
+    Everything else waits for a 3D view (``sync``)."""
+    choice = read_choice(project)
+    chosen = _chosen_models(store, choice)
+    profiles = {p.id for p in store.profiles()}
+    models = {d.id for _p, d in chosen}
+    pictured = {p.id for p, d in chosen if choice.look_of(d.id) == "picture"}
+    columns = set(choice.boreholes) & profiles
+    ticked = {p.id for p, _d in chosen} | columns
+    for dataset_id, layer in clouds_3d(project).items():
+        if dataset_id not in models or choice.look_of(dataset_id) == "picture":
+            _drop_cloud(project, layer)
+    for layer in _picture_layers(project):
+        if layer.customProperty(_PROFILE) not in pictured:
+            _drop_picture(project, layer)
+    for profile_id, layer in names_3d(project).items():
+        if profile_id not in ticked:
+            project.removeMapLayer(layer.id())
+    shared = layers_3d(project)
+    for kind, key, keep in (("models", "dataset_id", models), ("contours", "dataset_id", models),
+                            ("ground", "profile_id", ticked), ("boreholes", "profile_id", columns)):
+        if kind in shared:
+            _prune_features(project, shared[kind], key, keep)
+    for group in (SMOOTH_GROUP, PICTURES_GROUP, NAMES_GROUP):
+        _drop_empty_group(project, group)
+    in_use = {Path(la.source()) for la in clouds_3d(project).values()}
+    in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
+    _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
+
+
+def _prune_features(project, layer, key: str, keep: set) -> None:
+    """``prune`` for a shared 3D layer: the features whose ``key`` is not in ``keep`` go
+    (and the layer, when nothing is kept), and so does their part of the build record."""
+    if not keep:
+        _built.pop(layer.id(), None)
+        project.removeMapLayer(layer.id())
+        return
+    gone = [f.id() for f in layer.dataProvider().getFeatures() if f[key] not in keep]
+    if not gone:
+        return
+    _edit(layer, gone, [])
+    built = _built.get(layer.id(), {})
+    built.pop("rows", None)                     # the ground lines' or boreholes' rows
+    for dataset_id in [k for k in built if k not in ("hidden",) and k not in keep]:
+        built.pop(dataset_id)
+
+
 def sync(store, provider, project: QgsProject, create: bool = False,
          boreholes: bool = True) -> dict:
     """Fill the 3D layers for the project's choice, each model in its representation: as

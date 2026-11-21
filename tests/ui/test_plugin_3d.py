@@ -200,3 +200,21 @@ def test_unloading_the_plugin_stops_the_3d_interpretation_following_2d(plugin,
     plug.unload()                                         # the plugin is switched off
     _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
     assert _symbol3d(polys).materialSettings().diffuse().name() == "#0000ff"
+
+
+def test_a_deleted_model_leaves_the_3d_layers_with_no_3d_view_open(plugin, store_with_model):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_layers import layers_3d
+    plug, iface, views, calls, shown = plugin
+    _with_3d(iface, views, made=False)
+    views.append(_canvas())
+    plug.set_store(store_with_model[0])
+    plug._sync_3d(create=True)
+    assert "models" in layers_3d(QgsProject.instance())
+    views.clear()                                    # the 3D view is closed
+    before = list(calls)
+    store_with_model[0].delete_dataset("d1")
+    plug._sync_3d()
+    assert calls == before                           # nothing is built ...
+    assert "models" not in layers_3d(QgsProject.instance())   # ... but it is gone

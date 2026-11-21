@@ -369,14 +369,23 @@ class WorkbenchPlugin:
     def _sync_3d(self, create: bool = False, boreholes: bool = True) -> dict:
         """Refill the Show in 3D layers (created only when the user asks); never raises out
         of opening or a notification. Without ``create`` and with no 3D map view open, it
-        only notes that the layers are out of date: point clouds and pictures are files,
-        rewritten on every style change, and nobody would see them. The next 3D view that
-        opens, or OK in Show in 3D…, brings them up to date."""
+        only takes out what belongs to deleted or unticked models and profiles and notes
+        that the layers are out of date: point clouds and pictures are files, rewritten on
+        every style change, and nobody would see them. The next 3D view that opens, or OK in
+        Show in 3D…, brings them up to date."""
         if self.provider is None or self._syncing_3d:
             return {}
         if not create and not view3d_view.views_open(self.iface):
             self._view3d_stale = True
             self._view3d_boreholes = False      # the waiting refill gathers them anyway
+            self._syncing_3d = True
+            try:
+                view3d_layers.prune(self.provider.store, QgsProject.instance())
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"3D view layers: {exc}", MENU_TITLE,
+                                         Qgis.MessageLevel.Warning)
+            finally:
+                self._syncing_3d = False
             return {}
         self._syncing_3d = True
         self._view3d_boreholes = False

@@ -1230,3 +1230,55 @@ def test_a_project_that_never_showed_anything_in_3d_stays_unmodified(setup):
     prj.setDirty(False)
     sync(st, provider, prj)                               # unchanged: not written again
     assert not prj.isDirty()
+
+
+# -- removals do not wait for a 3D view ------------------------------------------------------
+def _files(folder):
+    return sorted(p.name for p in Path(folder).glob("*")) if Path(folder).exists() else []
+
+
+def test_a_deleted_model_leaves_without_a_3d_view(setup, tmp_path):
+    """prune: a deleted model's cloud (drawn in 2D too), picture and cells go at once; the
+    other models stay as they are and nothing is built or written."""
+    from groundwork_geophysics.ui.view3d_layers import (cloud_folder, clouds_3d, layers_3d,
+                                                         pictures_3d, prune, sync)
+    st, p, provider, prj = setup
+    _model(st, p, tmp_path, "e")
+    q = profile_from_polyline("P2", CRS, np.array([[0.0, 10.0], [60.0, 10.0]]))
+    st.save_profile(q)
+    _model(st, q, tmp_path, "f")
+    _choose(prj, ["d", "e", "f"], looks={"d": "cloud", "f": "picture"})
+    sync(st, provider, prj, create=True)
+    assert set(clouds_3d(prj)) == {"d"} and set(pictures_3d(prj)) == {q.id}
+    cells = layers_3d(prj)["models"]
+    assert {f["dataset_id"] for f in cells.getFeatures()} == {"e"}
+    files = _files(cloud_folder(st))
+    st.delete_dataset("d")
+    st.delete_dataset("f")
+    prune(st, prj)
+    assert clouds_3d(prj) == {} and pictures_3d(prj) == {}
+    assert {f["dataset_id"] for f in layers_3d(prj)["models"].getFeatures()} == {"e"}
+    assert set(_files(cloud_folder(st))) <= set(files)    # nothing written
+    st.delete_dataset("e")
+    prune(st, prj)
+    assert "models" not in layers_3d(prj)
+
+
+def test_a_deleted_profile_leaves_without_a_3d_view(setup, tmp_path):
+    from groundwork_geophysics.ui.view3d_layers import layers_3d, names_3d, prune, sync
+    st, p, provider, prj = setup
+    q = profile_from_polyline("P2", CRS, np.array([[0.0, 10.0], [60.0, 10.0]]))
+    st.save_profile(q)
+    _model(st, q, tmp_path, "f")
+    _choose(prj, ["d", "f"], [p.id, q.id])
+    sync(st, provider, prj, create=True)
+    assert set(names_3d(prj)) == {p.id, q.id}
+    ground = layers_3d(prj)["ground"]
+    assert {f["profile_id"] for f in ground.getFeatures()} == {p.id, q.id}
+    st.delete_profile(q.id)
+    prune(st, prj)
+    assert set(names_3d(prj)) == {p.id}
+    assert {f["profile_id"] for f in ground.getFeatures()} == {p.id}
+    st.delete_profile(p.id)
+    prune(st, prj)
+    assert names_3d(prj) == {} and layers_3d(prj) == {}
