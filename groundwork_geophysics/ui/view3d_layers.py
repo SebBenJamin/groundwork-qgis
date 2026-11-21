@@ -55,6 +55,7 @@ ENTRY_MADE = "view3d_made"
 _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "boreholes", ... "cloud"
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
 _PROFILE = f"{LEGACY_ID}/view3d_profile"   # a section picture's profile id
+_NAME_ITEM = f"{LEGACY_ID}/view3d_name_item"   # a name layer: the id of the plugin's text
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
@@ -1046,18 +1047,35 @@ def _new_name(store, project: QgsProject, profile_id: str, name: str, fmt):
     return layer
 
 
+def _own_name_item(layer):
+    """(id, item) of the plugin's text in a name layer, or (None, None): the item whose id
+    the layer keeps (or the only item of a layer made before it kept one)."""
+    from qgis.core import QgsAnnotationItem, QgsAnnotationPointTextItem
+    items = layer.items()
+    own = layer.customProperty(_NAME_ITEM)
+    if own is None and len(items) == 1:
+        own = next(iter(items))
+    item = as_kind(items[own], "pointtext", QgsAnnotationItem,
+                   QgsAnnotationPointTextItem) if own in items else None
+    return (own, item) if item is not None else (None, None)
+
+
 def _fill_name(layer, name: str, x: float, y: float, z: float, fmt) -> None:
-    """One text item ``name`` at (x, y), drawn at height ``z``; nothing is set that is
-    already so (a text format the user gave the 3D view stays)."""
+    """The plugin's text item ``name`` at (x, y), drawn at height ``z``; items the user
+    added to the layer stay, and nothing is set that is already so (a text format the user
+    gave the 3D view stays)."""
     from qgis.core import QgsAnnotationPointTextItem, QgsPointXY
-    items = list(layer.items().values())
-    item = items[0] if len(items) == 1 else None
-    if (item is None or not isinstance(item, QgsAnnotationPointTextItem) or item.text() != name
+    own, item = _own_name_item(layer)
+    if (item is None or item.text() != name
             or abs(item.point().x() - x) > 1e-6 or abs(item.point().y() - y) > 1e-6):
-        layer.clear()
         new = QgsAnnotationPointTextItem(name, QgsPointXY(x, y))
         new.setFormat(fmt)
-        layer.addItem(new)
+        if own is None:
+            own = layer.addItem(new)
+        else:
+            layer.replaceItem(own, new)
+    if layer.customProperty(_NAME_ITEM) != own:
+        layer.setCustomProperty(_NAME_ITEM, own)
     if layer.name() != name:
         layer.setName(name)
     try:

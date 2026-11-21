@@ -1172,3 +1172,23 @@ def test_a_kind_the_user_removed_stays_removed_when_the_project_opens(setup):
     sync(st, provider, prj)
     sync(st, provider, prj)
     assert "ground" not in layers_3d(prj)
+
+
+def test_an_annotation_the_user_adds_to_a_name_layer_stays(setup):
+    """Only the plugin's own text item is replaced when the name changes or moves."""
+    from qgis.core import QgsAnnotationPointTextItem, QgsPointXY
+
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    name = sync(st, provider, prj, create=True)["names"][p.id]
+    mine = name.addItem(QgsAnnotationPointTextItem("my note", QgsPointXY(30.0, 1.0)))
+    p.name = "Line 78"
+    st.save_profile(p)
+    provider.notify_changed()
+    sync(st, provider, prj)
+    items = name.items()
+    assert mine in items and items[mine].text() == "my note"
+    assert sorted(item.text() for item in items.values()) == ["Line 78", "my note"]
+    sync(st, provider, prj)                               # unchanged: nothing replaced
+    assert sorted(item.text() for item in name.items().values()) == ["Line 78", "my note"]
