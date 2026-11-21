@@ -566,3 +566,18 @@ def test_a_2d_style_by_another_field_leaves_the_3d_style_alone(qgis_app, interp_
     assert r3d.classAttribute() == "feature_id"
     assert [c.value() for c in r3d.categories()] == before
     prj.clear()
+
+
+@pytest.mark.parametrize("geometry", ["PointZ", "LineStringZ", "PolygonZ"])
+def test_a_sync_without_change_leaves_the_3d_style_as_it_is(qgis_app, geometry):
+    """A new 3D style rebuilds the layer in the 3D view. A point's 3D symbol carries a
+    billboard marker with a random id and colour: it must not count as a change."""
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = _memory_interp_layer(geometry)
+    il.sync_3d(layer)
+    replaced = []
+    layer.renderer3DChanged.connect(lambda: replaced.append(1))
+    for _ in range(3):
+        il.sync_3d(layer)
+        il.sync_categories(layer, [_Entity("a"), _Entity("b")])
+    assert replaced == []

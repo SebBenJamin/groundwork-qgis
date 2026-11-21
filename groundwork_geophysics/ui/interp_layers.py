@@ -240,7 +240,14 @@ def default_3d(layer: QgsVectorLayer) -> None:
     sync_3d(layer)
 
 
+#: a symbol layer's id in a saved symbol: new and random in every copy
+_LAYER_ID = re.compile(r'\sid="[^"]*"')
+
+
 def _symbol_hash(symbol) -> str:
+    """A fingerprint of what a 3D symbol shows: its saved form without the 2D marker a
+    point symbol carries for its billboard shape (made new, with a random id and colour, for
+    every symbol; the spheres don't show it) and without symbol layer ids."""
     import hashlib
 
     from qgis.core import QgsReadWriteContext
@@ -249,7 +256,12 @@ def _symbol_hash(symbol) -> str:
     element = doc.createElement("symbol")
     doc.appendChild(element)
     symbol.writeXml(element, QgsReadWriteContext())
-    return hashlib.sha1(doc.toString().encode()).hexdigest()[:16]
+    child = element.firstChildElement("symbol")
+    while not child.isNull():
+        following = child.nextSiblingElement("symbol")
+        element.removeChild(child)
+        child = following
+    return hashlib.sha1(_LAYER_ID.sub("", doc.toString()).encode()).hexdigest()[:16]
 
 
 def _give_source(renderer, geometry) -> None:
