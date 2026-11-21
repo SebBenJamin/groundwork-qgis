@@ -294,7 +294,8 @@ def sync_3d(layer: QgsVectorLayer) -> None:
         _give_source(r3d, geometry)
     r2d = _categorized_2d(layer)
     # only the per-entity 2D style is followed: one by another field leaves 3D as it is
-    if r3d.classAttribute() == "feature_id" and r2d is not None             and r2d.classAttribute() == "feature_id":
+    if (r3d.classAttribute() == "feature_id" and r2d is not None
+            and r2d.classAttribute() == "feature_id"):
         changed = _follow_categories(layer, r3d, r2d, geometry) or changed
     if changed:
         layer.setRenderer3D(r3d)
