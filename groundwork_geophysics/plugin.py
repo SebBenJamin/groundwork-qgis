@@ -24,7 +24,8 @@ from .ui import derived_layers, project_actions, view3d_layers, view3d_view
 from .ui.context_dialog import read_settings
 from .section.field_notes_render import note_looks
 from .ui.field_note_layers import ensure_note_layers, migrate_note_styles
-from .ui.interp_layers import ensure_3d_styles, interp_layers, migrate_letter_styles
+from .ui.interp_layers import (ensure_3d_styles, interp_layers, migrate_letter_styles,
+                               stop_following)
 
 
 def _own_styled_layers(store, project) -> list:
@@ -166,6 +167,7 @@ class WorkbenchPlugin:
             except (TypeError, RuntimeError):
                 pass
         self._project_signals.clear()
+        stop_following()                    # 2D restyles no longer restyle the 3D style
         self._close_profile_dialog()
         self._close_data_dialog()
         self._close_context_dialog()
@@ -223,6 +225,7 @@ class WorkbenchPlugin:
         The canvas is detached before the old source is unregistered, because
         unregistering destroys the source."""
         self._close_borehole_viewer()          # it follows the old store's data
+        stop_following()                       # the old store's interpretation layers
         view3d_layers.forget_shown(QgsProject.instance())   # a new store starts afresh
         old = derived_layers.derived_layer(QgsProject.instance())
         if old is not None:                    # the old store's electrodes

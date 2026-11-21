@@ -581,3 +581,23 @@ def test_a_sync_without_change_leaves_the_3d_style_as_it_is(qgis_app, geometry):
         il.sync_3d(layer)
         il.sync_categories(layer, [_Entity("a"), _Entity("b")])
     assert replaced == []
+
+
+def test_following_the_2d_style_stops_when_told(qgis_app, interp_store):
+    """With the plugin unloaded or the store closed, a 2D restyle leaves the 3D style alone;
+    following starts again with the next store."""
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui import interp_layers as il
+    prj, polys = _poly_layer(interp_store)
+    before = _symbol3d(polys).materialSettings().diffuse().name()
+    il.stop_following()
+    assert not polys.property("groundworkFollows2d")
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == before
+    il.ensure_3d_styles(interp_store, prj)                # the store is opened again
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#00ff00"
+    il.stop_following()
+    prj.clear()
+    il.stop_following()                                   # a layer gone meanwhile is fine

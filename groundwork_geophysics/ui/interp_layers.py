@@ -341,13 +341,41 @@ def _follow_categories(layer, r3d, r2d, geometry) -> bool:
     return changed
 
 
+_FOLLOWS = "groundworkFollows2d"            # Qt property: the layer's 3D style follows 2D
+#: the slots ``follow_2d`` connected, held weakly: Qt holds each while its layer lives, and
+#: a layer QGIS deleted must not stay wrapped here
+_following: list = []
+
+
 def follow_2d(layer: QgsVectorLayer) -> None:
-    """Restyling the layer in 2D (Symbology) restyles its 3D categories too."""
+    """Restyling the layer in 2D (Symbology) restyles its 3D categories too, until
+    ``stop_following``."""
+    import weakref
     from functools import partial
-    if layer.property("groundworkFollows2d"):
+    if layer.property(_FOLLOWS):
         return
-    layer.rendererChanged.connect(partial(sync_3d, layer))
-    layer.setProperty("groundworkFollows2d", True)
+    slot = partial(sync_3d, layer)
+    layer.rendererChanged.connect(slot)
+    layer.setProperty(_FOLLOWS, True)
+    _following.append(weakref.ref(slot))
+
+
+def stop_following() -> None:
+    """Undo every ``follow_2d``: the plugin is unloaded or its store closed."""
+    from qgis.PyQt import sip
+    for ref in _following:
+        slot = ref()
+        if slot is None:                        # its layer is gone, and the connection
+            continue
+        layer = slot.args[0]
+        try:
+            if sip.isdeleted(layer):
+                continue
+            layer.rendererChanged.disconnect(slot)
+            layer.setProperty(_FOLLOWS, None)
+        except (TypeError, RuntimeError):
+            pass
+    _following.clear()
 
 
 def ensure_3d_styles(store: ProjectStore, project: QgsProject) -> int:

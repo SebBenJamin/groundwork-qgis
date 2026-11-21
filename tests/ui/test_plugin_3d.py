@@ -168,3 +168,35 @@ def test_ok_restyles_the_interpretation_from_2d_when_ticked(plugin, store_with_m
     monkeypatch.setattr(View3dDialog, "restyle_interpretation", lambda self: True)
     plug.show_in_3d()
     assert restyled == [store_with_model[0]] and "follows its 2D style" in shown[-1]
+
+
+def test_unloading_the_plugin_stops_the_3d_interpretation_following_2d(plugin,
+                                                                        store_with_model):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+    from tests.ui.test_interp_layers import _restyle, _symbol3d
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    plug, iface, views, calls, shown = plugin
+    st = store_with_model[0]
+    st.ensure_interpretation()
+    v = st.current_version()
+    f = InterpFeature(new_id(), v.id, type="anomaly", name="A")
+    st.save_feature(f)
+    st.save_piece(InterpPiece(new_id(), v.id, f.id, store_with_model[1].id, "polygon",
+                              [(10, 100), (20, 100), (20, 95), (10, 95)]))
+    st.rebuild_derived(v.id, {store_with_model[1].id: store_with_model[1].chainage})
+    polys = add_interp_layers(st, QgsProject.instance())["interp_polygons_3d"]
+    plug.set_store(st)
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#ff0000"
+    plug.set_store(None)                                  # the store is closed
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#ff0000"
+    plug.set_store(st)
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#0000ff")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#0000ff"
+    plug.unload()                                         # the plugin is switched off
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#0000ff"
