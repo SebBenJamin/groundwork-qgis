@@ -17,6 +17,7 @@ from qgis.PyQt.QtGui import QColor
 
 from ..store.gpkg_store import ProjectStore
 from .project_actions import find_store_layers, plugin_group
+from .qgis_objects import as_kind, handed_over
 
 INTERP_GROUP = "Interpretation"
 INTERP_NAMES = ("interp_features", "interp_polygons_3d", "interp_lines_3d", "interp_points_3d",
@@ -87,8 +88,8 @@ def sync_categories(layer: QgsVectorLayer, features) -> None:
 
     The renderer is edited on a copy and set back, so QGIS's Layers panel legend (which
     listens to ``rendererChanged``) shows the new entries."""
-    r = layer.renderer()
-    if not isinstance(r, QgsCategorizedSymbolRenderer) or r.classAttribute() != "feature_id":
+    r = _categorized_2d(layer)
+    if r is None or r.classAttribute() != "feature_id":
         return
     r = r.clone()
     wanted = {f.id: f for f in features}
@@ -104,7 +105,23 @@ def sync_categories(layer: QgsVectorLayer, features) -> None:
                                                                   _entity_rgb(len(r.categories()))),
                                               entity_label(feat)))
     layer.setRenderer(r)
+    handed_over(r)
     sync_3d(layer)
+
+
+def _categorized_2d(layer: QgsVectorLayer):
+    """The layer's 2D renderer when it is categorized (asked of QGIS), else None."""
+    from qgis.core import QgsFeatureRenderer
+    return as_kind(layer.renderer(), "categorizedSymbol", QgsFeatureRenderer,
+                   QgsCategorizedSymbolRenderer)
+
+
+def _categorized_3d(layer: QgsVectorLayer):
+    """The layer's 3D renderer when it is categorized (asked of QGIS), else None."""
+    from qgis._3d import QgsCategorized3DRenderer
+    from qgis.core import QgsAbstract3DRenderer
+    return as_kind(layer.renderer3D(), "categorized", QgsAbstract3DRenderer,
+                   QgsCategorized3DRenderer)
 
 
 # -- the 3D view ------------------------------------------------------------------------------
@@ -240,10 +257,11 @@ def sync_3d(layer: QgsVectorLayer) -> None:
     changed. A 3D category the user restyled stays; a 3D renderer the user replaced is left
     alone. Nothing is set when nothing changed (the 3D view would rebuild the layer)."""
     import json
-    r3d = layer.renderer3D()
-    r2d = layer.renderer()
-    if (r3d is None or r3d.type() != "categorized" or r3d.classAttribute() != "feature_id"
-            or not isinstance(r2d, QgsCategorizedSymbolRenderer) or not _has_3d()):
+    if not _has_3d():
+        return
+    r3d = _categorized_3d(layer)
+    r2d = _categorized_2d(layer)
+    if r3d is None or r3d.classAttribute() != "feature_id" or r2d is None:
         return
     from qgis._3d import Qgs3DRendererCategory
     try:
@@ -289,6 +307,7 @@ def sync_3d(layer: QgsVectorLayer) -> None:
         recorded[str(value)] = digest
     if changed:
         layer.setRenderer3D(r3d)
+        handed_over(r3d)
     layer.setCustomProperty(SYMBOLS_3D, json.dumps(recorded, sort_keys=True))
 
 
@@ -329,9 +348,9 @@ def restyle_from_2d(store: ProjectStore, project: QgsProject) -> int:
     for name, layer in interp_layers(store, project).items():
         if name not in LAYERS_3D:
             continue
-        r3d = layer.renderer3D()
+        r3d = _categorized_3d(layer)
         layer.removeCustomProperty(SYMBOLS_3D)          # every 3D category counts as ours
-        if r3d is None or r3d.type() != "categorized" or r3d.classAttribute() != "feature_id":
+        if r3d is None or r3d.classAttribute() != "feature_id":
             default_3d(layer)
         else:
             sync_3d(layer)

@@ -291,6 +291,14 @@ def _restyle(layer, change):
     change(symbol)
     r2d.updateCategorySymbol(0, symbol)
     layer.setRenderer(r2d)
+    _qgis_holds(r2d)
+
+
+def _qgis_holds(obj):
+    """As QGIS's own widgets hand it over: no Python wrapper stays tied to the layer (a stale
+    one would come back later as another object of the wrong class)."""
+    from qgis.PyQt import sip
+    sip.transferto(obj, None)
 
 
 _KEEP = []          # clones behind sip.cast wrappers: the wrapper does not own them
@@ -356,6 +364,7 @@ def test_a_3d_category_the_user_restyled_is_not_followed(qgis_app, interp_store)
     own.setMaterialSettings(material)
     r3d.updateCategorySymbol(0, own)
     polys.setRenderer3D(r3d)
+    _qgis_holds(r3d)
     _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
     assert _symbol3d(polys).materialSettings().diffuse().name() == "#123456"
     prj.clear()
@@ -402,6 +411,7 @@ def test_restyling_from_2d_resets_every_3d_category_and_style(qgis_app, interp_s
     own.setMaterialSettings(material)
     r3d.updateCategorySymbol(0, own)
     polys.setRenderer3D(r3d)
+    _qgis_holds(r3d)
     layers = interp_layers(interp_store, prj)
     layers["interp_lines_3d"].setRenderer3D(QgsVectorLayer3DRenderer(QgsLine3DSymbol()))
     layers["interp_points_3d"].setRenderer3D(None)
@@ -439,3 +449,81 @@ def test_the_3d_renderer_has_the_source_symbol_qgis_needs(qgis_app, interp_store
     r3d = sip.cast(polys.renderer3D(), QgsCategorized3DRenderer)
     assert r3d.sourceSymbol() is not None
     prj.clear()
+
+
+# -- a renderer handed to QGIS is QGIS's: no stale Python wrapper stays behind ---------------
+class _Entity:
+    def __init__(self, fid):
+        self.id, self.name, self.type = fid, "n" + fid, "t"
+
+
+def _alive(type_name):
+    import gc
+    gc.collect()
+    return sum(1 for o in gc.get_objects() if type(o).__name__ == type_name)
+
+
+def _memory_interp_layer(geometry="PolygonZ"):
+    from qgis.core import QgsVectorLayer
+
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = QgsVectorLayer(f"{geometry}?crs=EPSG:25832&field=feature_id:string&field=type:string",
+                           "p", "memory")
+    il.default_style(layer)
+    il.sync_categories(layer, [_Entity("a"), _Entity("b")])
+    il.default_3d(layer)
+    il.follow_2d(layer)
+    return layer
+
+
+def test_renderers_set_by_the_plugin_leave_no_python_wrapper_behind(qgis_app):
+    """A renderer copy handed to the layer stayed wrapped for as long as the layer lived;
+    once QGIS deleted it, a new object QGIS made at its address came back to Python as
+    that stale wrapper, of the wrong class (a graduated renderer seen as categorized:
+    sync_categories on it crashed QGIS)."""
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = _memory_interp_layer()
+    before_2d = _alive("QgsCategorizedSymbolRenderer")
+    before_3d = _alive("QgsCategorized3DRenderer")
+    for i in range(40):                                  # every sync replaces both renderers
+        il.sync_categories(layer, [_Entity("a"), _Entity("b"), _Entity(str(i))])
+    assert _alive("QgsCategorizedSymbolRenderer") <= before_2d + 1
+    assert _alive("QgsCategorized3DRenderer") <= before_3d + 1
+    assert layer.renderer().type() == "categorizedSymbol"
+    assert len(layer.renderer().categories()) == 3 and len(layer.renderer3D().categories()) == 3
+
+
+def test_a_renderer_of_another_kind_is_never_taken_for_categorized(qgis_app):
+    """The user's graduated, rule-based or single-symbol renderer (made by QGIS, as Layer
+    Properties does) stays as it is, however often the plugin syncs in between."""
+    from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    from qgis.core import (QgsFillSymbol, QgsGraduatedSymbolRenderer, QgsRuleBasedRenderer,
+                           QgsSingleSymbolRenderer)
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = _memory_interp_layer()
+    others = [lambda: QgsGraduatedSymbolRenderer("feature_id", []),
+              lambda: QgsRuleBasedRenderer(QgsFillSymbol.createSimple({})),
+              lambda: QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({}))]
+    wrong = 0
+    for i in range(150):
+        il.sync_categories(layer, [_Entity("a"), _Entity("b"), _Entity(str(i))])
+        made = others[i % 3]().clone()                   # made in C++, as QGIS's own widget
+        kind = made.type()
+        layer.setRenderer(made)
+        sip.transferto(made, None)                       # as QGIS holds it: no Python owner
+        del made
+        got = layer.renderer()
+        wrong += type(got).__name__ == "QgsCategorizedSymbolRenderer"
+        il.sync_categories(layer, [_Entity("a")])        # leaves the user's renderer alone
+        il.sync_3d(layer)
+        assert layer.renderer().type() == kind
+        user_3d = QgsVectorLayer3DRenderer(QgsPolygon3DSymbol()).clone()
+        layer.setRenderer3D(user_3d)
+        sip.transferto(user_3d, None)
+        del user_3d
+        assert type(layer.renderer3D()).__name__ != "QgsCategorized3DRenderer"
+        il.default_style(layer)
+        il.default_3d(layer)
+    assert wrong == 0

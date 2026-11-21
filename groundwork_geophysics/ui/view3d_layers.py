@@ -32,6 +32,7 @@ from qgis.PyQt.QtGui import QColor
 
 from ..ids import LEGACY_ID
 from .project_actions import SCOPE, plugin_group, station_radius
+from .qgis_objects import as_kind, handed_over
 
 MODELS_NAME = "Models in 3D"
 BOREHOLES_NAME = "Boreholes in 3D"
@@ -1059,12 +1060,18 @@ def _fill_name(layer, name: str, x: float, y: float, z: float, fmt) -> None:
         layer.addItem(new)
     if layer.name() != name:
         layer.setName(name)
-    renderer = layer.renderer3D()
-    if renderer is not None and renderer.type() == "annotation" \
-            and abs(renderer.zOffset() - z) > 1e-6:
+    try:
+        from qgis._3d import QgsAnnotationLayer3DRenderer
+        from qgis.core import QgsAbstract3DRenderer
+    except ImportError:                             # a QGIS built without 3D
+        return
+    renderer = as_kind(layer.renderer3D(), "annotation", QgsAbstract3DRenderer,
+                       QgsAnnotationLayer3DRenderer)
+    if renderer is not None and abs(renderer.zOffset() - z) > 1e-6:
         renderer = renderer.clone()
         renderer.setZOffset(z)
         layer.setRenderer3D(renderer)
+        handed_over(renderer)
 
 
 def _sync_names(store, project, rows, may_create) -> dict:
