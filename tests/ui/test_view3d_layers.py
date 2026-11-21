@@ -1192,3 +1192,22 @@ def test_an_annotation_the_user_adds_to_a_name_layer_stays(setup):
     assert sorted(item.text() for item in items.values()) == ["Line 78", "my note"]
     sync(st, provider, prj)                               # unchanged: nothing replaced
     assert sorted(item.text() for item in name.items().values()) == ["Line 78", "my note"]
+
+
+def test_a_section_picture_takes_its_profiles_new_name_unless_the_user_named_it(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    picture = sync(st, provider, prj, create=True)["pictures"][p.id]
+    assert picture.name() == "P1"
+    p.name = "Line 79"
+    st.save_profile(p)
+    provider.notify_changed()
+    assert sync(st, provider, prj)["pictures"][p.id] is picture
+    assert picture.name() == "Line 79"
+    picture.setName("my picture")                         # the user's own name stays
+    p.name = "Line 80"
+    st.save_profile(p)
+    provider.notify_changed()
+    sync(st, provider, prj)
+    assert picture.name() == "my picture"

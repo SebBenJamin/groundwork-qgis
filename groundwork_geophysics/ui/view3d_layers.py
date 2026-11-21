@@ -56,6 +56,7 @@ _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "borehol
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
 _PROFILE = f"{LEGACY_ID}/view3d_profile"   # a section picture's profile id
 _NAME_ITEM = f"{LEGACY_ID}/view3d_name_item"   # a name layer: the id of the plugin's text
+_GIVEN_NAME = f"{LEGACY_ID}/view3d_given_name"  # a picture: the layer name the plugin gave
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
@@ -795,6 +796,7 @@ def _new_picture(project: QgsProject, path: Path, name: str, profile_id: str):
     from qgis.core import QgsTiledSceneLayer
     layer = QgsTiledSceneLayer(_picture_source(path), name, "cesiumtiles")
     layer.setCustomProperty(_FLAG, "picture")
+    layer.setCustomProperty(_GIVEN_NAME, name)
     layer.setCustomProperty(_PROFILE, profile_id)
     # kept out of the 2D map, which would decode the picture on every redraw (QGIS's 3D
     # view does not look at scale ranges); the user may switch it on again, it stays theirs
@@ -809,6 +811,18 @@ def _new_picture(project: QgsProject, path: Path, name: str, profile_id: str):
     group = plugin_group(project.layerTreeRoot())
     (group.findGroup(PICTURES_GROUP) or group.addGroup(PICTURES_GROUP)).addLayer(layer)
     return layer
+
+
+def _follow_name(layer, name: str) -> None:
+    """The layer takes ``name`` (its profile's, renamed) unless the user renamed it: only a
+    name the plugin gave follows (one made before it was noted counts as given)."""
+    given = layer.customProperty(_GIVEN_NAME)
+    if given is not None and layer.name() != given:
+        return                                      # the user's own name
+    if layer.name() != name:
+        layer.setName(name)
+    if given != name:
+        layer.setCustomProperty(_GIVEN_NAME, name)
 
 
 def _drop_picture(project, layer) -> None:
@@ -861,6 +875,8 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
         allowed = may_create(f"picture:{pid}")
         if layer is None and not allowed:
             continue                            # e.g. the user removed it
+        if layer is not None:
+            _follow_name(layer, profile.name)
         topo = topo_of(pid)
         layers = _section_order(provider, pid, layers)
         failed = False
