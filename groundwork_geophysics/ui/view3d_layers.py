@@ -1384,7 +1384,9 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
     project.setProperty(_NEEDS, "\n".join(sorted(needs)))
     now = known | set(layers_3d(project)) | ({"names"} if names_3d(project) else set())
-    if now != made:
+    # noted once Show in 3D was used (OK, or a layer of the plugin's): a project that never
+    # used it stays unmodified
+    if now != made and (create or now):
         project.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(now)))
     layer = layers_3d(project).get("boreholes")
     if not boreholes and layer is not None:

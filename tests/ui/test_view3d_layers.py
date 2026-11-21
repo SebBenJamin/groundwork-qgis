@@ -1211,3 +1211,22 @@ def test_a_section_picture_takes_its_profiles_new_name_unless_the_user_named_it(
     provider.notify_changed()
     sync(st, provider, prj)
     assert picture.name() == "my picture"
+
+
+def test_a_project_that_never_showed_anything_in_3d_stays_unmodified(setup):
+    """A sync with a 3D view open (any style change) on a project that never used Show in
+    3D writes nothing into it: QGIS would ask to save changes nobody made."""
+    from groundwork_geophysics.ui.project_actions import SCOPE
+    from groundwork_geophysics.ui.view3d_layers import ENTRY_MADE, sync
+    st, p, provider, prj = setup
+    prj.setDirty(False)
+    assert sync(st, provider, prj) == {}
+    sync(st, provider, prj)
+    assert not prj.isDirty()
+    assert not prj.readEntry(SCOPE, ENTRY_MADE, "")[1]
+    _choose(prj, ["d"])
+    sync(st, provider, prj, create=True)                  # OK in Show in 3D notes it
+    assert prj.readEntry(SCOPE, ENTRY_MADE, "")[1]
+    prj.setDirty(False)
+    sync(st, provider, prj)                               # unchanged: not written again
+    assert not prj.isDirty()
