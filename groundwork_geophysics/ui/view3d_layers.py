@@ -9,8 +9,9 @@ section stacks them, optionally with the interpretation). "Boreholes in 3D" hold
 column per log interval of the boreholes the ticked profiles' sections show, at their map
 position. "Ground in 3D" holds the section's ground line of every profile with something
 ticked, so the profiles stay readable with the terrain off. The choice lives in
-the project (entry ``view3d``); the layers are refilled from it whenever the data, the
-section's colour scale or its fade change, and when the store is opened. Their styles (2D
+the project (entry ``view3d``); while a 3D view is open, the layers are refilled from it
+whenever the data, the section's colour scale or its fade change, and when the store is
+opened (``sync``); without one, only what was deleted is taken out (``prune``). Their styles (2D
 and 3D) are written once when a layer is created and are the user's afterwards; they travel
 with the project file like any layer's."""
 from __future__ import annotations
