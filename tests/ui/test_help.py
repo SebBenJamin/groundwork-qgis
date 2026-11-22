@@ -32,7 +32,7 @@ def test_plugin_version_matches_metadata():
     from groundwork_geophysics.ui.help import plugin_version
     meta = configparser.ConfigParser()
     meta.read(REPO / "groundwork_geophysics" / "metadata.txt", encoding="utf-8")
-    assert plugin_version() == meta["general"]["version"] == "0.14.0"
+    assert plugin_version() == meta["general"]["version"] == "0.14.1"
 
 
 def test_release_note_for_installed_version_exists():

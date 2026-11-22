@@ -2,6 +2,7 @@
 
 The changes in each release, newest first. Versions before 0.10.0 were called Geophysics Workbench.
 
+- [0.14.1](0.14.1.md): Calhoun Line 6 in its place
 - [0.14.0](0.14.0.md): the 3D view
 - [0.13.0](0.13.0.md): seismic refraction
 - [0.12.0](0.12.0.md): electrode numbers from point names

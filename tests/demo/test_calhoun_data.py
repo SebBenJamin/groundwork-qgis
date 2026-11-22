@@ -80,6 +80,43 @@ def test_write_sgt_header_and_indices(tmp_path):
     assert lines[7].split()[:2] == ["1", "2"] and lines[8].split()[:2] == ["1", "3"]
 
 
+def test_the_dem_moves_a_line_its_map_points_place_wrongly():
+    """The authors' map points of a line can sit metres off along it while its elevations are
+    LiDAR at the true places: the DEM finds the offset that puts them back."""
+    import calhoun_data
+    piece = np.array([[e, 0.0, 0, 0, 0, e, 0, 0] for e in np.arange(0.0, 400.0, 10.0)])
+
+    def dem_at(e, n):                               # hills along the east axis
+        return 150.0 + 5.0 * np.sin(np.asarray(e, float) / 30.0)
+    x_h = np.arange(0.0, 300.0, 1.0)
+    line = calhoun_data.LineData(np.zeros((0, 3)), x_h, dem_at(x_h + 23.0, 0.0), x_h.copy())
+    offset, rms = calhoun_data.refine_offset(line, piece, 0.0, dem_at)
+    assert offset == pytest.approx(-23.0) and rms < 0.05
+    xyz, _n, _i = calhoun_data.stations_xy(
+        calhoun_data.LineData(np.array([[0.0, 100.0, 0.1]]), x_h, line.z, x_h), piece, offset)
+    assert xyz[0, 0] == pytest.approx(123.0)        # geophone at 100 m stands at E 123
+
+
+@pytest.mark.skipif(not (CACHE / "dem_3dep.tif").exists(), reason="no Calhoun cache")
+def test_cached_lines_fit_the_dem_after_refining():
+    """Line 6's map points in allBR.txt sit ~23 m off along it; the others within 3 m."""
+    import calhoun_data
+    from osgeo import gdal
+    ds = gdal.Open(str(CACHE / "dem_3dep.tif"))
+    dem_at = calhoun_data.raster_sampler(ds.GetGeoTransform(),
+                                         ds.GetRasterBand(1).ReadAsArray().astype(float))
+    pieces = calhoun_data.read_pieces(CACHE / "allBR.txt")
+    shifts = {}
+    for name in calhoun_data.LINES:
+        line = calhoun_data.read_line(*calhoun_data.line_files(CACHE, name))
+        k, off, _rms = calhoun_data.match_piece(line, pieces)
+        refined, rms = calhoun_data.refine_offset(line, pieces[k], off, dem_at)
+        assert rms <= calhoun_data.MAX_DEM_RMS, (name, rms)
+        shifts[name] = refined - off
+    assert shifts["L6"] == pytest.approx(-23.0, abs=1.5)
+    assert all(abs(v) <= 3.0 for k, v in shifts.items() if k != "L6"), shifts
+
+
 @pytest.mark.skipif(not (CACHE / "allBR.txt").exists(), reason="no Calhoun cache")
 def test_cached_matches():
     import calhoun_data
