@@ -8,8 +8,8 @@ from __future__ import annotations
 from qgis.gui import QgsCollapsibleGroupBox, QgsDoubleSpinBox
 from qgis.PyQt.QtCore import QLocale, Qt
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-                                 QHeaderView, QLabel, QTreeWidget, QTreeWidgetItem,
-                                 QVBoxLayout)
+                                 QHBoxLayout, QHeaderView, QLabel, QPushButton, QTreeWidget,
+                                 QTreeWidgetItem, QVBoxLayout)
 
 from ..core.dataset_types import type_label
 from .help import add_help_button
@@ -128,13 +128,35 @@ class View3dDialog(QDialog):
         add_help_button(buttons, "view3d")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        self.select_all = QPushButton("Select All")
+        self.select_all.setToolTip("Tick every model and every profile's boreholes")
+        self.select_all.clicked.connect(lambda: self._tick_all(True))
+        self.deselect_all = QPushButton("Deselect All")
+        self.deselect_all.setToolTip("Untick everything: nothing is shown in 3D")
+        self.deselect_all.clicked.connect(lambda: self._tick_all(False))
+        ticks = QHBoxLayout()
+        ticks.addWidget(self.select_all)
+        ticks.addWidget(self.deselect_all)
+        ticks.addStretch(1)
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
         layout.addWidget(self.tree, 1)
+        layout.addLayout(ticks)
         layout.addWidget(self.interpretation)
         layout.addWidget(self.restyle)
         layout.addWidget(self.sizes)
         layout.addWidget(buttons)
+
+    def _tick_all(self, ticked: bool) -> None:
+        """Tick or untick every model and boreholes entry of the profiles that can be shown
+        (a profile without real heights stays as it is)."""
+        state = Qt.CheckState.Checked if ticked else Qt.CheckState.Unchecked
+        for i in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(i)
+            if top.isDisabled():
+                continue
+            for k in range(top.childCount()):
+                top.child(k).setCheckState(0, state)
 
     @staticmethod
     def _child(top, text: str, kind: str, item_id: str, checked: bool) -> QTreeWidgetItem:

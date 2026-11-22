@@ -57,6 +57,7 @@ _FLAG = f"{LEGACY_ID}/view3d"              # custom property: "models", "borehol
 _DATASET = f"{LEGACY_ID}/view3d_dataset"   # a cloud's dataset id
 _PROFILE = f"{LEGACY_ID}/view3d_profile"   # a section picture's profile id
 _NAME_ITEM = f"{LEGACY_ID}/view3d_name_item"   # a name layer: the id of the plugin's text
+_CALLOUTS_SET = f"{LEGACY_ID}/view3d_callouts_set"   # a name layer: callouts switched off once
 _GIVEN_NAME = f"{LEGACY_ID}/view3d_given_name"  # a picture: the layer name the plugin gave
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
@@ -638,6 +639,7 @@ def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -
         else:
             _let_go(Path(layer.source()))
             layer.setDataSource(str(path), layer.name(), "pdal")    # the user's style stays
+            layer.trigger3DUpdate()     # a new source alone leaves the 3D view's old content
         out[did] = layer
     _drop_empty_group(project, SMOOTH_GROUP)
     return out
@@ -909,6 +911,7 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
             if old is not None:
                 _let_go(old)
             layer.setDataSource(_picture_source(path), layer.name(), "cesiumtiles")
+            layer.trigger3DUpdate()     # a new source alone leaves the 3D view's old content
         out[pid] = layer
     _drop_empty_group(project, PICTURES_GROUP)
     return out
@@ -1055,6 +1058,9 @@ def _new_name(store, project: QgsProject, profile_id: str, name: str, fmt):
         renderer = QgsAnnotationLayer3DRenderer()
         renderer.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
         renderer.setTextFormat(fmt)
+        # no callout lines: with the terrain off they run down to height 0 (the user can
+        # switch them on in the layer's 3D View properties)
+        renderer.setShowCalloutLines(False)
         layer.setRenderer3D(renderer)
     except ImportError:                             # a QGIS built without 3D
         pass
@@ -1083,6 +1089,7 @@ def _fill_name(layer, name: str, x: float, y: float, z: float, fmt) -> None:
     gave the 3D view stays)."""
     from qgis.core import QgsAnnotationPointTextItem, QgsPointXY
     own, item = _own_name_item(layer)
+    changed = False
     if (item is None or item.text() != name
             or abs(item.point().x() - x) > 1e-6 or abs(item.point().y() - y) > 1e-6):
         new = QgsAnnotationPointTextItem(name, QgsPointXY(x, y))
@@ -1091,6 +1098,7 @@ def _fill_name(layer, name: str, x: float, y: float, z: float, fmt) -> None:
             own = layer.addItem(new)
         else:
             layer.replaceItem(own, new)
+        changed = True
     if layer.customProperty(_NAME_ITEM) != own:
         layer.setCustomProperty(_NAME_ITEM, own)
     if layer.name() != name:
@@ -1102,11 +1110,19 @@ def _fill_name(layer, name: str, x: float, y: float, z: float, fmt) -> None:
         return
     renderer = as_kind(layer.renderer3D(), "annotation", QgsAbstract3DRenderer,
                        QgsAnnotationLayer3DRenderer)
-    if renderer is not None and abs(renderer.zOffset() - z) > 1e-6:
+    callouts_settled = bool(layer.customProperty(_CALLOUTS_SET))
+    if renderer is not None and (abs(renderer.zOffset() - z) > 1e-6 or not callouts_settled):
         renderer = renderer.clone()
         renderer.setZOffset(z)
+        if not callouts_settled:            # once (a layer made before they were off)
+            renderer.setShowCalloutLines(False)
         layer.setRenderer3D(renderer)
         handed_over(renderer)
+        changed = True
+    if not callouts_settled:
+        layer.setCustomProperty(_CALLOUTS_SET, True)
+    if changed:
+        layer.trigger3DUpdate()         # the 3D view reloads an annotation layer only on this
 
 
 def _sync_names(store, project, rows, may_create) -> dict:

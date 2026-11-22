@@ -190,3 +190,18 @@ def test_the_dialog_fits_a_laptop_screen(store):
     dialog = View3dDialog(store, Choice())
     hint = dialog.sizeHint()
     assert hint.height() <= 580 and hint.width() <= 1000
+
+
+def test_select_all_and_deselect_all(store):
+    from qgis.PyQt.QtCore import Qt
+
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice(), local={"p2"})
+    dialog.select_all.click()
+    chosen = dialog.choice()
+    assert chosen.models == {"m1"} and chosen.boreholes == {"p1"}   # P2 has no heights
+    dialog.deselect_all.click()
+    assert dialog.choice().models == frozenset() and dialog.choice().boreholes == frozenset()
+    assert all(dialog.tree.topLevelItem(i).checkState(0) == Qt.CheckState.Unchecked
+               for i in range(dialog.tree.topLevelItemCount()))

@@ -1282,3 +1282,71 @@ def test_a_deleted_profile_leaves_without_a_3d_view(setup, tmp_path):
     st.delete_profile(p.id)
     prune(st, prj)
     assert names_3d(prj) == {} and layers_3d(prj) == {}
+
+
+# -- the open 3D view reloads what changed ---------------------------------------------------
+def _reloads(layer):
+    """A list that grows each time ``layer`` asks the 3D view to reload it."""
+    seen = []
+    layer.request3DUpdate.connect(lambda: seen.append(1))
+    return seen
+
+
+def test_a_cloud_with_a_new_file_is_reloaded_in_the_3d_view(setup):
+    """QGIS's 3D scene reloads a layer only on request3DUpdate (a new data source alone
+    leaves the old content, pointing at a file since deleted)."""
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    seen = _reloads(cloud)
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    sync(st, provider, prj)
+    assert seen
+
+
+def test_a_picture_with_new_files_is_reloaded_in_the_3d_view(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose_pictures(prj, ["d"])
+    picture = sync(st, provider, prj, create=True)["pictures"][p.id]
+    seen = _reloads(picture)
+    style = provider.style("d")
+    provider.set_style("d", replace(style, scale=replace(style.scale, cmap="viridis")))
+    sync(st, provider, prj)
+    assert seen
+
+
+def test_a_renamed_name_is_reloaded_and_has_no_line_to_sea_level(setup):
+    """Callout lines run from the terrain (height 0 with the terrain off) to the text."""
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    name = sync(st, provider, prj, create=True)["names"][p.id]
+    assert not name.renderer3D().showCalloutLines()
+    seen = _reloads(name)
+    p.name = "Line 9"
+    st.save_profile(p)
+    provider.notify_changed()
+    sync(st, provider, prj)
+    assert seen
+
+
+def test_a_name_layer_made_with_callouts_loses_them_once(setup):
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    name = sync(st, provider, prj, create=True)["names"][p.id]
+    r3d = name.renderer3D().clone()
+    r3d.setShowCalloutLines(True)                # as made before they were switched off
+    name.setRenderer3D(r3d)
+    name.removeCustomProperty("geophysics_workbench/view3d_callouts_set")
+    sync(st, provider, prj)
+    assert not name.renderer3D().showCalloutLines()
+    r3d = name.renderer3D().clone()
+    r3d.setShowCalloutLines(True)                # now the user's own choice
+    name.setRenderer3D(r3d)
+    sync(st, provider, prj)
+    assert name.renderer3D().showCalloutLines()
