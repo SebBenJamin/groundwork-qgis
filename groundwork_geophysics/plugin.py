@@ -15,7 +15,7 @@ from .ids import NAME
 from .section.context_layers import ContextGatherer
 from .section.crossing_lines import own_layer_ids
 from .section.data import SectionDataProvider
-from .section.dock import SectionDock
+from .section.dock import UNCUT_3D_TEXT, SectionDock
 from .section.map_link import MapLink
 from .section.view3d_link import View3dLink
 from .section.profile_source import register_source, unregister_source
@@ -75,6 +75,7 @@ class WorkbenchPlugin:
         self._view3d_boreholes = False          # the next refill also gathers boreholes
         self._view3d_stale = False              # a refill waits for a 3D view to open
         self.view3d_action = None
+        self._view3d_dialog = None              # Show in 3D…, non-modal, one at a time
 
     @property
     def store(self):
@@ -139,6 +140,8 @@ class WorkbenchPlugin:
         self.dock.borehole_clicked.connect(self.open_borehole_viewer)
         self.dock.rename_requested.connect(self.rename_profile)
         self.dock.delete_requested.connect(self.delete_profile)
+        self.dock.view3d_requested.connect(self.profile_in_3d)
+        self.dock.view3d_cut_active = self._view3d_cut_state
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
 
@@ -168,6 +171,7 @@ class WorkbenchPlugin:
                 pass
         self._project_signals.clear()
         stop_following()                    # 2D restyles no longer restyle the 3D style
+        self._close_view3d_dialog()
         self._close_profile_dialog()
         self._close_data_dialog()
         self._close_context_dialog()
@@ -226,6 +230,7 @@ class WorkbenchPlugin:
         unregistering destroys the source."""
         self._close_borehole_viewer()          # it follows the old store's data
         stop_following()                       # the old store's interpretation layers
+        self._close_view3d_dialog()            # it lists the old store's profiles
         view3d_layers.forget_shown(QgsProject.instance())   # a new store starts afresh
         old = derived_layers.derived_layer(QgsProject.instance())
         if old is not None:                    # the old store's electrodes
@@ -407,10 +412,20 @@ class WorkbenchPlugin:
             self._sync_3d()
 
     def show_in_3d(self):
-        """Show in 3D…: pick the models and boreholes; the layers follow the choice."""
+        """Show in 3D…: pick the models and boreholes in a non-modal dialog (one at a time;
+        asked again, it comes to the front); Apply and OK make the layers follow the
+        choice."""
+        from qgis.PyQt.QtGui import QGuiApplication
+        from qgis.PyQt.QtCore import Qt as QtNs
+
         from .ui.view3d_dialog import View3dDialog
-        from .ui.view3d_layers import read_choice, write_choice
+        from .ui.view3d_layers import profiles_with_boreholes, read_choice
         if self.store is None:
+            return
+        if self._view3d_dialog is not None:
+            self._view3d_dialog.show()
+            self._view3d_dialog.raise_()
+            self._view3d_dialog.activateWindow()
             return
         project = QgsProject.instance()
         local = set()
@@ -420,31 +435,113 @@ class WorkbenchPlugin:
                     local.add(profile.id)
             except Exception:
                 continue
+        QGuiApplication.setOverrideCursor(QtNs.CursorShape.WaitCursor)
+        try:                                    # each profile's context is gathered once
+            with_boreholes = profiles_with_boreholes(self.store, self.provider)
+        finally:
+            QGuiApplication.restoreOverrideCursor()
         dialog = View3dDialog(self.store, read_choice(project), local=local,
-                              parent=self.iface.mainWindow())
-        if not dialog.exec():
+                              parent=self.iface.mainWindow(), with_boreholes=with_boreholes)
+        dialog.applied.connect(lambda: self._apply_3d(dialog))
+        dialog.restyle_requested.connect(self._restyle_interpretation_3d)
+        dialog.finished.connect(lambda _r: self._forget_view3d_dialog(dialog))
+        self._view3d_dialog = dialog
+        dialog.show()
+
+    def _forget_view3d_dialog(self, dialog) -> None:
+        if self._view3d_dialog is dialog:
+            self._view3d_dialog = None
+        dialog.deleteLater()
+
+    def _close_view3d_dialog(self) -> None:
+        dialog = self._view3d_dialog
+        if dialog is not None:
+            dialog.reject()                     # finished: forgotten and deleted
+
+    def _restyle_interpretation_3d(self) -> None:
+        """Show in 3D's Restyle Interpretation from 2D button: at once, with a message."""
+        from .ui import interp_layers as interp_module
+        if self.store is None:
             return
+        if interp_module.restyle_from_2d(self.store, QgsProject.instance()):
+            self._info("The interpretation's 3D style follows its 2D style again.")
+        else:
+            self._info("There is no interpretation to restyle in 3D.")
+
+    def _apply_3d(self, dialog) -> None:
+        """Show in 3D's Apply or OK: store the choice, build the layers, open or use a 3D
+        map view on them, and say what is shown."""
+        from .ui.view3d_layers import write_choice
+        if self.store is None:
+            return
+        project = QgsProject.instance()
         choice = dialog.choice()
         write_choice(project, choice)
         # the chosen size, or one fitting the stations imported since
         project_actions.fit_station_spheres(self.store, project,
                                             (choice.station_size or 0) / 2 or None)
-        restyled = ""
-        if dialog.restyle_interpretation():
-            from .ui import interp_layers as interp_module
-            if interp_module.restyle_from_2d(self.store, project):
-                restyled = " The interpretation's 3D style follows its 2D style again."
         layers = self._sync_3d(create=True)
         if not choice.models and not choice.boreholes:
-            self._info(f"Nothing is shown in 3D.{restyled}")
+            self._info("Nothing is shown in 3D.")
             return
         summary = f"Shown in 3D: {view3d_layers.shown_summary(layers)}"
         if not layers:
-            self._info(f"{summary}.{restyled}")
+            self._info(f"{summary}.")
             return
-        self._show_3d_view(project, summary, restyled)
+        self._show_3d_view(project, summary)
 
-    def _show_3d_view(self, project, summary: str, restyled: str) -> None:
+    def _view3d_cut_state(self) -> bool | None:
+        """For the profile menu: whether a 3D view is cut along a profile; None in a QGIS
+        without 3D map views (no 3D entries then)."""
+        if not hasattr(self.iface, "mapCanvases3D"):
+            return None
+        return view3d_view.cut_active(self.iface)
+
+    def profile_in_3d(self, profile_id: str, what: str) -> None:
+        """The section panel's profile menu: "look" turns the 3D view side-on to the
+        profile, "cut" also clips it to a slab along the profile (the curtain shows through
+        the terrain), "uncut" makes every 3D view whole again. With no 3D view open, a
+        ready one opens first."""
+        if what == "uncut":
+            view3d_view.remove_cuts(self.iface)
+            self._info("The 3D view shows everything again.")
+            return
+        if self.store is None or self.provider is None:
+            return
+        try:
+            profile = self.store.profile(profile_id)
+            local = self.provider.is_local(profile_id)
+        except Exception:                        # deleted meanwhile
+            return
+        if local:
+            self._info(f"{profile.name} has no real heights, so it has no place in 3D. Give "
+                       f"it a reference height in the section panel first.")
+            return
+        project = QgsProject.instance()
+        if not view3d_view.views_open(self.iface):
+            try:
+                box = view3d_layers.shown_box(self.store, self.provider, project)
+            except Exception:
+                box = None
+            view3d_view.open_ready_view(self.iface, project, box, self.store.crs_authid)
+            if self.view3d_link is not None:
+                self.view3d_link.poll()          # follows it, and fills what waits
+        done = view3d_view.look_at_profile(self.iface, project, profile,
+                                           self.store.crs_authid, cut=what == "cut")
+        if not done:
+            self._info("Open a 3D map view with View → 3D Map Views → New 3D Map View.")
+            return
+        choice = view3d_layers.read_choice(project)
+        shown = profile_id in choice.boreholes or any(
+            d.id in choice.models for d in self.store.datasets(profile_id))
+        if not shown:
+            self._info(f"Nothing of {profile.name} is shown in 3D yet: tick it in "
+                       f"Groundwork → Show in 3D….")
+        elif done == view3d_view.CUT:
+            self._info(f"The 3D view is cut along {profile.name}. To see everything again, "
+                       f"right-click the profile list → {UNCUT_3D_TEXT}.")
+
+    def _show_3d_view(self, project, summary: str) -> None:
         """Open (or use) a 3D map view on what is shown, and say so."""
         try:
             box = view3d_layers.shown_box(self.store, self.provider, project)
@@ -462,7 +559,7 @@ class WorkbenchPlugin:
                     f"terrain off in the view's settings.")
         else:
             text = f"{summary}. Open a 3D map view with View → 3D Map Views → New 3D Map View."
-        self._info(text + restyled)
+        self._info(text)
 
     def _project_write(self, *_):
         derived_layers.save_style(QgsProject.instance())

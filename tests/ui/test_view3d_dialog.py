@@ -175,13 +175,59 @@ def test_sizes_are_auto_or_metres_and_say_the_auto_value(store):
     assert again.choice().borehole_width is None
 
 
-def test_restyling_the_interpretation_is_asked_for_each_time(store):
+def test_the_restyle_button_asks_at_once(store):
     from groundwork_geophysics.ui.view3d_dialog import View3dDialog
     from groundwork_geophysics.ui.view3d_layers import Choice
     dialog = View3dDialog(store, Choice())
-    assert not dialog.restyle_interpretation() and dialog.restyle.toolTip()
-    dialog.restyle.setChecked(True)
-    assert dialog.restyle_interpretation()
+    asked = []
+    dialog.restyle_requested.connect(lambda: asked.append(1))
+    assert not dialog.restyle.isCheckable() and dialog.restyle.toolTip()
+    dialog.restyle.click()
+    assert asked == [1]
+
+
+def test_apply_and_ok_both_apply(store):
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice())
+    applied = []
+    dialog.applied.connect(lambda: applied.append(dialog.isVisible()))
+    dialog.show()
+    dialog.buttons.button(QDialogButtonBox.StandardButton.Apply).click()
+    assert applied == [True] and dialog.isVisible()
+    dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).click()
+    assert len(applied) == 2 and not dialog.isVisible()
+
+
+def test_show_as_is_open_only_for_ticked_models(store):
+    from qgis.PyQt.QtCore import Qt
+
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice())
+    combo = dialog._looks["m1"]
+    assert not combo.isEnabled() and "Tick" in combo.toolTip()
+    dialog._look_items["m1"].setCheckState(0, Qt.CheckState.Checked)
+    assert combo.isEnabled()
+
+
+def test_a_profile_without_boreholes_has_no_borehole_entry(store):
+    from qgis.PyQt.QtCore import Qt
+
+    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
+    from groundwork_geophysics.ui.view3d_layers import Choice
+    dialog = View3dDialog(store, Choice(boreholes=frozenset({"p2"})), with_boreholes={"p1"})
+    assert _items(dialog) == {"P1": {"Model one": False, "Boreholes": False}, "P2": {}}
+    assert dialog.choice().boreholes == frozenset()                     # nothing to show
+    p1 = dialog.tree.topLevelItem(0)
+    p1.child(0).setCheckState(0, Qt.CheckState.Checked)
+    assert p1.checkState(0) == Qt.CheckState.PartiallyChecked           # its own tick stays
+    dialog.select_all.click()
+    assert dialog.choice().boreholes == frozenset({"p1"})
+    assert p1.checkState(0) == Qt.CheckState.Checked
+    assert dialog.tree.textElideMode() == Qt.TextElideMode.ElideMiddle
 
 
 def test_the_dialog_fits_a_laptop_screen(store):

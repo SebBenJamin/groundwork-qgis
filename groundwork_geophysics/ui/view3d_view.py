@@ -17,6 +17,11 @@ PITCH = 60.0
 DISTANCE_SHARE, MIN_DISTANCE = 1.3, 20.0
 #: what open_ready_view did
 ALREADY_OPEN, READY, OPENED = "open", "ready", "opened"
+#: what look_at_profile did
+LOOKED, CUT = "looked", "cut"
+#: a cut along a profile is this wide on each side of the line beyond its bends:
+#: a share of the profile's length, at least CUT_MARGIN_M
+CUT_MARGIN_SHARE, CUT_MARGIN_M = 0.05, 5.0
 
 
 def _log(message: str) -> None:
@@ -51,6 +56,76 @@ def open_ready_view(iface, project, box, crs_authid: str) -> str:
     if box is not None:
         ready = _aim(canvas, project, box, crs_authid) and ready
     return READY if ready else OPENED
+
+
+def profile_section(canvas, project, profile, crs_authid: str):
+    """QGIS's cross section along ``profile`` in ``canvas``'s map coordinates: from its first
+    to its last point, wide enough for its bends plus a margin (``CUT_MARGIN_*``)."""
+    import numpy as np
+    from qgis._3d import QgsCrossSection
+    from qgis.core import QgsPoint
+    xy = np.asarray(profile.chainage.xy, float)
+    a, b = xy[0], xy[-1]
+    d = b - a
+    length = float(np.hypot(*d)) or 1.0
+    off = np.abs((xy[:, 0] - a[0]) * d[1] - (xy[:, 1] - a[1]) * d[0]) / length
+    half = float(off.max()) + max(CUT_MARGIN_M, CUT_MARGIN_SHARE * profile.chainage.length)
+    src = QgsCoordinateReferenceSystem(crs_authid)
+    dst = canvas.mapSettings().crs()
+    ends = [QgsPointXY(float(p[0]), float(p[1])) for p in (a, b)]
+    if src.isValid() and dst.isValid() and src != dst:
+        transform = QgsCoordinateTransform(src, dst, project)
+        ends = [transform.transform(p) for p in ends]
+    return QgsCrossSection(QgsPoint(ends[0].x(), ends[0].y()),
+                           QgsPoint(ends[1].x(), ends[1].y()), half)
+
+
+def _first_view(iface):
+    try:
+        views = list(iface.mapCanvases3D())
+    except Exception:                            # no 3D in this QGIS
+        return None
+    return views[0] if views else None
+
+
+def look_at_profile(iface, project, profile, crs_authid: str, cut: bool = False) -> str:
+    """Turn the first open 3D map view's camera side-on to ``profile`` (QGIS's cross-section
+    side view); with ``cut``, also clip the view to a slab along it, so the curtain shows
+    through the terrain. ``LOOKED``, ``CUT``, or "" (no 3D view, or it failed: logged)."""
+    canvas = _first_view(iface)
+    if canvas is None:
+        return ""
+    try:
+        section = profile_section(canvas, project, profile, crs_authid)
+        if cut:
+            canvas.setCrossSection(section)
+        canvas.cameraController().setCrossSectionSideView(section)
+    except Exception as exc:                     # not ready, or outside the CRS' area
+        _log(f"3D view: the camera could not be turned to the profile: {exc}")
+        return ""
+    return CUT if cut else LOOKED
+
+
+def cut_active(iface) -> bool:
+    """An open 3D map view is clipped to a cross section."""
+    try:
+        return any(c.crossSectionEnabled() for c in iface.mapCanvases3D())
+    except Exception:                            # no 3D in this QGIS
+        return False
+
+
+def remove_cuts(iface) -> int:
+    """Take the cross-section clipping off every open 3D map view; how many had one."""
+    from qgis._3d import QgsCrossSection
+    removed = 0
+    try:
+        for canvas in iface.mapCanvases3D():
+            if canvas.crossSectionEnabled():
+                canvas.setCrossSection(QgsCrossSection())     # invalid: no clipping
+                removed += 1
+    except Exception as exc:                     # no 3D in this QGIS
+        _log(f"3D view: the cut could not be removed: {exc}")
+    return removed
 
 
 def _tune(canvas) -> bool:

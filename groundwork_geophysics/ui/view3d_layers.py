@@ -40,6 +40,14 @@ BOREHOLES_NAME = "Boreholes in 3D"
 CONTOURS_NAME = "Contours in 3D"
 GROUND_NAME = "Ground in 3D"
 NAMES_GROUP = "Profile names in 3D"
+#: borehole names float this far above their column's collar; QGIS draws all texts of one
+#: annotation layer at one height, so the names are grouped by collar height in steps of
+#: BOREHOLE_NAME_STEP_M, one small layer per step, in this group
+BOREHOLE_NAMES_GROUP = "Borehole names in 3D"
+BOREHOLE_NAME_LIFT_M, BOREHOLE_NAME_STEP_M = 1.0, 0.5
+#: every layer Show in 3D makes sits in this group of the plugin's, collapsed, so one tick
+#: hides or shows all of them and the Layers panel stays short
+VIEW3D_GROUP = "3D View"
 #: a profile's name floats this far above the start of its ground line: a share of the
 #: profile's length, at least NAME_LIFT_M
 NAME_LIFT_SHARE, NAME_LIFT_M = 0.03, 1.0
@@ -59,6 +67,7 @@ _PROFILE = f"{LEGACY_ID}/view3d_profile"   # a section picture's profile id
 _NAME_ITEM = f"{LEGACY_ID}/view3d_name_item"   # a name layer: the id of the plugin's text
 _CALLOUTS_SET = f"{LEGACY_ID}/view3d_callouts_set"   # a name layer: callouts switched off once
 _GIVEN_NAME = f"{LEGACY_ID}/view3d_given_name"  # a picture: the layer name the plugin gave
+_HEIGHT = f"{LEGACY_ID}/view3d_height"     # a borehole names layer: its collar height step
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
@@ -68,7 +77,10 @@ _SMOOTH, _LINES = ("smooth", "smooth+contours"), ("contours", "smooth+contours")
 MAX_CHUNK = 5_000_000
 _MODEL_FIELDS = ("&field=profile_id:string&field=profile:string&field=dataset_id:string"
                  "&field=dataset:string&field=value:double&field=coverage:double"
-                 "&field=resolved:integer&field=color:string")
+                 "&field=resolved:integer&field=color:string&field=faded:integer")
+#: a cell the section fades (``faded`` = 1) is drawn this see-through in 3D: the 3D style's
+#: rule for it (the section's own floor, FADE_ALPHA)
+FADED_RULE, OPAQUE_RULE = '"faded" = 1', 'coalesce("faded", 0) <> 1'
 _BOREHOLE_FIELDS = ("&field=profile_id:string&field=borehole:string&field=layer:string"
                     "&field=top:double&field=bottom:double&field=text:string"
                     "&field=color:string&field=height:double")
@@ -208,21 +220,64 @@ def _style_models(layer: QgsVectorLayer) -> None:
     fill.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.FillColor,
                                                QgsProperty.fromField("color"))
     layer.setRenderer(QgsSingleSymbolRenderer(fill))
+    _style_models_3d(layer)
+
+
+def _style_models_3d(layer: QgsVectorLayer) -> None:
+    """Each cell in its section colour; a cell the section fades as see-through as there."""
     try:
-        from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+        from qgis._3d import Qgs3DTypes, QgsPolygon3DSymbol, QgsRuleBased3DRenderer
     except ImportError:                         # a QGIS built without 3D
         return
-    symbol = QgsPolygon3DSymbol()
-    symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
-    symbol.setExtrusionHeight(0.0)
-    # each cell is two faces a little behind the plane on either side; hiding back faces
-    # leaves the one behind, so an interpretation drawn in the plane is always in front
-    symbol.setAddBackFaces(False)
-    symbol.setCullingMode(Qgs3DTypes.CullingMode.Back)
-    symbol.setMaterialSettings(_colour_material())
-    renderer = QgsVectorLayer3DRenderer(symbol)
+    from ..core.gridding import FADE_ALPHA
+    root = QgsRuleBased3DRenderer.Rule(None)
+    for expression, opacity, text in ((OPAQUE_RULE, 1.0, "Cells"),
+                                      (FADED_RULE, FADE_ALPHA, "Faded cells (low coverage)")):
+        symbol = QgsPolygon3DSymbol()
+        symbol.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+        symbol.setExtrusionHeight(0.0)
+        # each cell is two faces a little behind the plane on either side; hiding back
+        # faces leaves the one behind, so an interpretation drawn in the plane is in front
+        symbol.setAddBackFaces(False)
+        symbol.setCullingMode(Qgs3DTypes.CullingMode.Back)
+        material = _colour_material()
+        material.setOpacity(opacity)
+        symbol.setMaterialSettings(material)
+        root.appendChild(QgsRuleBased3DRenderer.Rule(symbol, expression, text))
+    renderer = QgsRuleBased3DRenderer(root)
     _one_chunk(renderer)
     layer.setRenderer3D(renderer)
+
+
+def _plain_models_3d(layer: QgsVectorLayer) -> bool:
+    """The cells' 3D style is the plugin's own from before faded cells: one symbol coloured
+    by the "color" field (a style of the user's own is anything else, and stays)."""
+    renderer = layer.renderer3D()
+    if renderer is None or renderer.type() != "vector":
+        return False
+    try:
+        from qgis._3d import QgsAbstractMaterialSettings, QgsVectorLayer3DRenderer
+        from qgis.PyQt import sip
+        symbol = sip.cast(renderer, QgsVectorLayer3DRenderer).symbol()
+        prop = symbol.materialSettings().dataDefinedProperties().property(
+            QgsAbstractMaterialSettings.Property.Diffuse)
+    except Exception:                           # an odd renderer: the user's
+        return False
+    return prop.isActive() and prop.field() == "color"
+
+
+def _upgrade_models(layer: QgsVectorLayer) -> None:
+    """A cells layer made before faded cells: the "faded" field (and a refill), and the
+    see-through style for them while its 3D style is still the plugin's plain one."""
+    if layer.fields().indexOf("faded") < 0:
+        from qgis.core import QgsField
+        from qgis.PyQt.QtCore import QMetaType
+        layer.dataProvider().addAttributes([QgsField("faded", QMetaType.Type.Int)])
+        layer.updateFields()
+        layer.dataProvider().truncate()
+        _built.pop(layer.id(), None)
+    if _plain_models_3d(layer):
+        _style_models_3d(layer)
 
 
 def _style_boreholes(layer: QgsVectorLayer) -> None:
@@ -297,7 +352,50 @@ _KINDS = {"models": ("MultiPolygonZ", _MODEL_FIELDS, MODELS_NAME, _style_models)
           "contours": ("LineStringZ", _CONTOUR_FIELDS, CONTOURS_NAME, _style_contours),
           "ground": ("LineStringZ", _GROUND_FIELDS, GROUND_NAME, _style_ground)}
 #: the kinds the project's "made" record knows (a kind new in an update comes by itself)
-_MADE_KINDS = set(_KINDS) | {"names"}
+_MADE_KINDS = set(_KINDS) | {"names", "bhnames"}
+
+
+def _view3d_group(project: QgsProject):
+    """The plugin's "3D View" group (made collapsed when missing)."""
+    top = plugin_group(project.layerTreeRoot())
+    group = top.findGroup(VIEW3D_GROUP)
+    if group is None:
+        group = top.addGroup(VIEW3D_GROUP)
+        group.setExpanded(False)
+    return group
+
+
+def _subgroup(project: QgsProject, name: str):
+    """A group in "3D View" (made collapsed when missing)."""
+    parent = _view3d_group(project)
+    group = parent.findGroup(name)
+    if group is None:
+        group = parent.addGroup(name)
+        group.setExpanded(False)
+    return group
+
+
+def _is_3d_layer(layer) -> bool:
+    return layer is not None and layer.customProperty(_FLAG) in (
+        *_KINDS, "cloud", "picture", "name", "bhname")
+
+
+def _settle_groups(project: QgsProject) -> None:
+    """Move the 3D layers and groups an older version put straight into the plugin's group
+    into "3D View"; ones the user moved anywhere else stay where they are."""
+    top = plugin_group(project.layerTreeRoot())
+    from qgis.core import QgsLayerTreeGroup, QgsLayerTreeLayer
+    loose = [node for node in top.children()
+             if (isinstance(node, QgsLayerTreeLayer) and _is_3d_layer(node.layer()))
+             or (isinstance(node, QgsLayerTreeGroup)
+                 and node.name() in (SMOOTH_GROUP, PICTURES_GROUP, NAMES_GROUP,
+                                     BOREHOLE_NAMES_GROUP))]
+    if not loose:
+        return
+    group = _view3d_group(project)
+    for node in loose:
+        group.addChildNode(node.clone())
+        top.removeChildNode(node)
 
 
 def _create(store, project: QgsProject, kind: str) -> QgsVectorLayer:
@@ -308,7 +406,7 @@ def _create(store, project: QgsProject, kind: str) -> QgsVectorLayer:
     layer.setReadOnly(True)
     style(layer)
     project.addMapLayer(layer, False)
-    plugin_group(project.layerTreeRoot()).addLayer(layer)
+    _view3d_group(project).addLayer(layer)
     return layer
 
 
@@ -364,7 +462,7 @@ def _signature(section_layer, profile) -> tuple:
     return (hash(mesh.vertices.tobytes()), hash(mesh.values.tobytes()),
             None if cov is None else hash(cov.tobytes()), hash(profile.xy.tobytes()),
             None if sc is None else (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp, sc.lut),
-            style.fade_coverage, style.coverage_threshold)
+            style.fade_coverage, style.coverage_threshold, style.fade_mode)
 
 
 def _threshold(section_layer) -> float | None:
@@ -377,15 +475,16 @@ def _threshold(section_layer) -> float | None:
     return default_threshold(mesh.coverage, getattr(mesh, "coverage_cut", None))
 
 
-def _model_features(layer, profile, dataset, section_layer) -> list[QgsFeature]:
+def _model_features(layer, profile, dataset, section_layer, gap: float) -> list[QgsFeature]:
     from qgis.core import QgsMultiPolygon
 
     from ..core.colors import ColorScale
-    from ..core.view3d import curtain_cells, curtain_gap
+    from ..core.view3d import curtain_cells
     mesh = section_layer.mesh
     scale = section_layer.style.scale or ColorScale.auto(mesh.values)
     cells = curtain_cells(mesh, profile.chainage, scale.rgba(mesh.values),
-                          _threshold(section_layer), curtain_gap(profile.chainage.length))
+                          _threshold(section_layer), gap,
+                          keep_faded=section_layer.style.fade_mode != "blank")
     out = []
     for cell in cells:
         f = QgsFeature(layer.fields())
@@ -395,7 +494,7 @@ def _model_features(layer, profile, dataset, section_layer) -> list[QgsFeature]:
         f.setGeometry(QgsGeometry(both))
         f.setAttributes([profile.id, profile.name, dataset.id, dataset.name or dataset.id,
                          cell.value, cell.coverage, int(cell.resolved),
-                         QColor(*cell.rgb).name()])
+                         QColor(*cell.rgb).name(), int(cell.faded)])
         out.append(f)
     return out
 
@@ -450,8 +549,40 @@ def _as_cells(section_layer) -> bool:
     return section_layer.style.mode not in _SMOOTH + _LINES
 
 
-def _sync_models(store, project, chosen, create: bool):
-    """The cells of ``chosen`` (those shown as cells) in "Models in 3D"."""
+def _stack_gaps(provider, cells, pictured) -> tuple[dict, dict]:
+    """How far each curtain stands back from its profile's plane, so that no two share one
+    and flicker: the cell models (by dataset id) and the section picture (by profile id) of
+    a profile, in the section's stacking order, the top one closest (``curtain_gap``) and
+    each one below a gap further back."""
+    from ..core.view3d import curtain_gap
+    by_profile: dict = {}
+    for profile, d, _la in cells:
+        by_profile.setdefault(profile.id, (profile, set(), set()))[1].add(d.id)
+    for profile, d, _la in pictured:
+        by_profile.setdefault(profile.id, (profile, set(), set()))[2].add(d.id)
+    cell_gaps, picture_gaps = {}, {}
+    for pid, (profile, cell_ids, picture_ids) in by_profile.items():
+        try:
+            order = {la.dataset.id: i for i, la in enumerate(provider.layers(pid))}
+        except Exception:                       # unreadable: any order, still apart
+            order = {}
+        items = [(order.get(did, -1), did) for did in cell_ids]
+        if picture_ids:
+            items.append((max(order.get(did, -1) for did in picture_ids), ""))
+        items.sort(reverse=True)                # the top one first
+        base = curtain_gap(profile.chainage.length)
+        for k, (_i, did) in enumerate(items):
+            if did:
+                cell_gaps[did] = base * (k + 1)
+            else:
+                picture_gaps[pid] = base * (k + 1)
+    return cell_gaps, picture_gaps
+
+
+def _sync_models(store, project, chosen, create: bool, gaps: dict):
+    """The cells of ``chosen`` (those shown as cells) in "Models in 3D", each model's faces
+    ``gaps[dataset id]`` back from the plane."""
+    from ..core.view3d import curtain_gap
     old = layers_3d(project).get("models")
     if old is not None and not QgsWkbTypes.isMultiType(old.wkbType()):
         _built.pop(old.id(), None)                  # saved while cells were one face
@@ -460,6 +591,7 @@ def _sync_models(store, project, chosen, create: bool):
     layer = _layer(store, project, "models", bool(chosen), create)
     if layer is None:
         return None
+    _upgrade_models(layer)
     built = _fresh(layer)
     for profile, d, section_layer in chosen:
         if not _shown(section_layer):
@@ -467,11 +599,12 @@ def _sync_models(store, project, chosen, create: bool):
             if section_layer is not None and section_layer.error:
                 _log(f"3D view: '{d.name or d.id}' left out: {section_layer.error}")
             continue
-        signature = (_signature(section_layer, profile), profile.name, d.name)
+        gap = gaps.get(d.id) or curtain_gap(profile.chainage.length)
+        signature = (_signature(section_layer, profile), profile.name, d.name, gap)
         if d.id in built and built[d.id][0] == signature:
             continue
         try:
-            features = _model_features(layer, profile, d, section_layer)
+            features = _model_features(layer, profile, d, section_layer, gap)
         except Exception as exc:
             _log(f"3D view: '{d.name or d.id}' could not be shown: {exc}")
             _drop(layer, built, d.id)
@@ -530,8 +663,7 @@ def _write_cloud(path: Path, store, profile, section_layer, topo) -> int:
 
 
 def _smooth_group(project: QgsProject):
-    group = plugin_group(project.layerTreeRoot())
-    return group.findGroup(SMOOTH_GROUP) or group.addGroup(SMOOTH_GROUP)
+    return _subgroup(project, SMOOTH_GROUP)
 
 
 def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
@@ -700,7 +832,7 @@ def _interp_signature(interpretation) -> str:
     return h.hexdigest()
 
 
-def _picture_signature(layers, profile, topo, interpretation=None) -> str:
+def _picture_signature(layers, profile, topo, interpretation=None, gap: float = 0.0) -> str:
     """A short stable fingerprint of what a profile's picture shows: everything the section
     draws of its models (in their order) and, when painted in, the interpretation."""
     from ..section import picture
@@ -711,7 +843,8 @@ def _picture_signature(layers, profile, topo, interpretation=None) -> str:
         h.update(repr((section_layer.dataset.id, style.mode, style.contour_step,
                        tuple(style.contour_major), tuple(style.contour_minor),
                        style.opacity)).encode())
-    h.update(repr((picture.PX_PER_M, picture.MAX_PIXELS, picture.LABEL_SHARE, 2)).encode())
+    h.update(repr((picture.PX_PER_M, picture.MAX_PIXELS, picture.LABEL_SHARE, 2,
+                   round(gap, 6))).encode())
     h.update(_interp_signature(interpretation).encode())
     return h.hexdigest()[:10]
 
@@ -727,10 +860,10 @@ def _png(image) -> bytes:
 
 
 def _write_picture(path: Path, store, project, profile, layers, topo,
-                   interpretation=None) -> bool:
+                   interpretation=None, gap: float | None = None) -> bool:
     """The profile's section picture of ``layers`` (bottom first; with ``interpretation``
-    over them) as a tileset at ``path`` (and its glTF beside it); False when nothing is
-    painted."""
+    over them) as a tileset at ``path`` (and its glTF beside it), each face ``gap`` back from
+    the plane; False when nothing is painted."""
     from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                            QgsVector3D)
 
@@ -738,7 +871,7 @@ def _write_picture(path: Path, store, project, profile, layers, topo,
     from ..core.view3d import bend_chainages, curtain_gap, left_normals, picture_strip
     from ..section.picture import section_pictures
     bends = bend_chainages(profile.chainage)
-    gap = curtain_gap(profile.chainage.length)
+    gap = gap or curtain_gap(profile.chainage.length)
     raw = []
     for pic in section_pictures(layers, topo, interpretation):
         if not pic.alpha.any():
@@ -811,8 +944,7 @@ def _new_picture(project: QgsProject, path: Path, name: str, profile_id: str):
     except ImportError:                             # a QGIS built without 3D
         pass
     project.addMapLayer(layer, False)
-    group = plugin_group(project.layerTreeRoot())
-    (group.findGroup(PICTURES_GROUP) or group.addGroup(PICTURES_GROUP)).addLayer(layer)
+    _subgroup(project, PICTURES_GROUP).addLayer(layer)
     return layer
 
 
@@ -858,10 +990,11 @@ def _section_order(provider, profile_id: str, layers: list) -> list:
 
 
 def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_create, retry,
-                   topo_of) -> dict:
+                   topo_of, gaps: dict) -> dict:
     """One section picture per profile of the ``chosen`` models (shown ones), all of them in
     it as the section stacks them; with ``interpretation``, the profile's interpretation
-    painted over them. By profile id."""
+    painted over them; ``gaps[profile id]`` back from the plane. By profile id."""
+    from ..core.view3d import curtain_gap
     wanted: dict = {}
     for profile, _d, section_layer in chosen:
         if _shown(section_layer):
@@ -885,14 +1018,15 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
         failed = False
         try:
             interp = _interpretation(provider, pid) if interpretation else None
-            path = folder / f"{pid}-{_picture_signature(layers, profile, topo, interp)}.json"
+            gap = gaps.get(pid) or curtain_gap(profile.chainage.length)
+            path = folder / f"{pid}-{_picture_signature(layers, profile, topo, interp, gap)}.json"
             if layer is not None and layer.isValid() and _picture_file(layer) == path \
                     and path.exists():
                 out[pid] = layer
                 continue
             # the same signature always gives the same files: ones already there are reused
             painted = (path.exists() and path.with_suffix(".glb").exists()) or \
-                _busy(_write_picture, path, store, project, profile, layers, topo, interp)
+                _busy(_write_picture, path, store, project, profile, layers, topo, interp, gap)
         except Exception as exc:
             _log(f"3D view: the section picture of '{profile.name}' could not be drawn: {exc}")
             painted, failed = False, True
@@ -1043,14 +1177,17 @@ def _name_format(store, project):
     return QgsTextFormat()
 
 
-def _new_name(store, project: QgsProject, profile_id: str, name: str, fmt):
-    """An annotation layer for one profile's name, drawn in 3D by QGIS's annotation 3D
-    renderer in the map labels' format; kept out of the 2D map (it labels the profiles)."""
+def _new_name(store, project: QgsProject, profile_id: str, name: str, fmt,
+              flag: str = "name", group: str = NAMES_GROUP):
+    """An annotation layer for one profile's name (or, with ``flag`` and ``group``, other
+    texts), drawn in 3D by QGIS's annotation 3D renderer in the map labels' format; kept out
+    of the 2D map (the map labels them already)."""
     from qgis.core import QgsAnnotationLayer, QgsCoordinateReferenceSystem
     layer = QgsAnnotationLayer(name, QgsAnnotationLayer.LayerOptions(project.transformContext()))
     layer.setCrs(QgsCoordinateReferenceSystem(store.crs_authid))
-    layer.setCustomProperty(_FLAG, "name")
-    layer.setCustomProperty(_PROFILE, profile_id)
+    layer.setCustomProperty(_FLAG, flag)
+    if profile_id:
+        layer.setCustomProperty(_PROFILE, profile_id)
     layer.setScaleBasedVisibility(True)
     layer.setMinimumScale(PICTURE_2D_SCALE)
     try:
@@ -1065,8 +1202,7 @@ def _new_name(store, project: QgsProject, profile_id: str, name: str, fmt):
     except ImportError:                             # a QGIS built without 3D
         pass
     project.addMapLayer(layer, False)
-    group = plugin_group(project.layerTreeRoot())
-    (group.findGroup(NAMES_GROUP) or group.addGroup(NAMES_GROUP)).addLayer(layer)
+    _subgroup(project, group).addLayer(layer)
     return layer
 
 
@@ -1157,6 +1293,88 @@ def _sync_names(store, project, rows, may_create) -> dict:
     return out
 
 
+def borehole_names_3d(project: QgsProject) -> list:
+    """The borehole name layers in 3D (one per collar height step)."""
+    from qgis.core import QgsAnnotationLayer
+    return [layer for layer in project.mapLayers().values()
+            if isinstance(layer, QgsAnnotationLayer) and layer.customProperty(_FLAG) == "bhname"]
+
+
+def _height_step(z: float) -> float:
+    return round(round(z / BOREHOLE_NAME_STEP_M) * BOREHOLE_NAME_STEP_M, 3)
+
+
+def _set_height(layer, z: float) -> bool:
+    """The annotation layer's 3D height; True when it changed."""
+    try:
+        from qgis._3d import QgsAnnotationLayer3DRenderer
+        from qgis.core import QgsAbstract3DRenderer
+    except ImportError:                             # a QGIS built without 3D
+        return False
+    renderer = as_kind(layer.renderer3D(), "annotation", QgsAbstract3DRenderer,
+                       QgsAnnotationLayer3DRenderer)
+    if renderer is None or abs(renderer.zOffset() - z) <= 1e-6:
+        return False
+    renderer = renderer.clone()
+    renderer.setZOffset(z)
+    layer.setRenderer3D(renderer)
+    handed_over(renderer)
+    return True
+
+
+def _sync_borehole_names(store, project, names, may_create) -> list:
+    """``names`` ((label, x, y, collar height) of the boreholes shown) as texts a little above
+    their columns: one annotation layer per collar height step (QGIS draws all of a layer's
+    texts at one height), named after its boreholes, in "Borehole names in 3D". The plugin
+    owns their texts; a layer the user removed is not made again by itself."""
+    from qgis.core import QgsAnnotationPointTextItem, QgsPointXY
+    steps: dict = {}
+    for label, x, y, z in names:
+        steps.setdefault(_height_step(z), []).append((str(label), float(x), float(y)))
+    existing = {}
+    for layer in borehole_names_3d(project):
+        try:
+            step = float(layer.customProperty(_HEIGHT))
+        except (TypeError, ValueError):
+            step = None
+        if step not in steps or step in existing:
+            project.removeMapLayer(layer.id())
+        else:
+            existing[step] = layer
+    fmt = _name_format(store, project) if steps else None
+    out = []
+    for step, items in sorted(steps.items()):
+        items = sorted(items)
+        title = ", ".join(label for label, _x, _y in items)
+        title = title if len(title) <= 40 else title[:39] + "…"
+        layer = existing.get(step)
+        allowed = may_create(f"bhnames:{step:g}")
+        if layer is None:
+            if not allowed:
+                continue                            # e.g. the user removed it
+            layer = _new_name(store, project, "", title, fmt, "bhname", BOREHOLE_NAMES_GROUP)
+            layer.setCustomProperty(_HEIGHT, step)
+        have = sorted((item.text(), item.point().x(), item.point().y())
+                      for item in layer.items().values()
+                      if isinstance(item, QgsAnnotationPointTextItem))
+        changed = False
+        if have != items:
+            layer.clear()
+            for label, x, y in items:
+                item = QgsAnnotationPointTextItem(label, QgsPointXY(x, y))
+                item.setFormat(fmt)
+                layer.addItem(item)
+            changed = True
+        if layer.name() != title:
+            layer.setName(title)
+        changed = _set_height(layer, step + BOREHOLE_NAME_LIFT_M) or changed
+        if changed:
+            layer.trigger3DUpdate()     # the 3D view reloads an annotation layer only on this
+        out.append(layer)
+    _drop_empty_group(project, BOREHOLE_NAMES_GROUP)
+    return out
+
+
 # -- boreholes ------------------------------------------------------------------------------
 def _interval_colour(text: str, symbol) -> tuple:
     """The colour the section draws an interval in: its class's fill, the outline of a
@@ -1219,6 +1437,22 @@ def _borehole_rows(store, provider, project, choice: Choice) -> list[tuple]:
     return rows
 
 
+def profiles_with_boreholes(store, provider) -> set:
+    """The ids of the profiles whose section shows boreholes (a profile whose context cannot
+    be gathered just now counts as one that may: it is not greyed out for a passing
+    error)."""
+    out = set()
+    for profile in store.profiles():
+        try:
+            items = provider.drawn_context(profile.id)
+        except Exception:
+            out.add(profile.id)
+            continue
+        if items is not None and any(p.kind == "borehole" for p in items.points):
+            out.add(profile.id)
+    return out
+
+
 def _disc(x: float, y: float, z: float, radius: float, sides: int = 16) -> QgsPolygon:
     """A flat round base at height ``z``: extruded upward, a borehole interval's column."""
     a = np.linspace(0.0, 2 * np.pi, sides + 1)
@@ -1228,7 +1462,19 @@ def _disc(x: float, y: float, z: float, radius: float, sides: int = 16) -> QgsPo
     return QgsPolygon(ring)
 
 
-def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
+def _collars(rows) -> list:
+    """(label, x, y, collar height) of each borehole in ``_borehole_rows``' rows, once."""
+    out = {}
+    for _pid, label, _lid, iv in rows:
+        key = (label, round(iv.x, 3), round(iv.y, 3))
+        collar = iv.z_top + iv.top
+        out[key] = max(out.get(key, collar), collar)
+    return [(label, x, y, z) for (label, x, y), z in out.items()]
+
+
+def _sync_boreholes(store, provider, project, choice: Choice, create: bool, may_create):
+    """The columns of the ticked profiles' boreholes in "Boreholes in 3D", and their names
+    above them."""
     known = {p.id for p in store.profiles()}
     wanted = bool(choice.boreholes & known)
     old = layers_3d(project).get("boreholes")
@@ -1238,8 +1484,10 @@ def _sync_boreholes(store, provider, project, choice: Choice, create: bool):
         create = True
     layer = _layer(store, project, "boreholes", wanted, create)
     if layer is None:
+        _sync_borehole_names(store, project, [], may_create)
         return None
     rows = _borehole_rows(store, provider, project, choice)
+    _sync_borehole_names(store, project, _collars(rows), may_create)
     radius = (choice.borehole_width or auto_borehole_width(store)) / 2
     signature = [(pid, label, lid, iv) for pid, label, lid, iv in rows] + [radius]
     built = _fresh(layer)
@@ -1274,21 +1522,20 @@ def shown_summary(layers: dict) -> str:
     """What ``sync`` put into 3D, in words: "1 234 model cells, 2 point clouds, …"."""
     from qgis.PyQt.QtCore import QLocale
     loc, parts = QLocale(), []
+
+    def count(n: int, one: str, many: str) -> None:
+        if n:                                   # "0 borehole intervals" says nothing
+            parts.append(f"{loc.toString(n)} {one if n == 1 else many}")
     if "models" in layers:
-        parts.append(f"{loc.toString(layers['models'].featureCount())} model cells")
-    if layers.get("clouds"):
-        n = len(layers["clouds"])
-        parts.append(f"{loc.toString(n)} point cloud{'' if n == 1 else 's'}")
+        count(layers["models"].featureCount(), "model cell", "model cells")
+    count(len(layers.get("clouds") or ()), "point cloud", "point clouds")
     if "contours" in layers:
-        parts.append(f"{loc.toString(layers['contours'].featureCount())} contour lines")
-    if layers.get("pictures"):
-        n = len(layers["pictures"])
-        parts.append(f"{loc.toString(n)} section picture{'' if n == 1 else 's'}")
+        count(layers["contours"].featureCount(), "contour line", "contour lines")
+    count(len(layers.get("pictures") or ()), "section picture", "section pictures")
     if "boreholes" in layers:
-        parts.append(f"{loc.toString(layers['boreholes'].featureCount())} borehole intervals")
+        count(layers["boreholes"].featureCount(), "borehole interval", "borehole intervals")
     if "ground" in layers:
-        n = layers["ground"].featureCount()
-        parts.append(f"{loc.toString(n)} ground line{'' if n == 1 else 's'}")
+        count(layers["ground"].featureCount(), "ground line", "ground lines")
     if not parts:
         return "nothing that could be built"
     return ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
@@ -1349,12 +1596,16 @@ def prune(store, project: QgsProject) -> None:
     for profile_id, layer in names_3d(project).items():
         if profile_id not in ticked:
             project.removeMapLayer(layer.id())
+    if not columns:                             # which ones stay waits for a sync
+        for layer in borehole_names_3d(project):
+            project.removeMapLayer(layer.id())
     shared = layers_3d(project)
     for kind, key, keep in (("models", "dataset_id", models), ("contours", "dataset_id", models),
                             ("ground", "profile_id", ticked), ("boreholes", "profile_id", columns)):
         if kind in shared:
             _prune_features(project, shared[kind], key, keep)
-    for group in (SMOOTH_GROUP, PICTURES_GROUP, NAMES_GROUP):
+    for group in (SMOOTH_GROUP, PICTURES_GROUP, NAMES_GROUP, BOREHOLE_NAMES_GROUP,
+                  VIEW3D_GROUP):
         _drop_empty_group(project, group)
     in_use = {Path(la.source()) for la in clouds_3d(project).values()}
     in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
@@ -1392,6 +1643,7 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     ``boreholes`` (only a section style changed) the borehole layer is left as it is."""
     choice = read_choice(project)
     gathered = _gather(store, provider, choice)
+    _settle_groups(project)
     before = project.property(_NEEDS)
     needs: set[str] = set()
     try:
@@ -1399,7 +1651,7 @@ def sync(store, provider, project: QgsProject, create: bool = False,
         made = set(json.loads(text)) if text else None
     except (TypeError, ValueError):
         made = None
-    known = (made or set()) | set(layers_3d(project)) | ({"names"} if names_3d(project) else set())
+    known = (made or set()) | _made_now(project)
 
     def may_create(kind: str) -> bool:
         needs.add(kind)
@@ -1425,7 +1677,10 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     lines = [(p, d, la) for p, d, la in gathered
              if _shown(la) and look[d.id] != "picture" and la.style.mode in _LINES]
     pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture"]
-    models = _sync_models(store, project, cells, may_create("models") if cells else create)
+    cell_gaps, picture_gaps = _stack_gaps(provider, [c for c in cells if _shown(c[2])],
+                                          [c for c in pictured if _shown(c[2])])
+    models = _sync_models(store, project, cells, may_create("models") if cells else create,
+                          cell_gaps)
     if models is not None:
         out["models"] = models
     clouds = _sync_clouds(store, provider, project, smooth, may_create, needs.discard,
@@ -1436,7 +1691,7 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     if contours is not None:
         out["contours"] = contours
     pictures = _sync_pictures(store, provider, project, pictured, choice.interpretation,
-                              may_create, needs.discard, topo_of)
+                              may_create, needs.discard, topo_of, picture_gaps)
     if pictures:
         out["pictures"] = pictures
     ticked = {p.id for p, _d, _la in gathered} | set(choice.boreholes)
@@ -1450,18 +1705,27 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     in_use = {Path(la.source()) for la in clouds_3d(project).values()}
     in_use |= {f for f in map(_picture_file, pictures_3d(project).values()) if f is not None}
     _delete_stale(set().union(*(_companions(f) for f in in_use)) if in_use else set())
-    project.setProperty(_NEEDS, "\n".join(sorted(needs)))
-    now = known | set(layers_3d(project)) | ({"names"} if names_3d(project) else set())
-    # noted once Show in 3D was used (OK, or a layer of the plugin's): a project that never
-    # used it stays unmodified
-    if now != made and (create or now):
-        project.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(now)))
     layer = layers_3d(project).get("boreholes")
     if not boreholes and layer is not None:
         # a redraw: of the boreholes, only hiding or showing one in a section can change
         boreholes = _built.get(layer.id(), {}).get("hidden") != _hidden(store, choice)
     if boreholes or layer is None:
-        layer = _sync_boreholes(store, provider, project, choice, create)
+        layer = _sync_boreholes(store, provider, project, choice, create, may_create)
+    elif before is not None:    # a redraw: the borehole names stay as the last sync left them
+        needs.update(k for k in before.split("\n") if k.startswith("bhnames:"))
     if layer is not None:
         out["boreholes"] = layer
+    project.setProperty(_NEEDS, "\n".join(sorted(needs)))
+    now = known | _made_now(project)
+    # noted once Show in 3D was used (OK, or a layer of the plugin's): a project that never
+    # used it stays unmodified
+    if now != made and (create or now):
+        project.writeEntry(SCOPE, ENTRY_MADE, json.dumps(sorted(now)))
+    _drop_empty_group(project, VIEW3D_GROUP)
     return out
+
+
+def _made_now(project: QgsProject) -> set:
+    """The kinds of 3D layer the project holds now (for the "made" record)."""
+    return (set(layers_3d(project)) | ({"names"} if names_3d(project) else set())
+            | ({"bhnames"} if borehole_names_3d(project) else set()))

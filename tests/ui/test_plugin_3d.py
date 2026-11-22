@@ -23,6 +23,14 @@ def _canvas():
 
         def cameraController(self):
             return self.controller
+
+        section = None
+
+        def setCrossSection(self, section):
+            self.section = section if section.isValid() else None
+
+        def crossSectionEnabled(self):
+            return self.section is not None
     return FakeCanvas()
 
 
@@ -67,19 +75,25 @@ def _with_3d(iface, views, made=True):
         iface.createNewMapCanvas3D = create
 
 
-def _press_ok(monkeypatch):
+def _press(plug, monkeypatch, choice=None, button="Ok"):
+    """Show in 3D…, then OK (or Apply) with ``choice`` (default: model d1)."""
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
     from groundwork_geophysics.ui.view3d_dialog import View3dDialog
     from groundwork_geophysics.ui.view3d_layers import Choice
-    monkeypatch.setattr(View3dDialog, "exec", lambda self: 1)
-    monkeypatch.setattr(View3dDialog, "choice", lambda self: Choice(frozenset({"d1"})))
+    choice = choice or Choice(frozenset({"d1"}))
+    monkeypatch.setattr(View3dDialog, "choice", lambda self: choice)
+    plug.show_in_3d()
+    dialog = plug._view3d_dialog
+    dialog.buttons.button(getattr(QDialogButtonBox.StandardButton, button)).click()
+    return dialog
 
 
 def test_show_in_3d_opens_a_ready_3d_view(plugin, store_with_model, monkeypatch):
     plug, iface, views, calls, shown = plugin
     _with_3d(iface, views)
     plug.set_store(store_with_model[0])
-    _press_ok(monkeypatch)
-    plug.show_in_3d()
+    _press(plug, monkeypatch)
     canvas, = iface.made
     assert not canvas.settings.terrainRenderingEnabled()
     assert canvas.settings.eyeDomeLightingEnabled() and canvas.controller.looks
@@ -94,8 +108,7 @@ def test_an_open_3d_view_is_used_as_it_is(plugin, store_with_model, monkeypatch)
     mine.settings.setTerrainRenderingEnabled(True)
     views.append(mine)
     plug.set_store(store_with_model[0])
-    _press_ok(monkeypatch)
-    plug.show_in_3d()
+    _press(plug, monkeypatch)
     assert iface.made == [] and mine.settings.terrainRenderingEnabled()
     assert "open 3D map view" in shown[-1]
 
@@ -104,10 +117,64 @@ def test_without_3d_views_the_message_says_how_to_open_one(plugin, store_with_mo
                                                           monkeypatch):
     plug, iface, views, calls, shown = plugin
     plug.set_store(store_with_model[0])              # a QGIS without 3D map views
-    _press_ok(monkeypatch)
-    plug.show_in_3d()
+    _press(plug, monkeypatch)
     assert calls == [True]                           # OK always builds
     assert "View → 3D Map Views → New 3D Map View" in shown[-1]
+
+
+def test_apply_shows_the_choice_and_keeps_the_dialog_open(plugin, store_with_model,
+                                                          monkeypatch):
+    plug, iface, views, calls, shown = plugin
+    plug.set_store(store_with_model[0])
+    dialog = _press(plug, monkeypatch, button="Apply")
+    assert calls == [True] and plug._view3d_dialog is dialog and dialog.isVisible()
+    plug.show_in_3d()                                # asked again: the same one, in front
+    assert plug._view3d_dialog is dialog
+    dialog.buttons.button(dialog.buttons.StandardButton.Ok).click()
+    assert calls == [True, True] and plug._view3d_dialog is None
+
+
+def test_the_profile_menu_looks_at_and_cuts_along_the_profile_in_3d(plugin, store_with_model):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.section.dock import CUT_3D_TEXT, LOOK_3D_TEXT, UNCUT_3D_TEXT
+    from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
+    plug, iface, views, calls, shown = plugin
+    st, p, _src = store_with_model
+    write_choice(QgsProject.instance(), Choice())    # nothing ticked
+    plug.set_store(st)
+    plug.dock.open_profile(p.id)
+
+    def texts():
+        menu = plug.dock.profile_menu()              # held while it is read
+        return [a.text() for a in menu.actions()]
+
+    def pick(text):
+        menu = plug.dock.profile_menu()              # held while its action runs
+        next(a for a in menu.actions() if a.text() == text).trigger()
+
+    assert LOOK_3D_TEXT not in texts()
+    _with_3d(iface, views)                           # now QGIS has 3D views (none open)
+    assert LOOK_3D_TEXT in texts() and CUT_3D_TEXT in texts()
+    pick(LOOK_3D_TEXT)
+    canvas, = iface.made                             # a ready view opened first
+    assert len(canvas.controller.sides) == 1 and canvas.section is None
+    assert "Show in 3D" in shown[-1]                 # nothing of it is ticked yet
+    write_choice(QgsProject.instance(), Choice(frozenset({"d1"})))
+    pick(CUT_3D_TEXT)
+    assert canvas.section is not None and UNCUT_3D_TEXT in shown[-1]
+    assert UNCUT_3D_TEXT in texts()
+    pick(UNCUT_3D_TEXT)
+    assert canvas.section is None and iface.made == [canvas]
+
+
+def test_another_store_closes_the_dialog(plugin, store_with_model, monkeypatch):
+    plug, iface, views, calls, shown = plugin
+    plug.set_store(store_with_model[0])
+    plug.show_in_3d()
+    assert plug._view3d_dialog is not None
+    plug.set_store(None)
+    assert plug._view3d_dialog is None
 
 
 def test_nothing_is_built_until_a_3d_view_opens(plugin, store_with_model):
@@ -144,30 +211,26 @@ def test_ok_sizes_the_station_spheres_as_chosen(plugin, store_with_model, monkey
     st = store_with_model[0]
     stations = add_store_layers(st, QgsProject.instance())["stations"]
     plug.set_store(st)
-    monkeypatch.setattr(View3dDialog, "exec", lambda self: 1)
-    monkeypatch.setattr(View3dDialog, "choice",
-                        lambda self: Choice(frozenset({"d1"}), station_size=0.5))
-    plug.show_in_3d()
-    rule = sip.cast(stations.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()[0]
+    _press(plug, monkeypatch, Choice(frozenset({"d1"}), station_size=0.5))
+    rule =sip.cast(stations.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()[0]
     assert sip.cast(rule.symbol(), QgsPoint3DSymbol).shapeProperties()["radius"] == \
         pytest.approx(0.25)
 
 
-def test_ok_restyles_the_interpretation_from_2d_when_ticked(plugin, store_with_model,
-                                                           monkeypatch):
+def test_the_restyle_button_restyles_the_interpretation_at_once(plugin, store_with_model,
+                                                                monkeypatch):
     from groundwork_geophysics.ui import interp_layers
-    from groundwork_geophysics.ui.view3d_dialog import View3dDialog
     plug, iface, views, calls, shown = plugin
     plug.set_store(store_with_model[0])
     restyled = []
     monkeypatch.setattr(interp_layers, "restyle_from_2d",
                         lambda store, project: restyled.append(store) or 3)
-    _press_ok(monkeypatch)
+    _press(plug, monkeypatch)
+    assert restyled == []                            # OK alone does not restyle
     plug.show_in_3d()
-    assert restyled == []
-    monkeypatch.setattr(View3dDialog, "restyle_interpretation", lambda self: True)
-    plug.show_in_3d()
+    plug._view3d_dialog.restyle.click()
     assert restyled == [store_with_model[0]] and "follows its 2D style" in shown[-1]
+    assert calls == [True]                           # and builds nothing
 
 
 def test_unloading_the_plugin_stops_the_3d_interpretation_following_2d(plugin,

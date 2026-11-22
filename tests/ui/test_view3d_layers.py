@@ -48,6 +48,58 @@ def _choose(prj, models=(), boreholes=(), **kw):
     write_choice(prj, Choice(frozenset(models), frozenset(boreholes), **kw))
 
 
+def test_every_3d_layer_sits_in_one_collapsed_group(setup):
+    from groundwork_geophysics.ui.project_actions import plugin_group
+    from groundwork_geophysics.ui.view3d_layers import (BOREHOLE_NAMES_GROUP, NAMES_GROUP,
+                                                        PICTURES_GROUP, SMOOTH_GROUP,
+                                                        VIEW3D_GROUP, sync)
+    st, p, provider, prj = setup
+    _choose(prj, ["d"], [p.id])
+    sync(st, provider, prj, create=True)
+    root = prj.layerTreeRoot()
+    group = plugin_group(root).findGroup(VIEW3D_GROUP)
+    assert group is not None and not group.isExpanded()
+    inside = (group, *(group.findGroup(name) for name in (
+        SMOOTH_GROUP, PICTURES_GROUP, NAMES_GROUP, BOREHOLE_NAMES_GROUP)))
+    for layer in prj.mapLayers().values():
+        assert root.findLayer(layer.id()).parent() in inside
+    _choose(prj)
+    sync(st, provider, prj, create=True)
+    assert plugin_group(root).findGroup(VIEW3D_GROUP) is None          # nothing left: gone
+
+
+def test_3d_layers_of_an_older_project_move_into_the_group(setup):
+    from groundwork_geophysics.ui.project_actions import plugin_group
+    from groundwork_geophysics.ui.view3d_layers import VIEW3D_GROUP, layers_3d, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"], [p.id])
+    sync(st, provider, prj, create=True)
+    root = prj.layerTreeRoot()
+    top, group = plugin_group(root), plugin_group(root).findGroup(VIEW3D_GROUP)
+    for node in list(group.children()):                 # as an older version left them
+        top.addChildNode(node.clone())
+        group.removeChildNode(node)
+    top.removeChildNode(group)
+    models = layers_3d(prj)["models"]
+    sync(st, provider, prj)
+    assert root.findLayer(models.id()).parent() is plugin_group(root).findGroup(VIEW3D_GROUP)
+
+
+def test_a_3d_layer_the_user_moved_elsewhere_stays_there(setup):
+    from groundwork_geophysics.ui.view3d_layers import layers_3d, sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    sync(st, provider, prj, create=True)
+    root = prj.layerTreeRoot()
+    models = layers_3d(prj)["models"]
+    mine = root.addGroup("My 3D")
+    node = root.findLayer(models.id())
+    mine.addChildNode(node.clone())
+    node.parent().removeChildNode(node)
+    sync(st, provider, prj)
+    assert root.findLayer(models.id()).parent() is mine
+
+
 def test_choice_round_trips_through_the_project(setup):
     from groundwork_geophysics.ui.view3d_layers import Choice, read_choice
     _st, _p, _provider, prj = setup
@@ -128,10 +180,67 @@ def test_the_section_fade_leaves_out_unresolved_cells(qgis_app, tmp_path):
     everything = lyr.featureCount()
     unresolved = sum(1 for f in lyr.getFeatures() if not f["resolved"])
     assert everything > unresolved > 0
+    assert not any(f["faded"] for f in lyr.getFeatures())             # no fade: all opaque
     provider.set_style("v", replace(provider.style("v"), fade_coverage=True))
-    sync(st, provider, prj)
+    sync(st, provider, prj)                     # "fade": kept, see-through as in the section
+    assert lyr.featureCount() == everything
+    assert sum(1 for f in lyr.getFeatures() if f["faded"]) == unresolved
+    provider.set_style("v", replace(provider.style("v"), fade_mode="blank"))
+    sync(st, provider, prj)                     # "blank": left out
     assert lyr.featureCount() == everything - unresolved
-    assert all(f["resolved"] for f in lyr.getFeatures())
+    assert all(f["resolved"] and not f["faded"] for f in lyr.getFeatures())
+
+
+def test_faded_cells_are_see_through_in_3d(setup):
+    from qgis._3d import QgsRuleBased3DRenderer
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.core.gridding import FADE_ALPHA
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, _p, provider, prj = setup
+    _choose(prj, ["d"])
+    lyr = sync(st, provider, prj, create=True)["models"]
+    rules = sip.cast(lyr.renderer3D(), QgsRuleBased3DRenderer).rootRule().children()
+    opacity = {r.filterExpression(): r.symbol().materialSettings().opacity() for r in rules}
+    faded = [k for k in opacity if '"faded" = 1' in k]
+    assert len(rules) == 2 and faded and opacity[faded[0]] == pytest.approx(FADE_ALPHA)
+    assert lyr.renderer3D().tilingSettings().maximumChunkFeatures() >= lyr.featureCount()
+
+
+def test_an_older_cells_layer_gets_the_faded_field_and_style_once(setup):
+    from groundwork_geophysics.ui import view3d_layers
+    st, _p, provider, prj = setup
+    _choose(prj, ["d"])
+    lyr = view3d_layers.sync(st, provider, prj, create=True)["models"]
+    # as made before the fade field: no "faded", one plain symbol
+    from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    lyr.dataProvider().deleteAttributes([lyr.fields().indexOf("faded")])
+    lyr.updateFields()
+    symbol = QgsPolygon3DSymbol()
+    symbol.setMaterialSettings(view3d_layers._colour_material())
+    lyr.setRenderer3D(QgsVectorLayer3DRenderer(symbol))
+    view3d_layers._built.clear()
+    again = view3d_layers.sync(st, provider, prj)["models"]
+    assert again is lyr and lyr.fields().indexOf("faded") >= 0 and lyr.featureCount() > 0
+    assert lyr.renderer3D().type() == "rulebased"
+
+
+def test_a_cells_3d_style_of_the_users_own_is_kept(setup):
+    from qgis._3d import QgsPhongMaterialSettings, QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui import view3d_layers
+    st, _p, provider, prj = setup
+    _choose(prj, ["d"])
+    lyr = view3d_layers.sync(st, provider, prj, create=True)["models"]
+    symbol = QgsPolygon3DSymbol()
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor("red"))
+    symbol.setMaterialSettings(material)
+    lyr.setRenderer3D(QgsVectorLayer3DRenderer(symbol))
+    view3d_layers._built.clear()
+    view3d_layers.sync(st, provider, prj)
+    assert lyr.renderer3D().type() == "vector"
 
 
 def test_an_unchanged_sync_keeps_the_features(setup):
@@ -278,10 +387,10 @@ def test_one_failing_model_does_not_stop_the_others(setup, tmp_path, monkeypatch
     _two_models(st, p, provider, prj, tmp_path)
     real = view3d_layers._model_features
 
-    def flaky(layer, profile, dataset, section_layer):
+    def flaky(layer, profile, dataset, section_layer, gap):
         if dataset.id == "e":
             raise RuntimeError("broken")
-        return real(layer, profile, dataset, section_layer)
+        return real(layer, profile, dataset, section_layer, gap)
     monkeypatch.setattr(view3d_layers, "_model_features", flaky)
     lyr = view3d_layers.sync(st, provider, prj, create=True)["models"]
     assert {f["dataset_id"] for f in lyr.getFeatures()} == {"d"}
@@ -864,8 +973,45 @@ def test_cells_are_two_faces_standing_back_from_the_plane(setup):
     assert parts.numGeometries() == 2                    # one face per side
     ys = sorted({round(v.y(), 6) for v in parts.vertices()})
     assert ys == pytest.approx([-gap, gap])              # the line runs east at y = 0
-    symbol = sip.cast(lyr.renderer3D().symbol(), QgsPolygon3DSymbol)
-    assert not symbol.addBackFaces() and symbol.cullingMode() == Qgs3DTypes.CullingMode.Back
+    for rule in lyr.renderer3D().rootRule().children():      # opaque and faded alike
+        symbol = sip.cast(rule.symbol(), QgsPolygon3DSymbol)
+        assert not symbol.addBackFaces()
+        assert symbol.cullingMode() == Qgs3DTypes.CullingMode.Back
+
+
+def _face_offsets(lyr, did):
+    """The distances of a dataset's cell faces from the plane (the line runs east, y = 0)."""
+    return {round(abs(v.y()), 6) for f in lyr.getFeatures() if f["dataset_id"] == did
+            for v in f.geometry().constGet().vertices()}
+
+
+def test_two_cell_models_of_a_profile_stand_apart_the_top_one_in_front(setup, tmp_path):
+    """Resistivity and chargeability (or two time-lapse models) on one profile must not
+    flicker in one plane: the one the section draws on top stands closest to the plane."""
+    from groundwork_geophysics.core.view3d import curtain_gap
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _model(st, p, tmp_path, did="e")
+    provider.notify_changed()
+    _choose(prj, ["d", "e"])
+    lyr = sync(st, provider, prj, create=True)["models"]
+    gap = curtain_gap(p.chainage.length)
+    order = [la.dataset.id for la in provider.layers(p.id)]          # bottom first
+    top, bottom = _face_offsets(lyr, order[-1]), _face_offsets(lyr, order[0])
+    assert sorted(top) == pytest.approx([gap]) and sorted(bottom) == pytest.approx([2 * gap])
+
+
+def test_a_picture_and_cells_on_one_profile_stand_apart(setup, tmp_path):
+    from groundwork_geophysics.core.view3d import curtain_gap
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _model(st, p, tmp_path, did="e")
+    provider.notify_changed()
+    order = [la.dataset.id for la in provider.layers(p.id)]
+    _choose(prj, order, looks={order[-1]: "picture"})                # the top one pictured
+    lyr = sync(st, provider, prj, create=True)["models"]
+    assert sorted(_face_offsets(lyr, order[0])) == pytest.approx(
+        [2 * curtain_gap(p.chainage.length)])
 
 
 def test_a_cells_layer_saved_with_one_face_becomes_two(setup):
@@ -1350,3 +1496,63 @@ def test_a_name_layer_made_with_callouts_loses_them_once(setup):
     name.setRenderer3D(r3d)
     sync(st, provider, prj)
     assert name.renderer3D().showCalloutLines()
+
+
+# -- borehole names: a little above each column, one annotation layer per collar height -----
+def _texts(layer):
+    return sorted(item.text() for item in layer.items().values())
+
+
+def test_each_borehole_name_floats_above_its_column(setup):
+    from groundwork_geophysics.ui.view3d_layers import (BOREHOLE_NAMES_GROUP,
+                                                        BOREHOLE_NAME_LIFT_M,
+                                                        borehole_names_3d, sync)
+    st, p, provider, prj = setup
+    _choose(prj, boreholes=[p.id])
+    sync(st, provider, prj, create=True)
+    layers = borehole_names_3d(prj)
+    assert len(layers) == 1
+    layer, = layers
+    assert _texts(layer) == ["B1"]
+    item, = layer.items().values()
+    assert (item.point().x(), item.point().y()) == pytest.approx((10.0, 2.0))
+    assert layer.renderer3D().zOffset() == pytest.approx(100.0 + BOREHOLE_NAME_LIFT_M)
+    assert prj.layerTreeRoot().findLayer(layer.id()).parent().name() == BOREHOLE_NAMES_GROUP
+    assert not layer.isInScaleRange(1000.0)          # the map shows the boreholes already
+
+
+def test_boreholes_at_one_height_share_a_layer_others_get_their_own(setup):
+    from groundwork_geophysics.ui.view3d_layers import borehole_names_3d, sync
+    st, p, provider, prj = setup
+    low = replace(_borehole("B2", x=30.0, s=30.0), z_top=100.2)
+    high = replace(_borehole("B3", x=50.0, s=50.0), z_top=104.0)
+    provider.context_source = lambda profile: ContextItems(points=[_borehole(), low, high])
+    _choose(prj, boreholes=[p.id])
+    sync(st, provider, prj, create=True)
+    assert sorted(_texts(la) for la in borehole_names_3d(prj)) == [["B1", "B2"], ["B3"]]
+
+
+def test_unticking_the_boreholes_takes_their_names_away(setup):
+    from groundwork_geophysics.ui.view3d_layers import (BOREHOLE_NAMES_GROUP,
+                                                        borehole_names_3d, sync)
+    st, p, provider, prj = setup
+    _choose(prj, boreholes=[p.id])
+    sync(st, provider, prj, create=True)
+    _choose(prj, ["d"])
+    sync(st, provider, prj)
+    assert not borehole_names_3d(prj)
+    assert prj.layerTreeRoot().findGroup(BOREHOLE_NAMES_GROUP) is None
+
+
+def test_a_borehole_name_layer_removed_by_hand_stays_removed(setup):
+    from groundwork_geophysics.ui.view3d_layers import borehole_names_3d, sync
+    st, p, provider, prj = setup
+    _choose(prj, boreholes=[p.id])
+    sync(st, provider, prj, create=True)
+    layer, = borehole_names_3d(prj)
+    prj.removeMapLayer(layer.id())
+    provider.notify_changed()
+    sync(st, provider, prj)
+    assert not borehole_names_3d(prj)
+    sync(st, provider, prj, create=True)             # OK in Show in 3D brings it back
+    assert borehole_names_3d(prj)

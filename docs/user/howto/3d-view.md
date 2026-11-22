@@ -4,24 +4,36 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
 ## Show in 3D
 
-**Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see, choose under **Show As** how each model stands there, and press **OK**:
+**Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see, choose under **Show As** how each model stands there, and press **Apply** or **OK**. **Apply** shows your choice in the 3D view and keeps the dialog open, so you can try **Point Cloud** against **Section Picture** and look at the result; **OK** does the same and closes it. The dialog does not block QGIS: you can turn the 3D view while it is open.
 
 - a **model** stands as a curtain under its profile, at its real elevation: **As in the Section** (the default) draws it the way its section draws it, **Point Cloud** and **Section Picture** are explained below;
-- **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing (or as wide as you set under **Sizes**, see below);
+- **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing (or as wide as you set under **Sizes**, see below). Each borehole's **name** floats 1 m above its column. QGIS draws all texts of one annotation layer at one height, so the names come in small layers by collar height (in 0.5 m steps), in the group **Borehole names in 3D**. A profile whose section shows no boreholes has no **Boreholes** entry;
 - every profile with something ticked also shows its **ground line**, the line its section draws as the ground surface, in the section's ground colour (black), in the layer **Ground in 3D**: with the terrain switched off, it shows where each profile runs and how high its ground lies;
 - each such profile's **name** floats a little above the start of its ground line, as QGIS draws text annotations in the 3D view: in the format of the profile labels on the map. Each profile has its own small annotation layer in the group **Profile names in 3D** (QGIS draws all texts of one annotation layer at one height, and profiles lie at different heights). To change the look, open a name's layer properties → **3D View**: there you can also set its text format or switch on a callout line to the ground. The map labels the profiles already, so these layers stay out of the 2D map;
 - ticking a profile ticks all of it;
-- a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md).
+- a profile without real heights (a local section) is greyed out: give it a reference height first, see [Reference height](reference-height.md);
+- a model's **Show As** can be chosen while the model is ticked.
 
 Below the list:
 
 - **Section pictures show the interpretation** paints the interpretation into the section pictures (see below);
-- **Restyle the interpretation from 2D** gives the interpretation's 3D style back to its 2D style when you press **OK** (see [Stations and the interpretation in 3D](#stations-and-the-interpretation-in-3d)); it is a one-off and is unticked again the next time;
+- **Restyle Interpretation from 2D** gives the interpretation's 3D style back to its 2D style at once (see [Stations and the interpretation in 3D](#stations-and-the-interpretation-in-3d));
 - **Sizes** (click to open): the **Borehole column width** and the **Station sphere size**, both diameters in metres. **Auto** sizes them from the distance between the stations; the tooltip says how big that is. The clear button next to a size goes back to **Auto**.
 
 Nothing is shown in 3D until you ask. Untick a model or a profile's boreholes to take them out again.
 
-If no 3D map view is open when you press **OK**, a new one opens, ready to look at: the terrain switched off, eye-dome lighting on and the camera on what you ticked, seen at an angle from the long side of the profiles. A 3D map view you already have open is used as it is: its settings and camera are not touched.
+If no 3D map view is open when you press **Apply** or **OK**, a new one opens, ready to look at: the terrain switched off, eye-dome lighting on and the camera on what you ticked, seen at an angle from the long side of the profiles. A 3D map view you already have open is used as it is: its settings and camera are not touched.
+
+Everything **Show in 3D…** makes sits in one collapsed group **3D View** inside the Groundwork group: untick that group to hide all of it at once. A layer you move out of it stays where you put it.
+
+## Looking at one profile
+
+Right-click the profile list in the section panel:
+
+- **Look at Profile in 3D** turns the 3D view side-on to the open profile;
+- **Cut 3D View Along Profile** does the same and cuts the 3D view down to a slab along the profile (QGIS's cross section, a little wider than the profile's bends). Everything outside the slab is left out, so the curtain shows through a terrain or a DEM you keep switched on. **Remove 3D Cut** in the same menu shows everything again.
+
+With no 3D map view open, a ready one opens first. These only move the camera and cut the view: what is shown is still what you ticked in **Show in 3D…**.
 
 ## A curtain looks like its section
 
@@ -34,9 +46,11 @@ A curtain follows the model's **display** in the section panel, and changes when
 | **Contours** | the contour lines, at the section's levels and in its contour colour, in **Contours in 3D** |
 | **Smooth + contours** | the point cloud and the contour lines |
 
-The colour scale and the coverage fade follow too: the faded part is left out of the curtain.
+The colour scale and the coverage fade follow too. In **Cells**, a cell the section fades (low coverage, fade mode **Fade**) stands see-through, as faint as in the section; with fade mode **Blank** it is left out. In the smooth point cloud, the faded part is left out.
 
-**Models in 3D**, **Contours in 3D**, **Boreholes in 3D** and **Ground in 3D** are temporary layers: they are not stored in the Groundwork file, and the project saves the layers with their styles but not what they hold. They are filled from your models again once a 3D map view is open (QGIS reopens the 3D views saved with the project) or when you press **OK** in **Show in 3D…**. The **Profile names in 3D** are small annotation layers, saved in the project with their texts.
+Two models of one profile shown as cells (say resistivity and chargeability, or two time-lapse models) stand a little apart, in the order the section stacks them: the one on top is in front from either side, so they never flicker in one plane.
+
+**Models in 3D**, **Contours in 3D**, **Boreholes in 3D** and **Ground in 3D** are temporary layers: they are not stored in the Groundwork file, and the project saves the layers with their styles but not what they hold. They are filled from your models again once a 3D map view is open (QGIS reopens the 3D views saved with the project) or when you press **Apply** or **OK** in **Show in 3D…**. The **Profile names in 3D** and **Borehole names in 3D** are small annotation layers, saved in the project with their texts.
 
 The 3D layers are kept up to date only while a 3D map view is open: with none open, a change in the section panel (display, colour scale, fade, data) only marks them as out of date, so no point clouds or pictures are written that nobody sees. They catch up as soon as a 3D map view opens, or when you press **OK** in **Show in 3D…**. Deleting a model or a profile takes its part out of the 3D layers at once, also with no 3D view open. If you look at them in **Qgis2threejs** instead (it has no QGIS 3D map view), or in the 3D map of a print layout (that does not count as an open 3D view either), press **OK** in **Show in 3D…** to bring them up to date before you export or print.
 
@@ -69,7 +83,9 @@ The picture layers are shown in the 3D view only, not in the 2D map: there a pic
 
 The **stations** stand as small spheres at their surveyed height, in the outline colour of their map symbol, sized to the distance between them or to the **Station sphere size** set in **Show in 3D…**; stations without a height are left out. A size you set in the stations' own **3D View** properties is yours: **Show in 3D…** no longer changes it.
 
-The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as lines a few pixels wide, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. They follow their 2D style (Symbology), also when you change it: the colour, the fill's transparency and the outline. A hatched or patterned fill shows in its colour, half see-through, and a fill switched off shows only the outline: QGIS's 3D view can't draw patterns on upright polygons. Lines take their width. This works while the 2D style is the one with a colour per entity (Categorized by **feature_id**, as the plugin sets it up): if you categorize the layer by another field, such as the type, or choose another kind of style, the 3D style stays as it was. If an entity should look different in 3D, restyle it in the layer's properties → **3D View**: an entity you restyled there no longer follows its 2D style. To make every entity follow its 2D style again (also after you replaced or removed a layer's 3D style), tick **Restyle the interpretation from 2D** in **Show in 3D…** and press **OK**.
+The interpretation lines, polygons and points (3D) stand at the depth you drew them: lines as lines a few pixels wide, polygons as flat panels, points as spheres, each entity in its colour from the 2D legend. They follow their 2D style (Symbology), also when you change it: the colour, the fill's transparency and the outline. A hatched or patterned fill shows in its colour, half see-through, and a fill switched off shows only the outline: QGIS's 3D view can't draw patterns on upright polygons. Lines take their width. This works while the 2D style is the one with a colour per entity (Categorized by **feature_id**, as the plugin sets it up): if you categorize the layer by another field, such as the type, or choose another kind of style, the 3D style stays as it was. If an entity should look different in 3D, restyle it in the layer's properties → **3D View**: an entity you restyled there no longer follows its 2D style. To make every entity follow its 2D style again (also after you replaced or removed a layer's 3D style), press **Restyle Interpretation from 2D** in **Show in 3D…**.
+
+An edit in the section (a new piece, a moved vertex, a deleted one) shows in the open 3D view as soon as it is saved.
 
 The interpretation lies in the same plane as its profile's curtain. So that it never flickers with the curtain or hides behind it, cells and section pictures are drawn as two faces, each standing a little behind the plane as seen from its side (5 to 50 cm, depending on the profile's length): from either side, the interpretation is in front. Point clouds are drawn as they are.
 
@@ -81,7 +97,8 @@ A **click** does: click (left button, without dragging) on the curtain, section 
 
 ## Working with the layers
 
-- **Identify** a cell: **value**, **coverage** and **resolved** (0 or 1). Identify a point of a smooth curtain: its **Value** (and **Log10Value**).
+- **Identify** a cell: **value**, **coverage**, **resolved** (0 or 1) and **faded** (1 where the section fades it). Identify a point of a smooth curtain: its **Value** (and **Log10Value**).
+- **Models in 3D** has two rules in its **3D View** properties, **Cells** and **Faded cells (low coverage)**: change the see-through of the faded ones there. A 3D style you set up yourself stays.
 - **Only the resolved part:** filter **Models in 3D** with `"resolved" = 1`. When the section fades low coverage, the cells below the threshold are left out of the curtain anyway.
 - **Style a smooth curtain by value:** in the point cloud's properties → **Symbology**, choose **Attribute by Ramp** on **Log10Value** (or **Value** on a linear scale) and a colour ramp; the 3D view follows the 2D style. Your style stays when the curtain is rebuilt.
 - The point size is in the point cloud's **3D View** properties.

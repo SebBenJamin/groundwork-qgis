@@ -1,12 +1,14 @@
 """Show in 3D: which models stand as curtains and which profiles' boreholes as columns in
 QGIS's 3D view, and how each model stands there. One tick per model and per profile's
 boreholes (a profile's own tick sets all of them) and a representation per model; below,
-whether the section pictures show the interpretation, a one-off restyle of the
-interpretation from 2D, and the sizes of borehole columns and station spheres."""
+whether the section pictures show the interpretation, a button that restyles the
+interpretation's 3D layers from 2D at once, and the sizes of borehole columns and station
+spheres. Non-modal: Apply shows the choice in the open 3D view and keeps the dialog open,
+so looks can be compared there; OK applies and closes."""
 from __future__ import annotations
 
 from qgis.gui import QgsCollapsibleGroupBox, QgsDoubleSpinBox
-from qgis.PyQt.QtCore import QLocale, Qt
+from qgis.PyQt.QtCore import QLocale, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                                  QHBoxLayout, QHeaderView, QLabel, QPushButton, QTreeWidget,
                                  QTreeWidgetItem, QVBoxLayout)
@@ -35,12 +37,14 @@ LOOK_ITEMS = (
      "A picture of the section exactly as the panel draws it, labels included; all of a "
      "profile's pictured models in one picture. No values on Identify."))
 LOOK_TIP = "How this model stands in the 3D view"
+LOOK_OFF_TIP = "Tick the model to choose how it stands in the 3D view"
 INTERP_TEXT = "Section pictures show the interpretation"
 INTERP_TIP = ("Paint the interpretation into each profile's section picture as the section "
               "panel draws it: fills, hatches, transparency and names")
-RESTYLE_TEXT = "Restyle the interpretation from 2D"
-RESTYLE_TIP = ("On OK, the interpretation's 3D style follows its 2D style (Symbology) again "
+RESTYLE_TEXT = "Restyle Interpretation from 2D"
+RESTYLE_TIP = ("Now: the interpretation's 3D style follows its 2D style (Symbology) again "
                "for every entity, also ones you restyled in the layer's 3D View")
+APPLY_TIP = "Show the choice in the 3D view and keep this dialog open"
 SIZES_TITLE = "Sizes"
 BOREHOLE_LABEL = "Borehole column width"
 BOREHOLE_TIP = "The diameter of the borehole columns in 3D.\nAuto: {} m from the station spacing"
@@ -69,9 +73,14 @@ def _size_box(value: float | None, auto: float, tip: str) -> QgsDoubleSpinBox:
 class View3dDialog(QDialog):
     """The store's profiles with their models and boreholes; ``choice()`` gives the ticks,
     representations and options. Profiles in ``local`` (no real heights) are listed greyed
-    out, saying why."""
+    out, saying why; a profile not in ``with_boreholes`` (None: every profile may have
+    some) has no Boreholes entry. ``applied`` is emitted by Apply and by OK (before the
+    dialog closes); ``restyle_requested`` by the restyle button."""
 
-    def __init__(self, store, choice: Choice, local=(), parent=None):
+    applied = pyqtSignal()
+    restyle_requested = pyqtSignal()
+
+    def __init__(self, store, choice: Choice, local=(), parent=None, with_boreholes=None):
         super().__init__(parent)
         self.setWindowTitle(TITLE)
         intro = QLabel(INTRO)
@@ -79,6 +88,8 @@ class View3dDialog(QDialog):
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
         self.tree.setHeaderLabels(list(HEADERS))
+        # "ERT02 model (Silbermann et al. 2025, BERT)": the start and the end both matter
+        self.tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -86,6 +97,7 @@ class View3dDialog(QDialog):
         self.tree.setToolTip("Tick a profile to show all of it")
         self.tree.setMinimumSize(420, 260)          # room for model names; grows with the dialog
         self._looks: dict[str, QComboBox] = {}
+        self._look_items: dict[str, QTreeWidgetItem] = {}
         for profile in store.profiles():
             top = QTreeWidgetItem([profile.name])
             top.setFlags(top.flags() | Qt.ItemFlag.ItemIsUserCheckable
@@ -96,20 +108,26 @@ class View3dDialog(QDialog):
                     item = self._child(top, d.name or d.id, "model", d.id,
                                        d.id in choice.models)
                     item.setToolTip(0, f"{d.name or d.id}\n{type_label(d.kind)}")
-                    self._looks[d.id] = self._look_combo(item, choice.look_of(d.id),
-                                                         profile.id not in local)
-            child = self._child(top, BOREHOLES, "boreholes", profile.id,
-                                profile.id in choice.boreholes)
-            child.setToolTip(0, BOREHOLES_TIP)
+                    self._looks[d.id] = self._look_combo(item, choice.look_of(d.id))
+                    self._look_items[d.id] = item
+            # a section without boreholes has no entry for them (a greyed one would leave the
+            # profile's own tick half-set for good)
+            if with_boreholes is None or profile.id in with_boreholes:
+                child = self._child(top, BOREHOLES, "boreholes", profile.id,
+                                    profile.id in choice.boreholes)
+                child.setToolTip(0, BOREHOLES_TIP)
             top.setExpanded(True)
             if profile.id in local:
                 top.setDisabled(True)
                 top.setToolTip(0, LOCAL_TIP)
+        self.tree.itemChanged.connect(lambda *_: self._enable_looks())
+        self._enable_looks()
         self.interpretation = QCheckBox(INTERP_TEXT)
         self.interpretation.setToolTip(INTERP_TIP)
         self.interpretation.setChecked(choice.interpretation)
-        self.restyle = QCheckBox(RESTYLE_TEXT)
+        self.restyle = QPushButton(RESTYLE_TEXT)
         self.restyle.setToolTip(RESTYLE_TIP)
+        self.restyle.clicked.connect(self.restyle_requested.emit)
         self.sizes = QgsCollapsibleGroupBox(SIZES_TITLE)
         self.sizes.setSaveCollapsedState(False)
         self.borehole_width = _size_box(choice.borehole_width, auto_borehole_width(store),
@@ -123,11 +141,15 @@ class View3dDialog(QDialog):
             label.setToolTip(box.toolTip())
             form.addRow(label, box)
         self.sizes.setCollapsed(True)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
-                                   | QDialogButtonBox.StandardButton.Cancel)
-        add_help_button(buttons, "view3d")
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                        | QDialogButtonBox.StandardButton.Apply
+                                        | QDialogButtonBox.StandardButton.Cancel)
+        add_help_button(self.buttons, "view3d")
+        apply = self.buttons.button(QDialogButtonBox.StandardButton.Apply)
+        apply.setToolTip(APPLY_TIP)
+        apply.clicked.connect(self.applied.emit)
+        self.buttons.accepted.connect(self._ok)
+        self.buttons.rejected.connect(self.reject)
         self.select_all = QPushButton("Select All")
         self.select_all.setToolTip("Tick every model and every profile's boreholes")
         self.select_all.clicked.connect(lambda: self._tick_all(True))
@@ -138,14 +160,20 @@ class View3dDialog(QDialog):
         ticks.addWidget(self.select_all)
         ticks.addWidget(self.deselect_all)
         ticks.addStretch(1)
+        interp = QHBoxLayout()
+        interp.addWidget(self.interpretation, 1)
+        interp.addWidget(self.restyle)
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
         layout.addWidget(self.tree, 1)
         layout.addLayout(ticks)
-        layout.addWidget(self.interpretation)
-        layout.addWidget(self.restyle)
+        layout.addLayout(interp)
         layout.addWidget(self.sizes)
-        layout.addWidget(buttons)
+        layout.addWidget(self.buttons)
+
+    def _ok(self) -> None:
+        self.applied.emit()
+        self.accept()
 
     def _tick_all(self, ticked: bool) -> None:
         """Tick or untick every model and boreholes entry of the profiles that can be shown
@@ -158,6 +186,14 @@ class View3dDialog(QDialog):
             for k in range(top.childCount()):
                 top.child(k).setCheckState(0, state)
 
+    def _enable_looks(self) -> None:
+        """A model's Show As choice is open while it is ticked (on a profile with heights)."""
+        for did, combo in self._looks.items():
+            item = self._look_items[did]
+            on = item.checkState(0) == Qt.CheckState.Checked and not item.isDisabled()
+            combo.setEnabled(on)
+            combo.setToolTip(LOOK_TIP if on else LOOK_OFF_TIP)
+
     @staticmethod
     def _child(top, text: str, kind: str, item_id: str, checked: bool) -> QTreeWidgetItem:
         item = QTreeWidgetItem([text])
@@ -168,20 +204,14 @@ class View3dDialog(QDialog):
         item.setCheckState(0, Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
         return item
 
-    def _look_combo(self, item, look: str, enabled: bool) -> QComboBox:
+    def _look_combo(self, item, look: str) -> QComboBox:
         combo = QComboBox()
         for i, (value, text, tip) in enumerate(LOOK_ITEMS):
             combo.addItem(text, value)
             combo.setItemData(i, tip, Qt.ItemDataRole.ToolTipRole)
         combo.setCurrentIndex(max(0, combo.findData(look)))
-        combo.setToolTip(LOOK_TIP)
-        combo.setEnabled(enabled)
         self.tree.setItemWidget(item, 1, combo)
         return combo
-
-    def restyle_interpretation(self) -> bool:
-        """Whether OK restyles the interpretation's 3D layers from their 2D style."""
-        return self.restyle.isChecked()
 
     def choice(self) -> Choice:
         models, boreholes = set(), set()

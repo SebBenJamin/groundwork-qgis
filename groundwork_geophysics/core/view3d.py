@@ -164,6 +164,8 @@ class CurtainCell:
     rgb: tuple
     #: with a gap: the cell as two closed rings, one per side (see ``two_faces``)
     faces: tuple = ()
+    #: the section fades it (below the threshold, fade mode "fade"): drawn see-through
+    faded: bool = False
 
 
 @dataclass(frozen=True)
@@ -179,12 +181,14 @@ class BoreholeInterval:
 
 
 def curtain_cells(mesh, chainage, rgba, threshold: float | None,
-                  gap: float = 0.0) -> list[CurtainCell]:
+                  gap: float = 0.0, keep_faded: bool = False) -> list[CurtainCell]:
     """``mesh`` (chainage s, elevation z) as 3D cells under ``chainage``'s line; ``rgba``: one
     uint8 row per cell (``ColorScale.rgba``). With a ``threshold`` (the section fades low
-    coverage), cells whose finite coverage is below it are left out; without one, every cell
-    is kept and ``resolved`` says how it compares with the model's default threshold. With a
-    ``gap``, each cell also comes as two faces standing that far back on either side."""
+    coverage), cells whose finite coverage is below it are left out, or with ``keep_faded``
+    (the section fades rather than blanks them) kept and marked ``faded``; without one, every
+    cell is kept and ``resolved`` says how it compares with the model's default threshold.
+    With a ``gap``, each cell also comes as two faces standing that far back on either
+    side."""
     verts = np.asarray(mesh.vertices, float)
     xy = np.atleast_2d(chainage.to_xy(verts[:, 0]))
     z = verts[:, 1]
@@ -200,7 +204,8 @@ def curtain_cells(mesh, chainage, rgba, threshold: float | None,
     for i, cell in enumerate(np.asarray(mesh.cells, int)):
         cov = math.nan if coverage is None else float(coverage[i])
         resolved = cut is None or not math.isfinite(cov) or cov >= cut
-        if threshold is not None and not resolved:
+        faded = threshold is not None and not resolved
+        if faded and not keep_faded:
             continue
         if colours.shape[1] > 3 and colours[i][3] == 0:
             continue                        # the section leaves it out (no value, clear)
@@ -218,7 +223,8 @@ def curtain_cells(mesh, chainage, rgba, threshold: float | None,
                     for k in back_idx]
             faces = (front + front[:1], back + back[:1])
         r, g, b = (int(c) for c in colours[i][:3])
-        out.append(CurtainCell(ring, float(mesh.values[i]), cov, resolved, (r, g, b), faces))
+        out.append(CurtainCell(ring, float(mesh.values[i]), cov, resolved, (r, g, b), faces,
+                               faded))
     return out
 
 

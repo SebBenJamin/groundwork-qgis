@@ -53,6 +53,10 @@ REFERENCE_FAILED = "Could not save the reference height: {error}. Nothing was ch
 NOT_REFRESHED = "Saved, but the view could not be refreshed: {error}"
 #: what a store write raises (GDAL: RuntimeError) when the file cannot be written
 STORE_ERRORS = (ValueError, OSError, RuntimeError)
+#: the profile menu's 3D view entries
+LOOK_3D_TEXT = "Look at Profile in 3D"
+CUT_3D_TEXT = "Cut 3D View Along Profile"
+UNCUT_3D_TEXT = "Remove 3D Cut"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
@@ -95,6 +99,8 @@ class SectionDock(QDockWidget):
     borehole_clicked = pyqtSignal(int, str)     # (borehole entry, label): open the viewer
     rename_requested = pyqtSignal(str)          # profile id: "Profile Properties…"
     delete_requested = pyqtSignal(str)          # profile id: "Delete Profile…"
+    #: (profile id, "look" | "cut" | "uncut"): the profile menu's 3D view entries
+    view3d_requested = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -112,6 +118,9 @@ class SectionDock(QDockWidget):
         self._cursor_z = None                   # elevation of a cursor from the 3D view
         self._click_pos = None
         self.details_popup = None               # details with an "Open in borehole viewer" link
+        #: set by the plugin: () -> whether a 3D view is cut along a profile, or None in a
+        #: QGIS without 3D views; unset or None leaves the 3D entries out of the profile menu
+        self.view3d_cut_active = None
 
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
@@ -780,6 +789,19 @@ class SectionDock(QDockWidget):
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
+        try:
+            cut = None if self.view3d_cut_active is None else self.view3d_cut_active()
+        except Exception:                       # a 3D view going away: offer the cut
+            cut = False
+        if cut is not None:
+            menu.addSeparator()
+            entries = [(LOOK_3D_TEXT, self._look_3d, enabled)]
+            entries.append((UNCUT_3D_TEXT, self._uncut_3d, True) if cut
+                           else (CUT_3D_TEXT, self._cut_3d, enabled))
+            for text, slot, on in entries:
+                action = menu.addAction(text)
+                action.setEnabled(on)
+                action.triggered.connect(slot)
         return menu
 
     def set_pick_action(self, action) -> None:
@@ -803,6 +825,17 @@ class SectionDock(QDockWidget):
     def _delete_open_profile(self, *_args) -> None:
         if self.current_profile_id():
             self.delete_requested.emit(self.current_profile_id())
+
+    def _look_3d(self, *_args) -> None:
+        if self.current_profile_id():
+            self.view3d_requested.emit(self.current_profile_id(), "look")
+
+    def _cut_3d(self, *_args) -> None:
+        if self.current_profile_id():
+            self.view3d_requested.emit(self.current_profile_id(), "cut")
+
+    def _uncut_3d(self, *_args) -> None:
+        self.view3d_requested.emit(self.current_profile_id() or "", "uncut")
 
     def set_tool_hint(self, text: str | None) -> None:
         """The active tool's one-line hint (None: back to the panel's own hint)."""

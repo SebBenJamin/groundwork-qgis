@@ -7,9 +7,13 @@ import pytest
 class _Controller:
     def __init__(self):
         self.looks = []
+        self.sides = []
 
     def setLookingAtMapPoint(self, point, distance, pitch, yaw):
         self.looks.append(((point.x(), point.y(), point.z()), distance, pitch, yaw))
+
+    def setCrossSectionSideView(self, section):
+        self.sides.append(section)
 
 
 class _Canvas:
@@ -19,9 +23,16 @@ class _Canvas:
         self.settings = Qgs3DMapSettings()
         self.settings.setCrs(QgsCoordinateReferenceSystem("EPSG:25832"))
         self.controller = _Controller() if controller else None
+        self.section = None
 
     def mapSettings(self):
         return self.settings
+
+    def setCrossSection(self, section):
+        self.section = section if section.isValid() else None
+
+    def crossSectionEnabled(self):
+        return self.section is not None
 
     def cameraController(self):
         return self.controller
@@ -111,6 +122,56 @@ def test_a_view_opened_but_not_tuned_says_so(qgis_app):
     assert open_ready_view(_Iface(made=canvas), QgsProject.instance(), BOX,
                            "EPSG:25832") == OPENED
     assert not canvas.settings.terrainRenderingEnabled()     # what could be done, was
+
+
+def _bent():
+    import numpy as np
+
+    from groundwork_geophysics.core.model import profile_from_polyline
+    return profile_from_polyline("P1", "EPSG:25832",
+                                 np.array([[0.0, 0.0], [50.0, 4.0], [100.0, 0.0]]))
+
+
+def test_the_section_of_a_profile_spans_its_ends_and_its_bends(qgis_app):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_view import profile_section
+    section = profile_section(_Canvas(), QgsProject.instance(), _bent(), "EPSG:25832")
+    a, b = section.startPoint(), section.endPoint()
+    assert (a.x(), a.y(), b.x(), b.y()) == pytest.approx((0.0, 0.0, 100.0, 0.0))
+    assert section.halfWidth() > 4.0                # the bend 4 m off the chord is inside
+
+
+def test_looking_at_a_profile_turns_the_camera_side_on_without_a_cut(qgis_app):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_view import LOOKED, look_at_profile
+    canvas = _Canvas()
+    iface = _Iface(open_views=[canvas])
+    assert look_at_profile(iface, QgsProject.instance(), _bent(), "EPSG:25832") == LOOKED
+    assert len(canvas.controller.sides) == 1 and canvas.section is None
+
+
+def test_cutting_along_a_profile_clips_the_view_and_removing_undoes_it(qgis_app):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_view import (CUT, cut_active, look_at_profile,
+                                                      remove_cuts)
+    canvas = _Canvas()
+    iface = _Iface(open_views=[canvas])
+    assert not cut_active(iface)
+    assert look_at_profile(iface, QgsProject.instance(), _bent(), "EPSG:25832", cut=True) == CUT
+    assert canvas.section is not None and len(canvas.controller.sides) == 1
+    assert cut_active(iface)
+    assert remove_cuts(iface) == 1 and canvas.section is None and not cut_active(iface)
+
+
+def test_without_a_3d_view_looking_gives_nothing(qgis_app):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_view import look_at_profile
+    assert look_at_profile(_Iface(), QgsProject.instance(), _bent(), "EPSG:25832") == ""
+    assert look_at_profile(object(), QgsProject.instance(), _bent(), "EPSG:25832") == ""
 
 
 def test_without_anything_to_aim_at_the_view_keeps_its_own_camera(qgis_app):
