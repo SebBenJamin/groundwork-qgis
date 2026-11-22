@@ -343,9 +343,9 @@ def _follow_categories(layer, r3d, r2d, geometry) -> bool:
 
 
 _FOLLOWS = "groundworkFollows2d"            # Qt property: the layer's 3D style follows 2D
-#: the slots ``follow_2d`` connected, held weakly: Qt holds each while its layer lives, and
-#: a layer QGIS deleted must not stay wrapped here
-_following: list = []
+#: layer id -> (the slot ``follow_2d`` connected, held weakly as Qt holds it, and the one
+#: that forgets the layer when QGIS deletes it: a deleted layer must not be touched here)
+_following: dict = {}
 
 
 def follow_2d(layer: QgsVectorLayer) -> None:
@@ -358,21 +358,21 @@ def follow_2d(layer: QgsVectorLayer) -> None:
     slot = partial(sync_3d, layer)
     layer.rendererChanged.connect(slot)
     layer.setProperty(_FOLLOWS, True)
-    _following.append(weakref.ref(slot))
+    gone = partial(_following.pop, layer.id(), None)
+    layer.willBeDeleted.connect(gone)
+    _following[layer.id()] = (weakref.ref(slot), gone)
 
 
 def stop_following() -> None:
     """Undo every ``follow_2d``: the plugin is unloaded or its store closed."""
-    from qgis.PyQt import sip
-    for ref in _following:
-        slot = ref()
-        if slot is None:                        # its layer is gone, and the connection
+    for slot_ref, gone in list(_following.values()):
+        slot = slot_ref()
+        if slot is None:
             continue
         layer = slot.args[0]
         try:
-            if sip.isdeleted(layer):
-                continue
             layer.rendererChanged.disconnect(slot)
+            layer.willBeDeleted.disconnect(gone)
             layer.setProperty(_FOLLOWS, None)
         except (TypeError, RuntimeError):
             pass

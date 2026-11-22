@@ -598,6 +598,6 @@ def test_following_the_2d_style_stops_when_told(qgis_app, interp_store):
     il.ensure_3d_styles(interp_store, prj)                # the store is opened again
     _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
     assert _symbol3d(polys).materialSettings().diffuse().name() == "#00ff00"
+    prj.clear()                                           # a deleted layer is forgotten
+    assert il._following == {}
     il.stop_following()
-    prj.clear()
-    il.stop_following()                                   # a layer gone meanwhile is fine
