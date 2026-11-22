@@ -5,13 +5,14 @@
 **See your geophysical profiles where they are: on the map, next to the boreholes and the
 geology.** Groundwork is a plugin for profile-based geophysics in QGIS: sections as a
 panel under the map, with your boreholes, geology and crossing lines on them, your
-interpretation as ordinary QGIS layers and report plates in the QGIS layout.
+interpretation as ordinary QGIS layers, report plates in the QGIS layout, and all of it
+standing in QGIS's 3D view.
 
 Today it works with **resistivity (ERT)** and **seismic refraction** (P-wave velocity
 models). **Ground-penetrating radar (GPR) and seismic reflection sections** are planned next,
 on the same profiles, next to the same context.
 
-[![Version 0.13.0](https://img.shields.io/badge/version-0.13.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
+[![Version 0.14.0](https://img.shields.io/badge/version-0.14.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
 [![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
 [![Licence GPL-2.0-or-later](https://img.shields.io/badge/licence-GPL--2.0--or--later-lightgrey)](LICENSE)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
@@ -32,13 +33,19 @@ included as a demo.*
 | 🪨 **Context on the section** | Boreholes as lithology columns with log curves, one or more geology (or soil, land use) maps as strips above the ground, a terrain line from a DEM, crossing lines and ties to crossing profiles. All styled through QGIS. |
 | ✏️ **Interpretation as QGIS layers** | Draw lines, polygons and points on the section per profile, with type, name, confidence and note. Undo, frozen versions, 2D and 3D layers, DXF and CSV export. |
 | 📄 **Report plates** | A4 and A3 layouts with stacked sections, colour bars, legends, a mini-map and a title block, exported as vector PDF. Your text edits survive updates. |
+| 🧊 **3D view** | Models as curtains under their profiles (cells, point clouds or the section as a picture), boreholes as columns with their names, stations and the interpretation at its depth, in QGIS's own 3D view. Point at a curtain and the section shows the place; cut the view open along a profile. Shown when you ask, kept out of your Groundwork file. |
 
 ![A resistivity section with sediment cores, station numbers and geology strips](docs/images/section.png)
+
+![The Erfurt demo in QGIS's 3D view: seven resistivity curtains under their profiles, with the cores as columns and their names, over an aerial image](docs/images/howto/3d-overview.jpg)
+
+*Erfurt in QGIS's 3D view: seven resistivity profiles as curtains, with the cores as
+columns. Aerial image: © GDI-Th, dl-de/by-2-0.*
 
 ## Get started
 
 1. **Install** QGIS 4.2 or newer.
-2. **Download** `groundwork_geophysics-0.13.0.zip` from the
+2. **Download** `groundwork_geophysics-0.14.0.zip` from the
    [latest release](https://github.com/SebBenJamin/groundwork-qgis/releases/latest).
 3. In QGIS choose **Plugins → Manage and Install Plugins… → Install from ZIP**, pick the zip
    and click **Install Plugin**. A **Groundwork** menu appears.
@@ -88,11 +95,11 @@ The same pages, in the repository:
   [Reference height](docs/user/howto/reference-height.md) ·
   [Boreholes and logs](docs/user/howto/boreholes.md) ·
   [Field notes](docs/user/howto/field-notes.md) · [Dataset info](docs/user/howto/dataset-info.md) ·
-  [Report plates](docs/user/howto/plates.md)
+  [Report plates](docs/user/howto/plates.md) · [The 3D view](docs/user/howto/3d-view.md)
 - Data formats: [Borehole tables](docs/user/formats/borehole-tables.md) ·
   [Plate templates](docs/user/formats/plate-templates.md)
 - [Troubleshooting](docs/user/troubleshooting.md)
-- [What changed in each release](docs/releases/), latest: [0.13.0](docs/releases/0.13.0.md)
+- [What changed in each release](docs/releases/), latest: [0.14.0](docs/releases/0.14.0.md)
 
 Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundwork.gpkg`).
 

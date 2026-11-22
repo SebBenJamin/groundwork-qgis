@@ -62,6 +62,17 @@ class Grid:
     #                         ABOVE_GROUND above the topography
 
 
+def next_to_empty(grid, mesh) -> np.ndarray:
+    """Nodes next to a node outside the mesh or in a cell without a value: their pixel
+    would reach half a grid cell into it, so they are left out (the field stops just short
+    of empty space instead of overshooting into it). The ground is handled by the clip."""
+    cell = grid.cell
+    empty = (cell == -1) | ((cell >= 0) & ~np.isfinite(mesh.values[np.maximum(cell, 0)]))
+    pad = np.pad(empty, 1, constant_values=True)
+    near = pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]
+    return near & ~empty
+
+
 def _longest_edges(mesh) -> np.ndarray:
     """Longest edge of each mesh cell (triangles have -1 in column 3)."""
     v, c = mesh.vertices, mesh.cells

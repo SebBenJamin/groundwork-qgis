@@ -160,3 +160,465 @@ def test_layers_panel_legend_lists_a_new_entity(qgis_app, interp_store):
     reload_interp_layers(interp_store, prj)
     assert legend_labels() == ["A · anomaly", "B · geology"]
     prj.clear()
+
+
+def _colour_3d(symbol):
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.PyQt import sip
+    c = sip.cast(symbol, QgsPolygon3DSymbol).materialSettings().diffuse()
+    return c.red(), c.green(), c.blue()
+
+
+def test_the_3d_layers_get_one_3d_category_per_entity_in_its_2d_colour(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    for name in ("interp_lines_3d", "interp_polygons_3d", "interp_points_3d"):
+        r3d = layers[name].renderer3D()
+        assert r3d is not None and r3d.type() == "categorized", name
+        assert r3d.classAttribute() == "feature_id"
+    polys = layers["interp_polygons_3d"]
+    cats2d, cats3d = polys.renderer().categories(), polys.renderer3D().categories()
+    assert [c.value() for c in cats3d] == [c.value() for c in cats2d]
+    c2 = cats2d[0].symbol().color()
+    assert _colour_3d(cats3d[0].symbol()) == (c2.red(), c2.green(), c2.blue())
+    assert layers["interp_footprints"].renderer3D() is None
+    prj.clear()
+
+
+def test_a_new_entity_gets_its_3d_category_and_a_deleted_one_loses_it(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, reload_interp_layers
+
+    prj = QgsProject()
+    polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+    v = interp_store.current_version()
+    f = InterpFeature(new_id(), v.id, type="clay lens", name="B")
+    interp_store.save_feature(f)
+    interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "polygon",
+                                        [(0, 0), (5, 0), (5, -2)]))
+    reload_interp_layers(interp_store, prj)
+    assert len(polys.renderer3D().categories()) == 2
+    interp_store.delete_feature(f.id)
+    reload_interp_layers(interp_store, prj)
+    assert [c.value() for c in polys.renderer3D().categories()] == [
+        c.value() for c in polys.renderer().categories()]
+    prj.clear()
+
+
+def test_older_projects_get_the_3d_style_once_and_a_users_own_is_kept(qgis_app, interp_store):
+    from qgis._3d import QgsLine3DSymbol, QgsVectorLayer3DRenderer
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, ensure_3d_styles
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    from groundwork_geophysics.ui.interp_layers import STYLED_3D
+    layers["interp_polygons_3d"].setRenderer3D(None)                 # as before 0.14
+    layers["interp_polygons_3d"].removeCustomProperty(STYLED_3D)
+    own = QgsVectorLayer3DRenderer(QgsLine3DSymbol())
+    layers["interp_lines_3d"].setRenderer3D(own)                     # the user's
+    assert ensure_3d_styles(interp_store, prj) == 1
+    assert layers["interp_polygons_3d"].renderer3D().type() == "categorized"
+    assert layers["interp_lines_3d"].renderer3D().type() == "vector"
+    assert ensure_3d_styles(interp_store, prj) == 0
+    prj.clear()
+
+
+def test_a_3d_style_the_user_removed_stays_removed(qgis_app, interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, ensure_3d_styles
+
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    layers["interp_lines_3d"].setRenderer3D(None)                    # "No symbols"
+    assert ensure_3d_styles(interp_store, prj) == 0
+    assert layers["interp_lines_3d"].renderer3D() is None
+    prj.clear()
+
+
+def test_without_qgis_3d_the_layers_still_open(qgis_app, interp_store, monkeypatch):
+    import sys
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, ensure_3d_styles
+
+    monkeypatch.setitem(sys.modules, "qgis._3d", None)               # a build without 3D
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    assert len(layers) == 5 and layers["interp_lines_3d"].renderer3D() is None
+    assert ensure_3d_styles(interp_store, prj) == 0
+    prj.clear()
+
+
+def test_the_3d_view_is_asked_to_redraw_an_edit_once_the_layers_hold_it(qgis_app, interp_store):
+    """The 3D view rebuilds a layer on request3DUpdate: the last request after an edit must
+    come when the layer already reads the edited geometry, not one edit behind."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, reload_interp_layers
+    prj = QgsProject()
+    polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+    seen = []
+    polys.request3DUpdate.connect(
+        lambda: seen.append(polys.extent3D().zMinimum()))
+    v = interp_store.current_version()
+    piece = interp_store.pieces(v.id, "prof")[0]
+    piece.vertices = [(40, 0), (60, 0), (60, -9), (40, -9)]       # dragged deeper
+    interp_store.save_piece(piece)
+    interp_store.rebuild_derived(v.id, {"prof": BENT})
+    reload_interp_layers(interp_store, prj)
+    assert seen and seen[-1] == pytest.approx(-9.0)
+    prj.clear()
+
+
+def test_interpretation_lines_keep_their_heights_in_3d(qgis_app, interp_store):
+    """A buffered 3D line lies flat at height 0; simple lines keep the drawn depth."""
+    from qgis._3d import QgsLine3DSymbol
+    from qgis.core import QgsWkbTypes
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.interp_layers import _symbol_3d
+    symbol = sip.cast(_symbol_3d(QgsWkbTypes.GeometryType.LineGeometry, (10, 20, 30)),
+                      QgsLine3DSymbol)
+    assert symbol.renderAsSimpleLines()
+    material = symbol.materialSettings()
+    assert material.type() == "simpleline"
+    c = material.ambient()
+    assert (c.red(), c.green(), c.blue()) == (10, 20, 30)
+
+
+# -- the 3D interpretation carries its 2D style as far as QGIS 3D can --------------------------
+def _poly_layer(interp_store):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+    prj = QgsProject()
+    return prj, add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+
+
+def _restyle(layer, change):
+    """Change the first 2D category's symbol as Layer Properties would (setRenderer)."""
+    r2d = layer.renderer().clone()
+    categories = r2d.categories()                       # keep the copies alive
+    symbol = categories[0].symbol().clone()
+    change(symbol)
+    r2d.updateCategorySymbol(0, symbol)
+    layer.setRenderer(r2d)
+    _qgis_holds(r2d)
+
+
+def _qgis_holds(obj):
+    """As QGIS's own widgets hand it over: no Python wrapper stays tied to the layer (a stale
+    one would come back later as another object of the wrong class)."""
+    from qgis.PyQt import sip
+    sip.transferto(obj, None)
+
+
+_KEEP = []          # clones behind sip.cast wrappers: the wrapper does not own them
+
+
+def _symbol3d(layer):
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.PyQt import sip
+    categories = layer.renderer3D().categories()
+    clone = categories[0].symbol().clone()
+    _KEEP.append(clone)
+    return sip.cast(clone, QgsPolygon3DSymbol)
+
+
+def test_3d_polygons_carry_the_2d_transparency_and_outline(qgis_app, interp_store):
+    from qgis.PyQt.QtGui import QColor
+    prj, polys = _poly_layer(interp_store)
+
+    def change(symbol):
+        fill = symbol.symbolLayer(0)
+        fill.setFillColor(QColor(200, 100, 50, 128))
+        fill.setStrokeColor(QColor(0, 0, 255))
+        fill.setStrokeWidth(0.5)                         # mm
+        symbol.setOpacity(0.8)
+    _restyle(polys, change)                              # followed without a call of ours
+    s3d = _symbol3d(polys)
+    material = s3d.materialSettings()
+    assert material.diffuse().name() == "#c86432"
+    assert material.opacity() == pytest.approx(128 / 255 * 0.8, abs=0.01)
+    assert s3d.edgesEnabled() and s3d.edgeColor().name() == "#0000ff"
+    assert s3d.edgeWidth() == pytest.approx(0.5 * 96 / 25.4, rel=0.01)
+    prj.clear()
+
+
+def test_a_hatched_fill_is_its_colour_half_see_through(qgis_app, interp_store):
+    from qgis.PyQt.QtCore import Qt
+    prj, polys = _poly_layer(interp_store)
+    _restyle(polys, lambda s: s.symbolLayer(0).setBrushStyle(Qt.BrushStyle.BDiagPattern))
+    assert _symbol3d(polys).materialSettings().opacity() == pytest.approx(0.5, abs=0.01)
+    prj.clear()
+
+
+def test_an_outline_only_polygon_is_only_its_edges(qgis_app, interp_store):
+    from qgis.PyQt.QtCore import Qt
+    prj, polys = _poly_layer(interp_store)
+    _restyle(polys, lambda s: s.symbolLayer(0).setBrushStyle(Qt.BrushStyle.NoBrush))
+    s3d = _symbol3d(polys)
+    assert s3d.materialSettings().opacity() == pytest.approx(0.0) and s3d.edgesEnabled()
+    prj.clear()
+
+
+def test_a_3d_category_the_user_restyled_is_not_followed(qgis_app, interp_store):
+    from qgis._3d import QgsPhongMaterialSettings
+    from qgis.PyQt.QtGui import QColor
+    prj, polys = _poly_layer(interp_store)
+    from qgis._3d import QgsPolygon3DSymbol
+    from qgis.core import Qgis
+    r3d = polys.renderer3D().clone()
+    own = QgsPolygon3DSymbol()                           # the user's own 3D style
+    own.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor("#123456"))
+    own.setMaterialSettings(material)
+    r3d.updateCategorySymbol(0, own)
+    polys.setRenderer3D(r3d)
+    _qgis_holds(r3d)
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#123456"
+    prj.clear()
+
+
+def test_3d_lines_take_the_2d_width(qgis_app, interp_store):
+    from qgis._3d import QgsLine3DSymbol
+    from qgis.core import QgsProject
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+    v = interp_store.current_version()
+    f = InterpFeature(new_id(), v.id, type="fault", name="F")
+    interp_store.save_feature(f)
+    interp_store.save_piece(InterpPiece(new_id(), v.id, f.id, "prof", "line",
+                                        [(10, 0), (20, -5)]))
+    interp_store.rebuild_derived(v.id, {"prof": BENT})
+    prj = QgsProject()
+    lines = add_interp_layers(interp_store, prj)["interp_lines_3d"]
+    _restyle(lines, lambda s: s.setWidth(1.0))           # mm
+    categories = lines.renderer3D().categories()
+    clone = categories[0].symbol().clone()
+    s3d = sip.cast(clone, QgsLine3DSymbol)
+    assert s3d.width() == pytest.approx(96 / 25.4, rel=0.01)
+    prj.clear()
+
+
+def test_restyling_from_2d_resets_every_3d_category_and_style(qgis_app, interp_store):
+    """Show in 3D's "Restyle the interpretation from 2D": a 3D category the user restyled
+    follows its 2D style again, and a layer whose 3D style was replaced or removed gets the
+    categorized one back."""
+    from qgis._3d import (QgsLine3DSymbol, QgsPhongMaterialSettings, QgsPolygon3DSymbol,
+                          QgsVectorLayer3DRenderer)
+    from qgis.core import Qgis
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui.interp_layers import interp_layers, restyle_from_2d
+    prj, polys = _poly_layer(interp_store)
+    r3d = polys.renderer3D().clone()
+    own = QgsPolygon3DSymbol()
+    own.setAltitudeClamping(Qgis.AltitudeClamping.Absolute)
+    material = QgsPhongMaterialSettings()
+    material.setDiffuse(QColor("#123456"))
+    own.setMaterialSettings(material)
+    r3d.updateCategorySymbol(0, own)
+    polys.setRenderer3D(r3d)
+    _qgis_holds(r3d)
+    layers = interp_layers(interp_store, prj)
+    layers["interp_lines_3d"].setRenderer3D(QgsVectorLayer3DRenderer(QgsLine3DSymbol()))
+    layers["interp_points_3d"].setRenderer3D(None)
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#123456"
+    assert restyle_from_2d(interp_store, prj) == 3
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#ff0000"
+    for name in ("interp_lines_3d", "interp_points_3d"):
+        r = layers[name].renderer3D()
+        assert r is not None and r.type() == "categorized"
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#00ff00"   # follows again
+    prj.clear()
+
+
+def test_the_3d_renderer_has_the_source_symbol_qgis_needs(qgis_app, interp_store):
+    """QGIS's 3D style page clones the categorized renderer's source symbol without checking
+    for one: a renderer without it crashed QGIS when the layer was selected or its
+    properties opened. New layers get one, and so does a layer saved without it."""
+    from qgis._3d import QgsCategorized3DRenderer
+    from qgis.core import QgsProject
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui.interp_layers import (LAYERS_3D, add_interp_layers,
+                                                        ensure_3d_styles)
+    prj = QgsProject()
+    layers = add_interp_layers(interp_store, prj)
+    for name in LAYERS_3D:
+        r3d = sip.cast(layers[name].renderer3D(), QgsCategorized3DRenderer)
+        assert r3d.sourceSymbol() is not None, name
+    polys = layers["interp_polygons_3d"]
+    bare = QgsCategorized3DRenderer("feature_id", [])      # as saved before this fix
+    polys.setRenderer3D(bare)
+    ensure_3d_styles(interp_store, prj)
+    r3d = sip.cast(polys.renderer3D(), QgsCategorized3DRenderer)
+    assert r3d.sourceSymbol() is not None
+    prj.clear()
+
+
+# -- a renderer handed to QGIS is QGIS's: no stale Python wrapper stays behind ---------------
+class _Entity:
+    def __init__(self, fid):
+        self.id, self.name, self.type = fid, "n" + fid, "t"
+
+
+def _alive(type_name):
+    import gc
+    gc.collect()
+    return sum(1 for o in gc.get_objects() if type(o).__name__ == type_name)
+
+
+def _memory_interp_layer(geometry="PolygonZ"):
+    from qgis.core import QgsVectorLayer
+
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = QgsVectorLayer(f"{geometry}?crs=EPSG:25832&field=feature_id:string&field=type:string",
+                           "p", "memory")
+    il.default_style(layer)
+    il.sync_categories(layer, [_Entity("a"), _Entity("b")])
+    il.default_3d(layer)
+    il.follow_2d(layer)
+    return layer
+
+
+def test_renderers_set_by_the_plugin_leave_no_python_wrapper_behind(qgis_app):
+    """A renderer copy handed to the layer stayed wrapped for as long as the layer lived;
+    once QGIS deleted it, a new object QGIS made at its address came back to Python as
+    that stale wrapper, of the wrong class (a graduated renderer seen as categorized:
+    sync_categories on it crashed QGIS)."""
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = _memory_interp_layer()
+    before_2d = _alive("QgsCategorizedSymbolRenderer")
+    before_3d = _alive("QgsCategorized3DRenderer")
+    for i in range(40):                                  # every sync replaces both renderers
+        il.sync_categories(layer, [_Entity("a"), _Entity("b"), _Entity(str(i))])
+    assert _alive("QgsCategorizedSymbolRenderer") <= before_2d + 1
+    assert _alive("QgsCategorized3DRenderer") <= before_3d + 1
+    assert layer.renderer().type() == "categorizedSymbol"
+    assert len(layer.renderer().categories()) == 3 and len(layer.renderer3D().categories()) == 3
+
+
+def test_a_renderer_of_another_kind_is_never_taken_for_categorized(qgis_app):
+    """The user's graduated, rule-based or single-symbol renderer (made by QGIS, as Layer
+    Properties does) stays as it is, however often the plugin syncs in between."""
+    from qgis._3d import QgsPolygon3DSymbol, QgsVectorLayer3DRenderer
+    from qgis.core import (QgsFillSymbol, QgsGraduatedSymbolRenderer, QgsRuleBasedRenderer,
+                           QgsSingleSymbolRenderer)
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = _memory_interp_layer()
+    others = [lambda: QgsGraduatedSymbolRenderer("feature_id", []),
+              lambda: QgsRuleBasedRenderer(QgsFillSymbol.createSimple({})),
+              lambda: QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({}))]
+    wrong = 0
+    for i in range(150):
+        il.sync_categories(layer, [_Entity("a"), _Entity("b"), _Entity(str(i))])
+        made = others[i % 3]().clone()                   # made in C++, as QGIS's own widget
+        kind = made.type()
+        layer.setRenderer(made)
+        sip.transferto(made, None)                       # as QGIS holds it: no Python owner
+        del made
+        got = layer.renderer()
+        wrong += type(got).__name__ == "QgsCategorizedSymbolRenderer"
+        il.sync_categories(layer, [_Entity("a")])        # leaves the user's renderer alone
+        il.sync_3d(layer)
+        assert layer.renderer().type() == kind
+        user_3d = QgsVectorLayer3DRenderer(QgsPolygon3DSymbol()).clone()
+        layer.setRenderer3D(user_3d)
+        sip.transferto(user_3d, None)
+        del user_3d
+        assert type(layer.renderer3D()).__name__ != "QgsCategorized3DRenderer"
+        il.default_style(layer)
+        il.default_3d(layer)
+    assert wrong == 0
+
+
+def test_the_source_symbol_is_there_whatever_the_2d_style(qgis_app, interp_store):
+    """QGIS's 3D style page dereferences the categorized 3D renderer's source symbol: it is
+    given also when the 2D style is not the per-entity one (e.g. a 0.13 project restyled in
+    2D, upgraded; or "Restyle the interpretation from 2D" with such a style)."""
+    from qgis._3d import QgsCategorized3DRenderer
+    from qgis.core import QgsFillSymbol, QgsSingleSymbolRenderer
+    from qgis.PyQt import sip
+
+    from groundwork_geophysics.ui import interp_layers as il
+    prj, polys = _poly_layer(interp_store)
+    polys.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({})))
+    il.default_3d(polys)
+    r3d = sip.cast(polys.renderer3D(), QgsCategorized3DRenderer)
+    assert r3d.sourceSymbol() is not None
+    polys.setRenderer3D(QgsCategorized3DRenderer("feature_id", []))   # saved without one
+    il.ensure_3d_styles(interp_store, prj)
+    assert sip.cast(polys.renderer3D(), QgsCategorized3DRenderer).sourceSymbol() is not None
+    polys.setRenderer3D(None)
+    il.restyle_from_2d(interp_store, prj)
+    assert sip.cast(polys.renderer3D(), QgsCategorized3DRenderer).sourceSymbol() is not None
+    prj.clear()
+
+
+def test_a_2d_style_by_another_field_leaves_the_3d_style_alone(qgis_app, interp_store):
+    """The 3D style follows the per-entity 2D style only: a 2D style categorized by "type"
+    would give 3D categories 'clay', 'sand' under "feature_id", which match no feature."""
+    from qgis.core import QgsCategorizedSymbolRenderer, QgsFillSymbol, QgsRendererCategory
+    prj, polys = _poly_layer(interp_store)
+    before = [c.value() for c in polys.renderer3D().categories()]
+    assert before
+    polys.setRenderer(QgsCategorizedSymbolRenderer("type", [
+        QgsRendererCategory("clay", QgsFillSymbol.createSimple({}), "clay"),
+        QgsRendererCategory("sand", QgsFillSymbol.createSimple({}), "sand")]))
+    r3d = polys.renderer3D()
+    assert r3d.classAttribute() == "feature_id"
+    assert [c.value() for c in r3d.categories()] == before
+    prj.clear()
+
+
+@pytest.mark.parametrize("geometry", ["PointZ", "LineStringZ", "PolygonZ"])
+def test_a_sync_without_change_leaves_the_3d_style_as_it_is(qgis_app, geometry):
+    """A new 3D style rebuilds the layer in the 3D view. A point's 3D symbol carries a
+    billboard marker with a random id and colour: it must not count as a change."""
+    from groundwork_geophysics.ui import interp_layers as il
+    layer = _memory_interp_layer(geometry)
+    il.sync_3d(layer)
+    replaced = []
+    layer.renderer3DChanged.connect(lambda: replaced.append(1))
+    for _ in range(3):
+        il.sync_3d(layer)
+        il.sync_categories(layer, [_Entity("a"), _Entity("b")])
+    assert replaced == []
+
+
+def test_following_the_2d_style_stops_when_told(qgis_app, interp_store):
+    """With the plugin unloaded or the store closed, a 2D restyle leaves the 3D style alone;
+    following starts again with the next store."""
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.ui import interp_layers as il
+    prj, polys = _poly_layer(interp_store)
+    before = _symbol3d(polys).materialSettings().diffuse().name()
+    il.stop_following()
+    assert not polys.property("groundworkFollows2d")
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#ff0000")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == before
+    il.ensure_3d_styles(interp_store, prj)                # the store is opened again
+    _restyle(polys, lambda s: s.symbolLayer(0).setFillColor(QColor("#00ff00")))
+    assert _symbol3d(polys).materialSettings().diffuse().name() == "#00ff00"
+    prj.clear()                                           # a deleted layer is forgotten
+    assert il._following == {}
+    il.stop_following()

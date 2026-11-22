@@ -31,6 +31,9 @@ DEMO_ERFURT = REPO / "demo_erfurt"
 DEMO_CALHOUN = REPO / "demo_calhoun"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
+#: folders by pattern: the 3D view's point clouds and section pictures beside a store, made
+#: again from the models wherever a 3D view needs them (git-ignored too)
+EXCLUDE_DIR_PATTERNS = ("*_groundwork_3d",)
 EXCLUDE_FILES = ("*.qto3settings", "*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
                  "*-journal", "*.aux.xml", ".DS_Store", "Thumbs.db")
 MAX_PLUGIN_BYTES = 1_000_000
@@ -47,6 +50,9 @@ def files_under(root: Path) -> list[Path]:
     for path in sorted(root.rglob("*")):
         rel = path.relative_to(root)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        if any(fnmatch.fnmatch(folder, pat)
+               for folder in rel.parts[:-1] for pat in EXCLUDE_DIR_PATTERNS):
             continue
         if path.is_file() and not any(fnmatch.fnmatch(path.name, pat) for pat in EXCLUDE_FILES):
             out.append(path)

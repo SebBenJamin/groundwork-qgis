@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLa
                                  QPushButton, QVBoxLayout)
 
 from ..section.borehole_style import load_renderer, save_renderer
+from .qgis_objects import handed_over
 
 REMOTE_PROVIDERS = ("WFS", "OAPIF", "arcgisfeatureserver")
 _SQUARE = "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"
@@ -87,6 +88,7 @@ class BoreholeStyleDialog(QDialog):
         stored = load_renderer(project, entry.log_layer_id)
         if stored is not None:
             self.copy.setRenderer(stored)
+            handed_over(stored)
         elif entry.lithology_field:
             self.copy.setRenderer(drawn_look(self.copy, entry.lithology_field))
         self.setWindowTitle(f"Borehole style – {self.log_layer.name()}")
@@ -147,7 +149,9 @@ class BoreholeStyleDialog(QDialog):
 
     def take_patterns(self, table) -> None:
         """Hand the table's classes to QGIS's editor (saved on Apply/OK, as any edit)."""
-        self.copy.setRenderer(table.result())
+        result = table.result()
+        self.copy.setRenderer(result)
+        handed_over(result)
         self.reload_editor()
 
     def _open_patterns(self) -> None:

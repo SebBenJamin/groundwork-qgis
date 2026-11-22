@@ -16,7 +16,8 @@ from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QKeySequence, QPen, QShortcut
-from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsLineItem,
+from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsEllipseItem,
+                                 QGraphicsLineItem,
                                  QToolTip,
                                  QHBoxLayout, QLabel, QMenu, QSizePolicy, QSplitter,
                                  QToolButton,
@@ -52,6 +53,13 @@ REFERENCE_FAILED = "Could not save the reference height: {error}. Nothing was ch
 NOT_REFRESHED = "Saved, but the view could not be refreshed: {error}"
 #: what a store write raises (GDAL: RuntimeError) when the file cannot be written
 STORE_ERRORS = (ValueError, OSError, RuntimeError)
+#: the profile menu's 3D view entries
+LOOK_3D_TEXT = "Look at Profile in 3D"
+CUT_3D_TEXT = "Cut 3D View Along Profile"
+UNCUT_3D_TEXT = "Remove 3D Cut"
+SHOW_3D_TEXT = "Show in 3D…"
+VIEW3D_BUTTON_TEXT = "3D"
+VIEW3D_BUTTON_TIP = "The open profile in QGIS's 3D view: look at it, cut the view along it"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
@@ -94,6 +102,9 @@ class SectionDock(QDockWidget):
     borehole_clicked = pyqtSignal(int, str)     # (borehole entry, label): open the viewer
     rename_requested = pyqtSignal(str)          # profile id: "Profile Properties…"
     delete_requested = pyqtSignal(str)          # profile id: "Delete Profile…"
+    #: (profile id, "look" | "cut" | "uncut" | "dialog"): the 3D button's and profile
+    #: menu's entries
+    view3d_requested = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -108,8 +119,12 @@ class SectionDock(QDockWidget):
         self._topo = None
         self._coverage = None                   # (min, max) station chainage, with _topo
         self._cursor_s = None
+        self._cursor_z = None                   # elevation of a cursor from the 3D view
         self._click_pos = None
         self.details_popup = None               # details with an "Open in borehole viewer" link
+        #: set by the plugin: () -> whether a 3D view is cut along a profile, or None in a
+        #: QGIS without 3D views; unset or None leaves the 3D entries out of the profile menu
+        self.view3d_cut_active = None
 
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
@@ -157,6 +172,14 @@ class SectionDock(QDockWidget):
         self.guide_line.setZValue(1000)
         self.guide_line.hide()
         self.canvas.scene().addItem(self.guide_line)
+        # where the 3D view's mouse points: a small ring on the guide, in its pen
+        self.cursor_marker = QGraphicsEllipseItem(-5.0, -5.0, 10.0, 10.0)
+        ring = QPen(pen)
+        ring.setStyle(Qt.PenStyle.SolidLine)
+        self.cursor_marker.setPen(ring)
+        self.cursor_marker.setZValue(1001)
+        self.cursor_marker.hide()
+        self.canvas.scene().addItem(self.cursor_marker)
 
         self.layer_list = LayerList()
         self.readout = _Readout()
@@ -177,6 +200,17 @@ class SectionDock(QDockWidget):
         self.pick_button = QToolButton()
         self.pick_button.setAutoRaise(True)
         top.addWidget(self.pick_button)
+        # the open profile in QGIS's 3D view: a drop-down, filled when it opens
+        self.view3d_button = QToolButton()
+        self.view3d_button.setText(VIEW3D_BUTTON_TEXT)
+        self.view3d_button.setToolTip(VIEW3D_BUTTON_TIP)
+        self.view3d_button.setAutoRaise(True)
+        self.view3d_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.view3d_menu = QMenu(self.view3d_button)
+        self.view3d_menu.aboutToShow.connect(self._fill_view3d_menu)
+        self.view3d_button.setMenu(self.view3d_menu)
+        self.view3d_button.hide()               # shown by the plugin where QGIS has 3D views
+        top.addWidget(self.view3d_button)
         top.addWidget(self.topo.label)
         top.addWidget(self.topo_combo)
         top.addWidget(self.topo.reference_button)
@@ -533,6 +567,8 @@ class SectionDock(QDockWidget):
         return self.fit.is_busy()
 
     def eventFilter(self, obj, event):
+        if "canvas" not in self.__dict__:
+            return False                        # being taken apart (plugin reload): ignore
         etype = event.type()
         if obj is self.canvas.viewport():
             if etype == QEvent.Type.Leave:
@@ -722,12 +758,14 @@ class SectionDock(QDockWidget):
         beyond = cover is not None and not cover[0] <= s <= cover[1]
         self.readout.setText(format_readout(s, z, depth, xy, hits, beyond, extra))
 
-    def show_cursor(self, s: float | None) -> None:
-        """Vertical guide at forward chainage ``s``; ``None`` hides it."""
+    def show_cursor(self, s: float | None, z: float | None = None) -> None:
+        """Vertical guide at forward chainage ``s``, with a marker at elevation ``z`` when
+        given (the 3D view's mouse); ``None`` hides it."""
         self._cursor_s = None if s is None or self._profile is None else float(s)
+        self._cursor_z = None if self._cursor_s is None or z is None else float(z)
         self._update_guide()
         if self._cursor_s is not None:
-            self._show_readout(self._cursor_s)
+            self._show_readout(self._cursor_s, self._cursor_z)
 
     def cursor_chainage(self) -> float | None:
         return self._cursor_s
@@ -737,6 +775,7 @@ class SectionDock(QDockWidget):
         d = self.canvas.visibleDistanceRange()
         if s is None or not d.lower() <= s <= d.upper():
             self.guide_line.hide()
+            self.cursor_marker.hide()
             return
         area = self.canvas.plotArea()
         e = self.canvas.visibleElevationRange()
@@ -745,6 +784,13 @@ class SectionDock(QDockWidget):
             QgsProfilePoint(s, (e.lower() + e.upper()) / 2)).x()
         self.guide_line.setLine(QLineF(x, area.top(), x, area.bottom()))
         self.guide_line.show()
+        z = self._cursor_z
+        if z is None or not e.lower() <= z <= e.upper():
+            self.cursor_marker.hide()
+            return
+        at = self.canvas.plotPointToCanvasPoint(QgsProfilePoint(s, z))
+        self.cursor_marker.setPos(at.x(), at.y())
+        self.cursor_marker.show()
 
     def profile_menu(self):
         """Right-click menu of the profile list: rename or delete the open profile. The menu
@@ -758,7 +804,40 @@ class SectionDock(QDockWidget):
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
+        cut = self._cut_state()
+        if cut is not None:
+            menu.addSeparator()
+            self._add_3d_entries(menu, cut)
         return menu
+
+    def _cut_state(self) -> bool | None:
+        """Whether a 3D view is cut along a profile; None without 3D views."""
+        try:
+            return None if self.view3d_cut_active is None else self.view3d_cut_active()
+        except Exception:                       # a 3D view going away: offer the cut
+            return False
+
+    def _add_3d_entries(self, menu, cut: bool) -> None:
+        """Look at the open profile in 3D, and cut the 3D view along it or remove the cut."""
+        enabled = self.current_profile_id() is not None
+        entries = [(LOOK_3D_TEXT, self._look_3d, enabled)]
+        entries.append((UNCUT_3D_TEXT, self._uncut_3d, True) if cut
+                       else (CUT_3D_TEXT, self._cut_3d, enabled))
+        for text, slot, on in entries:
+            action = menu.addAction(text)
+            action.setEnabled(on)
+            action.triggered.connect(slot)
+
+    def _fill_view3d_menu(self) -> None:
+        """The 3D button's drop-down, as things are when it opens: the open profile's 3D
+        entries and Show in 3D…."""
+        menu = self.view3d_menu
+        menu.clear()
+        self._add_3d_entries(menu, bool(self._cut_state()))
+        menu.addSeparator()
+        action = menu.addAction(SHOW_3D_TEXT)
+        action.setEnabled(self.provider is not None)
+        action.triggered.connect(self._show_3d_dialog)
 
     def set_pick_action(self, action) -> None:
         """The plugin's Pick Profile on Map action, on the button next to the profile list."""
@@ -781,6 +860,20 @@ class SectionDock(QDockWidget):
     def _delete_open_profile(self, *_args) -> None:
         if self.current_profile_id():
             self.delete_requested.emit(self.current_profile_id())
+
+    def _look_3d(self, *_args) -> None:
+        if self.current_profile_id():
+            self.view3d_requested.emit(self.current_profile_id(), "look")
+
+    def _cut_3d(self, *_args) -> None:
+        if self.current_profile_id():
+            self.view3d_requested.emit(self.current_profile_id(), "cut")
+
+    def _uncut_3d(self, *_args) -> None:
+        self.view3d_requested.emit(self.current_profile_id() or "", "uncut")
+
+    def _show_3d_dialog(self, *_args) -> None:
+        self.view3d_requested.emit(self.current_profile_id() or "", "dialog")
 
     def set_tool_hint(self, text: str | None) -> None:
         """The active tool's one-line hint (None: back to the panel's own hint)."""

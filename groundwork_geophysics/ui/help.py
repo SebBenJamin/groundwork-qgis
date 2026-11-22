@@ -17,6 +17,7 @@ HELP_PAGES = {
     "context_layers": "user/howto/boreholes/#context-layers-field-by-field",
     "plates": "user/howto/plates/",
     "plate_details": "user/howto/plates/#the-title-block",
+    "view3d": "user/howto/3d-view/",
 }
 
 _METADATA = Path(__file__).resolve().parent.parent / "metadata.txt"

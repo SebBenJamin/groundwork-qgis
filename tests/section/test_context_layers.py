@@ -217,6 +217,7 @@ def test_borehole_with_log_table(project, profile):
     assert [(i.top, i.bottom, i.lithology) for i in p.log] == [
         (0.0, 4.0, "sand"), (4.0, 9.0, "clay"), (9.0, 12.0, "gravel")]
     assert p.s == approx(40) and p.offset == approx(3)
+    assert (p.x, p.y) == (approx(40), approx(3))         # where the 3D view stands it
 
 
 def test_band_from_polygon_layer(project, profile):

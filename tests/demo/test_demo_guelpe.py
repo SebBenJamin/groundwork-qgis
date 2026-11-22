@@ -45,9 +45,12 @@ def test_guelpe_demo_opens_offline(qgis_app, tmp_path):
 
 
 def test_guelpe_live_layers_point_at_brandenburg(qgis_app):
+    """The geology is live; the state boreholes are a copy around the transects (the live
+    state-wide WFS made a QGIS 3D view download half of Brandenburg)."""
     prj = _project()
     sources = [lyr.source() for lyr in prj.mapLayers().values()]
-    assert any("inspire.brandenburg.de/services/bpk_wfs" in s for s in sources)
+    assert not any("bpk_wfs" in s for s in sources)
+    assert any("state_boreholes.gpkg|layername=with_log" in s for s in sources)
     assert any("ge-core_guek300" in s for s in sources)
     assert any("inspire.brandenburg.de/services/gk_wfs" in s or
                "inspire.brandenburg.de/services/gk_wms" in s for s in sources)
@@ -67,6 +70,13 @@ def test_guelpe_geology_is_the_gk25_with_guek300_switched_off(qgis_app):
     assert not root.findLayer(guek.id()).isVisible()
     bands = read_settings(prj).bands
     assert gk25.id() in [b.layer_id for b in bands]
+    prj.clear()
+
+
+def test_guelpe_dgm_represents_an_elevation_surface(qgis_app):
+    prj = _project()
+    dem = next(lyr for lyr in prj.mapLayers().values() if lyr.name() == "DGM1 (LGB)")
+    assert dem.elevationProperties().isEnabled()
     prj.clear()
 
 
@@ -98,7 +108,8 @@ def test_guelpe_settings_reference_project_layers(qgis_app):
     state = [(p.layer_id, p.depth_field) for p in s.point_layers] + [
         (b.layer_id, b.total_depth_field) for b in s.boreholes[1:]]
     assert [d for _i, d in state] == ["Teufe_in_m"]
-    assert "bpk_m_sch" in layer(state[0][0]).source()
+    assert "layername=with_log" in layer(state[0][0]).source()
+    assert layer(state[0][0]).featureCount() > 0
     assert s.buffer == 5.0
     prj.clear()
 

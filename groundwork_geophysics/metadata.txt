@@ -2,19 +2,20 @@
 name=Groundwork
 qgisMinimumVersion=4.2
 supportsQt6=True
-description=Groundwork: geophysical profiles in QGIS. Sections under the map with boreholes, geology and interpretation
+description=Groundwork: geophysical profiles in QGIS. Sections under the map with boreholes, geology and interpretation, also in 3D
 about=Load, display and interpret georeferenced geophysical profiles and sections (ERT and seismic refraction today; GPR and seismic reflection planned) in QGIS.
-version=0.13.0
+version=0.14.0
 author=Sebastian Benjamin
 email=8215349+SebBenJamin@users.noreply.github.com
 license=GPL-2.0-or-later
 homepage=https://sebbenjamin.github.io/groundwork-qgis/
 tracker=https://github.com/SebBenJamin/groundwork-qgis/issues
 repository=https://github.com/SebBenJamin/groundwork-qgis
-tags=geophysics,ERT,resistivity,seismic,refraction,section,profile,borehole,geology,interpretation
+tags=geophysics,ERT,resistivity,seismic,refraction,section,profile,borehole,geology,interpretation,3D
 experimental=True
 icon=icons/workbench.svg
-changelog=0.13.0: seismic refraction: Refrapy (Refrainv) velocity models with geophone positions and a coverage fade below the rays, pyGIMLi/VTK velocity models, P-wave velocity and a coverage column for text tables; each dataset is typed by its method (ERT model, Seismic refraction Vp model), shown in the stamp, colour bar and tooltips; a Calhoun demo with four crossing refraction lines
+changelog=0.14.0: the 3D view: Show in 3D… stands models as curtains under their profiles (cells, point clouds, contour lines or the section as a picture, with the interpretation painted in), boreholes as round columns with their names, the ground line and profile names; stations and the interpretation stand at their heights and follow their 2D style; pointing in 3D moves the section's cursor, a click opens that profile; look at or cut the 3D view along a profile with the section panel's 3D button; low-coverage cells see-through
+    0.13.0: seismic refraction: Refrapy (Refrainv) velocity models with geophone positions and a coverage fade below the rays, pyGIMLi/VTK velocity models, P-wave velocity and a coverage column for text tables; each dataset is typed by its method (ERT model, Seismic refraction Vp model), shown in the stamp, colour bar and tooltips; a Calhoun demo with four crossing refraction lines
     0.12.0: electrode numbers read from point names (ERT03_15, E15, 15a) in positions files and point layers, with a list of every point to check and correct; names kept with the stations and shown in the fit report and map labels; projects are updated once and 0.11 cannot open them afterwards
     0.11.0: a title block (stamp) on new plates, ruled into cells, with Checked and a logo in Plate details and survey details from Dataset info; a documentation site with search; Help and About Groundwork in the menu; Help buttons in the main dialogs
     0.10.0: renamed to Groundwork (was Geophysics Workbench): uninstall the old plugin once; projects and files keep working

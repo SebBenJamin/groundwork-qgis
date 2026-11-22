@@ -81,6 +81,8 @@ class ProjectedPoint:
     flagged: bool = False         # elevation field and DEM differ by more than the tolerance
     bid: str = ""                 # boreholes: the id in its layer ("" = none: label is the name)
     layer_id: str = ""            # boreholes: the borehole layer
+    x: float | None = None        # boreholes: map position (the 3D view stands them there)
+    y: float | None = None
 
 
 def borehole_key(point: "ProjectedPoint") -> tuple[str, str] | None:

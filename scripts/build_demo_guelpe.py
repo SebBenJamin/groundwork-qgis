@@ -75,7 +75,9 @@ without changing its values.
 - Licence: https://creativecommons.org/licenses/by/4.0/
 
 ## State data (Datenlizenz Deutschland Namensnennung 2.0, https://www.govdata.de/dl-de/by-2-0)
-- **Boreholes** (live WFS Bohrpunktkarte): © LBGR, dl-de/by-2-0
+- **Boreholes** `context/state_boreholes.gpkg` (*derived*: the Bohrpunktkarte WFS, layers
+  bpk_m_sch and bpk_o_sch, within 1.5 km of the transects, saved unchanged):
+  © LBGR, dl-de/by-2-0
 - **Geology** GK 25, Geologische Karte 1 : 25 000 (live {geology_kind}), and GÜK300 (live, switched
   off on the map; both drawn as strips on the section): © LBGR, dl-de/by-2-0
 - **DGM1** `context/dgm1.tif` (*derived*: tiles merged and cropped): © GeoBasis-DE/LGB, dl-de/by-2-0
@@ -97,7 +99,8 @@ def _unzip_member(zf: zipfile.ZipFile, suffix: str, target: Path) -> Path:
 
 def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
     """Models, stations, cores and DGM1 from the cache (no QGIS)."""
-    for sub in ("data", "context/cores.gpkg", "context/synthetic_logs.gpkg", "context/dgm1.tif"):
+    for sub in ("data", "context/cores.gpkg", "context/synthetic_logs.gpkg", "context/dgm1.tif",
+                "context/state_boreholes.gpkg"):
         p = out / sub
         shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -123,6 +126,12 @@ def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
                                 make_synthetic_curves.read_logs(out / "context/cores.gpkg"))
     guelpe_data.mosaic_dgm([cache / "dgm" / f"{t}.zip" for t in dgm_tiles(TRANSECTS_BBOX)],
                            TRANSECTS_BBOX, out / "context/dgm1.tif")
+    # a copy around the transects, not the live state-wide WFS: a QGIS 3D view asks a web
+    # layer for its whole scene, which for these boreholes is half of Brandenburg
+    boreholes = cache / "state_boreholes.gpkg"
+    if not boreholes.exists():
+        raise RuntimeError(f"{boreholes} is missing: run scripts/fetch_demo_guelpe.py")
+    shutil.copy(boreholes, out / "context/state_boreholes.gpkg")
 
 
 def read_stations(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -374,12 +383,15 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         curves = QgsVectorLayer(f"{ctx / 'synthetic_logs.gpkg'}|layername="
                                 f"{make_synthetic_curves.LAYER}",
                                 "Synthetic curves (NOT measured)", "ogr")
-        bpk = _wfs("app:bpk_m_sch", BPK_WFS, "State boreholes with log (LBGR, live)")
+        state = ctx / "state_boreholes.gpkg"
+        bpk = QgsVectorLayer(f"{state}|layername=with_log", "State boreholes with log (LBGR)",
+                             "ogr")
         _symbol(bpk, "marker", {"name": "diamond", "color": "200,30,30",
                                 "outline_color": "60,0,0", "size": "2.8"})
         demo_extra._labels(bpk, '"Bohrungsname"', 8.0, (120, 0, 0))
         _log_action(bpk)
-        bpk_o = _wfs("app:bpk_o_sch", BPK_WFS, "State boreholes without log (LBGR, live)")
+        bpk_o = QgsVectorLayer(f"{state}|layername=without_log",
+                               "State boreholes without log (LBGR)", "ogr")
         _symbol(bpk_o, "marker", {"name": "diamond", "color": "240,170,170",
                                   "outline_color": "120,60,60", "size": "2.2"})
         water = QgsVectorLayer(str(ctx / "waterways.geojson"), "Waterways (OSM)", "ogr")
@@ -390,9 +402,10 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
         (gx0, gy0), (gx1, gy1) = xy.min(axis=0) - GEOLOGY_MARGIN, xy.max(axis=0) + GEOLOGY_MARGIN
         geology, geology_field, guek, guek_field = _geology(project, _Rect(gx0, gy0, gx1, gy1))
         dem = QgsRasterLayer(str(ctx / "dgm1.tif"), "DGM1 (LGB)", "gdal")
+        dem.elevationProperties().setEnabled(True)      # "Represents elevation surface"
         dop = _wms(DOP_WMS, "bebb_dop20c", "Aerial images DOP20 (LGB, live)")
         osm = QgsRasterLayer(OSM_URI, "OpenStreetMap", "wms")
-        offline = (cores, logs, curves, water, dem, osm)
+        offline = (cores, logs, curves, bpk, bpk_o, water, dem, osm)
         for layer in offline:
             if not layer.isValid():
                 raise RuntimeError(f"demo layer {layer.name()} is not valid")

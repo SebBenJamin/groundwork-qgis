@@ -433,7 +433,7 @@ class ContextGatherer:
             out.append(ProjectedPoint(s, off, bid or layer.name(), "borehole", z_top, log,
                                       entry=entry, z_source=source, z_dem=dem_z,
                                       total_depth=total, curves=curves, flagged=flagged,
-                                      bid=bid, layer_id=b.layer_id))
+                                      bid=bid, layer_id=b.layer_id, x=float(x), y=float(y)))
         return out
 
     def _curves(self, t, bid: str) -> list[Curve]:

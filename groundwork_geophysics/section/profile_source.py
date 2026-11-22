@@ -33,6 +33,8 @@ _EMPTY_Z = (math.inf, -math.inf)   # neutral for the canvas' min/max union of z 
 _MM = Qgis.RenderUnit.Millimeters
 #: drawn over models beyond the station coverage: white at 55 %, marked but readable
 BEYOND_COLOUR = QColor(255, 255, 255, 140)
+#: the section's ground line (also the colour of the ground line in the 3D view)
+GROUND_COLOUR = QColor(0, 0, 0)
 #: thin line through the measured station heights when the models hang from the DEM
 MEASURED_COLOUR = QColor(70, 70, 70)
 
@@ -312,7 +314,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         topo = self.snapshot.topo
         if topo is None or len(topo[0]) < 2:
             return
-        pen = QPen(QColor(0, 0, 0), max(1.0, rc.convertToPainterUnits(0.26, _MM)))
+        pen = QPen(GROUND_COLOUR, max(1.0, rc.convertToPainterUnits(0.26, _MM)))
         pen.setCosmetic(True)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -370,6 +372,24 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
 
 
 DERIVED_KINDS = ("readings", "spacing", "guessed")
+
+
+def paint_layers(painter, layers, wt, rc) -> None:
+    """Models as the section panel draws them (``display_render.LayerDrawing``, bottom
+    first): cells, smooth field, contour lines and their labels, in (chainage, elevation)
+    space through ``wt``; pen and label sizes from ``rc``. The 3D view's section pictures
+    are painted with it."""
+    from .display_render import contour_pen_mm
+    results = WorkbenchProfileResults(None, layers, (0.0, 0.0))
+    results._contour_px = max(1.0, rc.convertToPainterUnits(contour_pen_mm(True), _MM))
+    results._minor_px = max(0.6, rc.convertToPainterUnits(contour_pen_mm(False), _MM))
+    painter.save()
+    try:
+        painter.setTransform(wt, True)
+        results._draw_cells(painter)
+    finally:
+        painter.restore()
+    results._draw_contour_labels(painter, rc, wt)
 
 
 def station_labels_to_draw(spans, gap: float = 6.0) -> list[bool]:
