@@ -39,6 +39,9 @@ included as a demo.*
 
 ![The Erfurt demo in QGIS's 3D view: seven resistivity curtains under their profiles, with the cores as columns and their names, over an aerial image](docs/images/howto/3d-overview.jpg)
 
+*Erfurt in QGIS's 3D view: seven resistivity profiles as curtains, with the cores as
+columns. Aerial image: © GDI-Th, dl-de/by-2-0.*
+
 ## Get started
 
 1. **Install** QGIS 4.2 or newer.
