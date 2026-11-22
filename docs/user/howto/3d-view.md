@@ -112,7 +112,7 @@ A **click** does: click (left button, without dragging) on the curtain, section 
 - **Models in 3D** has two rules in its **3D View** properties, **Cells** and **Faded cells (low coverage)**: change the see-through of the faded ones there. A 3D style you set up yourself stays.
 - **Only the resolved part:** filter **Models in 3D** with `"resolved" = 1`. When the section fades low coverage, the cells below the threshold are left out of the curtain anyway.
 - **Style a smooth curtain by value:** in the point cloud's properties → **Symbology**, choose **Attribute by Ramp** on **Log10Value** (or **Value** on a linear scale) and a colour ramp; the 3D view follows the 2D style. Your style stays when the curtain is rebuilt.
-- The point size is in the point cloud's **3D View** properties.
+- The point size is in the point cloud's **3D View** properties. So is the **Maximum screen space error**: the plugin sets it to 0.5 px, so a curtain seen from a distance shows its dense points (with QGIS's default of 3 px it shows a thinned-out cloud, which eye-dome lighting turns almost black). A value you set there stays.
 - **Identify** a borehole interval in the 3D view: its **borehole**, **top** and **bottom** depth and its **text**.
 - **Qgis2threejs** reads the same layers: choose **Polygon** for the cells, **Polygon** extruded by the **height** field for the boreholes and **Line** for the contour lines and the ground lines, with the height from the Z values, and the point clouds as point clouds.
 - A very large model (hundreds of thousands of cells) makes the 3D view slow in **Cells**; show it **Smooth** or show fewer models at once.

@@ -71,6 +71,12 @@ _HEIGHT = f"{LEGACY_ID}/view3d_height"     # a borehole names layer: its collar 
 _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the last sync showed
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
+#: a point cloud's 3D level of detail (px): QGIS's default 3 shows a thinned-out cloud from a
+#: distance, and eye-dome lighting darkens each lone point until the curtain looks black
+CLOUD_SCREEN_ERROR = 0.5
+#: QGIS's own default, which a cloud made before 0.14 still carries
+_QGIS_SCREEN_ERROR = 3.0
+_CLOUD_DETAIL_SET = f"{LEGACY_ID}/view3d_cloud_detail_set"   # a cloud: the detail set once
 _SMOOTH, _LINES = ("smooth", "smooth+contours"), ("contours", "smooth+contours")
 #: features one 3D chunk may hold: QGIS shows a layer split into chunks in pieces when
 #: zoomed out, so a curtain layer is kept in one chunk
@@ -680,13 +686,36 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
         from qgis._3d import QgsPointCloudLayer3DRenderer
         renderer = QgsPointCloudLayer3DRenderer()
         renderer.convertFrom2DRenderer(rgb)
+        renderer.setMaximumScreenError(CLOUD_SCREEN_ERROR)
         layer.setRenderer3D(renderer)
         layer.setSync3DRendererTo2DRenderer(True)   # the 3D look follows the 2D style
+        layer.setCustomProperty(_CLOUD_DETAIL_SET, True)
     except ImportError:                             # a QGIS built without 3D
         pass
     project.addMapLayer(layer, False)
     _smooth_group(project).addLayer(layer)
     return layer
+
+
+def _cloud_detail(layer) -> None:
+    """A cloud made before 0.14: the finer 3D level of detail, once, while it still has
+    QGIS's default (a value the user set stays)."""
+    if layer.customProperty(_CLOUD_DETAIL_SET):
+        return
+    layer.setCustomProperty(_CLOUD_DETAIL_SET, True)
+    try:
+        from qgis._3d import QgsPointCloudLayer3DRenderer
+        from qgis.core import QgsAbstract3DRenderer
+    except ImportError:                             # a QGIS built without 3D
+        return
+    renderer = as_kind(layer.renderer3D(), "pointcloud", QgsAbstract3DRenderer,
+                       QgsPointCloudLayer3DRenderer)
+    if renderer is None or abs(renderer.maximumScreenError() - _QGIS_SCREEN_ERROR) > 1e-9:
+        return
+    renderer = renderer.clone()
+    renderer.setMaximumScreenError(CLOUD_SCREEN_ERROR)
+    layer.setRenderer3D(renderer)
+    handed_over(renderer)
 
 
 #: curtain files this session moved a cloud away from, deleted once nothing holds them
@@ -743,6 +772,8 @@ def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -
         allowed = may_create(f"cloud:{did}")       # noted for every cloud shown
         if layer is None and not allowed:
             continue                            # e.g. the user removed it
+        if layer is not None:
+            _cloud_detail(layer)
         topo = topo_of(profile.id)
         failed = False
         try:

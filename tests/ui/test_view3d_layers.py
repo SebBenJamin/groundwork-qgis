@@ -507,6 +507,46 @@ def _mode(provider, p, mode, did="d", **kw):
     provider.set_style(did, replace(provider.style(did), mode=mode, **kw))
 
 
+def _screen_error(cloud):
+    return cloud.renderer3D().maximumScreenError()
+
+
+def test_a_point_cloud_shows_its_dense_points_from_afar(setup):
+    """QGIS's default (3 px) shows a thinned-out cloud from a distance; with eye-dome
+    lighting each lone point is darkened and the curtain looks black."""
+    from groundwork_geophysics.ui.view3d_layers import CLOUD_SCREEN_ERROR, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    assert CLOUD_SCREEN_ERROR < 1.0
+    assert _screen_error(cloud) == pytest.approx(CLOUD_SCREEN_ERROR)
+    _mode(provider, p, "smooth", scale=replace(provider.style("d").scale, cmap="viridis"))
+    sync(st, provider, prj)                          # a new file: the setting stays
+    assert _screen_error(cloud) == pytest.approx(CLOUD_SCREEN_ERROR)
+
+
+def test_an_older_cloud_gets_the_finer_detail_once_and_the_users_own_stays(setup):
+    from groundwork_geophysics.ui import view3d_layers
+    from groundwork_geophysics.ui.view3d_layers import CLOUD_SCREEN_ERROR, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+
+    def set_error(value):
+        r3d = cloud.renderer3D().clone()
+        r3d.setMaximumScreenError(value)
+        cloud.setRenderer3D(r3d)
+    set_error(3.0)                                   # as made before 0.14
+    cloud.removeCustomProperty(view3d_layers._CLOUD_DETAIL_SET)
+    sync(st, provider, prj)
+    assert _screen_error(cloud) == pytest.approx(CLOUD_SCREEN_ERROR)
+    set_error(2.0)                                   # now the user's own choice
+    sync(st, provider, prj)
+    assert _screen_error(cloud) == pytest.approx(2.0)
+
+
 def test_a_cells_model_stays_cells(setup):
     from groundwork_geophysics.ui.view3d_layers import clouds_3d, sync
     st, p, provider, prj = setup
