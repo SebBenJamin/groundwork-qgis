@@ -163,6 +163,13 @@ class View3dDialog(QDialog):
         interp = QHBoxLayout()
         interp.addWidget(self.interpretation, 1)
         interp.addWidget(self.restyle)
+        # named parts: the documentation's picture numbers them (scripts/render_doc_images.py)
+        self.tree.setObjectName("view3d_tree")
+        self.select_all.setObjectName("select_all")
+        self.interpretation.setObjectName("interp_check")
+        self.restyle.setObjectName("restyle_button")
+        self.sizes.setObjectName("sizes_box")
+        apply.setObjectName("apply_button")
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
         layout.addWidget(self.tree, 1)
@@ -185,6 +192,17 @@ class View3dDialog(QDialog):
                 continue
             for k in range(top.childCount()):
                 top.child(k).setCheckState(0, state)
+
+    def tick(self, models, boreholes) -> None:
+        """Tick these models (dataset ids) and these profiles' boreholes (profile ids): what
+        was shown from elsewhere while the dialog is open, so Apply does not take it out."""
+        for i in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(i)
+            for k in range(top.childCount()):
+                item = top.child(k)
+                wanted = models if item.data(0, _KIND) == "model" else boreholes
+                if item.data(0, _ID) in wanted:
+                    item.setCheckState(0, Qt.CheckState.Checked)
 
     def _enable_looks(self) -> None:
         """A model's Show As choice is open while it is ticked (on a profile with heights)."""

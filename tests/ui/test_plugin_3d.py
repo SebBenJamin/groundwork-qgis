@@ -138,7 +138,8 @@ def test_the_profile_menu_looks_at_and_cuts_along_the_profile_in_3d(plugin, stor
     from qgis.core import QgsProject
 
     from groundwork_geophysics.section.dock import CUT_3D_TEXT, LOOK_3D_TEXT, UNCUT_3D_TEXT
-    from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
+    from groundwork_geophysics.ui.view3d_layers import (Choice, layers_3d, read_choice,
+                                                        write_choice)
     plug, iface, views, calls, shown = plugin
     st, p, _src = store_with_model
     write_choice(QgsProject.instance(), Choice())    # nothing ticked
@@ -159,13 +160,55 @@ def test_the_profile_menu_looks_at_and_cuts_along_the_profile_in_3d(plugin, stor
     pick(LOOK_3D_TEXT)
     canvas, = iface.made                             # a ready view opened first
     assert len(canvas.controller.sides) == 1 and canvas.section is None
-    assert "Show in 3D" in shown[-1]                 # nothing of it is ticked yet
-    write_choice(QgsProject.instance(), Choice(frozenset({"d1"})))
+    # nothing of it was ticked: asking to look at it shows it (built at once)
+    assert read_choice(QgsProject.instance()).models == frozenset({"d1"})
+    assert True in calls and "now shown in 3D" in shown[-1]
+    assert "models" in layers_3d(QgsProject.instance())
     pick(CUT_3D_TEXT)
     assert canvas.section is not None and UNCUT_3D_TEXT in shown[-1]
     assert UNCUT_3D_TEXT in texts()
     pick(UNCUT_3D_TEXT)
     assert canvas.section is None and iface.made == [canvas]
+
+
+def test_the_3d_button_beside_the_profile_list_offers_the_same(plugin, store_with_model):
+    from groundwork_geophysics.section.dock import (CUT_3D_TEXT, LOOK_3D_TEXT, SHOW_3D_TEXT,
+                                                    UNCUT_3D_TEXT)
+    plug, iface, views, calls, shown = plugin
+    st, p, _src = store_with_model
+    _with_3d(iface, views)
+    plug.set_store(st)
+    button, menu = plug.dock.view3d_button, plug.dock.view3d_menu
+
+    def texts():
+        plug.dock._fill_view3d_menu()                # as when it drops down
+        return {a.text(): a.isEnabled() for a in menu.actions() if a.text()}
+    assert texts() == {LOOK_3D_TEXT: False, CUT_3D_TEXT: False, SHOW_3D_TEXT: True}
+    plug.dock.open_profile(p.id)
+    assert texts() == {LOOK_3D_TEXT: True, CUT_3D_TEXT: True, SHOW_3D_TEXT: True}
+    next(a for a in menu.actions() if a.text() == CUT_3D_TEXT).trigger()
+    assert UNCUT_3D_TEXT in texts() and iface.made[0].section is not None
+    next(a for a in menu.actions() if a.text() == SHOW_3D_TEXT).trigger()
+    assert plug._view3d_dialog is not None and plug._view3d_dialog.isVisible()
+    assert button.toolTip() and button.menu() is menu
+
+
+def test_a_profile_shown_from_the_panel_is_ticked_in_the_open_dialog(plugin, store_with_model):
+    from qgis.core import QgsProject
+    from qgis.PyQt.QtCore import Qt
+
+    from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
+    plug, iface, views, calls, shown = plugin
+    st, p, _src = store_with_model
+    write_choice(QgsProject.instance(), Choice())
+    _with_3d(iface, views)
+    plug.set_store(st)
+    plug.show_in_3d()
+    dialog = plug._view3d_dialog
+    assert dialog._look_items["d1"].checkState(0) == Qt.CheckState.Unchecked
+    plug.profile_in_3d(p.id, "look")
+    assert dialog._look_items["d1"].checkState(0) == Qt.CheckState.Checked
+    assert dialog.choice().models == frozenset({"d1"})     # Apply keeps it
 
 
 def test_another_store_closes_the_dialog(plugin, store_with_model, monkeypatch):

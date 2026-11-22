@@ -287,6 +287,27 @@ def electrode_names_dialog(plugin, demo: Path):
     return dialog
 
 
+def show_in_3d_dialog(plugin, demo: Path):
+    """Show in 3D… with P1's model ticked as a section picture with the interpretation, and
+    the Sizes open."""
+    from groundwork_geophysics.ui.view3d_layers import Choice, write_choice
+    from qgis.core import QgsProject
+
+    models = [d.id for p in plugin.store.profiles() for d in plugin.store.datasets(p.id)
+              if d.kind.endswith("_model")]
+    if not models:
+        raise RuntimeError("the demo has no model")
+    pid = _profile_id(plugin)
+    write_choice(QgsProject.instance(), Choice(frozenset(models), frozenset({pid}),
+                                               {models[0]: "picture"}, True))
+    plugin.show_in_3d()
+    dialog = plugin._view3d_dialog
+    if dialog is None:
+        raise RuntimeError("the Show in 3D dialog did not open")
+    dialog.sizes.setCollapsed(False)
+    return dialog
+
+
 def _profile_id(plugin) -> str:
     by_name = {p.name: p.id for p in plugin.store.profiles()}
     if PROFILE not in by_name:
@@ -319,6 +340,9 @@ PICTURES = (
              "create_plates", "export_plates"), corners=True, width=PLATES_WIDTH),
     Picture("electrode-names", "user/howto/placement.md", electrode_names_dialog,
             ("names_row", "names_box"), width=620),
+    Picture("show-in-3d", "user/howto/3d-view.md", show_in_3d_dialog,
+            ("view3d_tree", "select_all", "interp_check", "sizes_box", "apply_button"),
+            width=560),
 )
 
 

@@ -1,6 +1,7 @@
 """Plugin object: owns the 'Groundwork' menu, the section panel, the map link
 and the registered profile source, and follows the QGIS project: the workbench project
 (GeoPackage) it refers to is attached on load and detached when the project is cleared."""
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -142,6 +143,7 @@ class WorkbenchPlugin:
         self.dock.delete_requested.connect(self.delete_profile)
         self.dock.view3d_requested.connect(self.profile_in_3d)
         self.dock.view3d_cut_active = self._view3d_cut_state
+        self.dock.view3d_button.setVisible(hasattr(self.iface, "mapCanvases3D"))
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
 
@@ -498,10 +500,15 @@ class WorkbenchPlugin:
         return view3d_view.cut_active(self.iface)
 
     def profile_in_3d(self, profile_id: str, what: str) -> None:
-        """The section panel's profile menu: "look" turns the 3D view side-on to the
-        profile, "cut" also clips it to a slab along the profile (the curtain shows through
-        the terrain), "uncut" makes every 3D view whole again. With no 3D view open, a
-        ready one opens first."""
+        """The section panel's 3D button and profile menu: "look" turns the 3D view side-on
+        to the profile, "cut" also clips it to a slab along the profile (the curtain shows
+        through the terrain), "uncut" makes every 3D view whole again, "dialog" opens Show in
+        3D…. A profile nothing of which is shown yet is shown first (its models and
+        boreholes ticked and built: asking to look at it asks for it), and with no 3D view
+        open, a ready one opens."""
+        if what == "dialog":
+            self.show_in_3d()
+            return
         if what == "uncut":
             view3d_view.remove_cuts(self.iface)
             self._info("The 3D view shows everything again.")
@@ -518,6 +525,7 @@ class WorkbenchPlugin:
                        f"it a reference height in the section panel first.")
             return
         project = QgsProject.instance()
+        added = self._show_profile_in_3d(project, profile_id)
         if not view3d_view.views_open(self.iface):
             try:
                 box = view3d_layers.shown_box(self.store, self.provider, project)
@@ -531,15 +539,34 @@ class WorkbenchPlugin:
         if not done:
             self._info("Open a 3D map view with View → 3D Map Views → New 3D Map View.")
             return
-        choice = view3d_layers.read_choice(project)
-        shown = profile_id in choice.boreholes or any(
-            d.id in choice.models for d in self.store.datasets(profile_id))
-        if not shown:
-            self._info(f"Nothing of {profile.name} is shown in 3D yet: tick it in "
+        if added is None:
+            self._info(f"{profile.name} has no model or boreholes to show in 3D.")
+        elif added:
+            self._info(f"{profile.name} is now shown in 3D. Change what is shown in "
                        f"Groundwork → Show in 3D….")
         elif done == view3d_view.CUT:
             self._info(f"The 3D view is cut along {profile.name}. To see everything again, "
                        f"right-click the profile list → {UNCUT_3D_TEXT}.")
+
+    def _show_profile_in_3d(self, project, profile_id: str) -> bool | None:
+        """When nothing of the profile is ticked in Show in 3D, tick its models (in their
+        chosen look) and, when its section shows some, its boreholes, and build them; other
+        profiles stay as they are. True when it did, False when something of it was shown
+        already, None when it has nothing to show."""
+        choice = view3d_layers.read_choice(project)
+        models = {d.id for d in self.store.datasets(profile_id) if d.kind.endswith("_model")}
+        if profile_id in choice.boreholes or models & choice.models:
+            return False
+        boreholes = {profile_id} & view3d_layers.profiles_with_boreholes_of(
+            self.provider, [profile_id])
+        if not models and not boreholes:
+            return None
+        view3d_layers.write_choice(project, replace(
+            choice, models=choice.models | models, boreholes=choice.boreholes | boreholes))
+        if self._view3d_dialog is not None:     # its ticks follow
+            self._view3d_dialog.tick(models, boreholes)
+        self._sync_3d(create=True)
+        return True
 
     def _show_3d_view(self, project, summary: str) -> None:
         """Open (or use) a 3D map view on what is shown, and say so."""

@@ -57,6 +57,9 @@ STORE_ERRORS = (ValueError, OSError, RuntimeError)
 LOOK_3D_TEXT = "Look at Profile in 3D"
 CUT_3D_TEXT = "Cut 3D View Along Profile"
 UNCUT_3D_TEXT = "Remove 3D Cut"
+SHOW_3D_TEXT = "Show in 3D…"
+VIEW3D_BUTTON_TEXT = "3D"
+VIEW3D_BUTTON_TIP = "The open profile in QGIS's 3D view: look at it, cut the view along it"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
@@ -99,7 +102,8 @@ class SectionDock(QDockWidget):
     borehole_clicked = pyqtSignal(int, str)     # (borehole entry, label): open the viewer
     rename_requested = pyqtSignal(str)          # profile id: "Profile Properties…"
     delete_requested = pyqtSignal(str)          # profile id: "Delete Profile…"
-    #: (profile id, "look" | "cut" | "uncut"): the profile menu's 3D view entries
+    #: (profile id, "look" | "cut" | "uncut" | "dialog"): the 3D button's and profile
+    #: menu's entries
     view3d_requested = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
@@ -196,6 +200,17 @@ class SectionDock(QDockWidget):
         self.pick_button = QToolButton()
         self.pick_button.setAutoRaise(True)
         top.addWidget(self.pick_button)
+        # the open profile in QGIS's 3D view: a drop-down, filled when it opens
+        self.view3d_button = QToolButton()
+        self.view3d_button.setText(VIEW3D_BUTTON_TEXT)
+        self.view3d_button.setToolTip(VIEW3D_BUTTON_TIP)
+        self.view3d_button.setAutoRaise(True)
+        self.view3d_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.view3d_menu = QMenu(self.view3d_button)
+        self.view3d_menu.aboutToShow.connect(self._fill_view3d_menu)
+        self.view3d_button.setMenu(self.view3d_menu)
+        self.view3d_button.hide()               # shown by the plugin where QGIS has 3D views
+        top.addWidget(self.view3d_button)
         top.addWidget(self.topo.label)
         top.addWidget(self.topo_combo)
         top.addWidget(self.topo.reference_button)
@@ -789,20 +804,40 @@ class SectionDock(QDockWidget):
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
-        try:
-            cut = None if self.view3d_cut_active is None else self.view3d_cut_active()
-        except Exception:                       # a 3D view going away: offer the cut
-            cut = False
+        cut = self._cut_state()
         if cut is not None:
             menu.addSeparator()
-            entries = [(LOOK_3D_TEXT, self._look_3d, enabled)]
-            entries.append((UNCUT_3D_TEXT, self._uncut_3d, True) if cut
-                           else (CUT_3D_TEXT, self._cut_3d, enabled))
-            for text, slot, on in entries:
-                action = menu.addAction(text)
-                action.setEnabled(on)
-                action.triggered.connect(slot)
+            self._add_3d_entries(menu, cut)
         return menu
+
+    def _cut_state(self) -> bool | None:
+        """Whether a 3D view is cut along a profile; None without 3D views."""
+        try:
+            return None if self.view3d_cut_active is None else self.view3d_cut_active()
+        except Exception:                       # a 3D view going away: offer the cut
+            return False
+
+    def _add_3d_entries(self, menu, cut: bool) -> None:
+        """Look at the open profile in 3D, and cut the 3D view along it or remove the cut."""
+        enabled = self.current_profile_id() is not None
+        entries = [(LOOK_3D_TEXT, self._look_3d, enabled)]
+        entries.append((UNCUT_3D_TEXT, self._uncut_3d, True) if cut
+                       else (CUT_3D_TEXT, self._cut_3d, enabled))
+        for text, slot, on in entries:
+            action = menu.addAction(text)
+            action.setEnabled(on)
+            action.triggered.connect(slot)
+
+    def _fill_view3d_menu(self) -> None:
+        """The 3D button's drop-down, as things are when it opens: the open profile's 3D
+        entries and Show in 3D…."""
+        menu = self.view3d_menu
+        menu.clear()
+        self._add_3d_entries(menu, bool(self._cut_state()))
+        menu.addSeparator()
+        action = menu.addAction(SHOW_3D_TEXT)
+        action.setEnabled(self.provider is not None)
+        action.triggered.connect(self._show_3d_dialog)
 
     def set_pick_action(self, action) -> None:
         """The plugin's Pick Profile on Map action, on the button next to the profile list."""
@@ -836,6 +871,9 @@ class SectionDock(QDockWidget):
 
     def _uncut_3d(self, *_args) -> None:
         self.view3d_requested.emit(self.current_profile_id() or "", "uncut")
+
+    def _show_3d_dialog(self, *_args) -> None:
+        self.view3d_requested.emit(self.current_profile_id() or "", "dialog")
 
     def set_tool_hint(self, text: str | None) -> None:
         """The active tool's one-line hint (None: back to the panel's own hint)."""

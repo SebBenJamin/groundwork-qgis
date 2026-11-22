@@ -6,6 +6,16 @@ How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
 **Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see, choose under **Show As** how each model stands there, and press **Apply** or **OK**. **Apply** shows your choice in the 3D view and keeps the dialog open, so you can try **Point Cloud** against **Section Picture** and look at the result; **OK** does the same and closes it. The dialog does not block QGIS: you can turn the 3D view while it is open.
 
+![The Show in 3D dialog: three profiles with their models and boreholes, one model shown as a section picture; its parts are numbered 1 to 5](../../images/howto/show-in-3d.png)
+
+| | Part of the dialog | What it does |
+|---|---|---|
+| ① | The list, **Show As** | what stands in 3D, and how each model stands there |
+| ② | **Select All**, **Deselect All** | tick or untick everything at once |
+| ③ | **Section pictures show the interpretation**, **Restyle Interpretation from 2D** | the interpretation painted into the pictures; its 3D style back to its 2D style |
+| ④ | **Sizes** | the borehole columns' width and the station spheres' size |
+| ⑤ | **Apply**, **OK** | show the choice (Apply keeps the dialog open) |
+
 - a **model** stands as a curtain under its profile, at its real elevation: **As in the Section** (the default) draws it the way its section draws it, **Point Cloud** and **Section Picture** are explained below;
 - **Boreholes** are the boreholes the profile's section shows (not the ones hidden there), as round columns at their real map position, from the collar down, each interval in its colour from the section and about as wide as two thirds of the station spacing (or as wide as you set under **Sizes**, see below). Each borehole's **name** floats 1 m above its column. QGIS draws all texts of one annotation layer at one height, so the names come in small layers by collar height (in 0.5 m steps), in the group **Borehole names in 3D**. A profile whose section shows no boreholes has no **Boreholes** entry;
 - every profile with something ticked also shows its **ground line**, the line its section draws as the ground surface, in the section's ground colour (black), in the layer **Ground in 3D**: with the terrain switched off, it shows where each profile runs and how high its ground lies;
@@ -28,12 +38,13 @@ Everything **Show in 3D…** makes sits in one collapsed group **3D View** insid
 
 ## Looking at one profile
 
-Right-click the profile list in the section panel:
+The **3D** button next to the profile list in the section panel (the same entries are in the list's right-click menu):
 
 - **Look at Profile in 3D** turns the 3D view side-on to the open profile;
-- **Cut 3D View Along Profile** does the same and cuts the 3D view down to a slab along the profile (QGIS's cross section, a little wider than the profile's bends). Everything outside the slab is left out, so the curtain shows through a terrain or a DEM you keep switched on. **Remove 3D Cut** in the same menu shows everything again.
+- **Cut 3D View Along Profile** does the same and cuts the 3D view down to a slab along the profile (QGIS's cross section, a little wider than the profile's bends). Everything outside the slab is left out, so the curtain shows through a terrain or a DEM you keep switched on. **Remove 3D Cut** in the same menu shows everything again;
+- **Show in 3D…** opens the dialog.
 
-With no 3D map view open, a ready one opens first. These only move the camera and cut the view: what is shown is still what you ticked in **Show in 3D…**.
+With no 3D map view open, a ready one opens first. If nothing of the profile is shown in 3D yet, its models (and its boreholes, when its section shows some) are ticked and shown first; other profiles stay as they are, and **Show in 3D…** lists the new ticks.
 
 ## A curtain looks like its section
 

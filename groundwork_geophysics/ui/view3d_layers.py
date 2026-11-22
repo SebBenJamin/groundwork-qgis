@@ -1438,18 +1438,23 @@ def _borehole_rows(store, provider, project, choice: Choice) -> list[tuple]:
 
 
 def profiles_with_boreholes(store, provider) -> set:
-    """The ids of the profiles whose section shows boreholes (a profile whose context cannot
-    be gathered just now counts as one that may: it is not greyed out for a passing
+    """The ids of the store's profiles whose section shows boreholes."""
+    return profiles_with_boreholes_of(provider, [p.id for p in store.profiles()])
+
+
+def profiles_with_boreholes_of(provider, profile_ids) -> set:
+    """Those of ``profile_ids`` whose section shows boreholes (a profile whose context cannot
+    be gathered just now counts as one that may: it is not left out for a passing
     error)."""
     out = set()
-    for profile in store.profiles():
+    for pid in profile_ids:
         try:
-            items = provider.drawn_context(profile.id)
+            items = provider.drawn_context(pid)
         except Exception:
-            out.add(profile.id)
+            out.add(pid)
             continue
         if items is not None and any(p.kind == "borehole" for p in items.points):
-            out.add(profile.id)
+            out.add(pid)
     return out
 
 
