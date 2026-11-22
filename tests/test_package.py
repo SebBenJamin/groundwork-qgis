@@ -116,6 +116,22 @@ def test_qgis_sidecar_files_are_not_packaged(tmp_path):
     assert sorted(p.name for p in package.files_under(tmp_path)) == ["dgm1.tif", "p.qgz"]
 
 
+def test_the_3d_view_files_are_not_packaged(tmp_path):
+    """Point clouds and section pictures are made again from the models wherever a 3D view
+    needs them: a demo zip must not carry the ones made while trying it."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import package
+    (tmp_path / "site_groundwork.gpkg").write_bytes(b"x")
+    cache = tmp_path / "site_groundwork_3d"
+    cache.mkdir()
+    for name in ("m-0123456789.las", "m-0123456789.copc.laz", "p-0123456789.json",
+                 "p-0123456789.glb"):
+        (cache / name).write_bytes(b"x")
+    assert [p.name for p in package.files_under(tmp_path)] == ["site_groundwork.gpkg"]
+
+
 def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
     """The Gülpe demo zip from a separately built folder (``--guelpe``), so a release ships
     a clean demo with all its files while the committed demo (the user's test drawings)
