@@ -32,6 +32,10 @@ LINES = {
 EXPECTED = {name: (piece, None) for name, (piece, _p, _e) in LINES.items()}
 MAX_RMS = 1.5           # m: the surface of a matched piece against the line's elevation file
 MIN_INSIDE = 0.8        # of a piece's points must lie on the line for a match to count
+#: the DEM refines a line's offset along its piece within this (m), and must then fit it
+#: within MAX_DEM_RMS: allBR.txt's heights are the elevation file's own, so the match above
+#: checks nothing of the map position, and Line 6's points there sit ~23 m off along it
+REFINE_SPAN, REFINE_STEP, MAX_DEM_RMS = 50.0, 0.5, 1.0
 
 
 @dataclass
@@ -88,6 +92,45 @@ def match_piece(line: LineData, pieces: list[np.ndarray]) -> tuple[int, float, f
     if best[1] < 0:
         raise ValueError("no piece lies along the line")
     return best[1], best[2], best[0]
+
+
+def raster_sampler(geotransform, values: np.ndarray, nodata=None):
+    """``dem_at(e, n)``: the heights of a north-up raster (GDAL geotransform, 2D array) at map
+    points, NaN outside it or at ``nodata``."""
+    x0, dx, _r1, y0, _r2, dy = geotransform
+
+    def dem_at(e, n) -> np.ndarray:
+        e, n = np.atleast_1d(np.asarray(e, float)), np.atleast_1d(np.asarray(n, float))
+        e, n = np.broadcast_arrays(e, n)
+        col = np.floor((e - x0) / dx).astype(int)
+        row = np.floor((n - y0) / dy).astype(int)
+        ok = (col >= 0) & (col < values.shape[1]) & (row >= 0) & (row < values.shape[0])
+        out = np.full(e.shape, np.nan)
+        out[ok] = values[row[ok], col[ok]]
+        if nodata is not None:
+            out[out == nodata] = np.nan
+        return out
+    return dem_at
+
+
+def refine_offset(line: LineData, piece: np.ndarray, offset: float, dem_at,
+                  span: float = REFINE_SPAN, step: float = REFINE_STEP) -> tuple[float, float]:
+    """``(offset, rms m)`` within ``span`` of ``offset`` at which the line's own elevations,
+    placed along ``piece`` as ``stations_xy`` places them, fit the DEM best (``dem_at(e, n)``,
+    NaN outside it): the authors' map points of a line can sit metres off along it, while its
+    elevations are LiDAR at the true places."""
+    best = (np.inf, offset)
+    for off in np.arange(offset - span, offset + span + step / 2, step):
+        xy = _along(piece, line.x_h - off)
+        dz = line.z - dem_at(xy[:, 0], xy[:, 1])
+        if np.isfinite(dz).sum() < MIN_INSIDE * len(dz):
+            continue
+        rms = float(np.sqrt(np.nanmean(dz ** 2)))
+        if rms < best[0]:
+            best = (rms, float(off))
+    if not np.isfinite(best[0]):
+        raise ValueError("the line does not lie on the DEM")
+    return best[1], best[0]
 
 
 def _along(piece: np.ndarray, s) -> np.ndarray:

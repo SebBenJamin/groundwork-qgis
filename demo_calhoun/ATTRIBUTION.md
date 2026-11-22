@@ -12,8 +12,11 @@ This demo uses only open data. Files marked *derived* were made from the source.
   (scripts/invert_calhoun.py: every 2nd geophone, 60 m deep, lambda 100, z weight 0.1),
   saved in Refrainv's file layout. They are not the authors' published models.
 - **Geophones** (`data/stations/`, *derived*): the geophone positions of the pick files,
-  placed along the authors' UTM points of each line (allBR.txt), whose surface matches the
-  line's elevation file.
+  placed along the authors' UTM points of each line (allBR.txt), at the place along them
+  where the line's own (LiDAR) elevations fit the USGS DEM best. For lines 10, 11 and 12
+  that is within 3 m of the points' own distances; Line 6's points sit about 23 m off along
+  the line, and its geophones are moved accordingly (from 0.14.1; 0.13 and 0.14.0 placed
+  Line 6 23 m too early).
 
 ## USGS 3DEP (public domain)
 - `context/dem_3dep.tif` (*derived*: cut to the lines + 150 m): U.S. Geological Survey, 3D

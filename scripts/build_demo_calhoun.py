@@ -7,7 +7,8 @@ Run: python-qgis.bat scripts/build_demo_calhoun.py [--out <folder>]
 Writes under demo_calhoun/:
   data/refraction/L<n>/L<n>_xzv.txt, L<n>_topography.txt   Vp models in Refrainv's layout
   data/stations/L<n>_geophones.csv     geophones (number,x,y,z) placed along the authors'
-                                       UTM points (calhoun_data.stations_xy)
+                                       UTM points where the line's elevations fit the DEM
+                                       (calhoun_data.refine_offset, stations_xy)
   context/dem_3dep.tif                 USGS 3DEP 1 m elevation
   calhoun_groundwork.gpkg              store: Line 6, 10, 11, 12, one Vp model each
   calhoun_project.qgz                  QGIS project (EPSG:32617), every path relative
@@ -50,8 +51,11 @@ This demo uses only open data. Files marked *derived* were made from the source.
   (scripts/invert_calhoun.py: every 2nd geophone, 60 m deep, lambda 100, z weight 0.1),
   saved in Refrainv's file layout. They are not the authors' published models.
 - **Geophones** (`data/stations/`, *derived*): the geophone positions of the pick files,
-  placed along the authors' UTM points of each line (allBR.txt), whose surface matches the
-  line's elevation file.
+  placed along the authors' UTM points of each line (allBR.txt), at the place along them
+  where the line's own (LiDAR) elevations fit the USGS DEM best. For lines 10, 11 and 12
+  that is within 3 m of the points' own distances; Line 6's points sit about 23 m off along
+  the line, and its geophones are moved accordingly (from 0.14.1; 0.13 and 0.14.0 placed
+  Line 6 23 m too early).
 
 ## USGS 3DEP (public domain)
 - `context/dem_3dep.tif` (*derived*: cut to the lines + 150 m): U.S. Geological Survey, 3D
@@ -73,7 +77,13 @@ def build_data(out: Path = DEMO) -> dict[str, tuple[np.ndarray, np.ndarray, np.n
     for sub in ("data", "context/dem_3dep.tif"):
         p = out / sub
         shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
+    from osgeo import gdal
+    gdal.UseExceptions()
     pieces = calhoun_data.read_pieces(CACHE / "allBR.txt")
+    ds = gdal.Open(str(CACHE / "dem_3dep.tif"))
+    band = ds.GetRasterBand(1)
+    dem_at = calhoun_data.raster_sampler(ds.GetGeoTransform(),
+                                         band.ReadAsArray().astype(float), band.GetNoDataValue())
     stations = {}
     for code, (piece, _picks, _elev) in calhoun_data.LINES.items():
         line = calhoun_data.read_line(*calhoun_data.line_files(CACHE, code))
@@ -81,7 +91,14 @@ def build_data(out: Path = DEMO) -> dict[str, tuple[np.ndarray, np.ndarray, np.n
         if k != piece or rms > calhoun_data.MAX_RMS:
             raise RuntimeError(f"{code}: matches piece {k} with {rms:.2f} m RMS "
                                f"(expected piece {piece}, at most {calhoun_data.MAX_RMS} m)")
-        xyz, numbers, inline = calhoun_data.stations_xy(line, pieces[k], offset)
+        # the match above only names the piece: its heights are the elevation file's own;
+        # the DEM says where along the piece the line really lies (Line 6: ~23 m off)
+        refined, dem_rms = calhoun_data.refine_offset(line, pieces[k], offset, dem_at)
+        if dem_rms > calhoun_data.MAX_DEM_RMS:
+            raise RuntimeError(f"{code}: its elevations fit the DEM only to {dem_rms:.2f} m")
+        print(f"{code}: along its allBR points {refined - offset:+.1f} m by the DEM "
+              f"(heights against the DEM {dem_rms:.2f} m RMS)")
+        xyz, numbers, inline = calhoun_data.stations_xy(line, pieces[k], refined)
         stations[code] = (xyz, numbers, inline)
         folder = out / "data" / "refraction" / code
         folder.mkdir(parents=True, exist_ok=True)
@@ -200,6 +217,7 @@ def build_qgis_project(out: Path = DEMO) -> Path:
             if not layer.isValid():
                 raise RuntimeError(f"demo layer {layer.name()} is not valid")
         dem.setRenderer(QgsHillshadeRenderer(dem.dataProvider(), 1, 315.0, 45.0))
+        dem.elevationProperties().setEnabled(True)      # "Represents elevation surface"
         dem.setOpacity(0.6)
         root = project.layerTreeRoot()
         for layer in (dem, osm):
