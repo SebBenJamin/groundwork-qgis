@@ -479,13 +479,17 @@ def add_interp_layers(store: ProjectStore, project: QgsProject) -> dict[str, Qgs
 def reload_interp_layers(store: ProjectStore, project: QgsProject) -> None:
     features = store.features(store.current_version().id) if store.has_interpretation() else []
     for name, layer in interp_layers(store, project).items():
-        if name != "interp_features":
-            sync_categories(layer, features)
-            layer.emitStyleChanged()            # the legend lists the entities
+        # the data first: a style change below may make an open 3D view rebuild the layer,
+        # which must then read the edit, not the state before it
         layer.dataProvider().reloadData()
         layer.reload()
         layer.updateExtents()
+        if name != "interp_features":
+            sync_categories(layer, features)
+            layer.emitStyleChanged()            # the legend lists the entities
         layer.triggerRepaint()
+        if name in LAYERS_3D:
+            layer.trigger3DUpdate()             # a reload alone leaves the 3D view's old shapes
 
 
 class InterpSync:

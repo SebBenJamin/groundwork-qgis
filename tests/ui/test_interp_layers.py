@@ -258,6 +258,27 @@ def test_without_qgis_3d_the_layers_still_open(qgis_app, interp_store, monkeypat
     prj.clear()
 
 
+def test_the_3d_view_is_asked_to_redraw_an_edit_once_the_layers_hold_it(qgis_app, interp_store):
+    """The 3D view rebuilds a layer on request3DUpdate: the last request after an edit must
+    come when the layer already reads the edited geometry, not one edit behind."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers, reload_interp_layers
+    prj = QgsProject()
+    polys = add_interp_layers(interp_store, prj)["interp_polygons_3d"]
+    seen = []
+    polys.request3DUpdate.connect(
+        lambda: seen.append(polys.extent3D().zMinimum()))
+    v = interp_store.current_version()
+    piece = interp_store.pieces(v.id, "prof")[0]
+    piece.vertices = [(40, 0), (60, 0), (60, -9), (40, -9)]       # dragged deeper
+    interp_store.save_piece(piece)
+    interp_store.rebuild_derived(v.id, {"prof": BENT})
+    reload_interp_layers(interp_store, prj)
+    assert seen and seen[-1] == pytest.approx(-9.0)
+    prj.clear()
+
+
 def test_interpretation_lines_keep_their_heights_in_3d(qgis_app, interp_store):
     """A buffered 3D line lies flat at height 0; simple lines keep the drawn depth."""
     from qgis._3d import QgsLine3DSymbol
