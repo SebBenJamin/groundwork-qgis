@@ -37,6 +37,8 @@ included as a demo.*
 
 ![A resistivity section with sediment cores, station numbers and geology strips](docs/images/section.png)
 
+![The Erfurt demo in QGIS's 3D view: seven resistivity curtains under their profiles, with the cores as columns and their names, over an aerial image](docs/images/howto/3d-overview.jpg)
+
 ## Get started
 
 1. **Install** QGIS 4.2 or newer.

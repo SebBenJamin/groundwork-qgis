@@ -2,6 +2,8 @@
 
 How to see your models, boreholes and interpretation together in QGIS's 3D view.
 
+![The Erfurt demo in QGIS's 3D view: seven resistivity curtains under their profiles, with the cores as columns and their names, over an aerial image](../../images/howto/3d-overview.jpg)
+
 ## Show in 3D
 
 **Groundwork → Show in 3D…** lists every profile with its models and its **Boreholes**. Tick what you want to see, choose under **Show As** how each model stands there, and press **Apply** or **OK**. **Apply** shows your choice in the 3D view and keeps the dialog open, so you can try **Point Cloud** against **Section Picture** and look at the result; **OK** does the same and closes it. The dialog does not block QGIS: you can turn the 3D view while it is open.
@@ -43,6 +45,8 @@ The **3D** button next to the profile list in the section panel (the same entrie
 - **Look at Profile in 3D** turns the 3D view side-on to the open profile;
 - **Cut 3D View Along Profile** does the same and cuts the 3D view down to a slab along the profile (QGIS's cross section, a little wider than the profile's bends). Everything outside the slab is left out, so the curtain shows through a terrain or a DEM you keep switched on. **Remove 3D Cut** in the same menu shows everything again;
 - **Show in 3D…** opens the dialog.
+
+![The Calhoun demo with its 1 m elevation model as the 3D terrain: the refraction curtains of the four crossing lines, the view cut along Line 10](../../images/howto/3d-cut.jpg)
 
 With no 3D map view open, a ready one opens first. If nothing of the profile is shown in 3D yet, its models (and its boreholes, when its section shows some) are ticked and shown first; other profiles stay as they are, and **Show in 3D…** lists the new ticks.
 
