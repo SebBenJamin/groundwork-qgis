@@ -90,6 +90,8 @@ The picture layers are shown in the 3D view only, not in the 2D map: there a pic
 3. For the point clouds, switch on **eye-dome lighting** in the point cloud's **Layer Properties → 3D View**: without it, a point cloud looks flat and dark.
 4. Turn the view with the middle mouse button or Ctrl + drag; zoom with the wheel.
 
+A 3D view asks every map layer it shows for its whole scene, not just for what is on screen, for the 3D layers and for the image it lays on the terrain. A web layer that covers a large area, such as a state-wide WFS of boreholes, then keeps downloading for a long time, and the terrain stays white until it is done. Switch such layers off while you use the 3D view, or save the part you need as a local layer (**Export → Save Features As…** with an extent).
+
 ## Stations and the interpretation in 3D
 
 The **stations** stand as small spheres at their surveyed height, in the outline colour of their map symbol, sized to the distance between them or to the **Station sphere size** set in **Show in 3D…**; stations without a height are left out. A size you set in the stations' own **3D View** properties is yours: **Show in 3D…** no longer changes it.

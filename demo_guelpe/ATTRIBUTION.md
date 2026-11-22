@@ -24,7 +24,9 @@ without changing its values.
 - Licence: https://creativecommons.org/licenses/by/4.0/
 
 ## State data (Datenlizenz Deutschland Namensnennung 2.0, https://www.govdata.de/dl-de/by-2-0)
-- **Boreholes** (live WFS Bohrpunktkarte): © LBGR, dl-de/by-2-0
+- **Boreholes** `context/state_boreholes.gpkg` (*derived*: the Bohrpunktkarte WFS, layers
+  bpk_m_sch and bpk_o_sch, within 1.5 km of the transects, saved unchanged):
+  © LBGR, dl-de/by-2-0
 - **Geology** GK 25, Geologische Karte 1 : 25 000 (live WFS), and GÜK300 (live, switched
   off on the map; both drawn as strips on the section): © LBGR, dl-de/by-2-0
 - **DGM1** `context/dgm1.tif` (*derived*: tiles merged and cropped): © GeoBasis-DE/LGB, dl-de/by-2-0

@@ -10,6 +10,10 @@ Writes the raw downloads to .cache/guelpe/ (git-ignored):
   cores.tab                         sediment cores, Köhler, Kaniecki, Schneider, Zielhofer (2025),
                                     PANGAEA, doi:10.1594/PANGAEA.983887, CC BY 4.0
   dgm/dgm_33<E>-<N>.zip             DGM1 1 km tiles, © GeoBasis-DE/LGB, dl-de/by-2-0
+  state_boreholes.gpkg              the LBGR Bohrpunktkarte (WFS) around the transects, layers
+                                    with_log and without_log, © LBGR, dl-de/by-2-0: a copy, as
+                                    the live state-wide layer makes a QGIS 3D view download
+                                    half of Brandenburg
 and, derived, demo_guelpe/context/waterways.geojson (EPSG:25833) from OpenStreetMap
 (© OpenStreetMap contributors, ODbL).
 """
@@ -36,6 +40,11 @@ WATERWAYS_BBOX = (12.200, 52.722, 12.230, 52.742)                # lon/lat: west
 ENDPOINT = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "groundwork-qgis-demo-builder/0.2 (QGIS plugin demo data; one-off fetch)"
 RETRIES, WAIT = 15, 30.0
+BPK_WFS = "https://inspire.brandenburg.de/services/bpk_wfs"
+#: the state boreholes: WFS type name -> layer in state_boreholes.gpkg
+BPK_LAYERS = {"app:bpk_m_sch": "with_log", "app:bpk_o_sch": "without_log"}
+#: m around the transects (as the geology the demo's legend lists)
+BOREHOLE_MARGIN = 1500.0
 
 
 def dgm_tiles(bbox, margin: float = 100.0) -> list[str]:
@@ -97,6 +106,29 @@ def fetch_waterways(out: Path = WATERWAYS) -> int:
     return len(features)
 
 
+def fetch_state_boreholes(out: Path = CACHE / "state_boreholes.gpkg",
+                          margin: float = BOREHOLE_MARGIN) -> dict:
+    """The LBGR state boreholes (with and without a layer log) within ``margin`` of the
+    transects, as layers of one GeoPackage (EPSG:25833); only that area is asked of the WFS.
+    Returns the feature count per layer."""
+    from osgeo import gdal, ogr
+    gdal.UseExceptions()
+    x0, y0, x1, y1 = TRANSECTS_BBOX
+    box = (x0 - margin, y0 - margin, x1 + margin, y1 + margin)
+    out.unlink(missing_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    counts = {}
+    for i, (typename, layer) in enumerate(BPK_LAYERS.items()):
+        gdal.VectorTranslate(str(out), f"WFS:{BPK_WFS}", format="GPKG",
+                             accessMode=None if i == 0 else "update",
+                             layers=[typename], layerName=layer, spatFilter=box,
+                             spatSRS="EPSG:25833", dstSRS="EPSG:25833")
+        ds = ogr.Open(str(out))
+        counts[layer] = ds.GetLayerByName(layer).GetFeatureCount()
+        ds = None
+    return counts
+
+
 def main() -> int:
     for name in ERT_FILES.values():
         _fetch_zip(ERT_URL + name, CACHE / "ert" / name)
@@ -108,6 +140,7 @@ def main() -> int:
         _fetch_zip(f"{DGM_URL}{tile}.zip", CACHE / "dgm" / f"{tile}.zip")
         print("dgm", tile)
     print("waterways", fetch_waterways())
+    print("state boreholes", fetch_state_boreholes())
     return 0
 
 
