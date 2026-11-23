@@ -62,6 +62,7 @@ nav:
       - Report plates: user/howto/plates.md
       - The 3D view: user/howto/3d-view.md
   - Data formats:
+      - Methods and formats: user/formats/overview.md
       - Borehole tables: user/formats/borehole-tables.md
       - Plate templates: user/formats/plate-templates.md
   - Troubleshooting: user/troubleshooting.md

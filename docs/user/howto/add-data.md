@@ -1,6 +1,6 @@
 # Add data
 
-**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models) are recognised; for any other text table you say what the columns are. A Groundwork project must be open; a profile need not be.
+**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models) are recognised; for any other text table you say what the columns are. What each format must contain is in [Methods and formats](../formats/overview.md). A Groundwork project must be open; a profile need not be.
 
 ![The Add Data dialog with a text table chosen; its parts are numbered 1 to 5](../../images/howto/add-data.png)
 
