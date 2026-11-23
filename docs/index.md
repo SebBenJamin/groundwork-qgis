@@ -39,7 +39,8 @@ Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundw
 
 - **How-tos**: one task each, from [adding data](user/howto/add-data.md) to
   [report plates](user/howto/plates.md).
-- **Data formats**: what [borehole tables](user/formats/borehole-tables.md) and
+- **Data formats**: [which methods and files](user/formats/overview.md) the plugin reads and
+  writes, what [borehole tables](user/formats/borehole-tables.md) and
   [plate templates](user/formats/plate-templates.md) must look like.
 - **[Troubleshooting](user/troubleshooting.md)**: when something doesn't show.
 - **[What's new](releases/index.md)**: the changes in each release.
