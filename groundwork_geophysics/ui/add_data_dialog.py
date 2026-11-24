@@ -21,6 +21,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget)
 
 from .help import add_help_button
+from .add_data_files import READY, FilesBox
 from .. import readers
 from ..core.coverage import overhang_message
 from ..core.layout import model_stations
@@ -28,7 +29,7 @@ from ..core.lines import line_from_cloud
 from ..core.model import Dataset
 from ..core.numbers import fmt, fmt_sig, fmt_trim
 from ..section.readout import format_value, unit_label
-from ..core.placement import fit_report
+from ..core.placement import Placement, fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
 from ..ids import LEGACY_ID
 from ..readers.errors import plain_error
@@ -196,6 +197,10 @@ class AddDataDialog(QDialog):
         self._zero_chosen = False                   # the user chose where distance 0 lies
         self._confirm: list[str] = []               # asked before saving
         self._busy = False
+        self._files: list[str] = []                 # several files chosen: all of them
+        self._file_grids: dict = {}                 # path -> (key, grid) of the coarse check
+        self._file_blocks: dict = {}                # path -> proposed block or None
+        self.added: list = []                       # (profile, dataset) per file added
 
         self.file_edit = QLineEdit()
         self.file_edit.editingFinished.connect(self._file_typed)
@@ -270,10 +275,15 @@ class AddDataDialog(QDialog):
                   self.electrode_label, self.warning_label):
             status.addWidget(w)
 
+        self.files_box = FilesBox()
+        self.files_box.hide()                       # only when several files are chosen
+        self.files_box.changed.connect(self._refresh)
+
         self._page = page = QWidget()
         column = QVBoxLayout(page)
         column.addLayout(form)
-        for w in (self.table_options, self.columns_group, self.placement, preview):
+        for w in (self.files_box, self.table_options, self.columns_group, self.placement,
+                  preview):
             column.addWidget(w)
         column.addStretch(1)
         self._scroll = scroll = QScrollArea()
@@ -436,9 +446,22 @@ class AddDataDialog(QDialog):
 
     # -- file --------------------------------------------------------------------------------
     def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Data File", "", FILE_FILTER)
-        if path:
-            self.set_file(path)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Data Files", "", FILE_FILTER)
+        if paths:
+            self.set_files(paths)
+
+    def set_files(self, paths) -> None:
+        """One file: the dialog as always. Several: the first file's settings for all, and a
+        row per file saying which profile it goes to."""
+        paths = [str(p) for p in paths]
+        self._files = paths if len(paths) > 1 else []
+        if self._files:
+            self._file_blocks = {}
+            on_map = False                          # known once the first file is read
+            self.files_box.set_files(paths, [(p.id, p.name) for p in self.store.profiles()],
+                                     on_map)
+        self.files_box.setVisible(bool(self._files))
+        self.set_file(paths[0] if paths else "")
 
     def _browse_response(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Model Response File", "",
@@ -450,7 +473,7 @@ class AddDataDialog(QDialog):
 
     def _file_typed(self) -> None:
         if self._path() != self._file:
-            self.set_file(self._path())
+            self.set_files([self._path()])         # a typed path: one file
 
     @_guarded
     def set_file(self, path) -> None:
@@ -595,6 +618,13 @@ class AddDataDialog(QDialog):
             problems = self.columns_group.columns().problems(tab)
         self._sync_placement(not problems)
         self._sync_coarse(table and bool(self._path()) and not problems)
+        several = bool(self._files)
+        self.placement.setVisible(not several)      # each file's row says where it goes
+        self._form.setRowVisible(self.name_edit, not several)   # each is named after its file
+        if several:
+            for w in (self.coarse_note, self.coarse_row):        # offered per file instead
+                w.hide()
+            self._check_files(not problems)
         if not self._path():
             self.summary_label.setText("Choose a data file.")
             return
@@ -621,7 +651,144 @@ class AddDataDialog(QDialog):
             self.z_combo.currentData()
         self.summary_label.setText(describe(result, z_kind,
                                             SAMPLE_ROWS if table and self._more else 0))
+        if several:                                 # the summary is the first file's
+            self.summary_label.setText(f"{Path(self._path()).name}: "
+                                       f"{self.summary_label.text()}")
+            return
         self._show_placement(result, z_kind)
+
+    # -- several files -----------------------------------------------------------------------
+    def _check_files(self, columns_ok: bool) -> None:
+        """Each file's row: the coarser cells offered for it and whether it is ready."""
+        box = self.files_box
+        box.set_on_map(self._on_map())
+        names = self._table.names if self._is_table() and self._table is not None else None
+        for row, (path, target) in enumerate(box.targets()):
+            problem = self._file_problem(path, target, names, columns_ok)
+            box.set_cells(row, "" if problem else self._cells_offer(path))
+            box.set_status(row, problem or READY)
+
+    def _file_problem(self, path: str, target, names, columns_ok: bool) -> str:
+        if not Path(path).is_file():
+            return "File not found"
+        if not columns_ok:
+            return "Assign the columns first (above)"
+        if names is not None and path != self._path():
+            try:
+                theirs = read_table(path, self.table_options.options(), max_rows=1).names
+            except (OSError, ValueError) as exc:
+                return str(exc)
+            if theirs != names:
+                return "Other columns than the first file"
+        if target is None:
+            return "Choose a profile"
+        return ""
+
+    def _cells_offer(self, path: str) -> str:
+        """The coarser cells proposed for an over-fine text table ("" for none)."""
+        if not self._is_table():
+            return ""
+        cols, options = self.columns_group.columns(), self.table_options.options()
+        try:
+            key = (Path(path).stat().st_mtime, json.dumps(options.to_dict(), sort_keys=True),
+                   cols.position, cols.distance, cols.easting, cols.northing, cols.vertical)
+            cached = self._file_grids.get(path)
+            if cached is None or cached[0] != key:
+                cached = (key, grid_of_file(path, options.to_dict(), cols.to_dict()))
+                self._file_grids[path] = cached
+            grid = cached[1]
+        except (OSError, ValueError):
+            grid = None
+        block = proposed_block(grid) if grid is not None else None
+        self._file_blocks[path] = block
+        if block is None:
+            return ""
+        # two decimals, as in the one-file box: a map file's spacing is walked along the
+        # ground, so it is not exactly round (0.502 m)
+        return f"{fmt_trim(block[0] * grid.dx, 2)} × {fmt_trim(block[1] * grid.dz, 2)} m"
+
+    def _file_placement(self, path: str, target) -> Placement:
+        if target == FilesBox.NEW:                  # a line through the file's coordinates
+            cols = self.columns_group.columns()
+            xy = map_points(path, self.table_options.options().to_dict(), cols.to_dict())
+            line, _bends = line_from_cloud(xy_to_store(xy, cols.crs, self.store.crs_authid,
+                                                       self.project))
+            return Placement(line_xy=line)
+        return Placement(profile_id=target, zero="station1")
+
+    def _file_options(self, path: str, coarse: bool) -> dict:
+        options = {k: v for k, v in self._reader_options().items()
+                   if k not in ("block", "response")}
+        block = self._file_blocks.get(path)
+        if coarse and block is not None:
+            options["block"] = list(block)
+        if self._reader() in RESPONSE_READERS:
+            response = guess_response(path)         # each file's own, next to it
+            if response:
+                resp = Path(response)
+                options["response"] = (resp.name if resp.parent.resolve() ==
+                                       Path(path).parent.resolve() else str(resp))
+        return options
+
+    def _accept_files(self) -> None:
+        """Add every ready file, after asking when some are not; one message for all."""
+        self._refresh()
+        box = self.files_box
+        rows = box.targets()
+        ready = [i for i in range(len(rows)) if box.status(i) == READY]
+        left = [f"{Path(rows[i][0]).name} ({box.status(i).lower()})"
+                for i in range(len(rows)) if i not in ready]
+        if not ready:
+            self._error("No file can be added yet:\n" + "\n".join(left))
+            return
+        if left and QMessageBox.question(
+                self, self.windowTitle(),
+                f"{len(left)} of {len(rows)} files cannot be added yet:\n" + "\n".join(left)
+                + f"\n\nAdd the other {len(ready)} and leave these out?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        added, failed, notes = [], [], []
+        for i in ready:
+            path, target = rows[i]
+            try:
+                placement = self._file_placement(path, target)
+                try:
+                    profile, dataset = add_data(
+                        self.store, placement, Path(path), self._reader(),
+                        self._file_options(path, box.cells_checked(i)), Path(path).stem,
+                        self.method_combo.currentData(), self.project, self.provider)
+                except NotRefreshed as exc:         # saved: never reported as a failure
+                    profile, dataset = exc.saved
+                    notes.append(str(exc))
+            except Exception as exc:                # noqa: BLE001 - one file must not stop all
+                failed.append(plain_error(exc, path, CHOOSE_OTHER, MISSING_FILE))
+                continue
+            added.append((profile, dataset, placement.profile_id is None))
+            unplaced = unplaced_rows(dataset.provenance)
+            if unplaced:
+                notes.append(f"{_rows_word(unplaced)} of {Path(path).name} "
+                             f"{'has' if unplaced == 1 else 'have'} no map position (-9999) "
+                             f"and {'was' if unplaced == 1 else 'were'} left out.")
+        if not added:
+            self._error("\n".join(failed))
+            return
+        self.added = [(p, d) for p, d, _new in added]
+        self.created = any(new for *_pd, new in added)
+        self.profile, self.dataset = next(((p, d) for p, d, new in added if new),
+                                          self.added[0])
+        if left or failed or notes:
+            text = f"{len(added)} of {len(rows)} files added."
+            if left:
+                text += " Left out: " + ", ".join(left) + "."
+            if failed:
+                text += " Not added: " + " ".join(failed)
+            self._warn(" ".join([text] + notes))
+        if self._is_table():
+            QgsSettings().setValue(SETTINGS_KEY, json.dumps(
+                {"names": self._table.names, "table": self.table_options.options().to_dict(),
+                 "columns": self.columns_group.columns().to_dict()}))
+        super().accept()
 
     def _fit_width(self) -> None:
         """Wide enough for the groups shown, so only the height scrolls."""
@@ -824,6 +991,12 @@ class AddDataDialog(QDialog):
 
     # -- saving ------------------------------------------------------------------------------
     def accept(self) -> None:
+        if self._files:
+            try:
+                self._accept_files()
+            except Exception as exc:                # noqa: BLE001 - a slot never raises
+                self._error(plain_error(exc, None, CHOOSE_OTHER, MISSING_FILE))
+            return
         path = self._path()
         try:
             try:

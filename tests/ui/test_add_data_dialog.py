@@ -549,12 +549,12 @@ def test_file_dialog_caption(qgis_app, make_dialog, project_store, monkeypatch):
 
     st, prj = project_store
     seen = []
-    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+    monkeypatch.setattr(QFileDialog, "getOpenFileNames",       # one file or several
                         staticmethod(lambda parent, caption, *a, **k: seen.append(caption)
-                                     or ("", "")))
+                                     or ([], "")))
     dlg = make_dialog(st, project=prj)
     dlg._browse()
-    assert seen == ["Data File"]
+    assert seen == ["Data Files"]
 
 
 def test_a_sample_without_a_section_waits_for_add(qgis_app, make_dialog, project_store,
