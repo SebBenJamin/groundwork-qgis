@@ -30,39 +30,48 @@ class PointGrid:
     dz: float                   # spacing of the vertical levels (m)
 
 
-def _lattice(a: np.ndarray) -> tuple[float, float] | None:
-    """(first level, spacing) when the values of ``a`` sit on at least two levels at a
-    regular spacing, else None."""
+def _levels(a: np.ndarray) -> np.ndarray | None:
+    """The distinct values of ``a`` (closer than the tolerance count as one), ascending;
+    None with fewer than two. Uneven steps are fine: a real export's positions are rounded
+    to centimetres, so the step from one to the next wobbles by millimetres."""
     a = np.sort(a[np.isfinite(a)])
     if len(a) < 2:
         return None
-    tol = _tolerance(a)
-    levels = a[np.r_[True, np.diff(a) > tol]]
-    if len(levels) < 2:
-        return None
-    spacing = float(np.median(np.diff(levels)))
-    if spacing <= tol:
-        return None
-    k = np.round((levels - levels[0]) / spacing)
-    if np.abs(levels - (levels[0] + k * spacing)).max() > max(tol, 0.01 * spacing):
-        return None
-    return float(levels[0]), spacing
+    levels = a[np.r_[True, np.diff(a) > _tolerance(a)]]
+    return levels if len(levels) >= 2 else None
+
+
+def _index(a: np.ndarray, levels: np.ndarray) -> np.ndarray:
+    """The level each value of ``a`` belongs to."""
+    return np.clip(np.searchsorted(levels, a + _tolerance(levels), side="right") - 1,
+                   0, len(levels) - 1)
+
+
+def _edges(levels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Lower and upper edge of each level's cells: halfway to the neighbouring levels, half
+    a step beyond the outermost."""
+    mid = 0.5 * (levels[1:] + levels[:-1])
+    return (np.r_[levels[0] - 0.5 * (levels[1] - levels[0]), mid],
+            np.r_[mid, levels[-1] + 0.5 * (levels[-1] - levels[-2])])
 
 
 def point_grid(x, z) -> PointGrid | None:
-    """The regular grid ``x`` (position along the line) and ``z`` sit on, or None."""
+    """The grid ``x`` (position along the line) and ``z`` sit on, or None: the points take
+    most places of a grid of their distinct positions and heights (scattered points take
+    hardly any). ``dx``/``dz``: the median step between neighbouring levels."""
     x, z = np.asarray(x, float).ravel(), np.asarray(z, float).ravel()
-    gx, gz = _lattice(x), _lattice(z)
-    if gx is None or gz is None:
+    lx, lz = _levels(x), _levels(z)
+    if lx is None or lz is None or len(lx) * len(lz) > 2 * len(x):
         return None
-    return PointGrid(int(len(x)), gx[1], gz[1])
+    return PointGrid(int(len(x)), float(np.median(np.diff(lx))), float(np.median(np.diff(lz))))
 
 
 def _nice(size: float) -> bool:
     if size <= 0:
         return False
     mantissa = size / 10 ** math.floor(math.log10(size))
-    return any(abs(mantissa - n) <= 1e-6 * n for n in _NICE) or abs(mantissa - 10) <= 1e-5
+    # within 2 %: along a diagonal line rounded positions are 0.2518 m apart, not 0.25
+    return any(abs(mantissa - n) <= 0.02 * n for n in (*_NICE, 10.0))
 
 
 def proposed_block(grid: PointGrid) -> tuple[int, int] | None:
@@ -95,12 +104,11 @@ def coarsen_boxes(x, z, v, coverage, block: tuple[int, int], log: bool):
     when all it has is -inf (no ray), else NaN. ValueError when the points are not on a
     regular grid."""
     x, z, v = (np.asarray(a, float).ravel() for a in (x, z, v))
-    gx, gz = _lattice(x), _lattice(z)
-    if gx is None or gz is None:
+    if point_grid(x, z) is None:
         raise ValueError("the points are not on a regular grid")
+    lx, lz = _levels(x), _levels(z)
     fx, fz = (max(1, int(f)) for f in block)
-    ix = np.round((x - gx[0]) / gx[1]).astype(np.int64)
-    iz = np.round((z - gz[0]) / gz[1]).astype(np.int64)
+    ix, iz = _index(x, lx), _index(z, lz)
     rows = int(iz.max()) // fz + 1
     keys, inverse = np.unique((ix // fx) * rows + iz // fz, return_inverse=True)
     inverse = inverse.ravel()
@@ -108,11 +116,11 @@ def coarsen_boxes(x, z, v, coverage, block: tuple[int, int], log: bool):
     order = np.argsort(inverse, kind="stable")
     starts = np.r_[0, np.flatnonzero(np.diff(inverse[order])) + 1]
 
-    def span(i, g):
-        lo = np.minimum.reduceat(i[order], starts)
-        hi = np.maximum.reduceat(i[order], starts)
-        return g[0] + g[1] * (lo - 0.5), g[0] + g[1] * (hi + 0.5)
-    boxes = np.column_stack([*span(ix, gx), *span(iz, gz)])
+    def span(i, levels):
+        lo_edge, hi_edge = _edges(levels)
+        return (lo_edge[np.minimum.reduceat(i[order], starts)],
+                hi_edge[np.maximum.reduceat(i[order], starts)])
+    boxes = np.column_stack([*span(ix, lx), *span(iz, lz)])
     with np.errstate(invalid="ignore", divide="ignore"):
         vals = np.log10(np.where(v > 0, v, np.nan)) if log else v
     has = np.isfinite(vals)

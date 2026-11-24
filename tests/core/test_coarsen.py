@@ -57,3 +57,24 @@ def test_a_block_at_the_edge_spans_only_the_points_it_has():
     boxes, _v, _c = coarsen_boxes(x, z, np.full(10, 10.0), None, (2, 1), log=True)
     assert boxes[:, 0].min() == pytest.approx(-0.125)
     assert boxes[:, 1].max() == pytest.approx(1.125)
+
+
+def test_positions_rounded_to_centimetres_are_still_a_grid():
+    # a real export: easting/northing to 2 decimals on a diagonal line, 0.25 m apart, so the
+    # distance from one position to the next wobbles by a few millimetres
+    angle = np.radians(37.3)
+    e = np.round(703719.5 + np.arange(300) * 0.25 * np.cos(angle), 2)
+    n = np.round(3399129.47 + np.arange(300) * 0.25 * np.sin(angle), 2)
+    along = np.r_[0, np.cumsum(np.hypot(np.diff(e), np.diff(n)))]
+    x, z = np.meshgrid(along, -np.arange(40) * 0.1)
+    g = point_grid(x.ravel(), z.ravel())
+    assert g is not None and g.dx == pytest.approx(0.25, abs=0.01)
+    boxes, _v, _c = coarsen_boxes(x.ravel(), z.ravel(), np.full(x.size, 10.0), None, (4, 5),
+                                  log=True)
+    xs = np.unique(np.round(boxes[:, :2], 9))
+    assert len(boxes) == 75 * 8 and len(xs) == 76          # columns meet edge to edge
+
+
+def test_a_spacing_a_little_off_a_round_number_gets_the_round_proposal():
+    # along a real diagonal line the positions are 0.2518 m apart, not 0.25
+    assert proposed_block(PointGrid(623_241, 0.2518, 0.1)) == (4, 5)

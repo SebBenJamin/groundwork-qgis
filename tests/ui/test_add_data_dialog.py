@@ -256,7 +256,8 @@ def test_other_quantity_needs_a_name(qgis_app, make_dialog, project_store, selec
 def test_preview_reads_only_the_first_rows(qgis_app, make_dialog, project_store, monkeypatch,
                                            tmp_path, selected_line, warnings_shown):
     # a 200 000-row file: until Add, every read (the preview's, the reader's and its own
-    # table read) stops after the sample; Add reads the whole file
+    # table read) stops after the sample; Add reads the whole file. (Only the check for an
+    # over-fine grid reads the whole file's numbers once, without text: grid_of_file.)
     from groundwork_geophysics import readers
     from groundwork_geophysics.readers import text_columns
     from groundwork_geophysics.ui import add_data_dialog
@@ -763,3 +764,67 @@ def test_method_follows_the_next_file(qgis_app, make_dialog, project_store, sele
     shutil.copy(FIXTURES / "ert" / "f001_res.dat", res)
     dlg.set_file(res)
     assert dlg.method_combo.currentData() == "ert"
+
+
+def _fine_export(tmp_path, nx=404, nz=250):
+    """A model exported on a 0.25 x 0.1 m lattice: 101 000 points by default."""
+    path = tmp_path / "fine.txt"
+    x, z = np.meshgrid(np.arange(nx) * 0.25, np.arange(nz) * 0.1 + 0.05)
+    rho = 10 ** (1 + x / 100)
+    lines = [f"{a:.2f} {b:.2f} {c:.3f}" for a, b, c in zip(x.ravel(), z.ravel(), rho.ravel())]
+    path.write_text("distance depth rho\n" + "\n".join(lines) + "\n")
+    return path
+
+
+def _digits(text):
+    import re
+    return re.sub(r"\D", "", text)
+
+
+def test_an_over_fine_table_is_offered_coarser_cells(qgis_app, make_dialog, project_store,
+                                                     tmp_path, selected_line, warnings_shown):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_fine_export(tmp_path))
+    assert not dlg.coarse_row.isHidden() and dlg.coarse_check.isChecked()
+    assert (dlg.coarse_dx.value(), dlg.coarse_dz.value()) == pytest.approx((0.5, 0.2))
+    assert "25250" in _digits(dlg.coarse_count.text())
+    assert "101000" in _digits(dlg.coarse_note.text())
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [p] = st.profiles()
+    [d] = st.datasets(p.id)
+    assert d.reader_options["block"] == [2, 2]
+    assert d.provenance["cell"] == pytest.approx([0.5, 0.2])
+
+
+def test_unticked_keeps_the_full_detail(qgis_app, make_dialog, project_store, tmp_path,
+                                        selected_line, warnings_shown):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_fine_export(tmp_path))
+    dlg.coarse_check.setChecked(False)
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [p] = st.profiles()
+    [d] = st.datasets(p.id)
+    assert "block" not in d.reader_options and "cell" not in d.provenance
+
+
+def test_a_typed_size_snaps_to_the_files_spacing(qgis_app, make_dialog, project_store,
+                                                 tmp_path, selected_line):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_fine_export(tmp_path))
+    dlg.coarse_dx.setValue(1.1)
+    dlg.coarse_dx.editingFinished.emit()
+    assert dlg.coarse_dx.value() == pytest.approx(1.0)
+    assert "12625" in _digits(dlg.coarse_count.text())
+
+
+def test_a_small_table_shows_no_offer(qgis_app, make_dialog, project_store):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(WILD / "dist_y_rho_junk.txt")
+    assert dlg.coarse_row.isHidden() and dlg.coarse_note.isHidden()
+    assert "block" not in dlg._reader_options()

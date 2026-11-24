@@ -14,7 +14,9 @@ from pathlib import Path
 
 import numpy as np
 from qgis.core import Qgis, QgsProject, QgsSettings
-from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from qgis.gui import QgsDoubleSpinBox
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+                                 QFormLayout,
                                  QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                  QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget)
 
@@ -30,7 +32,8 @@ from ..core.placement import fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
 from ..ids import LEGACY_ID
 from ..readers.errors import plain_error
-from ..readers.text_columns import map_points
+from ..core.coarsen import proposed_block
+from ..readers.text_columns import grid_of_file, map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
@@ -54,6 +57,12 @@ RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response"
                   "dcinv.response")
 #: the last text-table settings, offered for the next file with the same columns
 SETTINGS_KEY = f"{LEGACY_ID}/import/last"
+COARSE_NOTE = "{n} cells of {dx} × {dz} m: far finer than an inversion resolves."
+COARSE_TEXT = "Read as cells of"
+COARSE_TIP = ("Average the file's points in blocks of this size: faster sections, plates and "
+              "3D. The file itself is not changed; untick to keep every point.")
+COARSE_SIZE_TIP = "Snaps to a whole multiple of the file's spacing ({step} m)"
+COARSE_COUNT = "(about {n} cells, averaged)"
 PREVIEW_ROWS = 20
 #: rows read for the preview and the first guess: the first rows of a model often share one
 #: depth, so 20 would hide the vertical column
@@ -250,14 +259,15 @@ class AddDataDialog(QDialog):
         self.electrode_label = _label("electrode_label")
         self.warning_label = _label("warning_label")
         self.warning_label.setStyleSheet(WARNING_STYLE)
+        self._build_coarse()
         QVBoxLayout(preview).addWidget(self.preview_table)
         # the verdict stays in view above the buttons; only the groups and the table scroll
         self.status_block = QWidget()
         self.status_block.setObjectName("status_block")
         status = QVBoxLayout(self.status_block)
         status.setContentsMargins(0, 0, 0, 0)
-        for w in (self.summary_label, self.fit_label, self.electrode_label,
-                  self.warning_label):
+        for w in (self.coarse_note, self.coarse_row, self.summary_label, self.fit_label,
+                  self.electrode_label, self.warning_label):
             status.addWidget(w)
 
         self._page = page = QWidget()
@@ -312,8 +322,12 @@ class AddDataDialog(QDialog):
     def _reader_options(self) -> dict:
         """The reader options as saved (the placement is added on saving)."""
         if self._is_table():
-            return {"table": self.table_options.options().to_dict(),
-                    "columns": self.columns_group.columns().to_dict()}
+            options = {"table": self.table_options.options().to_dict(),
+                       "columns": self.columns_group.columns().to_dict()}
+            block = self._block()
+            if block is not None:
+                options["block"] = list(block)
+            return options
         options = {"z_kind": self.z_combo.currentData()} if self.z_combo.currentData() else {}
         response = self.response_edit.text().strip()
         if self._reader() in RESPONSE_READERS and response:
@@ -321,6 +335,102 @@ class AddDataDialog(QDialog):
             options["response"] = (resp.name if resp.parent.resolve() ==
                                    data.parent.resolve() else str(resp))
         return options
+
+    def _sample_options(self) -> dict:
+        """The reader options for the preview, which reads a sample: never in blocks."""
+        return {k: v for k, v in self._reader_options().items() if k != "block"}
+
+    # -- coarser cells -----------------------------------------------------------------------
+    def _build_coarse(self) -> None:
+        """The offer to read an over-fine table as coarser cells (``core.coarsen``)."""
+        self.coarse_note = _label("coarse_note")
+        self.coarse_row = QWidget()
+        self.coarse_row.setObjectName("coarse_row")
+        row = QHBoxLayout(self.coarse_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.coarse_check = QCheckBox(COARSE_TEXT)
+        self.coarse_check.setObjectName("coarse_check")
+        self.coarse_check.setToolTip(COARSE_TIP)
+        self.coarse_dx, self.coarse_dz = QgsDoubleSpinBox(), QgsDoubleSpinBox()
+        for name, spin in (("coarse_dx", self.coarse_dx), ("coarse_dz", self.coarse_dz)):
+            spin.setObjectName(name)
+            spin.setDecimals(3)
+            spin.setSuffix(" m")
+            spin.setShowClearButton(False)
+            spin.editingFinished.connect(self._snap_coarse)
+        self.coarse_count = _label("coarse_count")
+        self.coarse_check.toggled.connect(self._coarse_changed)
+        row.addWidget(self.coarse_check)
+        row.addWidget(self.coarse_dx)
+        row.addWidget(QLabel("×"))
+        row.addWidget(self.coarse_dz)
+        row.addWidget(self.coarse_count, 1)
+        self.coarse_note.hide()
+        self.coarse_row.hide()
+        self._grid = self._grid_key = self._coarse_for = None
+
+    def _block(self) -> tuple[int, int] | None:
+        """The ticked block factors (fx, fz), or None (no offer, or unticked)."""
+        if self._grid is None or self.coarse_row.isHidden() or not self.coarse_check.isChecked():
+            return None
+        return (max(1, round(self.coarse_dx.value() / self._grid.dx)),
+                max(1, round(self.coarse_dz.value() / self._grid.dz)))
+
+    def _sync_coarse(self, columns_ok: bool) -> None:
+        """Offer coarser cells when the whole file's points form an over-fine grid; the
+        proposal is made again only for another file or other position/vertical columns."""
+        grid, key = None, None
+        if columns_ok:
+            path = Path(self._path())
+            cols = self.columns_group.columns()
+            try:
+                key = (str(path), path.stat().st_mtime,
+                       json.dumps(self.table_options.options().to_dict(), sort_keys=True),
+                       cols.position, cols.distance, cols.easting, cols.northing, cols.vertical)
+                if key != self._grid_key:
+                    self._grid = grid_of_file(path, self.table_options.options().to_dict(),
+                                              cols.to_dict())
+                    self._grid_key = key
+                grid = self._grid
+            except (OSError, ValueError):
+                grid = None
+        block = proposed_block(grid) if grid is not None else None
+        for w in (self.coarse_note, self.coarse_row):
+            w.setVisible(block is not None)
+        if block is None:
+            return
+        if self._coarse_for != key:
+            self._coarse_for = key
+            for spin, step, f in ((self.coarse_dx, grid.dx, block[0]),
+                                  (self.coarse_dz, grid.dz, block[1])):
+                spin.setDecimals(next((d for d in range(3)        # 0.25 -> 2, 0.1 -> 1
+                                       if abs(step * 10 ** d - round(step * 10 ** d)) < 1e-6), 2))
+                spin.setSingleStep(step)
+                spin.setRange(step, step * 64)
+                spin.setToolTip(COARSE_SIZE_TIP.format(step=fmt_trim(step, 3)))
+                spin.setValue(f * step)
+            self.coarse_check.setChecked(True)
+        self.coarse_note.setText(COARSE_NOTE.format(n=fmt(grid.n_points, 0),
+                                                    dx=fmt_trim(grid.dx, 3),
+                                                    dz=fmt_trim(grid.dz, 3)))
+        self._coarse_changed()
+
+    def _snap_coarse(self) -> None:
+        """A typed size goes to the nearest whole multiple of the file's spacing."""
+        if self._grid is None:
+            return
+        for spin, step in ((self.coarse_dx, self._grid.dx), (self.coarse_dz, self._grid.dz)):
+            spin.setValue(max(1, round(spin.value() / step)) * step)
+        self._coarse_changed()
+
+    def _coarse_changed(self, *_args) -> None:
+        on = self.coarse_check.isChecked()
+        self.coarse_dx.setEnabled(on)
+        self.coarse_dz.setEnabled(on)
+        block = self._block()
+        self.coarse_count.setText(
+            "" if block is None or self._grid is None else
+            COARSE_COUNT.format(n=fmt(round(self._grid.n_points / (block[0] * block[1])), 0)))
 
     # -- file --------------------------------------------------------------------------------
     def _browse(self) -> None:
@@ -433,7 +543,7 @@ class AddDataDialog(QDialog):
             self._method_for = key
         if self._key(profile) != self._read_key:          # a text table: its sample only
             self._result, self._read_key = None, None
-            self._result = read_for(self.store, profile, path, reader, self._reader_options(),
+            self._result = read_for(self.store, profile, path, reader, self._sample_options(),
                                     SAMPLE_ROWS if self._is_table() else None)
             self._read_key = self._key(profile)
         return self._result
@@ -441,7 +551,7 @@ class AddDataDialog(QDialog):
     def _key(self, profile) -> tuple:
         line = None if profile is None else np.asarray(profile.xy, float).tobytes()
         return (self._path(), self._reader(),
-                json.dumps(self._reader_options(), sort_keys=True), line)
+                json.dumps(self._sample_options(), sort_keys=True), line)
 
     def _draft(self):
         """(profile, station sets, new station set) the placement gives; nothing saved."""
@@ -482,6 +592,7 @@ class AddDataDialog(QDialog):
                                     PREVIEW_ROWS)
             problems = self.columns_group.columns().problems(tab)
         self._sync_placement(not problems)
+        self._sync_coarse(table and bool(self._path()) and not problems)
         if not self._path():
             self.summary_label.setText("Choose a data file.")
             return
