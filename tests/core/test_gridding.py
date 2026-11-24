@@ -155,3 +155,25 @@ def test_automatic_grid_size_is_worked_out_once_per_mesh(monkeypatch):
     assert len(calls) == 1
     grid_shape(m, 0.5)                                  # an own cell needs no guess
     assert len(calls) == 1
+
+
+def test_grid_nodes_are_located_as_matplotlib_locates_them():
+    # the grid's own locator (big models: matplotlib's TriFinder took 15 s) finds the same
+    # triangle for every node, or one that shares the edge the node lies on
+    import matplotlib.tri as mtri
+
+    from groundwork_geophysics.core.gridding import locate_nodes
+    rng = np.random.default_rng(3)
+    pts = rng.uniform([0, -20], [100, 0], size=(400, 2))
+    tri = mtri.Triangulation(pts[:, 0], pts[:, 1])
+    s, z = np.linspace(-5, 105, 137), np.linspace(-25, 3, 41)
+    S, Z = np.meshgrid(s, z)
+    t, w = locate_nodes(pts, tri.triangles, s, z)
+    ref = tri.get_trifinder()(S.ravel(), Z.ravel())
+    assert ((t >= 0) == (ref >= 0)).all()
+    inside = t >= 0
+    differ = inside & (t != ref)
+    assert (w[differ].min(axis=1) < 1e-9).all()             # only on a shared edge
+    corners = pts[tri.triangles[t[inside]]]
+    back = (w[inside, :, None] * corners).sum(axis=1)
+    assert np.allclose(back, np.column_stack([S.ravel(), Z.ravel()])[inside])

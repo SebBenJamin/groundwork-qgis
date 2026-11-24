@@ -129,6 +129,88 @@ def _merged(mesh) -> tuple[np.ndarray, np.ndarray]:
     return v[first], renum
 
 
+#: candidate (triangle, node) pairs tested at once by ``locate_nodes``: bounds its memory
+_LOCATE_CHUNK = 4_000_000
+
+
+def locate_nodes(verts: np.ndarray, tris: np.ndarray, s: np.ndarray, z: np.ndarray
+                 ) -> tuple[np.ndarray, np.ndarray]:
+    """For each node of the regular grid ``s`` x ``z`` (row by row, z outer): the triangle
+    of ``tris`` it lies in (-1 outside every one) and its barycentric weights (n, 3) there.
+    Each triangle tests only the nodes inside its bounding box; a node on an edge shared by
+    two triangles takes either (the linear values agree there)."""
+    nx, nz = len(s), len(z)
+    t = np.full(nx * nz, -1, dtype=np.int64)
+    w = np.zeros((nx * nz, 3))
+    if not len(tris) or nx < 1 or nz < 1:
+        return t, w
+    ds = (s[-1] - s[0]) / (nx - 1) if nx > 1 else 1.0
+    dz = (z[-1] - z[0]) / (nz - 1) if nz > 1 else 1.0
+    ds, dz = (d if d > 0 else 1.0 for d in (ds, dz))
+    ax, az = verts[tris[:, 0], 0], verts[tris[:, 0], 1]
+    bx, bz = verts[tris[:, 1], 0], verts[tris[:, 1], 1]
+    cx, cz = verts[tris[:, 2], 0], verts[tris[:, 2], 1]
+    xs, zs = np.stack([ax, bx, cx]), np.stack([az, bz, cz])
+    i0 = np.clip(np.ceil((xs.min(0) - s[0]) / ds - 1e-9), 0, nx).astype(np.int64)
+    i1 = np.clip(np.floor((xs.max(0) - s[0]) / ds + 1e-9), -1, nx - 1).astype(np.int64)
+    j0 = np.clip(np.ceil((zs.min(0) - z[0]) / dz - 1e-9), 0, nz).astype(np.int64)
+    j1 = np.clip(np.floor((zs.max(0) - z[0]) / dz + 1e-9), -1, nz - 1).astype(np.int64)
+    ni, nj = np.maximum(i1 - i0 + 1, 0), np.maximum(j1 - j0 + 1, 0)
+    n = ni * nj
+    det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz)
+    ends = np.cumsum(n)
+    k0 = 0
+    while k0 < len(tris):
+        before = int(ends[k0 - 1]) if k0 else 0
+        k1 = max(int(np.searchsorted(ends, before + _LOCATE_CHUNK, side="right")), k0 + 1)
+        nn = n[k0:k1]
+        total = int(nn.sum())
+        if total:
+            tri = np.repeat(np.arange(k0, k1), nn)
+            off = np.arange(total) - np.repeat(np.cumsum(nn) - nn, nn)
+            ii = i0[tri] + off % ni[tri]
+            jj = j0[tri] + off // ni[tri]
+            px, pz = s[ii] - cx[tri], z[jj] - cz[tri]
+            l1 = ((bz - cz)[tri] * px + (cx - bx)[tri] * pz) / det[tri]
+            l2 = ((cz - az)[tri] * px + (ax - cx)[tri] * pz) / det[tri]
+            l3 = 1.0 - l1 - l2
+            ok = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+            node = jj[ok] * nx + ii[ok]
+            t[node] = tri[ok]
+            w[node] = np.column_stack([l1[ok], l2[ok], l3[ok]])
+        k0 = k1
+    return t, w
+
+
+def _triangles(mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(merged vertices, renumbered cells, triangles, the cell of each triangle) of
+    ``mesh``: quads split in two, triangles without an area left out. Once per mesh."""
+    memo = getattr(mesh, "_memo", {})
+    if "triangles" not in memo:
+        verts, c = _merged(mesh)
+        quad = c[:, 3] >= 0
+        tris = np.vstack([c[:, :3], c[quad][:, [0, 2, 3]]])
+        tri_cell = np.concatenate([np.arange(len(c)), np.flatnonzero(quad)])
+        p0, p1, p2 = (verts[tris[:, k]] for k in range(3))
+        area = np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
+                      - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
+        good = area > 1e-12 * max(width_of(verts), 1.0) ** 2
+        memo["triangles"] = (verts, c, tris[good], tri_cell[good])
+    return memo["triangles"]
+
+
+def _located(mesh, verts, tris, s, z) -> tuple[np.ndarray, np.ndarray]:
+    """``locate_nodes`` for ``mesh``'s grid; the last grid is kept, so the coverage of a
+    fade (same mesh, same grid) and the 3D view's grid reuse it."""
+    memo = getattr(mesh, "_memo", {})
+    key = (len(s), float(s[0]), float(s[-1]), len(z), float(z[0]), float(z[-1]))
+    hit = memo.get("located")
+    if hit is None or hit[0] != key:
+        hit = (key, *locate_nodes(verts, tris, s, z))
+        memo["located"] = hit
+    return hit[1], hit[2]
+
+
 def _to_log(v: np.ndarray) -> np.ndarray:
     return np.log10(np.where(v > 0, v, np.nan))
 
@@ -139,8 +221,6 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
     averaged onto the mesh vertices and interpolated linearly inside each cell (in log10
     when ``log``). Nodes outside every cell, in a cell without a value, or above ``topo``
     (s, z) stay nan: never extrapolates past the mesh or bridges gaps."""
-    import matplotlib.tri as mtri
-
     nx, nz = shape
     smin, smax, zmin, zmax = mesh.bounds()
     s = np.linspace(smin, smax, nx)
@@ -156,23 +236,10 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
         top = zmin + dz * (nz - 1)
     z = np.linspace(zmin, top, nz)
     S, Z = np.meshgrid(s, z)
-    verts, c = _merged(mesh)
-    quad = c[:, 3] >= 0
-    tris = np.vstack([c[:, :3], c[quad][:, [0, 2, 3]]])
-    tri_cell = np.concatenate([np.arange(len(c)), np.flatnonzero(quad)])
-    p0, p1, p2 = (verts[tris[:, k]] for k in range(3))
-    area = np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
-                  - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
-    good = area > 1e-12 * max(width_of(verts), 1.0) ** 2
-    tris, tri_cell = tris[good], tri_cell[good]
+    verts, c, tris, tri_cell = _triangles(mesh)
     if not len(tris):
         raise ValueError("cannot grid this mesh: it has no cell with an area")
-    try:
-        tri_mesh = mtri.Triangulation(verts[:, 0], verts[:, 1], tris)
-        finder = tri_mesh.get_trifinder()
-        t = finder(S.ravel(), Z.ravel())
-    except (RuntimeError, ValueError) as exc:
-        raise ValueError(f"cannot grid this mesh: {exc}") from exc
+    t, weights = _located(mesh, verts, tris, s, z)
     cell = np.where(t >= 0, tri_cell[np.maximum(t, 0)], -1).reshape(S.shape)
 
     v = np.asarray(mesh.values if values is None else values, float)
@@ -192,9 +259,8 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
     inside = cell >= 0
     if np.isfinite(vert).any():
         filled = np.where(np.isfinite(vert), vert, 0.0)
-        interp = mtri.LinearTriInterpolator(tri_mesh, filled, trifinder=finder)
-        smooth = np.ma.filled(interp(S[inside], Z[inside]).astype(float), np.nan)
-        out[inside] = smooth
+        flat = inside.ravel()
+        out[inside] = (weights[flat] * filled[tris[t[flat]]]).sum(axis=1)
     own = v[cell[inside]]
     corner_nan = np.zeros(len(tris), bool)
     corner_nan |= ~np.isfinite(vert[tris]).all(axis=1)
