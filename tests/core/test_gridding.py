@@ -177,3 +177,70 @@ def test_grid_nodes_are_located_as_matplotlib_locates_them():
     corners = pts[tri.triangles[t[inside]]]
     back = (w[inside, :, None] * corners).sum(axis=1)
     assert np.allclose(back, np.column_stack([S.ravel(), Z.ravel()])[inside])
+
+
+# -- gridding methods (nearest, inverse distance, spline, kriging) ---------------------------
+def _layered(nx=12, nz=6):
+    return regular_mesh(nx, nz, fn=lambda s, z: 50 + 20 * np.sin(s / 3) + 4 * z)
+
+
+def test_linear_method_is_todays_grid():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = _layered()
+    a = grid_model(mesh, None, (25, 13), log=False)
+    b = grid_model(mesh, None, (25, 13), log=False, interp=Interpolation())
+    assert np.array_equal(a.values, b.values, equal_nan=True) and b.note == ""
+
+
+@pytest.mark.parametrize("method", ["nearest", "idw", "spline", "kriging"])
+def test_each_method_fills_the_same_nodes_as_linear(method):
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = _layered()
+    mesh.values[14] = np.nan                                       # one empty cell
+    topo = (np.array([0.0, 12.0]), np.array([1.0, -1.5]))          # cuts the top corner
+    linear = grid_model(mesh, topo, (49, 25), log=False, fill_to_ground=True)
+    other = grid_model(mesh, topo, (49, 25), log=False, fill_to_ground=True,
+                       interp=Interpolation(method=method))
+    assert other.note == ""
+    assert np.array_equal(np.isfinite(other.values), np.isfinite(linear.values))
+    assert np.nanmax(np.abs(other.values - linear.values)) < 15          # same field, roughly
+
+
+def test_nearest_grid_takes_the_cell_values():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = regular_mesh(fn=lambda s, z: 10 * s + z)
+    g = grid_model(mesh, None, (41, 21), log=False, interp=Interpolation(method="nearest"),)
+    i, j = list(g.s).index(2.5), list(g.z).index(-3.5)                # a cell centre
+    assert g.values[j, i] == pytest.approx(10 * 2.5 - 3.5)
+
+
+def test_a_failed_fit_falls_back_to_linear_and_says_so():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = regular_mesh(fn=lambda s, z: 7.0)                          # nothing varies
+    linear = grid_model(mesh, None, (21, 11), log=False)
+    g = grid_model(mesh, None, (21, 11), log=False, interp=Interpolation(method="kriging"))
+    assert np.array_equal(g.values, linear.values, equal_nan=True)
+    assert "kriging" in g.note.lower() and "linear" in g.note.lower()
+
+
+def test_methods_work_in_log10_on_a_log_scale():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = regular_mesh(2, 1, fn=lambda s, z: 10.0 if s < 1 else 1000.0)
+    g = grid_model(mesh, None, (21, 3), log=True,
+                   interp=Interpolation(method="idw", anisotropy=1.0))
+    mid = g.values[1, list(g.s).index(1.0)]
+    assert mid == pytest.approx(100.0, rel=1e-6)                     # geometric mean
+
+
+def test_kriging_reports_what_it_fitted():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    g = grid_model(_layered(), None, (25, 13), log=False,
+                   interp=Interpolation(method="kriging"))
+    assert set(g.fitted) >= {"range", "sill", "nugget", "anisotropy"}
+
+
+def test_cell_aspect_is_the_default_anisotropy():
+    from groundwork_geophysics.core.gridding import cell_aspect
+    mesh = regular_mesh(4, 4, d=1.0)
+    mesh.vertices[:, 0] *= 3                                          # 3 m wide, 1 m tall
+    assert cell_aspect(mesh) == pytest.approx(3.0)

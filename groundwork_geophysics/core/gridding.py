@@ -1,7 +1,7 @@
 """Gridded display of section models: smooth fields, contour lines, coverage fade (no QGIS)."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -60,6 +60,8 @@ class Grid:
     values: np.ndarray      # (nz, nx) model values, nan where nothing is drawn
     cell: np.ndarray        # (nz, nx) mesh cell under each node, -1 outside the mesh,
     #                         ABOVE_GROUND above the topography
+    note: str = ""          # why the chosen method fell back to linear ("" when it did not)
+    fitted: dict = field(default_factory=dict)      # what the method fitted (kriging)
 
 
 def next_to_empty(grid, mesh) -> np.ndarray:
@@ -215,12 +217,54 @@ def _to_log(v: np.ndarray) -> np.ndarray:
     return np.log10(np.where(v > 0, v, np.nan))
 
 
+def cell_centres(mesh) -> np.ndarray:
+    """(n, 2) mean of each cell's own corners (a triangle's -1 left out). Once per mesh."""
+    memo = getattr(mesh, "_memo", {})
+    if "centres" not in memo:
+        c = mesh.cells
+        corners = mesh.vertices[np.maximum(c, 0)]                  # (n, 4, 2)
+        own = (c >= 0)[..., None]
+        memo["centres"] = (corners * own).sum(axis=1) / own.sum(axis=1)
+    return memo["centres"]
+
+
+def cell_aspect(mesh) -> float:
+    """Median cell width over median cell height: the default anisotropy of the gridding
+    methods (inversion meshes are wider than tall where the ground is layered)."""
+    v, c = mesh.vertices, mesh.cells
+    corners = v[np.maximum(c, 0)]
+    own = (c >= 0)[..., None]
+    big, small = np.where(own, corners, -np.inf), np.where(own, corners, np.inf)
+    size = big.max(axis=1) - small.min(axis=1)                    # (n, 2) width, height
+    w, h = float(np.median(size[:, 0])), float(np.median(size[:, 1]))
+    return max(w / h, 1e-3) if h > 0 else 1.0
+
+
+def _scattered(mesh, v, nodes, interp) -> tuple[np.ndarray, dict]:
+    """``interp``'s values at ``nodes`` (m, 2) from the cell centres with a value ``v``
+    (already in log10 on a log scale), and what it fitted. ValueError when it fails."""
+    from .interpolators import interpolate
+    ok = np.isfinite(v)
+    if not ok.any():
+        raise ValueError("no cell has a value")
+    aniso = interp.anisotropy or cell_aspect(mesh)
+    out, fitted = interpolate(cell_centres(mesh)[ok], v[ok], nodes, interp, aniso)
+    if not np.isfinite(out).all():
+        raise ValueError("it gave values that are not numbers")
+    return out, fitted
+
+
 def grid_model(mesh, topo, shape, log: bool, values=None,
-               fill_to_ground: bool = False) -> Grid:
+               fill_to_ground: bool = False, interp=None) -> Grid:
     """The mesh's values (or ``values`` per cell) on a regular grid. Cell values are
     averaged onto the mesh vertices and interpolated linearly inside each cell (in log10
     when ``log``). Nodes outside every cell, in a cell without a value, or above ``topo``
-    (s, z) stay nan: never extrapolates past the mesh or bridges gaps."""
+    (s, z) stay nan: never extrapolates past the mesh or bridges gaps.
+
+    ``interp`` (``core.interpolators.Interpolation``, None = linear) chooses another method:
+    the cell centres are interpolated onto the nodes that lie in a cell with a value; the
+    masks stay the same. A method that fails falls back to linear and says why in
+    ``Grid.note``."""
     nx, nz = shape
     smin, smax, zmin, zmax = mesh.bounds()
     s = np.linspace(smin, smax, nx)
@@ -267,6 +311,17 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
     bad = corner_nan[np.maximum(t.reshape(S.shape)[inside], 0)]
     out[inside] = np.where(bad, own, out[inside])          # next to empty cells: own value
     out[inside] = np.where(np.isfinite(own), out[inside], np.nan)      # empty cells stay empty
+    note, fitted = "", {}
+    if interp is not None and not interp.is_linear:
+        # another method: the same nodes (in a cell with a value), other values
+        nodes = inside & np.isfinite(out)
+        try:
+            new, fitted = _scattered(mesh, v, np.column_stack([S[nodes], Z[nodes]]), interp)
+            out[nodes] = new
+        except (ValueError, np.linalg.LinAlgError) as exc:
+            from .interpolators import METHOD_NAMES
+            note = (f"{METHOD_NAMES.get(interp.method, interp.method)} could not be used "
+                    f"here ({exc}): the field is gridded linearly instead.")
     if fill_to_ground and has_topo:
         # flat-topped cells leave steps under the ground line: fill each column upward from
         # its top valid node to the ground (the surface layer reaches the surface)
@@ -286,7 +341,7 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
         cell = np.where(above, ABOVE_GROUND, cell)
     if log:
         out = np.power(10.0, out)
-    return Grid(s, z, out, cell)
+    return Grid(s, z, out, cell, note, fitted)
 
 
 def _nice(x: float) -> float:

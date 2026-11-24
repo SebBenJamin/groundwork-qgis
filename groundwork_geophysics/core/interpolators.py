@@ -15,6 +15,8 @@ from dataclasses import asdict, astuple, dataclass
 import numpy as np
 
 METHODS = ("linear", "nearest", "idw", "spline", "kriging")
+METHOD_NAMES = {"linear": "Linear (mesh)", "nearest": "Nearest neighbour",
+                "idw": "Inverse distance", "spline": "Spline", "kriging": "Ordinary kriging"}
 KERNELS = ("thin_plate_spline", "cubic", "quintic", "multiquadric", "gaussian")
 VARIOGRAMS = ("spherical", "exponential", "gaussian")
 DEFAULT_NEIGHBOURS = {"nearest": 1, "idw": 12, "spline": 24, "kriging": 16}
