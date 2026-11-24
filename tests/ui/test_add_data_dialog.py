@@ -138,6 +138,26 @@ def test_map_file_creates_its_own_profile(qgis_app, make_dialog, project_store,
     assert d.reader_options["columns"]["position"] == "map"
 
 
+def test_map_file_rows_without_a_position_are_left_out_and_reported(
+        qgis_app, make_dialog, project_store, tmp_path, warnings_shown):
+    # exports write -9999 as easting/northing for cells past the surveyed line; a real
+    # 642 m line once became 3480 km long, running to (-9999, -9999)
+    path = tmp_path / "fill_coords.csv"
+    path.write_text((WILD / "east_north_depth_rho.csv").read_text()
+                    + "-9999,-9999,0.5,-9999\n-9999,-9999,1.5,120.0\n")
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    assert "2 rows have no map position (-9999)" in dlg.warning_label.text()
+    assert "without a value" not in dlg.summary_label.text()   # not counted as blank cells
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [p] = st.profiles()
+    assert p.chainage.length < 100.0                            # the 95 m line, not 3480 km
+    assert dlg.last_warning == ("2 rows of fill_coords.csv have no map position (-9999) "
+                                "and were left out.")
+
+
 def test_map_file_waits_for_the_line(qgis_app, make_dialog, project_store):
     st, prj = project_store
     dlg = make_dialog(st, project=prj)

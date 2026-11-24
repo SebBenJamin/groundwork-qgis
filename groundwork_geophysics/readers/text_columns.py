@@ -18,7 +18,8 @@ from pathlib import Path
 import numpy as np
 
 from ..core.roles import ModelColumns
-from .base import FILL_VALUE, Reader, ReaderResult, chosen_z_kind, fill_mask, mesh_from_points
+from .base import (FILL_VALUE, Reader, ReaderResult, _no_position, chosen_z_kind, fill_mask,
+                   mesh_from_points)
 from .texttable import TableOptions, guess_options, read_table, select_rows
 
 
@@ -73,7 +74,13 @@ def map_points(path, table: dict, columns: dict, max_rows: int | None = None) ->
     cols, arr, _skipped, _first = _rows(Path(path), table, columns, max_rows)
     if cols.position != "map":
         raise ValueError(f"{Path(path).name}: the file has no map coordinates")
-    return arr[:, :2]
+    return arr[_on_map(arr), :2]
+
+
+def _on_map(arr: np.ndarray) -> np.ndarray:
+    """True for rows of a map file whose easting and northing (columns 0, 1) are a position:
+    not the -9999 fill, which exports write for cells past the surveyed line."""
+    return ~(_no_position(arr[:, 0]) | _no_position(arr[:, 1]))
 
 
 def _depth_magnitude(z: np.ndarray, name: str) -> np.ndarray:
@@ -107,9 +114,18 @@ class TextColumnsReader(Reader):
             if xy_to_distance is None:
                 raise ValueError(f"{path.name}: a file with map coordinates needs a profile "
                                  "line to place it on")
-            placed = xy_to_distance(arr[:, 0], arr[:, 1])
-            x, offset = (np.asarray(a, dtype=float) for a in placed[:2])
+            # a -9999 easting or northing is no position: such rows are left unplaced
+            # (counted with the masked cells), never projected onto the line
+            on_map = _on_map(arr)
+            if not on_map.any():
+                raise ValueError(f"{path.name}: no row has a map position (all eastings or "
+                                 "northings are empty or -9999)")
+            placed = xy_to_distance(arr[on_map, 0], arr[on_map, 1])
+            x = np.full(len(arr), np.nan)
+            x[on_map] = np.asarray(placed[0], dtype=float)
+            offset = np.asarray(placed[1], dtype=float)
             beyond = np.asarray(placed[2], dtype=bool) if len(placed) > 2 else None
+            provenance["n_unplaced"] = int((~on_map).sum())
             provenance["max_offset"] = float(np.abs(offset).max())
             provenance["n_beyond"] = 0 if beyond is None else int(beyond.sum())
         else:
