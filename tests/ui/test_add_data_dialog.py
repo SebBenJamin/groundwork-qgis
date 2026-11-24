@@ -828,3 +828,17 @@ def test_a_small_table_shows_no_offer(qgis_app, make_dialog, project_store):
     dlg.set_file(WILD / "dist_y_rho_junk.txt")
     assert dlg.coarse_row.isHidden() and dlg.coarse_note.isHidden()
     assert "block" not in dlg._reader_options()
+
+
+def test_an_unticked_offer_stays_unticked_when_the_file_format_changes(
+        qgis_app, make_dialog, project_store, tmp_path):
+    # the user said no to coarser cells: choosing the delimiter by hand reads the same grid,
+    # so the box must not come back ticked
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_fine_export(tmp_path))
+    dlg.coarse_check.setChecked(False)
+    _index(dlg.table_options.delimiter_combo, "space")
+    assert dlg.table_options.options().delimiter == "space"
+    assert not dlg.coarse_row.isHidden() and not dlg.coarse_check.isChecked()
+    assert "block" not in dlg._reader_options()

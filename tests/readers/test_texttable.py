@@ -95,7 +95,6 @@ def test_a_clean_table_is_read_as_numbers_alone(tmp_path):
 
 
 @pytest.mark.parametrize("text, opts", [
-    ("a;b\n1,5;2\n", TableOptions("semicolon", decimal_comma=True)),     # decimal commas
     ("a,b\n1,2\n3\n", TableOptions()),                                  # a short row
     ("a,b\n1,2\n3,x\n", TableOptions()),                                # a text cell
     ("a,b\n1,2 # note\n", TableOptions()),                              # a comment in a row
@@ -107,3 +106,13 @@ def test_a_table_the_numbers_alone_cannot_read_is_left_to_the_text_table(tmp_pat
     p.write_text(text)
     assert read_numbers(p, opts) is None
     read_table(p, opts)                                 # which reads it as before
+
+
+@pytest.mark.parametrize("opts", [TableOptions("semicolon", decimal_comma=True),
+                                  TableOptions()])
+def test_decimal_commas_are_read_as_numbers_alone(tmp_path, opts):
+    # German exports: 1,25;3,4;120,5 (by "detect" too: a semicolon table reads commas as
+    # decimal points)
+    p = tmp_path / "comma.txt"
+    p.write_text("x;z;rho\n1,25;3,4;120,5\n1,5;3,5;-9999\n")
+    _numbers_match_the_text_table(p, opts)

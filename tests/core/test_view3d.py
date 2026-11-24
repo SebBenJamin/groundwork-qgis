@@ -269,3 +269,13 @@ def test_curtain_arrays_hold_the_same_cells_as_the_curtain_cells(threshold, gap,
             assert np.allclose(arr.back[k, :n], cell.faces[1])
         else:
             assert cell.faces == ()
+
+
+def test_the_faces_are_written_in_chunks_with_the_same_bytes(monkeypatch):
+    # 2 million cells at once took about 1 GB more: written a chunk of cells at a time
+    from groundwork_geophysics.core import view3d
+    a = view3d.curtain_arrays(_mixed_mesh(), L_SHAPE, np.full((5, 4), 255, np.uint8), None,
+                              0.5)
+    whole = view3d.faces_wkb(a)
+    monkeypatch.setattr(view3d, "_WKB_CHUNK", 1)
+    assert view3d.faces_wkb(a) == whole

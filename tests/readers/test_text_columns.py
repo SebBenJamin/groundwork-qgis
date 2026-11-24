@@ -301,3 +301,51 @@ def test_the_grid_of_a_big_file_is_found_and_a_small_one_is_not_read(tmp_path, m
         raise AssertionError("a small file is not read for its grid")
     monkeypatch.setattr(text_columns, "read_numbers", no_read)
     assert grid_of_file(small, NO_HEADER, DIST_ELEV.to_dict()) is None
+
+
+@pytest.mark.parametrize("bad_row", ["-9999 -1.0 50.0", "5.0 -9999 50.0"])
+def test_a_fill_distance_or_height_is_left_out_of_the_coarse_cells(tmp_path, bad_row):
+    # a -9999 distance or elevation is no position: it must not stretch a block to it
+    from groundwork_geophysics.readers.text_columns import grid_of_file
+    path = _lattice_file(tmp_path / "fill.txt", 40, 20)
+    path.write_text(path.read_text() + bad_row + "\n")
+    full = _read(path, DIST_ELEV)
+    coarse = _read(path, DIST_ELEV, block=[4, 5])
+    assert coarse.mesh.bounds() == pytest.approx(full.mesh.bounds(), abs=1e-9)
+    assert coarse.provenance["n_points_file"] == 800
+
+
+def test_a_coarsened_depth_model_hangs_from_the_surface_like_the_full_one(tmp_path):
+    # its first points lie 0.25 m deep: the full read's top edge is still depth 0
+    x, z = np.meshgrid(np.arange(40) * 0.25, np.arange(20) * 0.1 + 0.25)
+    path = tmp_path / "deep.txt"
+    np.savetxt(path, np.column_stack([x.ravel(), z.ravel(), np.full(x.size, 50.0)]),
+               fmt="%.4f")
+    cols = ModelColumns(distance=0, vertical=1, vertical_kind="depth", value=2)
+    full, coarse = _read(path, cols), _read(path, cols, block=[4, 5])
+    assert min(full.mesh.bounds()[2:]) == pytest.approx(0.0)
+    assert min(coarse.mesh.bounds()[2:]) == pytest.approx(0.0)
+
+
+def test_the_grid_check_never_reads_a_big_file_as_text(tmp_path, monkeypatch):
+    # a comment line keeps the fast reader out; the slow text read of millions of rows would
+    # freeze Add Data before the user chose anything, so there is simply no offer
+    from groundwork_geophysics.readers import text_columns
+    from groundwork_geophysics.readers.text_columns import grid_of_file
+    big = _lattice_file(tmp_path / "big.txt", 404, 250)
+    lines = big.read_text().splitlines(keepends=True)
+    big.write_text("".join(lines[:5000] + ["# a note in the middle\n"] + lines[5000:]))
+
+    def no_text(*_a, **_k):
+        raise AssertionError("read as text")
+    monkeypatch.setattr(text_columns, "read_table", no_text)
+    assert grid_of_file(big, NO_HEADER, DIST_ELEV.to_dict()) is None
+
+
+def test_points_that_form_no_grid_say_how_to_read_them_anyway(tmp_path):
+    rng = np.random.default_rng(2)
+    path = tmp_path / "scattered.txt"
+    np.savetxt(path, np.column_stack([rng.uniform(0, 50, 300), rng.uniform(-10, 0, 300),
+                                      np.full(300, 50.0)]), fmt="%.4f")
+    with pytest.raises(ValueError, match='untick "Read as cells of"'):
+        _read(path, DIST_ELEV, block=[2, 2])

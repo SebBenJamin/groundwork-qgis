@@ -75,11 +75,12 @@ def _coarse_mesh(path: Path, x, z, v, coverage, block, cols, kind: str, provenan
     from ..core.coarsen import coarsen_boxes, point_grid
     from ..core.section_mesh import SectionMesh
     from .base import coverage_values
-    placed = np.isfinite(x) & np.isfinite(z)
+    placed = ~(_no_position(x) | _no_position(z))        # -9999 or NaN: no position
     grid = point_grid(x[placed], z[placed])
     if grid is None:
         raise ValueError(f"{path.name}: the points are not on a regular grid, so they "
-                         "cannot be read as coarser cells")
+                         'cannot be read as coarser cells; untick "Read as cells of" in '
+                         "Add Data to read every point")
     fx, fz = (max(1, int(f)) for f in block)
     values = np.where(fill_mask(v), np.nan, v)[placed]
     cov = None
@@ -90,8 +91,10 @@ def _coarse_mesh(path: Path, x, z, v, coverage, block, cols, kind: str, provenan
     boxes, cv, ccov = coarsen_boxes(x[placed], z[placed], values, cov, (fx, fz), log)
     if not np.isfinite(cv).any():
         raise ValueError(f"{path.name}: no block of {fx} x {fz} points has a value")
-    if kind == "depth":
-        boxes[:, 2:] = np.maximum(boxes[:, 2:], 0.0)        # cells start at the surface
+    if kind == "depth" and z[placed].min() >= 0:
+        # as cell_boxes does: the shallowest row reaches up to the surface (depth 0)
+        boxes[np.abs(boxes[:, 2] - boxes[:, 2].min()) <= 1e-9, 2] = 0.0
+        boxes[:, 2:] = np.maximum(boxes[:, 2:], 0.0)
     verts, cells = quads(boxes)
     mesh = SectionMesh(verts, cells, cv, quantity=cols.quantity, unit=cols.unit,
                        coverage=None if ccov is None else coverage_values(ccov))
@@ -110,15 +113,17 @@ def grid_of_file(path, table: dict, columns: dict):
     if path.read_bytes().count(b"\n") <= OFFER_ABOVE:
         return None
     opts, cols = _options(path, table, columns)
-    tab = read_numbers(path, opts) or read_table(path, opts)
+    # numbers alone or nothing: reading millions of rows as text would freeze Add Data
+    tab = read_numbers(path, opts)
+    if tab is None:
+        return None
     k = 2 if cols.position == "map" else 1
     used = cols.used()[:k + 1]
     if any(not 0 <= i < tab.n_columns for i in used):
         return None
     arr = np.column_stack([tab.numeric(c) for c in used])
-    arr = arr[np.isfinite(arr).all(axis=1)]
+    arr = arr[~_no_position(arr).any(axis=1)]           # -9999 or NaN: no position
     if cols.position == "map":
-        arr = arr[_on_map(arr)]
         xy = arr[:, :2]
         # one complex number per position: a fast 1-D unique (axis=0 sorts raw rows)
         _u, first, inverse = np.unique(xy[:, 0] + 1j * xy[:, 1], return_index=True,

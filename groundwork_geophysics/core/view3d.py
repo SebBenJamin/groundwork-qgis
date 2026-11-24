@@ -246,6 +246,8 @@ def curtain_arrays(mesh, chainage, rgba, threshold: float | None, gap: float = 0
 
 
 _WKB_MULTIPOLYGON_Z, _WKB_POLYGON_Z = 1006, 1003
+#: cells whose WKB records are built at once (bounds the memory of a huge curtain)
+_WKB_CHUNK = 20_000
 
 
 def faces_wkb(a: CurtainArrays) -> list[bytes]:
@@ -259,18 +261,20 @@ def faces_wkb(a: CurtainArrays) -> list[bytes]:
                          dtype=[("o", "u1"), ("t", "<u4"), ("n", "<u4")]).tobytes()
         return [empty] * k
     for n in np.unique(a.points):
-        rows = np.flatnonzero(a.points == n)
         face = [("o", "u1"), ("t", "<u4"), ("r", "<u4"), ("n", "<u4"), ("p", "<f8", (int(n), 3))]
-        rec = np.zeros(len(rows), dtype=[("o", "u1"), ("t", "<u4"), ("n", "<u4"),
-                                         ("f", face), ("b", face)])
-        rec["o"], rec["t"], rec["n"] = 1, _WKB_MULTIPOLYGON_Z, 2
-        for name, pts in (("f", a.front), ("b", a.back)):
-            rec[name]["o"], rec[name]["t"], rec[name]["r"] = 1, _WKB_POLYGON_Z, 1
-            rec[name]["n"] = n
-            rec[name]["p"] = pts[rows, :int(n)]
-        raw, size = memoryview(rec.tobytes()), rec.dtype.itemsize
-        for j, row in enumerate(rows.tolist()):
-            out[row] = bytes(raw[j * size:(j + 1) * size])
+        dtype = np.dtype([("o", "u1"), ("t", "<u4"), ("n", "<u4"), ("f", face), ("b", face)])
+        same = np.flatnonzero(a.points == n)
+        for start in range(0, len(same), _WKB_CHUNK):
+            rows = same[start:start + _WKB_CHUNK]
+            rec = np.zeros(len(rows), dtype=dtype)
+            rec["o"], rec["t"], rec["n"] = 1, _WKB_MULTIPOLYGON_Z, 2
+            for name, pts in (("f", a.front), ("b", a.back)):
+                rec[name]["o"], rec[name]["t"], rec[name]["r"] = 1, _WKB_POLYGON_Z, 1
+                rec[name]["n"] = n
+                rec[name]["p"] = pts[rows, :int(n)]
+            raw, size = memoryview(rec).cast("B"), dtype.itemsize
+            for j, row in enumerate(rows.tolist()):
+                out[row] = bytes(raw[j * size:(j + 1) * size])
     return out
 
 

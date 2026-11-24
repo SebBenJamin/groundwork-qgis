@@ -378,7 +378,7 @@ class AddDataDialog(QDialog):
 
     def _sync_coarse(self, columns_ok: bool) -> None:
         """Offer coarser cells when the whole file's points form an over-fine grid; the
-        proposal is made again only for another file or other position/vertical columns."""
+        proposal is made again only for another file or a grid that differs."""
         grid, key = None, None
         if columns_ok:
             path = Path(self._path())
@@ -399,8 +399,10 @@ class AddDataDialog(QDialog):
             w.setVisible(block is not None)
         if block is None:
             return
-        if self._coarse_for != key:
-            self._coarse_for = key
+        # proposed (and ticked) again only for another file or another grid: a choice the
+        # user made stays when an option that reads the same grid changes
+        if self._coarse_for != (self._path(), grid):
+            self._coarse_for = (self._path(), grid)
             for spin, step, f in ((self.coarse_dx, grid.dx, block[0]),
                                   (self.coarse_dz, grid.dz, block[1])):
                 spin.setDecimals(next((d for d in range(3)        # 0.25 -> 2, 0.1 -> 1

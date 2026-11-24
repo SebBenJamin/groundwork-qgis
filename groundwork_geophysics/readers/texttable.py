@@ -155,8 +155,10 @@ def read_numbers(path, options: TableOptions = TableOptions()) -> NumericTable |
             return None
         first = head[1][0]
     body = text.split("\n", first - 1)[-1] if first > 1 else text
-    if (decimal and "," in body) or "#" in body or "//" in body:
+    if "#" in body or "//" in body:
         return None
+    if decimal:                         # commas are decimal points here (never the delimiter)
+        body = body.replace(",", ".")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error")              # an empty table: not for us
