@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from qgis.core import (Qgis, QgsFeature, QgsFillSymbol, QgsGeometry,
-                       QgsLineString, QgsLineSymbol, QgsMessageLog, QgsPoint, QgsPolygon,
+                       QgsLineString, QgsLineSymbol, QgsMessageLog, QgsPolygon,
                        QgsProject, QgsProperty, QgsSingleSymbolRenderer, QgsSymbolLayer,
                        QgsVectorLayer, QgsWkbTypes)
 from qgis.PyQt.QtCore import Qt
@@ -482,25 +482,25 @@ def _threshold(section_layer) -> float | None:
 
 
 def _model_features(layer, profile, dataset, section_layer, gap: float) -> list[QgsFeature]:
-    from qgis.core import QgsMultiPolygon
-
     from ..core.colors import ColorScale
-    from ..core.view3d import curtain_cells
+    from ..core.view3d import curtain_arrays, faces_wkb
     mesh = section_layer.mesh
     scale = section_layer.style.scale or ColorScale.auto(mesh.values)
-    cells = curtain_cells(mesh, profile.chainage, scale.rgba(mesh.values),
-                          _threshold(section_layer), gap,
-                          keep_faded=section_layer.style.fade_mode != "blank")
+    cells = curtain_arrays(mesh, profile.chainage, scale.rgba(mesh.values),
+                           _threshold(section_layer), gap,
+                           keep_faded=section_layer.style.fade_mode != "blank")
+    fields = layer.fields()
+    head = [profile.id, profile.name, dataset.id, dataset.name or dataset.id]
+    colours = ["#%02x%02x%02x" % tuple(rgb) for rgb in cells.rgb.tolist()]
     out = []
-    for cell in cells:
-        f = QgsFeature(layer.fields())
-        both = QgsMultiPolygon()
-        for face in cell.faces:
-            both.addGeometry(QgsPolygon(QgsLineString([QgsPoint(*p) for p in face])))
-        f.setGeometry(QgsGeometry(both))
-        f.setAttributes([profile.id, profile.name, dataset.id, dataset.name or dataset.id,
-                         cell.value, cell.coverage, int(cell.resolved),
-                         QColor(*cell.rgb).name(), int(cell.faded)])
+    for wkb, value, cov, resolved, colour, faded in zip(
+            faces_wkb(cells), cells.value.tolist(), cells.coverage.tolist(),
+            cells.resolved.astype(int).tolist(), colours, cells.faded.astype(int).tolist()):
+        f = QgsFeature(fields)
+        geometry = QgsGeometry()
+        geometry.fromWkb(wkb)
+        f.setGeometry(geometry)
+        f.setAttributes(head + [value, cov, resolved, colour, faded])
         out.append(f)
     return out
 

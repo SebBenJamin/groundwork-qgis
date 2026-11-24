@@ -180,52 +180,112 @@ class BoreholeInterval:
     rgb: tuple
 
 
-def curtain_cells(mesh, chainage, rgba, threshold: float | None,
-                  gap: float = 0.0, keep_faded: bool = False) -> list[CurtainCell]:
+@dataclass(frozen=True)
+class CurtainArrays:
+    """A model's curtain cells as arrays (``curtain_arrays``), one row per kept cell."""
+    index: np.ndarray           # (k,) the mesh cells kept
+    points: np.ndarray          # (k,) points of each closed ring: 4 (triangle) or 5 (quad)
+    ring: np.ndarray            # (k, 5, 3) closed rings (x, y, z), padded with their last point
+    front: np.ndarray | None    # (k, 5, 3) with a gap: the face that stands gap to the left
+    back: np.ndarray | None     # (k, 5, 3) and its reversed copy gap to the right
+    value: np.ndarray
+    coverage: np.ndarray        # nan when the model has none
+    resolved: np.ndarray        # bool
+    rgb: np.ndarray             # (k, 3) uint8
+    faded: np.ndarray           # bool
+
+
+def curtain_arrays(mesh, chainage, rgba, threshold: float | None, gap: float = 0.0,
+                   keep_faded: bool = False) -> CurtainArrays:
     """``mesh`` (chainage s, elevation z) as 3D cells under ``chainage``'s line; ``rgba``: one
     uint8 row per cell (``ColorScale.rgba``). With a ``threshold`` (the section fades low
     coverage), cells whose finite coverage is below it are left out, or with ``keep_faded``
     (the section fades rather than blanks them) kept and marked ``faded``; without one, every
     cell is kept and ``resolved`` says how it compares with the model's default threshold.
-    With a ``gap``, each cell also comes as two faces standing that far back on either
-    side."""
+    Cells the section leaves out (no value, clear) are left out. With a ``gap``, each cell
+    also comes as two faces standing that far back on either side (see ``two_faces``)."""
     verts = np.asarray(mesh.vertices, float)
     xy = np.atleast_2d(chainage.to_xy(verts[:, 0]))
     z = verts[:, 1]
-    if gap > 0:                                     # per vertex, so neighbours share it
-        side = left_normals(chainage, verts[:, 0]) * gap
-        front_xy, back_xy = xy + side, xy - side
-    coverage = None if mesh.coverage is None else np.asarray(mesh.coverage, float)
+    cells = np.asarray(mesh.cells, int)
+    cov = (np.full(len(cells), np.nan) if mesh.coverage is None
+           else np.asarray(mesh.coverage, float))
     cut = threshold
-    if cut is None and coverage is not None:
-        cut = default_threshold(coverage, getattr(mesh, "coverage_cut", None))
+    if cut is None and mesh.coverage is not None:
+        cut = default_threshold(cov, getattr(mesh, "coverage_cut", None))
+    with np.errstate(invalid="ignore"):
+        resolved = np.ones(len(cells), bool) if cut is None else ~np.isfinite(cov) | (cov >= cut)
+    faded = ~resolved if threshold is not None else np.zeros(len(cells), bool)
+    keep = ~faded | keep_faded
     colours = np.asarray(rgba)
-    out = []
-    for i, cell in enumerate(np.asarray(mesh.cells, int)):
-        cov = math.nan if coverage is None else float(coverage[i])
-        resolved = cut is None or not math.isfinite(cov) or cov >= cut
-        faded = threshold is not None and not resolved
-        if faded and not keep_faded:
-            continue
-        if colours.shape[1] > 3 and colours[i][3] == 0:
-            continue                        # the section leaves it out (no value, clear)
-        idx = [int(k) for k in cell if k >= 0]
-        ring = [(float(xy[k, 0]), float(xy[k, 1]), float(z[k])) for k in idx]
-        ring.append(ring[0])
-        faces = ()
-        if gap > 0:
-            s_, z_ = verts[idx, 0], verts[idx, 1]
-            if float(np.sum(s_ * np.roll(z_, -1) - np.roll(s_, -1) * z_)) < 0:
-                idx = idx[::-1]                     # counter-clockwise in (s, z): faces right
-            front = [(float(front_xy[k, 0]), float(front_xy[k, 1]), float(z[k])) for k in idx]
-            back_idx = [idx[0]] + idx[:0:-1]
-            back = [(float(back_xy[k, 0]), float(back_xy[k, 1]), float(z[k]))
-                    for k in back_idx]
-            faces = (front + front[:1], back + back[:1])
-        r, g, b = (int(c) for c in colours[i][:3])
-        out.append(CurtainCell(ring, float(mesh.values[i]), cov, resolved, (r, g, b), faces,
-                               faded))
+    if colours.shape[1] > 3:
+        keep &= colours[:, 3] != 0              # the section leaves it out (no value, clear)
+    index = np.flatnonzero(keep)
+    c = cells[index]
+    quad = c[:, 3] >= 0
+
+    def rings(order_quad, order_tri, at):
+        idx = np.where(quad[:, None], order_quad, order_tri)
+        return np.stack([at[idx, 0], at[idx, 1], z[idx]], axis=-1)
+
+    ring = rings(c[:, [0, 1, 2, 3, 0]], c[:, [0, 1, 2, 0, 0]], xy)
+    front = back = None
+    if gap > 0:                                 # per vertex, so neighbours share it
+        side = left_normals(chainage, verts[:, 0]) * gap
+        corner = np.where(quad[:, None], c[:, :4], c[:, [0, 1, 2, 2]])
+        s_, z_ = verts[corner, 0], verts[corner, 1]
+        area = np.sum(s_ * np.roll(z_, -1, 1) - np.roll(s_, -1, 1) * z_, axis=1)
+        cw = (area < 0)[:, None]                # counter-clockwise in (s, z): faces right
+        o = np.where(quad[:, None], np.where(cw, c[:, [3, 2, 1, 0]], c[:, :4]),
+                     np.where(cw, c[:, [2, 1, 0, 0]], c[:, [0, 1, 2, 0]]))
+        front = rings(o[:, [0, 1, 2, 3, 0]], o[:, [0, 1, 2, 0, 0]], xy + side)
+        back = rings(o[:, [0, 3, 2, 1, 0]], o[:, [0, 2, 1, 0, 0]], xy - side)
+    return CurtainArrays(index, np.where(quad, 5, 4), ring, front, back,
+                         np.asarray(mesh.values, float)[index], cov[index], resolved[index],
+                         colours[index, :3].astype(np.uint8), faded[index])
+
+
+_WKB_MULTIPOLYGON_Z, _WKB_POLYGON_Z = 1006, 1003
+
+
+def faces_wkb(a: CurtainArrays) -> list[bytes]:
+    """Each kept cell of ``a`` as a MultiPolygon Z of its two faces, in ISO WKB
+    (little-endian); without faces (no gap) an empty MultiPolygon Z. Built a few thousand
+    cells at a time in NumPy, one record type per ring size."""
+    k = len(a.index)
+    out: list[bytes] = [b""] * k
+    if a.front is None:
+        empty = np.array([(1, _WKB_MULTIPOLYGON_Z, 0)],
+                         dtype=[("o", "u1"), ("t", "<u4"), ("n", "<u4")]).tobytes()
+        return [empty] * k
+    for n in np.unique(a.points):
+        rows = np.flatnonzero(a.points == n)
+        face = [("o", "u1"), ("t", "<u4"), ("r", "<u4"), ("n", "<u4"), ("p", "<f8", (int(n), 3))]
+        rec = np.zeros(len(rows), dtype=[("o", "u1"), ("t", "<u4"), ("n", "<u4"),
+                                         ("f", face), ("b", face)])
+        rec["o"], rec["t"], rec["n"] = 1, _WKB_MULTIPOLYGON_Z, 2
+        for name, pts in (("f", a.front), ("b", a.back)):
+            rec[name]["o"], rec[name]["t"], rec[name]["r"] = 1, _WKB_POLYGON_Z, 1
+            rec[name]["n"] = n
+            rec[name]["p"] = pts[rows, :int(n)]
+        raw, size = memoryview(rec.tobytes()), rec.dtype.itemsize
+        for j, row in enumerate(rows.tolist()):
+            out[row] = bytes(raw[j * size:(j + 1) * size])
     return out
+
+
+def curtain_cells(mesh, chainage, rgba, threshold: float | None,
+                  gap: float = 0.0, keep_faded: bool = False) -> list[CurtainCell]:
+    """``curtain_arrays`` as one ``CurtainCell`` per kept cell."""
+    a = curtain_arrays(mesh, chainage, rgba, threshold, gap, keep_faded)
+
+    def points(arr, k):
+        return [tuple(float(v) for v in p) for p in arr[k, :int(a.points[k])]]
+    return [CurtainCell(points(a.ring, k), float(a.value[k]), float(a.coverage[k]),
+                        bool(a.resolved[k]), tuple(int(v) for v in a.rgb[k]),
+                        () if a.front is None else (points(a.front, k), points(a.back, k)),
+                        bool(a.faded[k]))
+            for k in range(len(a.index))]
 
 
 def borehole_intervals(point, surface_z: float | None, colour_of) -> list[BoreholeInterval]:

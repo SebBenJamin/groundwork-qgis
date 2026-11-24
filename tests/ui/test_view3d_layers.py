@@ -1596,3 +1596,30 @@ def test_a_borehole_name_layer_removed_by_hand_stays_removed(setup):
     assert not borehole_names_3d(prj)
     sync(st, provider, prj, create=True)             # OK in Show in 3D brings it back
     assert borehole_names_3d(prj)
+
+
+def test_each_cell_is_its_two_faces_with_its_value(setup):
+    # the cells' geometry is written in bulk (one QgsPoint per corner took 26 s for a
+    # 370 000-cell model); it must stay the cell's two faces, cell by cell
+    from qgis.core import QgsGeometry, QgsLineString, QgsMultiPolygon, QgsPoint, QgsPolygon
+
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.view3d import curtain_cells, curtain_gap
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    lyr = sync(st, provider, prj, create=True)["models"]
+    la = provider.layers(p.id)[0]
+    scale = la.style.scale or ColorScale.auto(la.mesh.values)
+    cells = curtain_cells(la.mesh, p.chainage, scale.rgba(la.mesh.values), None,
+                          curtain_gap(p.chainage.length))
+    want = []
+    for cell in cells:
+        both = QgsMultiPolygon()
+        for face in cell.faces:
+            both.addGeometry(QgsPolygon(QgsLineString([QgsPoint(*q) for q in face])))
+        want.append(QgsGeometry(both).asWkt(6))
+    features = list(lyr.getFeatures())
+    assert [f.geometry().asWkt(6) for f in features] == want
+    assert [f["value"] for f in features] == [c.value for c in cells]
+    assert [f["color"] for f in features] == ["#%02x%02x%02x" % c.rgb for c in cells]
