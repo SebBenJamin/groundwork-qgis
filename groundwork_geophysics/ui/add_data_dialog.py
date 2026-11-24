@@ -111,7 +111,9 @@ def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) 
             (f"values {format_value(values.min())} – {format_value(values.max())} "
              f"{unit_label(mesh.unit)}".rstrip()
              if len(values) else "no values"))
-    n_masked = int(result.provenance.get("n_masked") or 0)
+    # rows without a map position are reported as such (unplaced_text), not as blank cells
+    n_masked = int(result.provenance.get("n_masked") or 0) - \
+        int(result.provenance.get("n_unplaced") or 0)
     if n_masked and result.provenance.get("reconstruction") == "delaunay":
         text += f" · {n_masked} fill/NaN values skipped"
     elif n_masked:
@@ -121,6 +123,15 @@ def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) 
         text += (f" · {n_skipped} {'row' if n_skipped == 1 else 'rows'} skipped "
                  f"(line {result.provenance.get('first_skipped_line')})")
     return text + (f" (first {sample} rows)" if sample else "")
+
+
+def unplaced_rows(provenance: dict) -> int:
+    """Rows of a map file left out because their easting or northing is -9999."""
+    return int(provenance.get("n_unplaced") or 0)
+
+
+def _rows_word(n: int) -> str:
+    return f"{n} {'row' if n == 1 else 'rows'}"
 
 
 def _remembered() -> dict | None:
@@ -568,6 +579,11 @@ class AddDataDialog(QDialog):
         self.placement.set_guessed_spacing(float(np.median(np.diff(guess)))
                                            if guess.size >= 2 else None)
         warnings = [self._line_error] if on_map and self._line_error else []
+        unplaced = unplaced_rows(result.provenance)
+        if on_map and unplaced:
+            n = _rows_word(unplaced)
+            warnings.append(f"{n} {'has' if unplaced == 1 else 'have'} no map position "
+                            "(-9999) and will be left out.")
         try:
             placement = self.placement.placement()
             profile, sets, new_set = self._draft()
@@ -721,6 +737,12 @@ class AddDataDialog(QDialog):
             except NotRefreshed as exc:             # saved: never reported as a failure
                 self.profile, self.dataset = exc.saved
                 self._warn(str(exc))
+            # the preview read a sample: the whole file's count is known only now
+            unplaced = unplaced_rows(self.dataset.provenance)
+            if unplaced:
+                self._warn(f"{_rows_word(unplaced)} of {Path(path).name} "
+                           f"{'has' if unplaced == 1 else 'have'} no map position (-9999) "
+                           f"and {'was' if unplaced == 1 else 'were'} left out.")
             self.created = placement.profile_id is None
         except Exception as exc:                    # noqa: BLE001 - a slot never raises
             self._error(plain_error(exc, path or None, CHOOSE_OTHER, MISSING_FILE))

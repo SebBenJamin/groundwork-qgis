@@ -155,6 +155,37 @@ def test_map_points_are_the_usable_rows():
     assert xy[0].tolist() == [437702.17, 5850701.25]
 
 
+def _with_unplaced_rows(tmp_path) -> Path:
+    """The map fixture plus rows whose easting/northing is the -9999 fill (one with a value),
+    as exports write the cells past the surveyed line (a real Res2DInv-style CSV)."""
+    path = tmp_path / "fill_coords.csv"
+    text = (WILD / "east_north_depth_rho.csv").read_text()
+    path.write_text(text + "-9999,-9999,0.5,-9999\n-9999,-9999,1.5,120.0\n"
+                    "437784.44,-9999,3.0,130.0\n")
+    return path
+
+
+def test_map_points_leave_out_fill_coordinates(tmp_path):
+    # a -9999 position is no position: it must not pull the profile line off to (-9999, -9999)
+    xy = map_points(_with_unplaced_rows(tmp_path), {}, MAP_COLS)
+    assert xy.shape == (60, 2) and (xy > 0).all()
+
+
+def test_map_file_rows_with_fill_coordinates_are_not_placed(tmp_path):
+    seen = []
+
+    def project(e, n):
+        seen.append(np.column_stack([e, n]))
+        return e - 437702.17, np.zeros_like(e)
+    r = readers.read(_with_unplaced_rows(tmp_path), reader="text_columns", table={},
+                     columns=MAP_COLS, xy_to_distance=project)
+    assert (np.concatenate(seen) > 0).all()            # never asked to place a fill
+    lo, hi = r.mesh.bounds()[:2]
+    assert lo > -5 and hi < 100                         # the 60 real cells only
+    assert r.provenance["n_masked"] >= 2                # the two with a value, counted
+    assert r.provenance["n_unplaced"] == 3              # reported on their own
+
+
 def test_max_rows_reads_only_the_first_rows():
     # the Add Data preview reads a sample; the whole file is read when it is added
     cols = ModelColumns(distance=0, vertical=1, vertical_kind="elevation", value=2)
