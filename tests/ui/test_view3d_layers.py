@@ -1623,3 +1623,28 @@ def test_each_cell_is_its_two_faces_with_its_value(setup):
     assert [f.geometry().asWkt(6) for f in features] == want
     assert [f["value"] for f in features] == [c.value for c in cells]
     assert [f["color"] for f in features] == ["#%02x%02x%02x" % c.rgb for c in cells]
+
+
+def test_which_profiles_show_boreholes_is_known_without_the_ties(setup, monkeypatch):
+    # Show in 3D… asks this for every profile before it opens: building the ties read the
+    # crossing profiles' models (seconds each on a big project)
+    from groundwork_geophysics.ui.view3d_layers import profiles_with_boreholes
+    st, p, provider, _prj = setup
+
+    calls = []
+    monkeypatch.setattr(provider, "ties", lambda *_a, **_k: calls.append(1) or [])
+    assert profiles_with_boreholes(st, provider) == {p.id}
+    assert calls == []
+
+
+def test_which_profiles_show_boreholes_asks_only_for_the_boreholes(setup):
+    from groundwork_geophysics.ui.view3d_layers import profiles_with_boreholes
+    st, p, provider, _prj = setup
+
+    def whole(_profile):
+        raise AssertionError("whole context gathered")
+    provider.context_source = whole
+    provider.borehole_source = lambda profiles: {q.id: [("layer", "B1")] for q in profiles}
+    assert profiles_with_boreholes(st, provider) == {p.id}
+    provider.borehole_source = lambda profiles: {q.id: [] for q in profiles}
+    assert profiles_with_boreholes(st, provider) == set()

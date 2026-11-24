@@ -1477,16 +1477,11 @@ def profiles_with_boreholes_of(provider, profile_ids) -> set:
     """Those of ``profile_ids`` whose section shows boreholes (a profile whose context cannot
     be gathered just now counts as one that may: it is not left out for a passing
     error)."""
-    out = set()
-    for pid in profile_ids:
-        try:
-            items = provider.drawn_context(pid)
-        except Exception:
-            out.add(pid)
-            continue
-        if items is not None and any(p.kind == "borehole" for p in items.points):
-            out.add(pid)
-    return out
+    ids = list(profile_ids)
+    try:
+        return provider.profiles_showing_boreholes(ids)
+    except Exception:                       # cannot tell just now: none is left out
+        return set(ids)
 
 
 def _disc(x: float, y: float, z: float, radius: float, sides: int = 16) -> QgsPolygon:

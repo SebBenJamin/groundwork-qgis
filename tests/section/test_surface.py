@@ -279,3 +279,18 @@ def test_the_ground_of_an_export_rectangle_is_the_top_of_its_values(tmp_path):
     assert float(np.interp(1.0, *s.line)) == pytest.approx(250.0)     # the lowest column
     assert float(np.interp(9.0, *s.line)) == pytest.approx(252.0)     # the highest
     assert s.line[1].min() == pytest.approx(250.0)
+
+
+def test_a_profile_with_an_elevation_model_has_heights_without_reading_it(tmp_path,
+                                                                           monkeypatch):
+    # Show in 3D… asks every profile whether it is local before it opens; reading each model
+    # for that took 55 s on an 11-line project
+    st, p = _drawn(tmp_path)
+    _add(st, p, _columns(tmp_path / "elev.txt", [250.0, 251.0]), "text_columns",
+         _text("elevation"), "e")
+    provider = SectionDataProvider(st)
+
+    def no_read(*_a, **_k):
+        raise AssertionError("model read")
+    monkeypatch.setattr(provider, "_read", no_read)
+    assert not provider.is_local(p.id)

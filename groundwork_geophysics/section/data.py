@@ -493,6 +493,10 @@ class SectionDataProvider:
         #: profile shown in the section panel; wins when several profiles share a curve.
         #: Set and read on the main thread only (snapshots stay plain data).
         self.active_profile_id: str | None = None
+        #: profiles -> {profile id: ``borehole_key`` of each borehole near it (None without
+        #: an id)}, read from the borehole layers alone (``ContextGatherer.borehole_keys``);
+        #: None: the whole context is gathered instead
+        self.borehole_source: Callable[[list], dict] | None = None
         self._styles: dict[str, LayerStyle] = {}
         self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
         self._readings_seen: set[str] = set()
@@ -698,9 +702,25 @@ class SectionDataProvider:
         return self._surface_of(self._build(profile_id))
 
     def is_local(self, profile_id: str) -> bool:
-        """True when the profile has no real heights: its section is drawn in depth."""
+        """True when the profile has no real heights: its section is drawn in depth. Known
+        without reading a model when the stations have heights or a model is stored as an
+        elevation model (Show in 3D… asks every profile; reading each model took a minute
+        on a big project)."""
+        if self._has_heights(profile_id):
+            return False
         surface = self.surface(profile_id)
         return surface is not None and surface.local
+
+    def _has_heights(self, profile_id: str) -> bool:
+        """Stations with heights, or a model stored as an elevation model (not readings)."""
+        from ..core.dataset_types import READINGS_KINDS
+        if self._profile(profile_id) is None:
+            return False
+        if station_line(self.store.station_sets(profile_id)) is not None:
+            return True
+        return any(d.kind not in READINGS_KINDS
+                   and (d.reader_options or {}).get("z_kind") == "elevation"
+                   for d in self.store.datasets(profile_id))
 
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
         """The line of ``surface(profile_id)``; None only for an unknown profile."""
@@ -1101,6 +1121,32 @@ class SectionDataProvider:
             items = replace(items, points=[p for p in items.points
                                            if borehole_key(p) not in hidden])
         return items
+
+    def profiles_showing_boreholes(self, profile_ids) -> set[str]:
+        """Those of ``profile_ids`` whose section draws a borehole: near the line, not
+        hidden there, not a local section. The ties are not built (they read the crossing
+        profiles' models); a profile whose context is not gathered yet is answered from the
+        borehole layers alone (``borehole_source``), all such profiles in one go: gathering
+        whole contexts read live geology strips and the DEM too, a minute on a big project."""
+        out, light = set(), []
+        for pid in profile_ids:
+            profile = self._profile(pid)
+            if profile is None or self.is_local(pid):
+                continue
+            if self.borehole_source is not None and not self._gathered.has(pid):
+                light.append(profile)
+                continue
+            hidden = self.hidden_keys(pid)
+            if any(p.kind == "borehole" and borehole_key(p) not in hidden
+                   for p in self._items(profile).points):
+                out.add(pid)
+        if light:
+            keys = self.borehole_source(light)
+            for profile in light:
+                hidden = self.hidden_keys(profile.id)
+                if any(k is None or k not in hidden for k in keys.get(profile.id, [])):
+                    out.add(profile.id)
+        return out
 
     def drawn_context(self, profile_id: str, include_hidden: bool = False
                       ) -> ContextItems | None:

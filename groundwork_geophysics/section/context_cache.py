@@ -20,6 +20,10 @@ class GatheredContext:
     def clear(self) -> None:
         self._items.clear()
 
+    def has(self, profile_id: str) -> bool:
+        """The profile's items are gathered already (cached)."""
+        return profile_id in self._items
+
     def set_borehole_views(self, views: dict) -> None:
         for items in self._items.values():
             items.borehole_views = dict(views)

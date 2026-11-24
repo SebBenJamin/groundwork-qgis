@@ -263,6 +263,7 @@ class WorkbenchPlugin:
                                             on_change=self.provider.notify_changed,
                                             exclude=lambda: own_layer_ids(store, project))
             self.provider.context_source = self.gatherer.items_for
+            self.provider.borehole_source = self.gatherer.borehole_keys
             self.provider.interp_layers = lambda: interp_layers(store, project)
             self.style_watch = StyleWatch(project, partial(_own_styled_layers, store, project),
                                           self.provider.notify_redraw)
@@ -314,6 +315,7 @@ class WorkbenchPlugin:
             self.style_watch = None
         if self.provider is not None:
             self.provider.context_source = None
+            self.provider.borehole_source = None
         if self.gatherer is not None:
             self.gatherer.close()
             self.gatherer = None
