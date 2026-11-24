@@ -108,6 +108,8 @@ class ContextDialog(QDialog):
 
         # Lines: crossing line layers, and how near two profiles must pass to be tied
         self.lines = CrossingLinesGroup(self.project, exclude)
+        self.lines.setObjectName("crossing_lines")
+        self.near_miss_spin.setObjectName("tie_distance")
         ties = QFormLayout()
         ties.addRow("Tie profiles that pass within (m)", self.near_miss_spin)
         self._add_tab("Lines", [self.lines], ties)
@@ -122,9 +124,11 @@ class ContextDialog(QDialog):
         self._add_tab("Boreholes", [self.boreholes])
 
         self.strips = StripRows(self.project, by_geom["polygon"])
+        self.strips.setObjectName("surface_strips")
         self.dem_combo = QComboBox()
         fill_layer_combo(self.dem_combo, rasters)
         dem_box = QGroupBox("DEM")
+        dem_box.setObjectName("dem_box")
         dem_form = QFormLayout(dem_box)
         dem_form.addRow("Raster layer", self.dem_combo)
         dem_form.addRow("Warn when station and DEM heights differ by more than (m)",

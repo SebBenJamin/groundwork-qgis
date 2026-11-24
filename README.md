@@ -62,7 +62,7 @@ columns. Aerial image: © GDI-Th, dl-de/by-2-0.*
 | Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
-The background maps and the Gülpe state layers load from the internet. Opening a demo writes
+The background maps and the Gülpe geology maps load from the internet. Opening a demo writes
 to its Groundwork file; keep a copy of the folder if you want to start over.
 
 <p align="center">
@@ -90,13 +90,20 @@ The documentation is on its own site, with search:
 **https://sebbenjamin.github.io/groundwork-qgis/**
 
 The same pages, in the repository:
-- How-tos: [Add data](docs/user/howto/add-data.md) ·
+- [First steps with the Gülpe demo](docs/user/first-steps.md)
+- How-tos: [Projects and profiles](docs/user/howto/projects-and-profiles.md) ·
+  [Add data](docs/user/howto/add-data.md) ·
+  [The section panel](docs/user/howto/section-panel.md) ·
+  [Seismic refraction](docs/user/howto/seismic-refraction.md) ·
   [Placement on the electrodes](docs/user/howto/placement.md) ·
   [Reference height](docs/user/howto/reference-height.md) ·
   [Boreholes and logs](docs/user/howto/boreholes.md) ·
+  [Geology, crossing lines and ties](docs/user/howto/context.md) ·
+  [Interpretation](docs/user/howto/interpretation.md) ·
   [Field notes](docs/user/howto/field-notes.md) · [Dataset info](docs/user/howto/dataset-info.md) ·
   [Report plates](docs/user/howto/plates.md) · [The 3D view](docs/user/howto/3d-view.md)
-- Data formats: [Borehole tables](docs/user/formats/borehole-tables.md) ·
+- Data formats: [Methods and formats](docs/user/formats/overview.md) ·
+  [Borehole tables](docs/user/formats/borehole-tables.md) ·
   [Plate templates](docs/user/formats/plate-templates.md)
 - [Troubleshooting](docs/user/troubleshooting.md)
 - [What changed in each release](docs/releases/), latest: [0.14.2](docs/releases/0.14.2.md)
@@ -144,8 +151,8 @@ details.
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
   https://doi.org/10.1016/j.dib.2025.112372.
-- Boreholes (Bohrpunktkarte) and geology (Geologische Karte 1 : 25 000, and the GÜK300
-  switched off on the map; both drawn as strips on the section), live WFS: © LBGR,
+- Boreholes (Bohrpunktkarte, a local copy) and geology (Geologische Karte 1 : 25 000, and the
+  GÜK300 switched off on the map; both drawn as strips on the section, live WFS): © LBGR,
   dl-de/by-2-0.
 - DGM1 terrain model (tiles merged and cropped) and DOP20 aerial images (live WMS):
   © GeoBasis-DE/LGB, dl-de/by-2-0.

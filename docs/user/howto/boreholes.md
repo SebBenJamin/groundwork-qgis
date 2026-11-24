@@ -47,6 +47,8 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
 **The borehole viewer** shows the boreholes of the profile open in the section panel side by side. Open it with **Groundwork › Show Borehole Viewer**, or click a column in the section (that borehole is then framed).
 
+![The borehole viewer with the cores of Transect 3 in the Gülpe demo, at their true distance and height, with the ground line](../../images/howto/borehole-viewer.png)
+
 - **VE Auto** (the default with true distance) stretches the columns to fill the window; the box shows the value it chose, e.g. "Auto (46×)". Type a number to keep a fixed exaggeration.
 - **Even** spacing moves the columns closer together until they fit the window. When they still do not fit, the line under the view counts the ones out of sight, e.g. "4 more boreholes to the right (drag to see them)".
 - **Layer text** in thin layers is spread apart, with a short line to its layer; in a column too short for all of it, the thinnest layers' text is left out (hover over the column to read it). The section draws layer text the same way.

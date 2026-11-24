@@ -30,6 +30,7 @@ CORNER_OUT = 6              # a corner marker's centre lies this far outside its
 MARK_COLOR = "#009485"      # the site's teal (mkdocs.yml: primary)
 DIALOG_WIDTH = 760
 PLATES_WIDTH = 980          # the dialog's own width: all columns of the frames table show
+TIES_WIDTH = 560
 TABLE_SOURCE = "data/ert/P1/f001_res.dat"       # distance, elevation, resistivity, log10
 TABLE = "data/ert/P1/P1_table.csv"
 TABLE_HEADER = "Distance [m],Elevation [m],Rho [ohm.m]"
@@ -308,6 +309,51 @@ def show_in_3d_dialog(plugin, demo: Path):
     return dialog
 
 
+def new_profile_dialog(plugin, demo: Path):
+    """New Profile, as it opens."""
+    from groundwork_geophysics.ui.new_profile_dialog import NewProfileDialog
+    dialog = NewProfileDialog(plugin.iface, plugin.store, provider=plugin.provider)
+    dialog.show()
+    return dialog
+
+
+def _context_tab(plugin, title: str):
+    plugin.edit_context()
+    dialog = plugin._context_dialog
+    if dialog is None:
+        raise RuntimeError("the Context layers dialog did not open")
+    tabs = dialog.tabs
+    index = next((i for i in range(tabs.count()) if tabs.tabText(i) == title), -1)
+    if index < 0:
+        raise RuntimeError(f"Context layers has no {title} tab")
+    tabs.setCurrentIndex(index)
+    return dialog
+
+
+def context_lines_dialog(plugin, demo: Path):
+    """Context Layers on its Lines tab: crossing line layers and the tie distance."""
+    return _context_tab(plugin, "Lines")
+
+
+def context_band_dialog(plugin, demo: Path):
+    """Context Layers on its Band and DEM tab: the surface strips and the DEM."""
+    return _context_tab(plugin, "Band and DEM")
+
+
+def ties_panel(plugin, demo: Path):
+    """Profile ties, floating, with the first tie selected (its plot drawn)."""
+    plugin.show_section_panel()
+    plugin.show_ties_panel()
+    panel = plugin.ties_panel
+    if panel is None or panel.table.rowCount() == 0:
+        raise RuntimeError("the demo has no profile ties")
+    panel.setFloating(True)
+    panel.resize(TIES_WIDTH, 640)
+    panel.table.selectRow(0)
+    panel.reject = panel.close              # closed like the dialogs
+    return panel
+
+
 def _profile_id(plugin) -> str:
     by_name = {p.name: p.id for p in plugin.store.profiles()}
     if PROFILE not in by_name:
@@ -343,6 +389,14 @@ PICTURES = (
     Picture("show-in-3d", "user/howto/3d-view.md", show_in_3d_dialog,
             ("view3d_tree", "select_all", "interp_check", "sizes_box", "apply_button"),
             width=560),
+    Picture("new-profile", "user/howto/projects-and-profiles.md", new_profile_dialog,
+            ("profile_name", "placement", "reverse_check"), width=620),
+    Picture("context-layers-lines", "user/howto/context.md", context_lines_dialog,
+            ("crossing_lines", "tie_distance", "search_distance")),
+    Picture("context-layers-band", "user/howto/context.md", context_band_dialog,
+            ("surface_strips", "dem_box")),
+    Picture("profile-ties", "user/howto/context.md", ties_panel,
+            ("ties_table", "ties_show", "ties_plot"), width=TIES_WIDTH),
 )
 
 

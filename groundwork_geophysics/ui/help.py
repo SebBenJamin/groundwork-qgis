@@ -12,9 +12,9 @@ REPO = "https://github.com/SebBenJamin/groundwork-qgis"
 #: dialog -> its page on the site (relative to SITE), with a heading's anchor where useful
 HELP_PAGES = {
     "add_data": "user/howto/add-data/",
-    "new_profile": "user/howto/add-data/#where-the-line-runs",
-    "profile_properties": "user/howto/placement/#adding-surveyed-positions-later",
-    "context_layers": "user/howto/boreholes/#context-layers-field-by-field",
+    "new_profile": "user/howto/projects-and-profiles/#a-new-profile",
+    "profile_properties": "user/howto/projects-and-profiles/#profile-properties",
+    "context_layers": "user/howto/context/",
     "plates": "user/howto/plates/",
     "plate_details": "user/howto/plates/#the-title-block",
     "view3d": "user/howto/3d-view/",

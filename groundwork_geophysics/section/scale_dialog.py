@@ -62,6 +62,7 @@ class ColorScaleDialog(QDialog):
         from .ramps import scale_ramp
         self._scale = scale
         self.ramp_button = QgsColorRampButton()
+        self.ramp_button.setObjectName("colour_ramp")
         self.ramp_button.setShowNull(False)
         self.ramp_button.setColorRamp(scale_ramp(scale))
         self.ramp_button.setToolTip("Colour ramp: click for the QGIS ramps (and your own)")
@@ -193,6 +194,7 @@ class DisplayDialog(ColorScaleDialog):
         readings = None if mesh is None else getattr(mesh, "readings", None)
         self._readings = readings
         display = QGroupBox("Display")
+        display.setObjectName("display_group")
         form = QFormLayout(display)
         self.shown_combo = QComboBox()
         self._shown_before = None
@@ -230,6 +232,7 @@ class DisplayDialog(ColorScaleDialog):
         form.addRow("Grid cell", row)
 
         contours = QGroupBox("Contours")
+        contours.setObjectName("contours_group")
         form = QFormLayout(contours)
         self.auto_step = QCheckBox("Automatic (1-2-5 per decade, or nice steps)")
         self.step_spin = QDoubleSpinBox()
@@ -273,6 +276,7 @@ class DisplayDialog(ColorScaleDialog):
         self._step_unit()
 
         self.coverage_group = QGroupBox("Coverage")
+        self.coverage_group.setObjectName("coverage_group")
         form = QFormLayout(self.coverage_group)
         self.fade_check = QCheckBox("Fade where coverage is low")
         self.fade_check.setChecked(style.fade_coverage)

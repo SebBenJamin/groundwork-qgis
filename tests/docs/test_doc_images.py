@@ -13,8 +13,9 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 def test_every_marked_widget_is_named_in_the_plugin():
     import render_doc_images as r
+    plugin = REPO / "groundwork_geophysics"
     source = "\n".join(p.read_text(encoding="utf-8")
-                       for p in (REPO / "groundwork_geophysics" / "ui").glob("*.py"))
+                       for d in ("ui", "section") for p in (plugin / d).glob("*.py"))
     names = set(re.findall(r'setObjectName\("(\w+)"\)', source))
     assert r.PICTURES, "no pictures"
     for picture in r.PICTURES:
@@ -172,4 +173,8 @@ def test_pictures_cover_the_dialog_pages():
         "plates": "user/howto/plates.md",
         "electrode-names": "user/howto/placement.md",
         "show-in-3d": "user/howto/3d-view.md",
+        "new-profile": "user/howto/projects-and-profiles.md",
+        "context-layers-lines": "user/howto/context.md",
+        "context-layers-band": "user/howto/context.md",
+        "profile-ties": "user/howto/context.md",
     }

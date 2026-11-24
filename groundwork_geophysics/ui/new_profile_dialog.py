@@ -45,8 +45,10 @@ class NewProfileDialog(QDialog):
         self._file = ""                     # the positions file the name was taken from
 
         self.name_edit = QLineEdit()
+        self.name_edit.setObjectName("profile_name")
         self.name_edit.setToolTip("Name of the profile")
         self.method_combo = QComboBox()
+        self.method_combo.setObjectName("profile_method")
         for label, value in METHODS:
             self.method_combo.addItem(label, value)
         self.method_combo.setToolTip("Method of the station set made from the positions")
