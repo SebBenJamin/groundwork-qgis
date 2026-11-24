@@ -21,6 +21,8 @@ Open **Groundwork → Plates…**.
 The parts in the order you use them:
 
 - ② **Template**: A4 or A3, portrait or landscape. You can also choose **Own template…** (see [Plate templates](../formats/plate-templates.md)).
+  Choosing another template for a plate that already has a layout makes the layout again,
+  after asking: changes made to it in QGIS's layout designer are lost.
 - ③ **Section frames**: each row is a profile with its own look. To show the ERT model and the seismics of the same line, add two rows with the same profile.
   - **From / To** limit the chainage range. Leave them empty for the full data range.
   - **Scale / VE** fix the scale (e.g. 2500 for 1:2500) or the vertical exaggeration. Leave them empty to fit the page.

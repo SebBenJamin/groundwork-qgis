@@ -15,8 +15,18 @@ crossing lines and your interpretation.
 - click the button next to the list (**Pick Profile on Map**), then click the profile's line
   on the map.
 
+- The arrows on either side of the list, or **Page Up** / **Page Down** while the panel has
+  the focus, step to the previous or next profile in the list.
+
 Right-click the **Profile** list for **Profile Properties…** and **Delete Profile…** (see
 [Projects and profiles](projects-and-profiles.md)).
+
+## The section as a picture
+
+The picture button at the right end of the panel's top row copies the section, as shown, to
+the clipboard (**Copy Section Image**) or saves it as a PNG file (**Save Section Image…**):
+for an e-mail or a quick report. For a printed, scaled section use a
+[plate](plates.md).
 
 ## Moving around
 

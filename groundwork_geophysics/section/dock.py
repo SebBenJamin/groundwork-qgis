@@ -7,6 +7,7 @@ so canvas distance == forward profile chainage (what ``cursor_moved``, ``show_cu
 """
 from __future__ import annotations
 
+import os
 from functools import partial
 
 import numpy as np
@@ -39,6 +40,7 @@ from .view_fit import ViewFitter, keep_auto_text_whole
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
 AUTO_VE = 0.0                   # the VE box's "Auto": the exaggeration that fills the panel
 SPLITTER_KEY = f"{LEGACY_ID}/section/splitter"
+IMAGE_DIR_KEY = f"{LEGACY_ID}/section/image_dir"   # where Save Section Image… saved last
 DEFAULT_VE = AUTO_VE
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
@@ -60,6 +62,15 @@ UNCUT_3D_TEXT = "Remove 3D Cut"
 SHOW_3D_TEXT = "Show in 3D…"
 VIEW3D_BUTTON_TEXT = "3D"
 VIEW3D_BUTTON_TIP = "The open profile in QGIS's 3D view: look at it, cut the view along it"
+PREVIOUS_TIP = "Previous profile (Page Up)"
+NEXT_TIP = "Next profile (Page Down)"
+FIRST_TIP = "This is the first profile"
+LAST_TIP = "This is the last profile"
+NO_PROFILES_TIP = "No profiles yet: make one with New Profile… or Add Data…"
+IMAGE_TIP = "Copy the section as a picture, or save it as a PNG file"
+IMAGE_OFF_TIP = "Open a profile first; then its section can be copied or saved as a picture"
+COPY_IMAGE_TEXT = "Copy Section Image"
+SAVE_IMAGE_TEXT = "Save Section Image…"
 ZOOM_MAP_TEXT = "Zoom Map to Profile"
 ZOOM_MAP_TIP = "Zoom the map to the open profile's line"
 ZOOM_MAP_OFF_TIP = "Open a profile first; then this zooms the map to its line"
@@ -200,7 +211,22 @@ class SectionDock(QDockWidget):
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Profile"))
+        # step through the profiles in list order: arrows beside the list, Page Up / Down
+        self.previous_button, self.next_button = QToolButton(), QToolButton()
+        self.previous_button.setArrowType(Qt.ArrowType.LeftArrow)
+        self.next_button.setArrowType(Qt.ArrowType.RightArrow)
+        for button, step in ((self.previous_button, -1), (self.next_button, 1)):
+            button.setAutoRaise(True)
+            button.clicked.connect(self._step_previous if step < 0 else self._step_next)
+        self.previous_shortcut = QShortcut(QKeySequence("PgUp"), self)
+        self.next_shortcut = QShortcut(QKeySequence("PgDown"), self)
+        for shortcut, slot in ((self.previous_shortcut, self._step_previous),
+                               (self.next_shortcut, self._step_next)):
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(slot)
+        top.addWidget(self.previous_button)
         top.addWidget(self.profile_combo)
+        top.addWidget(self.next_button)
         # Pick on Map next to the list (the plugin gives it its map tool action)
         self.pick_button = QToolButton()
         self.pick_button.setAutoRaise(True)
@@ -212,7 +238,9 @@ class SectionDock(QDockWidget):
         self.zoom_map_button.setText(ZOOM_MAP_TEXT)
         self.zoom_map_button.clicked.connect(self._zoom_map)
         self.profile_changed.connect(self._sync_zoom_map)
+        self.profile_changed.connect(self._sync_steps)
         self._sync_zoom_map()
+        self._sync_steps()
         top.addWidget(self.zoom_map_button)
         # the open profile in QGIS's 3D view: a drop-down, filled when it opens
         self.view3d_button = QToolButton()
@@ -232,6 +260,18 @@ class SectionDock(QDockWidget):
         top.addWidget(QLabel("Vertical exaggeration"))
         top.addWidget(self.ve_spin)
         top.addWidget(zoom_button)
+        # the section as a picture: for an e-mail or a report, without making a plate
+        self.image_button = QToolButton()
+        self.image_button.setAutoRaise(True)
+        self.image_button.setIcon(QgsApplication.getThemeIcon("/mActionSaveMapAsImage.svg"))
+        self.image_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        image_menu = QMenu(self.image_button)
+        image_menu.addAction(COPY_IMAGE_TEXT).triggered.connect(self.copy_image)
+        image_menu.addAction(SAVE_IMAGE_TEXT).triggered.connect(self._save_image_clicked)
+        self.image_button.setMenu(image_menu)
+        self.profile_changed.connect(self._sync_image)
+        self._sync_image()
+        top.addWidget(self.image_button)
         # an empty panel says what to do instead of showing empty axes
         self.empty_hint = QLabel(HINT_NO_PROFILE)
         self.empty_hint.linkActivated.connect(self._hint_link)
@@ -356,6 +396,38 @@ class SectionDock(QDockWidget):
         index = self.profile_combo.findData(self.current_profile_id()) if self._profile else 0
         self.profile_combo.setCurrentIndex(max(0, index))
         self.profile_combo.blockSignals(False)
+        self._sync_steps()
+
+    def _step_index(self, step: int) -> int | None:
+        """The list index ``step`` profiles away from the open one (nothing open: Next is
+        the first profile, Previous the last), or None past either end."""
+        last = self.profile_combo.count() - 1       # index 0 is "Choose a profile…"
+        if last < 1:
+            return None
+        here = self.profile_combo.findData(self.current_profile_id()) if self._profile else -1
+        if here < 1:
+            return 1 if step > 0 else last
+        there = here + step
+        return there if 1 <= there <= last else None
+
+    def _step(self, step: int) -> None:
+        index = self._step_index(step)
+        if index is not None:
+            self.open_profile(self.profile_combo.itemData(index))
+
+    def _step_previous(self, *_args) -> None:
+        self._step(-1)
+
+    def _step_next(self, *_args) -> None:
+        self._step(1)
+
+    def _sync_steps(self, *_args) -> None:
+        for button, step, tip, end in ((self.previous_button, -1, PREVIOUS_TIP, FIRST_TIP),
+                                       (self.next_button, 1, NEXT_TIP, LAST_TIP)):
+            on = self._step_index(step) is not None
+            button.setEnabled(on)
+            button.setToolTip(tip if on else end if self.profile_combo.count() > 1
+                              else NO_PROFILES_TIP)
 
     def _combo_changed(self, index: int) -> None:
         pid = self.profile_combo.itemData(index)
@@ -883,6 +955,54 @@ class SectionDock(QDockWidget):
     def _zoom_map(self, *_args) -> None:
         if self.current_profile_id():
             self.zoom_map_requested.emit(self.current_profile_id())
+
+    def _sync_image(self, *_args) -> None:
+        on = self.current_profile_id() is not None
+        self.image_button.setEnabled(on)
+        self.image_button.setToolTip(IMAGE_TIP if on else IMAGE_OFF_TIP)
+
+    def section_image(self):
+        """The section as shown (axes, models, context, interpretation), without the
+        mouse's guide line."""
+        shown = [item for item in (self.guide_line, self.cursor_marker) if item.isVisible()]
+        for item in shown:
+            item.hide()
+        try:
+            return self.canvas.grab()
+        finally:
+            for item in shown:
+                item.show()
+
+    def copy_image(self, *_args) -> None:
+        if self._profile is None:
+            return
+        from qgis.PyQt.QtWidgets import QApplication
+        QApplication.clipboard().setPixmap(self.section_image())
+        self.readout.setText(f"{self._profile.name}: section image copied to the clipboard")
+
+    def _save_image_clicked(self, *_args) -> None:
+        if self._profile is None:
+            return
+        from qgis.PyQt.QtWidgets import QFileDialog
+        folder = QgsSettings().value(IMAGE_DIR_KEY, "") or QgsProject.instance().homePath()
+        name = "".join(c if c.isalnum() or c in " -_." else "_" for c in self._profile.name)
+        path, _ = QFileDialog.getSaveFileName(self, SAVE_IMAGE_TEXT,
+                                              os.path.join(folder, f"{name}.png"),
+                                              "PNG image (*.png)")
+        if path:
+            QgsSettings().setValue(IMAGE_DIR_KEY, os.path.dirname(path))
+            self.save_image(path)
+
+    def save_image(self, path: str) -> None:
+        if self._profile is None:
+            return
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        if self.section_image().save(path, "PNG"):
+            self.readout.setText(f"{self._profile.name}: section image saved as {path}")
+        else:
+            self.readout.setText(f"Could not write {path}. Check that the folder exists and "
+                                 f"you may write to it.")
 
     def _sync_zoom_map(self, *_args) -> None:
         on = self.current_profile_id() is not None
