@@ -33,6 +33,26 @@ def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     return scale
 
 
+def _same_rows(rows: np.ndarray) -> tuple[int, np.ndarray]:
+    """``(number of distinct rows, label of each row)``: equal rows (by value, -0.0 = 0.0)
+    share a label, as ``np.unique(rows, axis=0)`` groups them. One 64-bit fingerprint per
+    row is grouped instead of the rows (np.unique with axis=0 sorts raw rows: seconds on
+    millions of cell edges); every row is checked against its group, and should two
+    different rows ever share a fingerprint, the rows themselves are grouped."""
+    rows = np.ascontiguousarray(rows, dtype=float) + 0.0
+    bits = rows.view(np.uint64)
+    h = np.zeros(len(rows), dtype=np.uint64)
+    for k in range(bits.shape[1]):
+        h = (h ^ bits[:, k]) * np.uint64(0x100000001B3)
+        h ^= h >> np.uint64(29)
+    keys, first, labels = np.unique(h, return_index=True, return_inverse=True)
+    labels = labels.ravel()
+    if (rows == rows[first[labels]]).all():
+        return len(keys), labels
+    keys, labels = np.unique(rows, axis=0, return_inverse=True)
+    return len(keys), labels.ravel()
+
+
 def _steps(s: np.ndarray) -> bool:
     """True when the line ``s`` (ascending) has a vertical step: two points at one s."""
     return len(s) > 1 and bool((np.diff(s) == 0).any())
@@ -296,9 +316,8 @@ class SectionMesh:
         if not n_up:
             return np.empty((0, 2)), np.empty((0, 2))
         both = np.vstack([edges[up], edges[down]])
-        _keys, inverse = np.unique(both, axis=0, return_inverse=True)
-        inverse = inverse.ravel()
-        covered = np.zeros(len(_keys), dtype=bool)
+        n_keys, inverse = _same_rows(both)
+        covered = np.zeros(n_keys, dtype=bool)
         covered[inverse[n_up:]] = True
         keep = ~covered[inverse[:n_up]]
         return edges[up][keep, :2], edges[up][keep, 2:]

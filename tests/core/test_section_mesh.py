@@ -250,3 +250,20 @@ def test_a_moved_copy_of_a_mesh_has_its_own_bounds():
     m.bounds()
     moved = replace(m, vertices=m.vertices + [100.0, 10.0])
     assert moved.bounds() == pytest.approx((100, 110, 5, 10))
+
+
+def test_equal_rows_are_grouped_as_numpy_groups_them():
+    # the top edge matches up- and downward cell edges; np.unique(axis=0) took 9 s on a
+    # 2-million-cell model
+    from groundwork_geophysics.core.section_mesh import _same_rows
+    rng = np.random.default_rng(5)
+    base = rng.normal(size=(50, 4)).round(2)
+    rows = base[rng.integers(0, 50, 400)]
+    rows[::7, 2] = -0.0                                      # -0.0 and 0.0 are one value
+    rows[1::7, 2] = 0.0
+    n, labels = _same_rows(rows)
+    _u, ref = np.unique(rows + 0.0, axis=0, return_inverse=True)
+    ref = ref.ravel()
+    assert n == len(_u)
+    same = labels[:, None] == labels[None, :]
+    assert (same == (ref[:, None] == ref[None, :])).all()
