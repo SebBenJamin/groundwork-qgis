@@ -15,15 +15,16 @@ from pathlib import Path
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                  QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-                                 QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton,
+                                 QHeaderView, QLabel, QLineEdit, QListWidget, QMessageBox,
+                                 QPushButton,
                                  QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                  QWidget)
 
 from .help import add_help_button
 from ..core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
 from ..plates.build import DETAILS, STALE_PROPERTY, TEMPLATES, create_or_update_plate, \
-    plate_details, plate_logo, plate_name, set_plate_details, set_plate_logo
-from ..plates.sources import read_plates, write_plates
+    find_plate_layout, plate_details, plate_logo, plate_name, set_plate_details, set_plate_logo
+from ..plates.sources import detach_frame_items, read_plates, write_plates
 
 OWN_TEMPLATE = "__own__"
 TEMPLATE_LABELS = {"A4_landscape": "A4 landscape", "A4_portrait": "A4 portrait",
@@ -187,8 +188,8 @@ class PlatesDialog(QDialog):
         for key in TEMPLATES:
             self.template.addItem(TEMPLATE_LABELS[key], key)
         self.template.addItem("Own template…", OWN_TEMPLATE)
-        self.template.setToolTip("Used when the plate's layout is first made; afterwards the "
-                                 "layout is edited in QGIS's layout designer.")
+        self.template.setToolTip("The page the plate's layout is made from. Choosing another "
+                                 "for a plate that has a layout makes it again (asks first).")
         self.template.currentIndexChanged.connect(self._template_changed)
         head = QFormLayout()
         head.addRow("Number", self.number)
@@ -406,8 +407,37 @@ class PlatesDialog(QDialog):
             self._filling = True
             self.template.setCurrentIndex(self.template.findData(path))
             self._filling = False
+        layout = find_plate_layout(self.project, plate)
+        if layout is not None and key != plate.template:
+            if not self.confirm_remake(plate):  # keep the layout, and the setting that made it
+                self._filling = True
+                self.template.setCurrentIndex(max(self.template.findData(plate.template), 0))
+                self._filling = False
+                return
+            detach_frame_items(self.project)
+            self.project.layoutManager().removeLayout(layout)
+            plate.template = key
+            self._save()
+            try:
+                create_or_update_plate(self.project, self.store, self.provider, plate)
+            except Exception as exc:            # the message says it; Update tries again
+                self.message.setText(f"{plate_name(plate)}: {exc}")
+                return
+            self.message.setText(f"{plate_name(plate)} made again from the template "
+                                 f"{self.template.currentText()}.")
+            return
         plate.template = key
         self._save()
+
+    def confirm_remake(self, plate: PlateSpec) -> bool:
+        """Ask before a new template replaces a plate's existing layout."""
+        answer = QMessageBox.question(
+            self, "Change template",
+            f"{plate_name(plate)} already has a layout. Make it again from the new template?"
+            "\n\nChanges made to it in QGIS's layout designer are lost.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        return answer == QMessageBox.StandardButton.Yes
 
     # -- frames ------------------------------------------------------------------------------
     def add_frame(self) -> FrameSpec | None:
