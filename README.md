@@ -90,13 +90,19 @@ The documentation is on its own site, with search:
 **https://sebbenjamin.github.io/groundwork-qgis/**
 
 The same pages, in the repository:
-- How-tos: [Add data](docs/user/howto/add-data.md) ·
+- [First steps with the Gülpe demo](docs/user/first-steps.md)
+- How-tos: [Projects and profiles](docs/user/howto/projects-and-profiles.md) ·
+  [Add data](docs/user/howto/add-data.md) ·
+  [The section panel](docs/user/howto/section-panel.md) ·
   [Placement on the electrodes](docs/user/howto/placement.md) ·
   [Reference height](docs/user/howto/reference-height.md) ·
   [Boreholes and logs](docs/user/howto/boreholes.md) ·
+  [Geology, crossing lines and ties](docs/user/howto/context.md) ·
+  [Interpretation](docs/user/howto/interpretation.md) ·
   [Field notes](docs/user/howto/field-notes.md) · [Dataset info](docs/user/howto/dataset-info.md) ·
   [Report plates](docs/user/howto/plates.md) · [The 3D view](docs/user/howto/3d-view.md)
-- Data formats: [Borehole tables](docs/user/formats/borehole-tables.md) ·
+- Data formats: [Methods and formats](docs/user/formats/overview.md) ·
+  [Borehole tables](docs/user/formats/borehole-tables.md) ·
   [Plate templates](docs/user/formats/plate-templates.md)
 - [Troubleshooting](docs/user/troubleshooting.md)
 - [What changed in each release](docs/releases/), latest: [0.14.2](docs/releases/0.14.2.md)

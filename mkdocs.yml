@@ -8,6 +8,10 @@ docs_dir: docs
 exclude_docs: |
   superpowers/
   decisions/
+not_in_nav: |
+  /releases/0.1*.md
+  /releases/0.[2-9]*.md
+  /releases/0.1[0-2]*.md
 
 theme:
   name: material
@@ -52,11 +56,16 @@ validation:
 
 nav:
   - Home: index.md
+  - First steps: user/first-steps.md
   - How-tos:
+      - Projects and profiles: user/howto/projects-and-profiles.md
       - Add data: user/howto/add-data.md
+      - The section panel: user/howto/section-panel.md
       - Placement on the electrodes: user/howto/placement.md
       - Reference height: user/howto/reference-height.md
       - Boreholes and logs: user/howto/boreholes.md
+      - Geology, crossing lines and ties: user/howto/context.md
+      - Interpretation: user/howto/interpretation.md
       - Field notes: user/howto/field-notes.md
       - Dataset info: user/howto/dataset-info.md
       - Report plates: user/howto/plates.md
@@ -67,27 +76,8 @@ nav:
       - Plate templates: user/formats/plate-templates.md
   - Troubleshooting: user/troubleshooting.md
   - What's new:
-      - Overview: releases/index.md
+      - All releases: releases/index.md
       - 0.14.2: releases/0.14.2.md
       - 0.14.1: releases/0.14.1.md
       - 0.14.0: releases/0.14.0.md
       - 0.13.0: releases/0.13.0.md
-      - 0.12.0: releases/0.12.0.md
-      - 0.11.0: releases/0.11.0.md
-      - 0.10.0: releases/0.10.0.md
-      - 0.9.1: releases/0.9.1.md
-      - 0.9.0: releases/0.9.0.md
-      - 0.8.0: releases/0.8.0.md
-      - 0.7.0: releases/0.7.0.md
-      - 0.6.0: releases/0.6.0.md
-      - 0.5.1: releases/0.5.1.md
-      - 0.5.0: releases/0.5.0.md
-      - 0.4.5: releases/0.4.5.md
-      - 0.4.0: releases/0.4.0.md
-      - 0.3.5: releases/0.3.5.md
-      - 0.3.0: releases/0.3.0.md
-      - 0.2.2: releases/0.2.2.md
-      - 0.2.1: releases/0.2.1.md
-      - 0.2.0: releases/0.2.0.md
-      - 0.1.1: releases/0.1.1.md
-      - 0.1.0: releases/0.1.0.md
