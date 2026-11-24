@@ -94,6 +94,7 @@ The same pages, in the repository:
 - How-tos: [Projects and profiles](docs/user/howto/projects-and-profiles.md) ·
   [Add data](docs/user/howto/add-data.md) ·
   [The section panel](docs/user/howto/section-panel.md) ·
+  [Seismic refraction](docs/user/howto/seismic-refraction.md) ·
   [Placement on the electrodes](docs/user/howto/placement.md) ·
   [Reference height](docs/user/howto/reference-height.md) ·
   [Boreholes and logs](docs/user/howto/boreholes.md) ·
