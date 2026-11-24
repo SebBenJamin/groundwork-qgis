@@ -23,6 +23,7 @@ from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
 from ..core.dataset_types import method_of, station_words
+from ..core.interpolators import Interpolation
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport
@@ -156,6 +157,8 @@ class LayerStyle:
     contour_minor: tuple = ()
     #: grid cell of the smooth field in metres; None = automatic
     grid_cell: float | None = None
+    #: how the smooth field is gridded (``core.interpolators``); the default is linear
+    interpolation: Interpolation = Interpolation()
     #: fade (or blank) the model where its coverage is below ``coverage_threshold``
     fade_coverage: bool = False
     coverage_threshold: float | None = None     # None = 10th percentile of the coverage
@@ -236,7 +239,8 @@ def _layers_for_look(layers: list, look) -> list:
         out.append(SectionLayer(la.dataset, la.mesh, replace(
             style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale,
             contour_step=m.contour_step, contour_major=tuple(m.contour_major),
-            contour_minor=tuple(m.contour_minor), grid_cell=m.grid_cell, fade_coverage=m.fade_coverage,
+            contour_minor=tuple(m.contour_minor), grid_cell=m.grid_cell,
+            interpolation=Interpolation.from_dict(m.interpolation), fade_coverage=m.fade_coverage,
             coverage_threshold=m.coverage_threshold, fade_mode=m.fade_mode,
             shown=m.shown if m.shown is not None else style.shown), la.error))
     return out

@@ -46,7 +46,9 @@ def panel_look(provider, profile_id: str) -> FrameLook:
                                 style.mode, style.contour_step, style.grid_cell,
                                 style.fade_coverage, style.coverage_threshold, style.fade_mode,
                                 style.shown, list(style.contour_major),
-                                list(style.contour_minor)))
+                                list(style.contour_minor),
+                                None if style.interpolation.is_linear
+                                else style.interpolation.to_dict()))
     return FrameLook(models, getattr(provider, "interp_version_id", None), True,
                      bool(provider.show_field_notes), True)
 

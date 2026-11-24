@@ -61,7 +61,7 @@ def _key(layer, topo, shape):
             None if cov is None else hash(cov.tobytes()), topo_key, shape,
             (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp), st.mode, st.contour_step,
             tuple(st.contour_major), tuple(st.contour_minor),
-            st.fade_coverage, st.coverage_threshold, st.fade_mode)
+            st.fade_coverage, st.coverage_threshold, st.fade_mode, st.interpolation.key())
 
 
 _next_to_empty = next_to_empty            # the section and the 3D view share it
@@ -112,7 +112,12 @@ def _gridded(layer, topo, threshold):
         if hit is not None:
             _cache.move_to_end(key)
             return hit
-    grid = grid_model(mesh, topo, shape, scale.log, fill_to_ground=True)
+    grid = grid_model(mesh, topo, shape, scale.log, fill_to_ground=True,
+                      interp=st.interpolation)
+    if grid.note:                       # once per drawing: the result is cached under key
+        from qgis.core import Qgis, QgsMessageLog
+        QgsMessageLog.logMessage(f"{layer.dataset.name or layer.dataset.id}: {grid.note}",
+                                 "Groundwork", Qgis.MessageLevel.Warning)
     low = alpha = None
     if threshold is not None:
         cov = grid_model(mesh, topo, shape, False, values=mesh.coverage,

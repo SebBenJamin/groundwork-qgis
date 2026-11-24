@@ -164,3 +164,22 @@ def test_cells_are_grouped_by_colour_once_per_look(qgis_app, monkeypatch):
         layer.style.scale, vmax=60.0)))
     display_render.build_drawing(recoloured, None)
     assert len(calls) == 2
+
+
+def test_display_cache_key_follows_the_gridding_method():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.section.display_render import _key
+    a = _layer()
+    b = replace(a, style=replace(a.style, interpolation=Interpolation(method="idw")))
+    assert _key(a, None, (10, 10)) != _key(b, None, (10, 10))
+
+
+def test_the_smooth_field_uses_the_layers_method():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.section.display_render import _gridded
+    layer = _layer()
+    near = replace(layer, style=replace(layer.style, interpolation=Interpolation(
+        method="nearest", anisotropy=1.0)))
+    linear_image, _rect = _gridded(layer, None, None)[0]
+    near_image, _rect = _gridded(near, None, None)[0]
+    assert linear_image != near_image

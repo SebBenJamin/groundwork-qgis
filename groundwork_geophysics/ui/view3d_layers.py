@@ -646,7 +646,7 @@ def _cloud_signature(section_layer, profile, topo) -> str:
             h.update(np.ascontiguousarray(a, dtype=float).tobytes())
     h.update(repr((None if sc is None else (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp, sc.lut),
                    style.grid_cell, style.fade_coverage, style.coverage_threshold,
-                   style.fade_mode, CLOUD_SPACING)).encode())
+                   style.fade_mode, CLOUD_SPACING, style.interpolation.key())).encode())
     return h.hexdigest()[:10]
 
 

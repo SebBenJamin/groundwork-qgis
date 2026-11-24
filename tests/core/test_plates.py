@@ -78,3 +78,13 @@ def test_provenance_says_when_a_frame_does_not_fit():
         chainage = Chainage(np.array([[0.0, 0.0], [40000.0, 0.0]]))
     assert "does not fit" in provenance_text(P(), [], 50000, 1.0, fits=False)
     assert "does not fit" not in provenance_text(P(), [], 50000, 1.0)
+
+
+def test_plate_look_keeps_the_gridding_method():
+    method = {"method": "idw", "power": 3.0}
+    look = FrameLook([ModelLook("d1", mode="smooth", interpolation=method),
+                      ModelLook("d2", mode="smooth")])
+    plates = [PlateSpec("pl1", "1", "T", "A3_landscape", [FrameSpec("f1", "P1", look)])]
+    [back] = plates_from_json(plates_to_json(plates))
+    models = back.frames[0].look.models
+    assert models[0].interpolation == method and models[1].interpolation is None

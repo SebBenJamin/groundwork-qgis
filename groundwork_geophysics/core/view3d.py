@@ -24,9 +24,10 @@ def field_grid(mesh, topo, style, threshold: float | None) -> Grid:
     """The section's smooth grid of ``mesh`` (as the panel draws it in smooth mode), with nan
     where the section shows nothing: next to empty space and, with ``threshold`` (the fade
     is on), where the soft fade makes a node faint or blank. ``style``: its ``scale``,
-    ``grid_cell`` and ``fade_mode``."""
+    ``grid_cell``, ``interpolation`` and ``fade_mode``."""
     shape = grid_shape(mesh, style.grid_cell)
-    grid = grid_model(mesh, topo, shape, style.scale.log, fill_to_ground=True)
+    grid = grid_model(mesh, topo, shape, style.scale.log, fill_to_ground=True,
+                      interp=getattr(style, "interpolation", None))
     drop = next_to_empty(grid, mesh)
     if threshold is not None and getattr(mesh, "coverage", None) is not None:
         cov = grid_model(mesh, topo, shape, False, values=mesh.coverage, fill_to_ground=True)

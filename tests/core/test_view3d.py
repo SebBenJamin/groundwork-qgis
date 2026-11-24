@@ -279,3 +279,14 @@ def test_the_faces_are_written_in_chunks_with_the_same_bytes(monkeypatch):
     whole = view3d.faces_wkb(a)
     monkeypatch.setattr(view3d, "_WKB_CHUNK", 1)
     assert view3d.faces_wkb(a) == whole
+
+
+def test_the_3d_field_uses_the_models_gridding_method():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.core.view3d import field_grid
+    mesh = _grid_mesh()
+    linear = field_grid(mesh, None, _style(), None)
+    nearest = field_grid(mesh, None, _style(interpolation=Interpolation(
+        method="nearest", anisotropy=1.0)), None)
+    assert np.array_equal(np.isfinite(linear.values), np.isfinite(nearest.values))
+    assert not np.allclose(linear.values, nearest.values, equal_nan=True)

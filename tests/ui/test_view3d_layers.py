@@ -1648,3 +1648,18 @@ def test_which_profiles_show_boreholes_asks_only_for_the_boreholes(setup):
     assert profiles_with_boreholes(st, provider) == {p.id}
     provider.borehole_source = lambda profiles: {q.id: [] for q in profiles}
     assert profiles_with_boreholes(st, provider) == set()
+
+
+def test_a_clouds_signature_follows_the_gridding_method():
+    from types import SimpleNamespace
+
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.core.section_mesh import SectionMesh
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.ui.view3d_layers import _cloud_signature
+    mesh = SectionMesh(np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                       np.array([[0, 1, 2, 3]]), np.array([5.0]), "x", "")
+    profile = SimpleNamespace(xy=np.array([[0.0, 0.0], [1.0, 0.0]]))
+    a = SimpleNamespace(mesh=mesh, style=LayerStyle())
+    b = SimpleNamespace(mesh=mesh, style=LayerStyle(interpolation=Interpolation(method="idw")))
+    assert _cloud_signature(a, profile, None) != _cloud_signature(b, profile, None)

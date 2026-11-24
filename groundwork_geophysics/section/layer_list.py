@@ -20,7 +20,8 @@ MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip),
 REMOVE_TEXT = "Remove from profile…"
 #: style fields the Display dialog edits
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
-                  "grid_cell", "fade_coverage", "coverage_threshold", "fade_mode", "shown")
+                  "grid_cell", "interpolation", "fade_coverage", "coverage_threshold",
+                  "fade_mode", "shown")
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
 INFO_TEXT = "Dataset info…"

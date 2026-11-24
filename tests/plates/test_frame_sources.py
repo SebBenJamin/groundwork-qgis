@@ -200,3 +200,15 @@ def test_model_look_keeps_display_settings(store_with_model, qgis_app):
                                                         [FrameSpec("f", p.id, look)])]))
     assert back.frames[0].look.models[0] == look.models[0]
     assert ModelLook("d").contour_step is None              # old plates: the defaults
+
+
+def test_a_frame_grids_its_models_by_the_stored_method(store_with_model, qgis_app):
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.section.data import SectionDataProvider
+    st, p, _ = store_with_model
+    prov = SectionDataProvider(st)
+    look = _look(st, p, mode="smooth", interpolation={"method": "idw", "power": 3.0})
+    [layer] = prov.snapshot(p.id, look=look).layers
+    assert layer.style.interpolation == Interpolation(method="idw", power=3.0)
+    [plain] = prov.snapshot(p.id, look=_look(st, p, mode="smooth")).layers
+    assert plain.style.interpolation.is_linear
