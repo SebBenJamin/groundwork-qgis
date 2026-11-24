@@ -25,15 +25,23 @@ belong to it.
 
 **Groundwork → New Profile…**:
 
-1. **Name**: for example *ERT 3* or *Line 6*.
-2. **Where the Line Runs**:
-   - **Selected line feature**: select a line on the map first;
-   - **Start and end points**: type them, or **Pick on Map** and click the start, then the end;
-   - **Positions file** or **Point layer**: the surveyed electrode or geophone positions; the
-     line runs through them (see [Placement on the electrodes](placement.md));
-   - **Other…** for the remaining ways.
-3. **Reverse the line** when distance 0 is at the other end.
-4. **OK**: the profile shows on the map.
+![The New Profile dialog; its parts are numbered 1 to 3](../../images/howto/new-profile.png)
+
+| | Part | What you choose |
+|---|---|---|
+| ① | **Name** | for example *ERT 3* or *Line 6* |
+| ② | **Where the Line Runs** | how the line is given (below) |
+| ③ | **Reverse the line** | when distance 0 is at the other end |
+
+**Where the Line Runs**:
+
+- **Selected line feature**: make a line layer active and select one line first;
+- **Start and end points**: **Pick on Map**, then click the start and the end;
+- **Positions file** or **Point layer**: the surveyed electrode or geophone positions; the line
+  runs through them, and a **Method** row asks for ERT or seismic refraction (see
+  [Placement on the electrodes](placement.md)).
+
+Press **OK**: the profile shows on the map.
 
 A profile is also made by **Add Data…** when you add a file with map coordinates, or a model on
 a line you choose there (see [Add data](add-data.md)).

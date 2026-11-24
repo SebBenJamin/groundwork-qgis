@@ -72,20 +72,24 @@ profile…**. Removing takes the model off the profile; the file stays where it 
 
 ## How a model is drawn
 
+![Transect 3 of the Gülpe demo twice: drawn as cells, and as a smooth field with contour lines, faded where the coverage is low](../../images/howto/display-modes.png)
+
 **Display…** holds everything about one model's look:
 
-- **Colour scale**: **Colour ramp** (QGIS's ramps and your own), **Minimum** and **Maximum**,
+![The Display dialog of a Gülpe model: colour ramp and range, Draw as, contours and coverage fade; its parts are numbered 1 to 4](../../images/howto/display.png)
+
+- ① **Colour scale**: **Colour ramp** (QGIS's ramps and your own), **Minimum** and **Maximum**,
   **Logarithmic**. **Auto** sets the 2nd to 98th percentile of the values.
-- **Draw as**:
+- ② **Draw as**:
    - **Cells (as inverted)**;
    - **Smooth colour field**: blended over the cells, up to the ground line, never outside the
      model;
    - **Contours**, with labels on the lines;
    - **Smooth field + contours**.
 - **Grid cell** of the smooth field: automatic, or your own size in metres.
-- **Contours**: automatic steps (1-2-5 per decade on a logarithmic scale), your own
+- ③ **Contours**: automatic steps (1-2-5 per decade on a logarithmic scale), your own
   **Spacing**, or your own **Major levels** and **Minor levels**.
-- **Coverage**: **Fade where coverage is low**, **Below** a threshold you set; **Fade** or
+- ④ **Coverage**: **Fade where coverage is low**, **Below** a threshold you set; **Fade** or
   **Blank**. It needs a model file that carries coverage or sensitivity (BERT/pyGIMLi
   coverage, ResIPy sensitivity, Refrapy ray coverage).
 - **Show**, for measured data (BERT/pyGIMLi data files, R2/ResIPy misfit): **Measured apparent

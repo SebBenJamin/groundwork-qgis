@@ -15,6 +15,8 @@ connection for the aerial images and the geology maps.
 2. In QGIS, open `guelpe_project.qgz`. The map shows the four transects over the aerial image,
    with the cores and the state boreholes.
 
+![The Gülpe demo: aerial image with the transect and its cores above, the section of Transect 3 below](../images/overview.jpg)
+
 Opening the demo writes to its Groundwork file. Keep a copy of the zip to start over.
 
 ## 2. Open a section
@@ -38,10 +40,14 @@ resistivity, and a marker follows on the map. See [The section panel](howto/sect
    hardly see fades out.
 4. **OK**.
 
+![Transect 3 as cells, and as a smooth field with contours, faded where the coverage is low](../images/howto/display-modes.png)
+
 ## 4. Look at a core
 
 Click a core column in the section. The [borehole viewer](howto/boreholes.md) opens with all
 cores of the transect side by side, the one you clicked framed.
+
+![The borehole viewer with the cores of Transect 3](../images/howto/borehole-viewer.png)
 
 ## 5. Draw an interpretation
 
@@ -52,6 +58,8 @@ cores of the transect side by side, the one you clicked framed.
 4. Look at the map: the group **Interpretation** now holds the polygon in 3D, and its footprint
    along the transect is labelled *A*.
 
+![Transect 3 with the polygon A drawn around the high-resistivity body](../images/howto/interpretation.png)
+
 More in [Interpretation](howto/interpretation.md): editing, versions, export.
 
 ## 6. Make a report plate
@@ -61,6 +69,8 @@ More in [Interpretation](howto/interpretation.md): editing, versions, export.
    colour bar, borehole and interpretation legends, mini-map and title block.
 3. **Export Plates…** writes it as a PDF.
 
+![A report plate: the Transect 3 section with colour bar, borehole legend, mini-map and title block](../images/plate.jpg)
+
 See [Report plates](howto/plates.md).
 
 ## 7. Look at it in 3D
@@ -68,6 +78,10 @@ See [Report plates](howto/plates.md).
 1. Click the **3D** button next to the **Profile** list → **Look at Profile in 3D**.
 2. A 3D map view opens with the model standing as a curtain under the transect, the cores as
    columns and your polygon at its depth.
+
+![Transect 3 of the Gülpe demo: the section panel with its cores, and the same transect in the 3D view with the cores as columns, their names above them, on the DGM](../images/howto/3d-boreholes.jpg)
+
+*Map: GK 25 © LBGR, DGM1 © GeoBasis-DE/LGB, both dl-de/by-2-0; © OpenStreetMap contributors.*
 
 See [The 3D view](howto/3d-view.md).
 

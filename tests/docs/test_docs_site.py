@@ -43,9 +43,16 @@ def test_every_nav_page_exists():
 
 
 def test_every_user_page_is_in_nav():
+    """Every page is in the menu, except older release notes: the menu lists the latest
+    ones, and the releases overview links every one."""
     nav = set(nav_pages())
+    overview = (DOCS / "releases" / "index.md").read_text(encoding="utf-8")
     for page in _site_pages():
-        assert page.relative_to(DOCS).as_posix() in nav, page
+        rel = page.relative_to(DOCS).as_posix()
+        if rel.startswith("releases/") and rel not in nav:
+            assert f"]({page.name})" in overview, page
+            continue
+        assert rel in nav, page
 
 
 def test_relative_links_resolve():

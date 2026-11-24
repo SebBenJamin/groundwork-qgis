@@ -44,6 +44,10 @@ to compare looks.
 - **Sizes**: **Borehole column width** and **Station sphere size**, diameters in metres.
   **Auto** sizes them from the distance between the stations.
 
+![Transect 3 of the Gülpe demo: the section panel with its cores, and the same transect in the 3D view with the cores as columns, their names above them, on the DGM](../../images/howto/3d-boreholes.jpg)
+
+*Map: GK 25 © LBGR, DGM1 © GeoBasis-DE/LGB, both dl-de/by-2-0; © OpenStreetMap contributors.*
+
 A 3D map view you already have open is used as it is: its settings and camera are not touched.
 Everything **Show in 3D…** makes sits in one group **3D View** inside the Groundwork group:
 untick it to hide all of it at once.
@@ -115,6 +119,10 @@ never flicker in one plane.
   front of its curtain, from either side.
 
 ## Pointing in 3D shows the place in the section
+
+![ERT06 of the Erfurt demo: the section panel and the 3D view side by side, with the crossing profile ERT07, two cores and an interpretation polygon in both](../../images/howto/3d-section-picture.jpg)
+
+*Map: © OpenStreetMap contributors.*
 
 - **Move the mouse** over a curtain, section picture, point cloud or borehole column of the
   profile open in the section panel: the panel's cursor moves to that place, with its readout,

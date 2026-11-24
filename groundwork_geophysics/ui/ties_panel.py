@@ -119,6 +119,7 @@ class TiesPanel(QDockWidget):
         self.rows: list[TieRow] = []
 
         self.table = QTableWidget(0, len(HEADERS))
+        self.table.setObjectName("ties_table")
         self.table.setHorizontalHeaderLabels(HEADERS)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -135,9 +136,11 @@ class TiesPanel(QDockWidget):
         self.held_back.setWordWrap(True)
         self.held_back.hide()
         self.show_button = QPushButton("Show in section")
+        self.show_button.setObjectName("ties_show")
         self.show_button.setEnabled(False)
         self.show_button.clicked.connect(self.show_in_section)
         self.plot = TiesPlot()
+        self.plot.setObjectName("ties_plot")
 
         top = QWidget()
         lay = QVBoxLayout(top)
