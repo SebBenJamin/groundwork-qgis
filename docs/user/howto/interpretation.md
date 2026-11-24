@@ -10,9 +10,11 @@ Groundwork file and shows on the map, on plates and in the 3D view.
 Interpretation belongs to one profile. A piece you draw on one profile never joins a feature
 on another one.
 
+![Transect 3 of the Gülpe demo in the section panel: the drawing tools in the row above the section, and a dashed polygon named A around a high-resistivity body](../../images/howto/interpretation.png)
+
 ## Drawing
 
-The tools sit in a row above the section, as icons:
+The tools sit in a row above the section:
 
 | Tool | What it draws |
 |---|---|
@@ -146,7 +148,7 @@ polygons as see-through bars, lines as ticks, points as diamonds.
 
 **GeoPackage** (`.gpkg`) gets one layer each for lines, polygons and points, with the
 attributes. **DXF** (`.dxf`) puts every piece on a layer named after its feature, for example
-*A - conductive body*; DXF layer names are plain ASCII, so ä, ö, ü and ß become ae, oe, ue and
+*A - resistive body*; DXF layer names are plain ASCII, so ä, ö, ü and ß become ae, oe, ue and
 ss.
 
 A local section (a profile without heights) has no real elevations, so it is left out of the
@@ -156,8 +158,8 @@ export. Give it a [reference height](reference-height.md) first.
 
 In the Gülpe demo, open **Transect 3**:
 
-1. Choose **Polygon** and draw around the low-resistivity body near 115–140 m. Call the type
-   *conductive body* and the name *A*.
+1. Choose **Polygon** and draw around the high-resistivity body between about 117 and 142 m
+   (red). Call the type *resistive body* and the name *A*.
 2. Choose **Edit**, drag one corner, then press **Undo**.
 3. **Interpretation → Freeze…** and call it *Test*. Move a corner again.
 4. **Interpretation → Compare With → Test**: the old shape shows faintly behind.

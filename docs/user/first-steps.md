@@ -46,8 +46,9 @@ cores of the transect side by side, the one you clicked framed.
 ## 5. Draw an interpretation
 
 1. In the row above the section, choose **Polygon**.
-2. Click around the low-resistivity body near 115–140 m; right-click to close it.
-3. In the form, type the type *conductive body* and the name *A*. **OK**.
+2. Click around the high-resistivity body between about 117 and 142 m (red); right-click to
+   close it.
+3. In the form, type the type *resistive body* and the name *A*. **OK**.
 4. Look at the map: the group **Interpretation** now holds the polygon in 3D, and its footprint
    along the transect is labelled *A*.
 
