@@ -151,6 +151,25 @@ def _gridded(layer, topo, threshold):
     return entry
 
 
+def _cell_groups(layer, threshold, cell_path_groups, path_from_elements) -> list:
+    """The cells as one path per colour, kept on the mesh for its last look (colour scale
+    and fade): every pan or zoom draws them again, and grouping a big model's cells took
+    seconds."""
+    st, mesh = layer.style, layer.mesh
+    sc = st.scale
+    look = (sc, threshold, st.fade_mode if threshold is not None else None)
+    memo = getattr(mesh, "_memo", {})
+    hit = memo.get("cell_groups")
+    if hit is not None and hit[0] == look:
+        return hit[1]
+    alpha = None if threshold is None else coverage_alpha(mesh.coverage, threshold,
+                                                          st.fade_mode)
+    groups = [(QColor(*(int(c) for c in rgba)), path_from_elements(elems))
+              for rgba, elems in cell_path_groups(mesh, sc, alpha)]
+    memo["cell_groups"] = (look, groups)
+    return groups
+
+
 def _as_cells(layer):
     from dataclasses import replace
     return replace(layer, style=replace(layer.style, mode="cells"))
@@ -175,10 +194,7 @@ def build_drawing(layer, topo) -> LayerDrawing:
             drawing.markers.append((QColor(*c), pts[packed == code]))
         return drawing
     if st.mode == "cells" or st.mode not in ("smooth", "contours", "smooth+contours"):
-        alpha = (None if threshold is None
-                 else coverage_alpha(layer.mesh.coverage, threshold, st.fade_mode))
-        drawing.groups = [(QColor(*(int(c) for c in rgba)), _path_from_elements(elems))
-                          for rgba, elems in cell_path_groups(layer.mesh, st.scale, alpha)]
+        drawing.groups = _cell_groups(layer, threshold, cell_path_groups, _path_from_elements)
         return drawing
     try:
         drawing.field, drawing.contours = _gridded(layer, topo, threshold)

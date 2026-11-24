@@ -143,3 +143,24 @@ def test_smooth_field_fills_up_to_a_higher_ground(qgis_app):
     img = _img(res)
     assert np.abs(_rgb(img, _x(60.5), _y(0.3)) - _expected(60.5)).max() <= 12   # mesh top is 0
     assert (_rgb(img, _x(60.5), _y(0.8)) == 255).all()                          # above ground
+
+
+def test_cells_are_grouped_by_colour_once_per_look(qgis_app, monkeypatch):
+    # every pan or zoom builds the drawing again: a 2-million-cell model took 1.3 s each time
+    from groundwork_geophysics.section import data, display_render
+    calls = []
+    real = data.cell_path_groups
+    monkeypatch.setattr(data, "cell_path_groups",
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+    display_render._cache.clear()
+    layer = _layer("cells")
+    first = display_render.build_drawing(layer, None)
+    again = display_render.build_drawing(layer, None)
+    assert len(calls) == 1 and again.groups is first.groups
+    other = replace(layer, style=replace(layer.style, opacity=0.5))     # opacity: no regroup
+    display_render.build_drawing(other, None)
+    assert len(calls) == 1
+    recoloured = replace(layer, style=replace(layer.style, scale=replace(
+        layer.style.scale, vmax=60.0)))
+    display_render.build_drawing(recoloured, None)
+    assert len(calls) == 2
