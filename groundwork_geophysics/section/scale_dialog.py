@@ -527,8 +527,9 @@ class DisplayDialog(ColorScaleDialog):
             aniso = (estimate_anisotropy(points, values[ok], model)
                      if self.auto_aniso.isChecked() else self.aniso_spin.value())
             fit = fit_variogram(points, values[ok], model, anisotropy=aniso)
-        except ValueError as exc:
-            self.fit_label.setText(f"Cannot fit: {exc}")
+        except (ValueError, MemoryError) as exc:
+            why = "not enough memory" if isinstance(exc, MemoryError) else str(exc)
+            self.fit_label.setText(f"Cannot fit: {why}")
             self.fit_label.setWordWrap(True)
             self.fit_label.setToolTip("")
             return

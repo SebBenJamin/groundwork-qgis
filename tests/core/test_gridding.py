@@ -244,3 +244,18 @@ def test_cell_aspect_is_the_default_anisotropy():
     mesh = regular_mesh(4, 4, d=1.0)
     mesh.vertices[:, 0] *= 3                                          # 3 m wide, 1 m tall
     assert cell_aspect(mesh) == pytest.approx(3.0)
+
+
+def test_running_out_of_memory_falls_back_to_linear(monkeypatch):
+    from groundwork_geophysics.core import interpolators
+    from groundwork_geophysics.core.interpolators import Interpolation
+
+    def no_memory(*_a, **_k):
+        raise MemoryError()
+
+    monkeypatch.setattr(interpolators, "interpolate", no_memory)
+    mesh = _layered()
+    linear = grid_model(mesh, None, (25, 13), log=False)
+    g = grid_model(mesh, None, (25, 13), log=False, interp=Interpolation(method="idw"))
+    assert np.array_equal(g.values, linear.values, equal_nan=True)
+    assert "not enough memory" in g.note and "()" not in g.note

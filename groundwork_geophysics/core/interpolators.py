@@ -26,6 +26,9 @@ MAX_ANISOTROPY = 20.0
 _SHAPED = ("multiquadric", "gaussian")
 #: targets solved at once by kriging: bounds the memory of the batched systems
 _BATCH = 2000
+#: cells sampled for a variogram: every pair is compared, so this bounds the memory
+#: (1 200 cells: 720 000 pairs, about 40 MB for a moment)
+VARIOGRAM_SAMPLE = 1200
 _LAG_BINS = 15
 _MIN_PAIRS = 10
 
@@ -156,7 +159,7 @@ def _experimental(p, v, direction: str | None = None):
 
 
 def fit_variogram(points, values, model: str = "spherical", anisotropy: float = 1.0,
-                  max_points: int = 2000, seed: int = 0) -> Variogram:
+                  max_points: int = VARIOGRAM_SAMPLE, seed: int = 0) -> Variogram:
     """The ``model`` variogram fitted (weighted least squares) to the experimental variogram
     of a random sample of the points; ValueError when it cannot be fitted."""
     from scipy.optimize import curve_fit
@@ -199,7 +202,8 @@ def _crossing(h, g, level: float) -> float | None:
     return float(np.interp(level, [g[k - 1], g[k]], [h[k - 1], h[k]]))
 
 
-def estimate_anisotropy(points, values, model: str = "spherical", max_points: int = 2000,
+def estimate_anisotropy(points, values, model: str = "spherical",
+                        max_points: int = VARIOGRAM_SAMPLE,
                         seed: int = 0) -> float:
     """Horizontal over vertical correlation length, from the directional variograms: the
     lags at which each reaches half the variance (a horizontal one that never does counts

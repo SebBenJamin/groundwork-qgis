@@ -322,10 +322,11 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
         try:
             new, fitted = _scattered(mesh, v, np.column_stack([S[nodes], Z[nodes]]), interp)
             out[nodes] = new
-        except (ValueError, np.linalg.LinAlgError) as exc:
+        except (ValueError, np.linalg.LinAlgError, MemoryError) as exc:
             from .interpolators import METHOD_NAMES
+            why = "not enough memory" if isinstance(exc, MemoryError) else str(exc)
             note = (f"{METHOD_NAMES.get(interp.method, interp.method)} could not be used "
-                    f"here ({exc}): the field is gridded linearly instead.")
+                    f"here ({why}): the field is gridded linearly instead.")
     if fill_to_ground and has_topo:
         # flat-topped cells leave steps under the ground line: fill each column upward from
         # its top valid node to the ground (the surface layer reaches the surface)
