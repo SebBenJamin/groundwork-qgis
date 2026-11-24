@@ -99,6 +99,8 @@ profile…**. Removing takes the model off the profile; the file stays where it 
    - **Contours**, with labels on the lines;
    - **Smooth field + contours**.
 - **Grid cell** of the smooth field: automatic, or your own size in metres.
+- **Interpolation**: how the smooth field and the contours are made from the model's cells
+  (see [Interpolation](#interpolation) below).
 - ③ **Contours**: automatic steps (1-2-5 per decade on a logarithmic scale), your own
   **Spacing**, or your own **Major levels** and **Minor levels**.
 - ④ **Coverage**: **Fade where coverage is low**, **Below** a threshold you set; **Fade** or
@@ -107,6 +109,41 @@ profile…**. Removing takes the model off the profile; the file stays where it 
 - **Show**, for measured data (BERT/pyGIMLi data files, R2/ResIPy misfit): **Measured apparent
   resistivity**, **Calculated apparent resistivity (model response)** or **Misfit**, drawn as
   **Points (one per reading)**.
+
+### Interpolation
+
+The smooth field and the contours are made on a fine grid over the model. **Interpolation**
+chooses how each point of that grid gets its value from the model's cells:
+
+| Method | What it does | Good for |
+|---|---|---|
+| **Linear (mesh)** (the default) | Blends the cells' values across the inversion's own mesh. | Showing the model as inverted, with nothing added. |
+| **Nearest neighbour** | Each point takes the value of the nearest cell. | Seeing the cells' own values, without blending. |
+| **Inverse distance** | Averages the nearby cells, nearer ones counting more (**Power**, 2 is usual; **Neighbours**, how many cells). | A quick, gentle smoothing. |
+| **Spline** | A smooth surface through the cells' values (**Kernel**; **Smoothing** 0 passes exactly through them, more smooths). | Smooth fields from few or uneven cells. |
+| **Ordinary kriging** | Weights the nearby cells by how values vary with distance in this model (its variogram). | Fields that respect the model's own structure, as geostatistics does it. |
+
+For **Ordinary kriging**:
+
+- **Variogram**: spherical, exponential or Gaussian.
+- **Fit to the data** (on by default) fits **Range**, **Sill** and **Nugget** to the model; untick
+  it to type your own. **Fit Now** shows the fit and puts it into the three fields.
+- **Neighbours**: how many cells each point is computed from (16 by default).
+
+**Anisotropy** (all but linear) is how much further values stay alike along the line than in
+depth. Layered ground has values that change faster with depth, so a larger anisotropy
+interpolates along the layers. **Automatic** uses the cells' own width over height; for
+kriging it is read from the model's variogram along and across the line.
+
+Whatever the method, the field stays inside the model: nothing past its outline, above the
+ground or into cells without a value, and the coverage fade still applies. On a logarithmic
+scale the methods work on the logarithm of the values, as the linear one does. When a method
+cannot be used on a model (kriging on values that do not vary, for example), the field is drawn
+linearly and the **Log Messages** panel (Groundwork tab) says why. Kriging and spline take a few
+seconds on large models.
+
+The setting is part of the model's look: the 3D view's smooth clouds and section pictures and
+the plates use it too.
 
 ## Boreholes on the section
 
