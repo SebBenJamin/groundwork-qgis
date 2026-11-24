@@ -97,7 +97,17 @@ def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callab
                                            QgsProject.instance())
 
     def xy_to_distance(easting, northing):
-        xy = np.column_stack([np.asarray(easting, float), np.asarray(northing, float)])
+        # exports repeat each position for every depth row (2 million rows, 2 600 places):
+        # each place is transformed and projected once
+        e, n = np.asarray(easting, float).ravel(), np.asarray(northing, float).ravel()
+        places, inverse = np.unique(e + 1j * n, return_inverse=True)
+        inverse = inverse.ravel()
+        if len(places) < len(e):
+            s, offset, beyond = _place(np.column_stack([places.real, places.imag]))
+            return s[inverse], offset[inverse], beyond[inverse]
+        return _place(np.column_stack([e, n]))
+
+    def _place(xy):
         if transform is not None:
             from qgis.core import QgsPointXY
             xy = np.array([[q.x(), q.y()] for q in

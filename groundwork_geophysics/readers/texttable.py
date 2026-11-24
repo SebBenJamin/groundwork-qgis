@@ -132,18 +132,50 @@ class NumericTable:
         return False
 
 
+def _first_lines(text: str, n: int) -> str:
+    """The first ``n`` lines of ``text`` (split at \\n), without splitting the rest."""
+    pos = -1
+    for _ in range(n):
+        pos = text.find("\n", pos + 1)
+        if pos < 0:
+            return text
+    return text[:pos]
+
+
+def _line_start(text: str, line_no: int) -> int:
+    """Index in ``text`` where file line ``line_no`` (1-based, split at \\n) begins."""
+    pos = -1
+    for _ in range(line_no - 1):
+        pos = text.find("\n", pos + 1)
+        if pos < 0:
+            return len(text)
+    return pos + 1
+
+
+def _lines_from(text: str, start: int, decimal_comma: bool):
+    """The lines of ``text`` from index ``start`` on, one at a time (commas as points when
+    ``decimal_comma``)."""
+    pos, end = start, len(text)
+    while pos < end:
+        nl = text.find("\n", pos)
+        line = text[pos:] if nl < 0 else text[pos:nl]
+        yield line.replace(",", ".") if decimal_comma else line
+        if nl < 0:
+            return
+        pos = nl + 1
+
+
 def read_numbers(path, options: TableOptions = TableOptions()) -> NumericTable | None:
     """The whole table as numbers alone, with numpy's own parser: fast and lean for a big
     model export. None when the table holds anything else (a text cell, a short row, a
     decimal comma, a comment inside a row): ``read_table`` reads those."""
-    import io
     import warnings
     import re
     text = decode_bytes(Path(path).read_bytes())
     if re.search("[\x0b\x0c\x1c-\x1e\x85  ]|\r(?!\n)", text):
         return None             # line breaks other than \n: the line numbers below could slip
-    head = _content_lines("\n".join(text.splitlines()[:options.skip + _VOTE_LINES]),
-                          options.skip)
+    # only the first lines are split (splitting a 2-million-line file ran out of memory)
+    head = _content_lines(_first_lines(text, options.skip + _VOTE_LINES), options.skip)
     if not head:
         return None
     delim, decimal = _resolve(options, head)
@@ -154,15 +186,16 @@ def read_numbers(path, options: TableOptions = TableOptions()) -> NumericTable |
         if len(head) < 2:
             return None
         first = head[1][0]
-    body = text.split("\n", first - 1)[-1] if first > 1 else text
-    if "#" in body or "//" in body:
+    start = _line_start(text, first)
+    if text.find("#", start) >= 0 or text.find("//", start) >= 0:
         return None
-    if decimal:                         # commas are decimal points here (never the delimiter)
-        body = body.replace(",", ".")
+    # the parser takes the table's lines one by one from the text read: no copy of a big
+    # file is made (decimal commas, which are never the delimiter here, become points per line)
+    lines = _lines_from(text, start, decimal)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error")              # an empty table: not for us
-            values = np.loadtxt(io.StringIO(body), delimiter=None if delim == " " else delim,
+            values = np.loadtxt(lines, delimiter=None if delim == " " else delim,
                                 dtype=float, ndmin=2, comments=None)
     except (ValueError, UserWarning):
         return None

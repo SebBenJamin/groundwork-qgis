@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import numpy as np
 
+#: (points x segments) projected at once: bounds the memory of ``Chainage.project``
+_PROJECT_CHUNK = 2_000_000
+
 
 class Chainage:
     """A polyline with a distance-along-line coordinate ``s``."""
@@ -48,6 +51,14 @@ class Chainage:
         to it, positive to the left of the line direction.
         """
         p = np.atleast_2d(np.asarray(xy, dtype=float))
+        rows = max(1, _PROJECT_CHUNK // len(self._seg_len))   # bounded (points x segments)
+        if len(p) <= rows:
+            return self._project(p)
+        parts = [self._project(p[i:i + rows]) for i in range(0, len(p), rows)]
+        return (np.concatenate([s for s, _o in parts]),
+                np.concatenate([o for _s, o in parts]))
+
+    def _project(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         a = self._xy[:-1]
         d = np.diff(self._xy, axis=0)
         rel = p[:, None, :] - a[None, :, :]                      # (m, k, 2)
