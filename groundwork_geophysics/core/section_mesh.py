@@ -115,6 +115,9 @@ class SectionMesh:
     #: None when the file does not say
     coverage_cut: float | None = field(default=None, repr=False, compare=False)
     _bbox: np.ndarray | None = field(default=None, init=False, repr=False, compare=False)
+    #: what is worked out once per mesh (bounds, the automatic grid cell): a mesh is never
+    #: changed in place, and a copy (dataclasses.replace) starts with an empty memo
+    _memo: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def __post_init__(self):
         self.vertices = np.asarray(self.vertices, dtype=float)
@@ -315,9 +318,12 @@ class SectionMesh:
 
     # -- queries --------------------------------------------------------
     def bounds(self) -> tuple[float, float, float, float]:
-        used = self.vertices[np.unique(self.cells[self.cells >= 0])]
-        return (float(used[:, 0].min()), float(used[:, 0].max()),
-                float(used[:, 1].min()), float(used[:, 1].max()))
+        """(smin, smax, zmin, zmax) of the vertices the cells use."""
+        if "bounds" not in self._memo:
+            used = self.vertices[np.unique(self.cells[self.cells >= 0])]
+            self._memo["bounds"] = (float(used[:, 0].min()), float(used[:, 0].max()),
+                                    float(used[:, 1].min()), float(used[:, 1].max()))
+        return self._memo["bounds"]
 
     def _cell_bboxes(self) -> np.ndarray:
         if self._bbox is None:

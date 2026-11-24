@@ -93,14 +93,23 @@ def grid_shape(mesh, cell: float | None, max_nodes: int = 250_000) -> tuple[int,
     smin, smax, zmin, zmax = mesh.bounds()
     width, height = max(smax - smin, 1e-9), max(zmax - zmin, 1e-9)
     if cell is None or cell <= 0:
-        size = np.sort(_longest_edges(mesh))
-        # finer than the mesh, so the field looks smooth; never absurdly fine
-        cell = max(float(np.median(size[:max(1, len(size) // 20)])) / 4, width / 1500)
+        cell = _auto_cell(mesh, width)
     nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
     while nx * nz > max_nodes:
         cell *= np.sqrt(nx * nz / max_nodes) * 1.01
         nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
     return max(nx, 2), max(nz, 2)
+
+
+def _auto_cell(mesh, width: float) -> float:
+    """The automatic grid cell of ``mesh`` (see ``grid_shape``), worked out once per mesh."""
+    memo = getattr(mesh, "_memo", {})
+    if "auto_cell" not in memo:
+        size = np.sort(_longest_edges(mesh))
+        # finer than the mesh, so the field looks smooth; never absurdly fine
+        memo["auto_cell"] = max(float(np.median(size[:max(1, len(size) // 20)])) / 4,
+                                width / 1500)
+    return memo["auto_cell"]
 
 
 def width_of(verts: np.ndarray) -> float:

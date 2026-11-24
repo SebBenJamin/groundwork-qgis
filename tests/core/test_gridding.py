@@ -142,3 +142,16 @@ def test_default_threshold_prefers_the_files_cut():
     assert default_threshold([0, 1, 2, 3], cut=1.5) == 1.5
     assert default_threshold([0, 1, 2, 3], cut=None) == default_threshold([0, 1, 2, 3])
     assert np.isfinite(default_threshold([np.nan, 1.0], cut=float("nan")))
+
+
+def test_automatic_grid_size_is_worked_out_once_per_mesh(monkeypatch):
+    # every redraw of a smooth or contour display asks for it
+    from groundwork_geophysics.core import gridding
+    m = regular_mesh()
+    calls = []
+    real = gridding._longest_edges
+    monkeypatch.setattr(gridding, "_longest_edges", lambda mesh: calls.append(1) or real(mesh))
+    assert grid_shape(m, None) == grid_shape(m, None)
+    assert len(calls) == 1
+    grid_shape(m, 0.5)                                  # an own cell needs no guess
+    assert len(calls) == 1

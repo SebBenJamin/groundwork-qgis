@@ -236,3 +236,17 @@ def test_mesh_from_points_puts_minus_inf_coverage_below_the_rest():
     assert np.isfinite(mesh.coverage).any() and not np.isinf(mesh.coverage).any()
     assert np.nanmin(mesh.coverage) >= 0.0 - 1e-9          # -inf -> 1.0 - 1 = 0.0
     assert mesh.coverage_cut == 1.5
+
+
+def test_bounds_are_worked_out_once_per_mesh():
+    # every redraw asks for them; a big model took over a second each time
+    m = SectionMesh.from_points(*grid_points())
+    assert m.bounds() is m.bounds()
+
+
+def test_a_moved_copy_of_a_mesh_has_its_own_bounds():
+    from dataclasses import replace
+    m = SectionMesh.from_points(*grid_points())
+    m.bounds()
+    moved = replace(m, vertices=m.vertices + [100.0, 10.0])
+    assert moved.bounds() == pytest.approx((100, 110, 5, 10))
