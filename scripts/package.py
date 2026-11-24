@@ -36,7 +36,9 @@ EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 EXCLUDE_DIR_PATTERNS = ("*_groundwork_3d",)
 EXCLUDE_FILES = ("*.qto3settings", "*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
                  "*-journal", "*.aux.xml", ".DS_Store", "Thumbs.db")
-MAX_PLUGIN_BYTES = 1_000_000
+#: a guard against data or build output leaking into the plugin zip (code and the FGDC
+#: patterns were 0.92 MB at 0.14.2 and passed 1 MB with Add Data's several files)
+MAX_PLUGIN_BYTES = 1_500_000
 
 
 def version() -> str:
