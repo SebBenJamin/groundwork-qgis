@@ -444,17 +444,28 @@ def matching_profiles(profiles: list[Profile], xy: np.ndarray,
     return out
 
 
+def _valued_cells(mesh: SectionMesh) -> SectionMesh:
+    """``mesh`` with only its cells that have a value (``mesh`` itself when all have)."""
+    keep = np.isfinite(mesh.values)
+    if keep.all() or not keep.any():
+        return mesh
+    return replace(mesh, cells=mesh.cells[keep], values=mesh.values[keep],
+                   coverage=None if mesh.coverage is None else mesh.coverage[keep])
+
+
 def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
                ) -> tuple[np.ndarray, np.ndarray] | None:
     """Top edge ``(s, z)`` of the first model of ``z_kind`` placed in ``placed``
     (``SectionDataProvider._placed``); None when there is none. A dataset that could not be
-    read, a readings dataset and a mesh without a usable top are skipped."""
+    read, a readings dataset and a mesh without a usable top are skipped. Only cells with
+    a value count: exports fill their rectangle above the terrain with -9999, and those
+    empty cells are no ground."""
     for d in datasets:
         item = placed.get(d.id)
         if not isinstance(item, tuple) or item[1] != z_kind or item[0].readings is not None:
             continue
         try:
-            s, z = item[0].top_edge()
+            s, z = _valued_cells(item[0]).top_edge()
         except Exception:                       # an odd mesh just gives no surface
             continue
         if len(s) >= 2:
