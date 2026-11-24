@@ -125,6 +125,33 @@ def test_field_notes_list_excludes_hidden(env):
     assert text.index("wet ground") < text.index("fence") and "secret" not in text
 
 
+def test_plate_prints_no_empty_notes_or_interpretation_blocks(env):
+    """A plate without field notes or interpretation printed "Field notes (none)" and an
+    "Interpretation" heading over nothing; both blocks now stay empty until they have
+    content."""
+    from groundwork_geophysics.core.field_notes import FieldNote
+    from groundwork_geophysics.core.interpretation import InterpFeature, InterpPiece, new_id
+    from groundwork_geophysics.plates.build import create_or_update_plate
+    st, p, prov, prj = env
+    plate = _plate(st, p)
+    plate.frames[0].look.field_notes = True
+    layout = create_or_update_plate(prj, st, prov, plate)
+    assert layout.itemById("wb_field_notes").text() == ""
+    assert not layout.itemById("wb_legend_interp").isVisible()
+    st.save_field_note(FieldNote("a", p.id, 30.0, None, "fence"))
+    st.ensure_interpretation()
+    v = st.current_version()
+    f = InterpFeature(new_id(), v.id, type="clay")
+    st.save_feature(f)
+    st.save_piece(InterpPiece(new_id(), v.id, f.id, p.id, "point", [(5.0, -1.0)]))
+    from groundwork_geophysics.ui.interp_layers import add_interp_layers
+    st.rebuild_derived(v.id, {p.id: p.chainage})   # as the plugin does after an edit
+    add_interp_layers(st, prj)                  # as the plugin does once there is one
+    create_or_update_plate(prj, st, prov, plate)
+    assert "fence" in layout.itemById("wb_field_notes").text()
+    assert layout.itemById("wb_legend_interp").isVisible()
+
+
 def test_title_reads_project_variables(env):
     from qgis.core import QgsExpressionContextUtils
 

@@ -37,6 +37,23 @@ def test_layer_rows_fit_without_horizontal_scrolling(qgis_app, store_with_model)
         qgis_app.processEvents()
 
 
+def test_cut_layer_name_keeps_its_start_and_its_end(qgis_app):
+    """Names on one line often share their start ("Line 3 model", "Line 3 misfit"): a cut
+    name keeps both ends, so the rows stay told apart."""
+    from groundwork_geophysics.section.layer_list import _ElidedCheck
+    check = _ElidedCheck("Transect 3 resistivity model (robust inversion)")
+    check.resize(150, 20)
+    check.show()
+    qgis_app.processEvents()
+    try:
+        shown = check.text()
+        assert "…" in shown
+        assert shown.startswith("Tran") and shown.endswith("ion)")
+    finally:
+        check.close()
+        check.deleteLater()
+
+
 def test_layer_list_widens_in_its_splitter_for_full_names(qgis_app, store_with_model):
     from dataclasses import replace
 

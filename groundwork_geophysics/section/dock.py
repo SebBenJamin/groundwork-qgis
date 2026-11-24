@@ -34,7 +34,7 @@ from .profile_source import SOURCE_ID
 from .readout import format_readout
 from .topo_switch import TopoSwitch
 from .view_extent import data_extent, headroom_px
-from .view_fit import ViewFitter
+from .view_fit import ViewFitter, keep_auto_text_whole
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
 AUTO_VE = 0.0                   # the VE box's "Auto": the exaggeration that fills the panel
@@ -146,6 +146,7 @@ class SectionDock(QDockWidget):
         self.ve_spin.setValue(DEFAULT_VE)
         self.ve_spin.setSuffix(" ×")
         self.ve_spin.setToolTip("Vertical exaggeration (Auto: fill the panel)")
+        keep_auto_text_whole(self.ve_spin)
         self.ve_spin.valueChanged.connect(self._ve_changed)
         zoom_button = QToolButton()
         zoom_button.setText("Zoom Full")

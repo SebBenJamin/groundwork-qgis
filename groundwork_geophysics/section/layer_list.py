@@ -41,7 +41,8 @@ def _exec_once(menu: QMenu, pos) -> None:
 
 
 class _ElidedCheck(QCheckBox):
-    """A check box whose text ends in "…" when cut (the full name is in the tooltip)."""
+    """A check box whose text is cut in the middle with "…" (names on one line often share
+    their start; the full name is in the tooltip)."""
 
     def __init__(self, text: str):
         super().__init__(text)
@@ -59,7 +60,7 @@ class _ElidedCheck(QCheckBox):
     def resizeEvent(self, event):
         indicator = self.style().pixelMetric(self.style().PixelMetric.PM_IndicatorWidth) + 8
         room = max(10, self.width() - indicator)
-        super().setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight,
+        super().setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle,
                                                       room))
         super().resizeEvent(event)
 

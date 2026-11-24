@@ -120,6 +120,19 @@ def test_profile_menu_offers_zoom_map(qgis_app, store_with_model, make_dock):
     assert got == [p.id]
 
 
+def test_ve_box_shows_its_whole_auto_text_at_laptop_width(qgis_app, store_with_model,
+                                                         make_dock):
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    dock.ve_spin.setSpecialValueText("Auto (12.5×)")
+    dock.ve_spin.setValue(dock.ve_spin.minimum())
+    dock.resize(1000, 420)                      # narrower than a 1280 px laptop panel
+    qgis_app.processEvents()
+    edit = dock.ve_spin.lineEdit()
+    assert edit.width() >= edit.fontMetrics().horizontalAdvance("Auto (12.5×)")
+
+
 def test_hiding_layer_triggers_refresh(qgis_app, store_with_model, make_dock):
     st, p, _ = store_with_model
     dock = make_dock(st); dock.open_profile(p.id)

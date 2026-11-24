@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from qgis.core import (Qgis, QgsBasicNumericFormat, QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform, QgsExpressionBasedNumericFormat,
-                       QgsExpressionContextUtils, QgsLayerTreeUtils,
+                       QgsExpressionContextUtils, QgsFeatureRequest, QgsLayerTreeUtils,
                        QgsLayoutItemElevationProfile, QgsLayoutItemLabel, QgsLayoutItemLegend,
                        QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsLayoutUtils,
                        QgsLineSymbol, QgsMapLayerStyle, QgsMarkerLineSymbolLayer,
@@ -374,7 +374,7 @@ def field_notes_text(store, plate, names: dict) -> str:
             text = " ".join(n.text.split())
             head = f"{names[pid]} · " if len(pids) > 1 else ""
             lines.append(f"{head}{where} · {text}")
-    return "\n".join(["Field notes"] + (lines or ["(none)"]))
+    return "\n".join(["Field notes"] + lines) if lines else ""     # no empty block printed
 
 
 NOT_FIT = "does not fit the frame at this scale: part of the section is cut off"
@@ -412,12 +412,18 @@ def _update_interp_legend(layout, store, project, plate, versions: dict) -> None
     pairs = sorted({(pid, v) for pid, v in versions.items() if v})
     expr = " OR ".join(f"(\"profile_id\" = {_quoted(pid)} AND \"version_id\" = {_quoted(v)})"
                        for pid, v in pairs) or "FALSE"
+    shown = False                               # any feature to list (else no empty heading)
     for name in INTERP_LEGEND_LAYERS:
         layer = layers.get(name)
         if layer is None:
             continue
         node = root.addLayer(layer)
         QgsLayerTreeUtils.setLegendFilterByExpression(node, expr)
+        if not shown:
+            request = QgsFeatureRequest().setFilterExpression(expr).setLimit(1)
+            request.setFlags(QgsFeatureRequest.Flag.NoGeometry)
+            shown = any(True for _ in layer.getFeatures(request))
+    legend.setVisibility(shown)
     legend.setCustomProperty(WRITTEN, _legend_signature(root))
     legend.updateLegend()
 
