@@ -237,3 +237,67 @@ def test_a_clean_model_file_is_read_without_its_text(tmp_path, monkeypatch):
     r = readers.read(WILD / "x_zero_depth_rho.txt", reader="text_columns", table=NO_HEADER,
                      columns=DEPTH_COLS.to_dict())
     assert r.mesh is not None
+
+
+DIST_ELEV = ModelColumns(distance=0, vertical=1, vertical_kind="elevation", value=2)
+
+
+def _lattice_file(path, nx, nz, dx=0.25, dz=0.1, depth=False):
+    """A model exported on a fine lattice: distance, elevation (or depth), resistivity."""
+    x, z = np.meshgrid(np.arange(nx) * dx, (1 if depth else -1) * (np.arange(nz) * dz
+                                                                   + (0.05 if depth else 0)))
+    rho = 10 ** (1 + x / 50)
+    np.savetxt(path, np.column_stack([x.ravel(), z.ravel(), rho.ravel()]), fmt="%.4f")
+    return path
+
+
+def test_a_block_reads_the_file_as_coarser_averaged_cells(tmp_path):
+    path = _lattice_file(tmp_path / "fine.txt", 40, 20)
+    full = _read(path, DIST_ELEV)
+    r = _read(path, DIST_ELEV, block=[4, 5])
+    assert len(r.mesh.values) == 10 * 4
+    assert r.provenance["block"] == [4, 5]
+    assert r.provenance["cell"] == pytest.approx([1.0, 0.5])
+    assert r.provenance["cell_file"] == pytest.approx([0.25, 0.1])
+    assert r.provenance["n_points_file"] == 800
+    assert r.mesh.bounds() == pytest.approx(full.mesh.bounds(), abs=1e-9)
+
+
+def test_a_depth_model_still_hangs_from_the_surface_when_coarsened(tmp_path):
+    path = _lattice_file(tmp_path / "depth.txt", 40, 20, depth=True)
+    cols = ModelColumns(distance=0, vertical=1, vertical_kind="depth", value=2)
+    r = _read(path, cols, block=[4, 5])
+    assert r.provenance["reconstruction"] == "rows"
+    assert min(r.mesh.bounds()[2:]) == pytest.approx(0.0)
+
+
+def test_a_map_file_with_a_bend_is_averaged_along_its_line(tmp_path):
+    s = np.arange(81) * 0.25                                    # 0 .. 20 m along an L
+    e = np.where(s <= 10, 100 + s, 110.0)
+    n = np.where(s <= 10, 200.0, 200 + s - 10)
+    rows = [(e[i], n[i], 0.05 + 0.1 * k, 50.0) for k in range(20) for i in range(81)]
+    path = tmp_path / "bend.txt"
+    np.savetxt(path, rows, fmt="%.4f")
+
+    def project(ee, nn):
+        along = np.where(nn == 200.0, ee - 100, 10 + nn - 200)
+        return along, np.zeros_like(along)
+    r = readers.read(path, reader="text_columns", table=NO_HEADER, columns=MAP_COLS,
+                     xy_to_distance=project, block=[4, 5])
+    assert len(r.mesh.values) == 21 * 4                         # 81 positions in blocks of 4
+    assert r.mesh.bounds()[:2] == pytest.approx((-0.125, 20.125))
+
+
+def test_the_grid_of_a_big_file_is_found_and_a_small_one_is_not_read(tmp_path, monkeypatch):
+    from groundwork_geophysics.core.coarsen import PointGrid
+    from groundwork_geophysics.readers import text_columns
+    from groundwork_geophysics.readers.text_columns import grid_of_file
+    big = _lattice_file(tmp_path / "big.txt", 404, 250)
+    g = grid_of_file(big, NO_HEADER, DIST_ELEV.to_dict())
+    assert isinstance(g, PointGrid) and g.n_points == 101_000 and g.dx == pytest.approx(0.25) and g.dz == pytest.approx(0.1)
+    small = _lattice_file(tmp_path / "small.txt", 10, 5)
+
+    def no_read(*_a, **_k):
+        raise AssertionError("a small file is not read for its grid")
+    monkeypatch.setattr(text_columns, "read_numbers", no_read)
+    assert grid_of_file(small, NO_HEADER, DIST_ELEV.to_dict()) is None

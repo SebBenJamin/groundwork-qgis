@@ -3,8 +3,8 @@
 Some programs export a model interpolated onto a grid far finer than the inversion
 resolves (0.25 m x 0.1 m, millions of points). Such a table's points lie on a regular
 lattice in position and vertical (``point_grid``); Add Data offers whole-number blocks of
-them (``proposed_block``) and the reader averages each block into one point
-(``coarsen_points``) before the cells are rebuilt. The file is never changed.
+them (``proposed_block``) and the reader averages each block into one cell
+(``coarsen_boxes``). The file is never changed.
 """
 from __future__ import annotations
 
@@ -85,26 +85,34 @@ def proposed_block(grid: PointGrid) -> tuple[int, int] | None:
                                                   - old)))
 
 
-def coarsen_points(x, z, v, coverage, block: tuple[int, int], log: bool):
-    """``(x, z, v, coverage)`` with every block of ``block`` = (fx, fz) lattice points
-    averaged into one point at the middle of the block's levels. ``v`` without a value is
-    NaN (the caller turns fill values into NaN); a block keeps a value when at least half
-    of its points have one: the mean (of log10 values when ``log``), else NaN. Coverage:
-    the mean of its finite values, -inf when all it has is -inf (no ray), else NaN.
-    ValueError when the points are not on a regular grid."""
+def coarsen_boxes(x, z, v, coverage, block: tuple[int, int], log: bool):
+    """``(boxes, v, coverage)``: every block of ``block`` = (fx, fz) lattice points averaged
+    into one cell. A box (x_lo, x_hi, z_lo, z_hi) spans the levels its own points have,
+    half a spacing beyond, so the model's outline stays where it was (a block at the edge
+    holds fewer points). ``v`` without a value is NaN (the caller turns fill values into
+    NaN); a block keeps a value when at least half of its points have one: the mean (of
+    log10 values when ``log``), else NaN. Coverage: the mean of its finite values, -inf
+    when all it has is -inf (no ray), else NaN. ValueError when the points are not on a
+    regular grid."""
     x, z, v = (np.asarray(a, float).ravel() for a in (x, z, v))
     gx, gz = _lattice(x), _lattice(z)
     if gx is None or gz is None:
         raise ValueError("the points are not on a regular grid")
     fx, fz = (max(1, int(f)) for f in block)
-    bx = np.round((x - gx[0]) / gx[1]).astype(np.int64) // fx
-    bz = np.round((z - gz[0]) / gz[1]).astype(np.int64) // fz
-    keys, inverse = np.unique(bx * (int(bz.max()) + 1) + bz, return_inverse=True)
+    ix = np.round((x - gx[0]) / gx[1]).astype(np.int64)
+    iz = np.round((z - gz[0]) / gz[1]).astype(np.int64)
+    rows = int(iz.max()) // fz + 1
+    keys, inverse = np.unique((ix // fx) * rows + iz // fz, return_inverse=True)
     inverse = inverse.ravel()
     n = len(keys)
-    kx, kz = keys // (int(bz.max()) + 1), keys % (int(bz.max()) + 1)
-    cx = gx[0] + gx[1] * (kx * fx + (fx - 1) / 2)
-    cz = gz[0] + gz[1] * (kz * fz + (fz - 1) / 2)
+    order = np.argsort(inverse, kind="stable")
+    starts = np.r_[0, np.flatnonzero(np.diff(inverse[order])) + 1]
+
+    def span(i, g):
+        lo = np.minimum.reduceat(i[order], starts)
+        hi = np.maximum.reduceat(i[order], starts)
+        return g[0] + g[1] * (lo - 0.5), g[0] + g[1] * (hi + 0.5)
+    boxes = np.column_stack([*span(ix, gx), *span(iz, gz)])
     with np.errstate(invalid="ignore", divide="ignore"):
         vals = np.log10(np.where(v > 0, v, np.nan)) if log else v
     has = np.isfinite(vals)
@@ -123,4 +131,4 @@ def coarsen_points(x, z, v, coverage, block: tuple[int, int], log: bool):
         c_sum = np.bincount(inverse[fin], weights=cov[fin], minlength=n)
         no_ray = np.bincount(inverse[np.isneginf(cov)], minlength=n) > 0
         ccov = np.where(c_n > 0, c_sum / np.maximum(c_n, 1), np.where(no_ray, -np.inf, np.nan))
-    return cx, cz, cv, ccov
+    return boxes, cv, ccov
