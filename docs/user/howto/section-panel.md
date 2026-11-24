@@ -27,6 +27,8 @@ Right-click the **Profile** list for **Profile Properties…** and **Delete Prof
 
 ## Section and map, linked
 
+- **Zoom Map to Profile** (the magnifier next to the **Profile** list, also in its right-click
+  menu) zooms the map to the open profile's line and flashes it.
 - Moving the mouse over the section moves a marker along the profile on the map.
 - With **Pick Profile on Map** on, moving the mouse near the open profile on the map moves a red
   dashed guide line through the section.

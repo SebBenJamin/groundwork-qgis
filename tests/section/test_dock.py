@@ -88,6 +88,38 @@ def test_cursor_moves_map_marker(qgis_app, store_with_model, make_dock_and_link)
     assert not link.marker.isVisible()
 
 
+def test_zoom_map_button_zooms_map_to_open_profile(qgis_app, store_with_model,
+                                                  make_dock_and_link):
+    st, p, _ = store_with_model                 # the line runs (0, 0) -> (50, 0)
+    dock, link = make_dock_and_link(st)
+    assert not dock.zoom_map_button.isEnabled()         # no profile open yet
+    assert "open a profile" in dock.zoom_map_button.toolTip().lower()
+    link.map_canvas.setExtent(link.map_canvas.extent().buffered(5000))   # far out
+    dock.open_profile(p.id)
+    assert dock.zoom_map_button.isEnabled()
+    dock.zoom_map_button.click()
+    e = link.map_canvas.extent()
+    assert e.xMinimum() < 0 and e.xMaximum() > 50       # the whole line, with a margin
+    assert e.xMinimum() > -50 and e.xMaximum() < 100    # zoomed in, not left far out
+    assert e.yMinimum() < 0 < e.yMaximum()
+
+
+def test_profile_menu_offers_zoom_map(qgis_app, store_with_model, make_dock):
+    from groundwork_geophysics.section.dock import ZOOM_MAP_TEXT
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    menu = dock.profile_menu()
+    [entry] = [a for a in menu.actions() if a.text() == ZOOM_MAP_TEXT]
+    assert not entry.isEnabled()
+    dock.open_profile(p.id)
+    got = []
+    dock.zoom_map_requested.connect(got.append)
+    menu = dock.profile_menu()
+    [entry] = [a for a in menu.actions() if a.text() == ZOOM_MAP_TEXT]
+    entry.trigger()
+    assert got == [p.id]
+
+
 def test_hiding_layer_triggers_refresh(qgis_app, store_with_model, make_dock):
     st, p, _ = store_with_model
     dock = make_dock(st); dock.open_profile(p.id)

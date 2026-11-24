@@ -60,6 +60,9 @@ UNCUT_3D_TEXT = "Remove 3D Cut"
 SHOW_3D_TEXT = "Show in 3D…"
 VIEW3D_BUTTON_TEXT = "3D"
 VIEW3D_BUTTON_TIP = "The open profile in QGIS's 3D view: look at it, cut the view along it"
+ZOOM_MAP_TEXT = "Zoom Map to Profile"
+ZOOM_MAP_TIP = "Zoom the map to the open profile's line"
+ZOOM_MAP_OFF_TIP = "Open a profile first; then this zooms the map to its line"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
@@ -105,6 +108,7 @@ class SectionDock(QDockWidget):
     #: (profile id, "look" | "cut" | "uncut" | "dialog"): the 3D button's and profile
     #: menu's entries
     view3d_requested = pyqtSignal(str, str)
+    zoom_map_requested = pyqtSignal(str)        # profile id: "Zoom Map to Profile"
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -200,6 +204,15 @@ class SectionDock(QDockWidget):
         self.pick_button = QToolButton()
         self.pick_button.setAutoRaise(True)
         top.addWidget(self.pick_button)
+        # the map follows the panel: zoom it to the open profile's line
+        self.zoom_map_button = QToolButton()
+        self.zoom_map_button.setAutoRaise(True)
+        self.zoom_map_button.setIcon(QgsApplication.getThemeIcon("/mActionZoomToSelected.svg"))
+        self.zoom_map_button.setText(ZOOM_MAP_TEXT)
+        self.zoom_map_button.clicked.connect(self._zoom_map)
+        self.profile_changed.connect(self._sync_zoom_map)
+        self._sync_zoom_map()
+        top.addWidget(self.zoom_map_button)
         # the open profile in QGIS's 3D view: a drop-down, filled when it opens
         self.view3d_button = QToolButton()
         self.view3d_button.setText(VIEW3D_BUTTON_TEXT)
@@ -800,7 +813,12 @@ class SectionDock(QDockWidget):
         menu = QMenu()
         enabled = self.current_profile_id() is not None
         for text, slot in ((RENAME_TEXT, self._rename_open_profile),
-                           (DELETE_TEXT, self._delete_open_profile)):
+                           (DELETE_TEXT, self._delete_open_profile),
+                           (None, None),
+                           (ZOOM_MAP_TEXT, self._zoom_map)):
+            if text is None:
+                menu.addSeparator()
+                continue
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
@@ -860,6 +878,15 @@ class SectionDock(QDockWidget):
     def _delete_open_profile(self, *_args) -> None:
         if self.current_profile_id():
             self.delete_requested.emit(self.current_profile_id())
+
+    def _zoom_map(self, *_args) -> None:
+        if self.current_profile_id():
+            self.zoom_map_requested.emit(self.current_profile_id())
+
+    def _sync_zoom_map(self, *_args) -> None:
+        on = self.current_profile_id() is not None
+        self.zoom_map_button.setEnabled(on)
+        self.zoom_map_button.setToolTip(ZOOM_MAP_TIP if on else ZOOM_MAP_OFF_TIP)
 
     def _look_3d(self, *_args) -> None:
         if self.current_profile_id():
