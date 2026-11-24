@@ -11,6 +11,8 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 from ..core.colors import ColorScale
 
 LIMIT = 1e12            # spin box range for linear scales
+MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then it scrolls)
+MIN_WIDTH = 420         # its groups never squeezed below this
 LOG_MIN = 0.001         # smallest minimum on a log scale (= the spin boxes' 3 decimals)
 
 
@@ -168,6 +170,15 @@ class ColorScaleDialog(QDialog):
 SHOWN_TEXT = {"misfit": "Misfit (calculated − measured) / measured",
               "measured": "Measured apparent resistivity",
               "calculated": "Calculated apparent resistivity (model response)"}
+KERNEL_TEXT = {"thin_plate_spline": "Thin-plate", "cubic": "Cubic", "quintic": "Quintic",
+               "multiquadric": "Multiquadric", "gaussian": "Gaussian"}
+METHOD_TIP = ("How the smooth field and contours are made from the model's cells. Linear "
+              "(mesh) follows the inversion's own cells.")
+METHOD_OFF_TIP = "Used by the smooth field and contours: draw as Smooth or Contours to choose it"
+ANISO_TIP = ("Horizontal over vertical correlation length: larger values follow layered "
+             "ground along its layers")
+ANISO_AUTO_TIP = ("Kriging: read from the model's directional variograms; the other methods: "
+                  "the cells' own width over height")
 MODE_TEXT = {"points": "Points (one per reading)", "cells": "Cells (as inverted)",
              "smooth": "Smooth colour field",
              "contours": "Contours", "smooth+contours": "Smooth field + contours"}
@@ -230,6 +241,8 @@ class DisplayDialog(ColorScaleDialog):
         row.addWidget(self.cell_spin)
         row.addWidget(self.auto_cell)
         form.addRow("Grid cell", row)
+        self._mesh = mesh
+        self._build_interpolation(form, getattr(style, "interpolation", None))
 
         contours = QGroupBox("Contours")
         contours.setObjectName("contours_group")
@@ -269,8 +282,9 @@ class DisplayDialog(ColorScaleDialog):
         self._levels_typed()
         self.contours_group = contours
         # contour settings only matter when contours are drawn; the spacing's unit follows
-        # the scale (decades on a logarithmic one)
+        # the scale (decades on a logarithmic one); the interpolation when a field is drawn
         self.mode_combo.currentIndexChanged.connect(lambda _i: self._mode_changed())
+        self.mode_combo.currentIndexChanged.connect(lambda _i: self._sync_interpolation())
         self.log_check.toggled.connect(lambda _on: self._step_unit())
         self._mode_changed()
         self._step_unit()
@@ -302,9 +316,232 @@ class DisplayDialog(ColorScaleDialog):
             self.coverage_group.setEnabled(False)
             self.coverage_group.setToolTip("This model file has no coverage or sensitivity")
 
+        # the scale and the three groups scroll, the buttons stay: at most MAX_HEIGHT tall
+        from qgis.PyQt.QtWidgets import QFrame, QScrollArea, QWidget
         layout = self.layout()
-        for i, box in enumerate((display, contours, self.coverage_group)):
-            layout.insertWidget(1 + i, box)
+        self._page = QWidget()
+        column = QVBoxLayout(self._page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.addLayout(layout.takeAt(0).layout())
+        for box in (display, contours, self.coverage_group):
+            column.addWidget(box)
+        column.addStretch(1)
+        self._scroll = QScrollArea()
+        self._scroll.setObjectName("display_scroll")
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setWidget(self._page)
+        layout.insertWidget(0, self._scroll, 1)
+        self._rest = layout.sizeHint().height() - self._scroll.sizeHint().height()
+        self._fit_height()
+
+    def _fit_height(self) -> None:
+        """As tall as the content, at most ``MAX_HEIGHT`` (then the groups scroll)."""
+        scroll = getattr(self, "_scroll", None)
+        if scroll is None:
+            return
+        bar = scroll.verticalScrollBar().sizeHint().width()
+        scroll.setMinimumWidth(max(self._page.sizeHint().width() + bar, MIN_WIDTH))
+        scroll.setMinimumHeight(min(self._page.sizeHint().height(), MAX_HEIGHT - self._rest))
+        self.adjustSize()
+
+    # -- interpolation of the smooth field -------------------------------------------------
+    def _build_interpolation(self, form, interp) -> None:
+        """Interpolation, the chosen method's few settings and the anisotropy, under the
+        grid cell (``core.interpolators``)."""
+        from qgis.PyQt.QtWidgets import QSizePolicy, QSpinBox, QStackedWidget, QWidget
+
+        from ..core.interpolators import (DEFAULT_NEIGHBOURS, KERNELS, METHOD_NAMES, METHODS,
+                                          VARIOGRAMS, Interpolation)
+        interp = interp or Interpolation()
+        self._interp_form = form
+        self.method_combo = QComboBox()
+        self.method_combo.setObjectName("method_combo")
+        for m in METHODS:
+            self.method_combo.addItem(METHOD_NAMES[m], m)
+        self.method_combo.setCurrentIndex(max(0, self.method_combo.findData(interp.method)))
+        form.addRow("Interpolation", self.method_combo)
+
+        def spin(low, high, decimals, value, step=None):
+            s = QDoubleSpinBox()
+            s.setRange(low, high)
+            s.setDecimals(decimals)
+            s.setValue(value)
+            if step:
+                s.setSingleStep(step)
+            return s
+
+        def neighbours(method):
+            s = QSpinBox()
+            s.setRange(1, 64)
+            s.setValue(interp.neighbours if interp.method == method and interp.neighbours
+                       else DEFAULT_NEIGHBOURS[method])
+            s.setToolTip("How many cells around each point of the field are used")
+            return s
+
+        def page(*rows):
+            w = QWidget()
+            box = QVBoxLayout(w)
+            box.setContentsMargins(0, 0, 0, 0)
+            for items in rows:
+                line = QHBoxLayout()
+                for item in items:
+                    line.addWidget(QLabel(item) if isinstance(item, str) else item)
+                line.addStretch(1)
+                box.addLayout(line)
+            return w
+
+        self.power_spin = spin(0.5, 10.0, 1, interp.power, 0.5)
+        self.power_spin.setToolTip("Higher: nearer cells count more (2 is usual)")
+        self.idw_neighbours = neighbours("idw")
+        self.kernel_combo = QComboBox()
+        for k in KERNELS:
+            self.kernel_combo.addItem(KERNEL_TEXT[k], k)
+        self.kernel_combo.setCurrentIndex(max(0, self.kernel_combo.findData(interp.kernel)))
+        self.smooth_spin = spin(0.0, 1000.0, 2, interp.smoothing, 0.1)
+        self.smooth_spin.setToolTip("0 passes exactly through the cell values; larger values "
+                                    "smooth the field")
+        self.variogram_combo = QComboBox()
+        for v in VARIOGRAMS:
+            self.variogram_combo.addItem(v.capitalize(), v)
+        self.variogram_combo.setCurrentIndex(
+            max(0, self.variogram_combo.findData(interp.variogram)))
+        self.kriging_neighbours = neighbours("kriging")
+        given = None not in (interp.range_m, interp.sill, interp.nugget)
+        self.fit_check = QCheckBox("Fit to the data")
+        self.fit_check.setToolTip("Range, sill and nugget fitted to the model's own variogram")
+        self.fit_check.setChecked(not given)
+        self.range_spin = spin(0.01, 1e6, 2, interp.range_m or 10.0)
+        self.range_spin.setSuffix(" m")
+        self.sill_spin = spin(0.0, 1e9, 3, interp.sill if interp.sill is not None else 1.0, 0.01)
+        self.nugget_spin = spin(0.0, 1e9, 3, interp.nugget or 0.0, 0.01)
+        self.fit_check.toggled.connect(self._sync_interpolation)
+        self.fit_button = QPushButton("Fit Now")
+        self.fit_button.setToolTip("Fit the variogram now and show what kriging would use")
+        self.fit_button.clicked.connect(self.fit_variogram_now)
+        self.fit_label = QLabel()              # two lines, always room for them
+        self.fit_label.setMinimumHeight(2 * self.fit_label.fontMetrics().lineSpacing() + 2)
+        self.method_pages = QStackedWidget()
+        self.method_pages.setObjectName("method_pages")
+        self._pages = {
+            "linear": page(), "nearest": page(),
+            "idw": page(("Power", self.power_spin, "Neighbours", self.idw_neighbours)),
+            "spline": page(("Kernel", self.kernel_combo, "Smoothing", self.smooth_spin)),
+            "kriging": page(("Variogram", self.variogram_combo, "Neighbours",
+                             self.kriging_neighbours, self.fit_check),
+                            ("Range", self.range_spin, "Sill", self.sill_spin,
+                             "Nugget", self.nugget_spin),
+                            (self.fit_button, self.fit_label))}
+        self.fit_label.setMinimumWidth(240)
+        for m in METHODS:
+            self.method_pages.addWidget(self._pages[m])
+        form.addRow(self.method_pages)
+        shown = interp.anisotropy
+        if shown is None:                       # Automatic: show what the cells give
+            from ..core.gridding import cell_aspect
+            shown = cell_aspect(self._mesh) if self._mesh is not None else 1.0
+        self.aniso_spin = spin(0.01, 1000.0, 2, shown, 0.5)
+        self.auto_aniso = QCheckBox("Automatic")
+        self.auto_aniso.setChecked(interp.anisotropy is None)
+        self.auto_aniso.setToolTip(ANISO_AUTO_TIP)
+        self.auto_aniso.toggled.connect(self._sync_interpolation)
+        self.aniso_spin.setToolTip(ANISO_TIP)
+        self._aniso_row = QWidget()
+        row = QHBoxLayout(self._aniso_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.aniso_spin)
+        row.addWidget(self.auto_aniso)
+        row.addStretch(1)
+        form.addRow("Anisotropy", self._aniso_row)
+        self._ignored = QSizePolicy.Policy.Ignored
+        self.method_combo.currentIndexChanged.connect(self._sync_interpolation)
+        self._sync_interpolation()
+
+    def _sync_interpolation(self, *_args) -> None:
+        """The chosen method's page only (the others take no room); everything off where no
+        smooth field is drawn."""
+        from qgis.PyQt.QtWidgets import QSizePolicy
+        method = self.method_combo.currentData()
+        for m, w in self._pages.items():
+            policy = QSizePolicy.Policy.Preferred if m == method else self._ignored
+            w.setSizePolicy(policy, policy)
+        self.method_pages.setCurrentWidget(self._pages[method])
+        self.method_pages.adjustSize()
+        field = "smooth" in (self.mode_combo.currentData() or "") or \
+            "contours" in (self.mode_combo.currentData() or "")
+        self.method_combo.setEnabled(field)
+        self.method_combo.setToolTip(METHOD_TIP if field else METHOD_OFF_TIP)
+        self.method_pages.setEnabled(field)
+        self._interp_form.setRowVisible(self.method_pages, method not in ("linear", "nearest"))
+        self._interp_form.setRowVisible(self._aniso_row, method != "linear")
+        self._aniso_row.setEnabled(field)
+        self.aniso_spin.setEnabled(not self.auto_aniso.isChecked())
+        for s in (self.range_spin, self.sill_spin, self.nugget_spin):
+            s.setEnabled(not self.fit_check.isChecked())
+        self._fit_height()
+
+    def interpolation(self):
+        """The method and settings as chosen (Auto fields: None)."""
+        from ..core.interpolators import DEFAULT_NEIGHBOURS, Interpolation
+        method = self.method_combo.currentData()
+        if method == "linear":
+            return Interpolation()
+        aniso = None if self.auto_aniso.isChecked() else self.aniso_spin.value()
+
+        def k(spin):
+            return None if spin.value() == DEFAULT_NEIGHBOURS[method] else spin.value()
+
+        if method == "idw":
+            return Interpolation(method, power=self.power_spin.value(),
+                                 neighbours=k(self.idw_neighbours), anisotropy=aniso)
+        if method == "spline":
+            return Interpolation(method, kernel=self.kernel_combo.currentData(),
+                                 smoothing=self.smooth_spin.value(), anisotropy=aniso)
+        if method == "kriging":
+            fit = self.fit_check.isChecked()
+            return Interpolation(method, neighbours=k(self.kriging_neighbours),
+                                 variogram=self.variogram_combo.currentData(),
+                                 range_m=None if fit else self.range_spin.value(),
+                                 sill=None if fit else self.sill_spin.value(),
+                                 nugget=None if fit else self.nugget_spin.value(),
+                                 anisotropy=aniso)
+        return Interpolation(method, anisotropy=aniso)
+
+    def fit_variogram_now(self) -> None:
+        """Fit the variogram of the model's cells as kriging would, show it and put it into
+        the range, sill and nugget fields (untick "Fit to the data" to tune them)."""
+        from ..core.gridding import cell_centres
+        from ..core.interpolators import estimate_anisotropy, fit_variogram
+        from ..core.numbers import fmt_sig
+        mesh = self._mesh
+        if mesh is None:
+            return
+        values = np.asarray(mesh.values, dtype=float)
+        log = self.log_check.isChecked()
+        if log:
+            values = np.log10(np.where(values > 0, values, np.nan))
+        ok = np.isfinite(values)
+        model = self.variogram_combo.currentData()
+        try:
+            points = cell_centres(mesh)[ok]
+            aniso = (estimate_anisotropy(points, values[ok], model)
+                     if self.auto_aniso.isChecked() else self.aniso_spin.value())
+            fit = fit_variogram(points, values[ok], model, anisotropy=aniso)
+        except ValueError as exc:
+            self.fit_label.setText(f"Cannot fit: {exc}")
+            self.fit_label.setWordWrap(True)
+            self.fit_label.setToolTip("")
+            return
+        unit = " (log10)" if log else ""
+        text = (f"Range {fmt_sig(fit.range_m, 3)} m, sill {fmt_sig(fit.sill, 3)}, "
+                f"nugget {fmt_sig(fit.nugget, 3)}{unit}\nanisotropy {fmt_sig(aniso, 3)}")
+        self.fit_label.setText(text)
+        self.fit_label.setToolTip(text)
+        self.range_spin.setValue(fit.range_m)
+        self.sill_spin.setValue(fit.sill)
+        self.nugget_spin.setValue(fit.nugget)
+        self.aniso_spin.setValue(aniso)
+        self._fit_height()
 
     def _check_levels_in_scale(self, levels) -> None:
         """A typed level outside the colour scale would be dropped without a word: say so."""
@@ -347,6 +584,7 @@ class DisplayDialog(ColorScaleDialog):
             scale=None if changed else self.scale(),      # a new value: automatic scale
             mode=self.mode_combo.currentData(),
             grid_cell=None if self.auto_cell.isChecked() else self.cell_spin.value(),
+            interpolation=self.interpolation(),
             contour_step=None if self.auto_step.isChecked() else self.step_spin.value(),
             contour_major=major, contour_minor=minor,
             fade_coverage=self.fade_check.isChecked() and self.coverage_group.isEnabled(),

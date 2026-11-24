@@ -64,3 +64,69 @@ def test_row_menu_has_display(qgis_app, store_with_model):
         assert prov.style(layer.dataset.id).mode == "contours"
     finally:
         ll.deleteLater()
+
+
+# -- interpolation of the smooth field ---------------------------------------------------------
+def _with(layer, **style):
+    return replace(layer, style=replace(layer.style, **style))
+
+
+def test_interpolation_round_trips_through_the_dialog(qgis_app, store_with_model):
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model)
+    chosen = Interpolation(method="kriging", variogram="exponential", range_m=8.0, sill=0.5,
+                           nugget=0.01, neighbours=20, anisotropy=4.0)
+    dlg = DisplayDialog(None, _with(layer, mode="smooth", interpolation=chosen))
+    assert dlg.method_combo.currentData() == "kriging"
+    assert dlg.style().interpolation == chosen
+    idw = Interpolation(method="idw", power=3.0, neighbours=8)
+    dlg = DisplayDialog(None, _with(layer, mode="smooth", interpolation=idw))
+    assert dlg.style().interpolation == idw
+    spline = Interpolation(method="spline", kernel="cubic", smoothing=0.5)
+    dlg = DisplayDialog(None, _with(layer, mode="smooth", interpolation=spline))
+    assert dlg.style().interpolation == spline
+
+
+def test_auto_fields_read_as_none(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model)
+    dlg = DisplayDialog(None, _with(layer, mode="smooth"))
+    dlg.method_combo.setCurrentIndex(dlg.method_combo.findData("kriging"))
+    got = dlg.style().interpolation
+    assert got.method == "kriging"
+    assert (got.range_m, got.sill, got.nugget, got.anisotropy, got.neighbours) == (
+        None, None, None, None, None)
+
+
+def test_fit_now_shows_the_fitted_variogram(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model)
+    dlg = DisplayDialog(None, _with(layer, mode="smooth"))
+    dlg.method_combo.setCurrentIndex(dlg.method_combo.findData("kriging"))
+    dlg.fit_button.click()
+    text = dlg.fit_label.text().lower()
+    assert "range" in text and "sill" in text and any(c.isdigit() for c in text)
+
+
+def test_interpolation_is_off_where_no_smooth_field_is_drawn(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model)
+    dlg = DisplayDialog(None, _with(layer, mode="cells"))
+    assert not dlg.method_combo.isEnabled() and "smooth" in dlg.method_combo.toolTip().lower()
+    dlg.mode_combo.setCurrentIndex(dlg.mode_combo.findData("contours"))
+    assert dlg.method_combo.isEnabled()
+
+
+def test_the_dialog_fits_a_laptop_screen_with_kriging(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model, coverage=lambda m: np.linspace(-3, 0, len(m.values)))
+    dlg = DisplayDialog(None, _with(layer, mode="smooth"))
+    dlg.method_combo.setCurrentIndex(dlg.method_combo.findData("kriging"))
+    dlg.show()
+    qgis_app.processEvents()
+    try:
+        assert dlg.sizeHint().height() <= 580 and dlg.height() <= 580
+        assert dlg.fit_button.isVisibleTo(dlg)              # reachable: the groups scroll
+    finally:
+        dlg.close()

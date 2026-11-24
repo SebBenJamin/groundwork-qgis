@@ -243,12 +243,16 @@ def cell_aspect(mesh) -> float:
 def _scattered(mesh, v, nodes, interp) -> tuple[np.ndarray, dict]:
     """``interp``'s values at ``nodes`` (m, 2) from the cell centres with a value ``v``
     (already in log10 on a log scale), and what it fitted. ValueError when it fails."""
-    from .interpolators import interpolate
+    from .interpolators import estimate_anisotropy, interpolate
     ok = np.isfinite(v)
     if not ok.any():
         raise ValueError("no cell has a value")
-    aniso = interp.anisotropy or cell_aspect(mesh)
-    out, fitted = interpolate(cell_centres(mesh)[ok], v[ok], nodes, interp, aniso)
+    points = cell_centres(mesh)[ok]
+    aniso = interp.anisotropy
+    if aniso is None:           # Auto: kriging reads it from the data, the others the cells
+        aniso = (estimate_anisotropy(points, v[ok], interp.variogram)
+                 if interp.method == "kriging" else cell_aspect(mesh))
+    out, fitted = interpolate(points, v[ok], nodes, interp, aniso)
     if not np.isfinite(out).all():
         raise ValueError("it gave values that are not numbers")
     return out, fitted
