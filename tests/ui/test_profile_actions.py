@@ -36,10 +36,12 @@ def test_delete_message_lists_what_goes():
 
 
 def test_context_menu_on_profile_combo(plugin):
+    from groundwork_geophysics.section.dock import ZOOM_MAP_TEXT
     from groundwork_geophysics.ui.profile_actions import DELETE_TEXT, RENAME_TEXT
     plug, st, p = plugin
     menu = plug.dock.profile_menu()
-    assert [a.text() for a in menu.actions()] == [RENAME_TEXT, DELETE_TEXT]
+    assert [a.text() for a in menu.actions() if not a.isSeparator()] == [
+        RENAME_TEXT, DELETE_TEXT, ZOOM_MAP_TEXT]
     assert RENAME_TEXT == "Profile Properties…" and DELETE_TEXT == "Delete Profile…"
 
 

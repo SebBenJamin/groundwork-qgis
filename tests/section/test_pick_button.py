@@ -30,7 +30,9 @@ def test_pick_button_next_to_profile_list(plugin):
     from qgis.PyQt.QtWidgets import QHBoxLayout
     top = next(lay for lay in plugin.dock.findChildren(QHBoxLayout)
                if lay.indexOf(plugin.dock.profile_combo) >= 0)
-    assert top.indexOf(button) == top.indexOf(plugin.dock.profile_combo) + 1
+    combo = top.indexOf(plugin.dock.profile_combo)          # list, its Next arrow, then Pick
+    assert top.indexOf(plugin.dock.next_button) == combo + 1
+    assert top.indexOf(button) == combo + 2
 
 
 def test_empty_hint_link_starts_pick(plugin):
