@@ -24,6 +24,9 @@ def _detected(d) -> str:
         value = p.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             parts.append(label.format(value))
+    from ..core.dataset_info import averaged_from_text
+    if averaged_from_text(d):
+        parts.append(averaged_from_text(d))
     return " · ".join(parts) or "nothing detected"
 
 
