@@ -225,3 +225,15 @@ def test_coverage_column_never_drops_cells(tmp_path):
     c = r.mesh.coverage
     assert np.isnan(c).sum() == 1                       # the blank one: unknown
     assert np.nanmin(c) < 1.0                           # -inf: below the lowest (1.1)
+
+
+def test_a_clean_model_file_is_read_without_its_text(tmp_path, monkeypatch):
+    # the whole file of a big model is read as numbers alone (the preview still shows text)
+    from groundwork_geophysics.readers import text_columns
+
+    def no_text(*_a, **_k):
+        raise AssertionError("read as text")
+    monkeypatch.setattr(text_columns, "read_table", no_text)
+    r = readers.read(WILD / "x_zero_depth_rho.txt", reader="text_columns", table=NO_HEADER,
+                     columns=DEPTH_COLS.to_dict())
+    assert r.mesh is not None

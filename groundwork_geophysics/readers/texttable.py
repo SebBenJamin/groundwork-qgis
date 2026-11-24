@@ -87,6 +87,92 @@ class TextTable:
         return any(row[col].strip() and not np.isfinite(v) for row, v in zip(self.cells, values))
 
 
+    def raw(self, col: int) -> np.ndarray:
+        """Column ``col`` as floats with -inf and inf kept (coverage: no ray), NaN where the
+        cell is not a number."""
+        return np.array([_raw_number(row[col], self.decimal_comma) for row in self.cells],
+                        dtype=float)
+
+
+def _raw_number(cell: str, decimal_comma: bool) -> float:
+    """A cell as a float, -inf kept (coverage: no ray); NaN when empty or not a number."""
+    try:
+        return float(cell.replace(",", ".") if decimal_comma else cell)
+    except ValueError:
+        return float("nan")
+
+
+@dataclass
+class NumericTable:
+    """A table of numbers alone (``read_numbers``): what the column checks and the model
+    readers ask of a ``TextTable``, without a text cell per value."""
+    names: list[str]
+    values: np.ndarray                  # (rows, columns), -inf/inf as in the file
+    decimal_comma: bool = False
+
+    @property
+    def n_columns(self) -> int:
+        return len(self.names)
+
+    @property
+    def n_rows(self) -> int:
+        return len(self.values)
+
+    def numeric(self, col: int) -> np.ndarray:
+        v = self.values[:, col]
+        return np.where(np.isfinite(v), v, np.nan)
+
+    def raw(self, col: int) -> np.ndarray:
+        return self.values[:, col].copy()
+
+    def is_numeric(self, col: int) -> bool:
+        return bool(self.n_rows) and int(np.isfinite(self.numeric(col)).sum()) * 2 > self.n_rows
+
+    def has_text(self, col: int) -> bool:
+        return False
+
+
+def read_numbers(path, options: TableOptions = TableOptions()) -> NumericTable | None:
+    """The whole table as numbers alone, with numpy's own parser: fast and lean for a big
+    model export. None when the table holds anything else (a text cell, a short row, a
+    decimal comma, a comment inside a row): ``read_table`` reads those."""
+    import io
+    import warnings
+    import re
+    text = decode_bytes(Path(path).read_bytes())
+    if re.search("[\x0b\x0c\x1c-\x1e\x85  ]|\r(?!\n)", text):
+        return None             # line breaks other than \n: the line numbers below could slip
+    head = _content_lines("\n".join(text.splitlines()[:options.skip + _VOTE_LINES]),
+                          options.skip)
+    if not head:
+        return None
+    delim, decimal = _resolve(options, head)
+    names: list[str] = []
+    first = head[0][0]                                  # file line of the first table line
+    if options.header:
+        names = _split(head[0][1], delim)
+        if len(head) < 2:
+            return None
+        first = head[1][0]
+    body = text.split("\n", first - 1)[-1] if first > 1 else text
+    if (decimal and "," in body) or "#" in body or "//" in body:
+        return None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")              # an empty table: not for us
+            values = np.loadtxt(io.StringIO(body), delimiter=None if delim == " " else delim,
+                                dtype=float, ndmin=2, comments=None)
+    except (ValueError, UserWarning):
+        return None
+    if not len(values):
+        return None
+    width = max(len(names), values.shape[1])
+    if len(names) > values.shape[1]:
+        return None                                     # named columns with no cells
+    names = [n or f"column {i}" for i, n in enumerate(names + [""] * (width - len(names)), 1)]
+    return NumericTable(names, values, decimal)
+
+
 def _content_lines(text: str, skip: int) -> list[tuple[int, str]]:
     out = []
     for no, raw in enumerate(text.splitlines(), 1):

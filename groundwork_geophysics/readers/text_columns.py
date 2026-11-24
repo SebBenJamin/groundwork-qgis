@@ -20,7 +20,7 @@ import numpy as np
 from ..core.roles import ModelColumns
 from .base import (FILL_VALUE, Reader, ReaderResult, _no_position, chosen_z_kind, fill_mask,
                    mesh_from_points)
-from .texttable import TableOptions, guess_options, read_table, select_rows
+from .texttable import TableOptions, guess_options, read_numbers, read_table, select_rows
 
 
 def _options(path: Path, table: dict, columns: dict) -> tuple[TableOptions, ModelColumns]:
@@ -40,32 +40,29 @@ def _rows(path: Path, table: dict, columns: dict, max_rows: int | None = None
     the first ``max_rows`` data rows (all when None). ValueError when an assigned column is
     missing, unusable, or no row is usable."""
     opts, cols = _options(path, table, columns)
-    tab = read_table(path, opts, max_rows=max_rows)
+    required = cols.used()[:-1] if cols.coverage is not None else cols.used()
+    # the whole file of a big model: numbers alone (no text per cell); a file with anything
+    # else, or with a row to skip (its line is reported), is read as text
+    tab = read_numbers(path, opts) if max_rows is None else None
+    if tab is not None and not (all(0 <= i < tab.n_columns for i in cols.used()) and
+                                np.isfinite(tab.values[:, required]).all()):
+        tab = None
+    if tab is None:
+        tab = read_table(path, opts, max_rows=max_rows)
     for i in cols.used():
         if not 0 <= i < tab.n_columns:
             raise ValueError(f"{path.name}: column {i + 1} is not in the file any more")
     problems = cols.problems(tab)
     if problems:
         raise ValueError(f"{path.name}: " + "; ".join(problems))
-    required = cols.used()[:-1] if cols.coverage is not None else cols.used()
     try:
         arr, skipped, first = select_rows(tab, required)
     except ValueError as exc:
         raise ValueError(f"{path.name}: {exc}") from None
     if cols.coverage is not None:            # optional: never drops a row, keeps -inf
         kept = np.isfinite(np.column_stack([tab.numeric(c) for c in required])).all(axis=1)
-        cov = [_coverage_number(tab.cells[i][cols.coverage], tab.decimal_comma)
-               for i in np.flatnonzero(kept)]
-        arr = np.column_stack([arr, np.asarray(cov, dtype=float)])
+        arr = np.column_stack([arr, tab.raw(cols.coverage)[kept]])
     return cols, arr, skipped, first
-
-
-def _coverage_number(cell: str, decimal_comma: bool) -> float:
-    """A coverage cell as a float, -inf kept (no ray); nan when empty or not a number."""
-    try:
-        return float(cell.replace(",", ".") if decimal_comma else cell)
-    except ValueError:
-        return float("nan")
 
 
 def map_points(path, table: dict, columns: dict, max_rows: int | None = None) -> np.ndarray:
