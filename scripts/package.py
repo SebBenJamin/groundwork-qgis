@@ -37,7 +37,7 @@ EXCLUDE_DIR_PATTERNS = ("*_groundwork_3d",)
 EXCLUDE_FILES = ("*.qto3settings", "*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
                  "*-journal", "*.aux.xml", ".DS_Store", "Thumbs.db")
 #: a guard against data or build output leaking into the plugin zip (code and the FGDC
-#: patterns were 0.92 MB at 0.14.2 and passed 1 MB with Add Data's several files)
+#: patterns were 0.996 MB after Add Data's several files, close to the old 1 MB guard)
 MAX_PLUGIN_BYTES = 1_500_000
 
 
