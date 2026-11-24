@@ -239,6 +239,7 @@ def _optimise_intervals(item) -> None:
 
 
 LABEL_LINE_MM = 3.3     # one row of section labels (2.6 mm font) on a plate
+PLATE_PX_PER_MM = 300.0 / 25.4      # a plate's resolution for sizes laid out in pixels
 
 
 def label_room_mm(snap) -> float:
@@ -253,8 +254,12 @@ def label_room_mm(snap) -> float:
     if not (labels or ctx.band):
         return 0.0
     from ..core.context import strips_of
-    return context_headroom_px(1.0, LABEL_LINE_MM, labels, max(1, len(strips_of(ctx.band)))) \
-        + lanes_px(1.0, ctx.field_notes)
+    # worked out at a plate's resolution: the panel's layout has minimum sizes in screen
+    # pixels, which read at 1 px per mm left three short frames no room for their sections
+    px = PLATE_PX_PER_MM
+    return (context_headroom_px(px, LABEL_LINE_MM * px, labels,
+                                max(1, len(strips_of(ctx.band))))
+            + lanes_px(px, ctx.field_notes)) / px
 
 
 def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float,

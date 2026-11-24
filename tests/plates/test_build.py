@@ -346,3 +346,18 @@ def test_plate_headroom_counts_strips(env):
     two = replace(snap, context=ContextItems(band=[BandSegment(0, 5, "a", strip=0),
                                                    BandSegment(0, 5, "b", strip=1)]))
     assert label_room_mm(two) - label_room_mm(one) == pytest.approx(3.6)
+
+
+def test_plate_headroom_is_millimetres_not_screen_pixel_minimums(env):
+    # the panel's layout keeps minimum sizes in screen pixels (a marker at least 3 px, a
+    # station number at least 10 px); read at "1 px per mm" they became 3 and 10 mm, and
+    # three short frames on a plate were left with no room for their sections at all
+    from dataclasses import replace
+
+    from groundwork_geophysics.core.context import BandSegment, ContextItems
+    from groundwork_geophysics.plates.build import label_room_mm
+    st, p, prov, prj = env
+    snap = prov.snapshot(p.id)
+    one = replace(snap, context=ContextItems(band=[BandSegment(0, 5, "a", strip=0)]))
+    # marker 2 x 1 mm, station number 1.6 x 3 mm, gap 1.5 mm, strip 3 mm, 1 mm spacing
+    assert label_room_mm(one) == pytest.approx(2 * 1.0 + 1.6 * 3.0 + 1.5 + 3.0 + 1.0, abs=0.2)
