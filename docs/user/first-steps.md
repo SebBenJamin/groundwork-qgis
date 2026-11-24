@@ -5,7 +5,7 @@ with sediment cores at Lake Gülpe (Havel, Brandenburg), the state's boreholes a
 maps, a 1 m terrain model and aerial images.
 
 You need Groundwork installed (see [Get started](../index.md#get-started)) and an internet
-connection for the aerial images and the state layers.
+connection for the aerial images and the geology maps.
 
 ## 1. Open the demo
 

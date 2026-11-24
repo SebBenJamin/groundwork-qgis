@@ -31,7 +31,7 @@ seismic reflection sections are planned.
 | Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
-The background maps and the Gülpe state layers load from the internet. Opening a demo writes
+The background maps and the Gülpe geology maps load from the internet. Opening a demo writes
 to its Groundwork file; keep a copy of the folder if you want to start over.
 
 Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundwork.gpkg`).

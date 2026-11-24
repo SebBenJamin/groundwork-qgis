@@ -62,7 +62,7 @@ columns. Aerial image: © GDI-Th, dl-de/by-2-0.*
 | Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
-The background maps and the Gülpe state layers load from the internet. Opening a demo writes
+The background maps and the Gülpe geology maps load from the internet. Opening a demo writes
 to its Groundwork file; keep a copy of the folder if you want to start over.
 
 <p align="center">
@@ -150,8 +150,8 @@ details.
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
   https://doi.org/10.1016/j.dib.2025.112372.
-- Boreholes (Bohrpunktkarte) and geology (Geologische Karte 1 : 25 000, and the GÜK300
-  switched off on the map; both drawn as strips on the section), live WFS: © LBGR,
+- Boreholes (Bohrpunktkarte, a local copy) and geology (Geologische Karte 1 : 25 000, and the
+  GÜK300 switched off on the map; both drawn as strips on the section, live WFS): © LBGR,
   dl-de/by-2-0.
 - DGM1 terrain model (tiles merged and cropped) and DOP20 aerial images (live WMS):
   © GeoBasis-DE/LGB, dl-de/by-2-0.
