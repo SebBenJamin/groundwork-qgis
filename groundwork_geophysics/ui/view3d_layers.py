@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import zipfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -1105,16 +1107,61 @@ def forget_shown(project: QgsProject) -> None:
     project.setProperty(_NEEDS, None)
 
 
-def _contour_features(layer, profile, dataset, section_layer, topo) -> list[QgsFeature]:
+def _contour_rows(store, profile, dataset, section_layer, topo, signature) -> list:
+    """(level, xyz) of the model's 3D contour lines, kept beside the clouds as
+    ``<dataset id>-<signature>.contours.npz`` so a project opened again is not re-gridded."""
     from ..core.gridding import contour_levels
     from ..core.view3d import field_contours
-    from ..section.display_render import CONTOUR_DARKER
+    digest = hashlib.sha1(repr(signature).encode("utf-8", "replace")).hexdigest()[:10]
+    path = cloud_folder(store) / f"{dataset.id}-{digest}.contours.npz"
+    rows = _load_contours(path)
+    if rows is not None:
+        return rows
     style = section_layer.style
     grid, scale = _field(section_layer, topo)
     levels = [v for v, _major in contour_levels(scale, style.contour_step,
                                                 style.contour_major, style.contour_minor)]
+    rows = [(float(level), np.asarray(xyz, dtype=float))
+            for level, xyz in field_contours(grid, profile.chainage, scale, levels)]
+    _save_contours(path, rows, dataset.id)
+    return rows
+
+
+def _load_contours(path: Path) -> list | None:
+    try:
+        with np.load(path, allow_pickle=False) as data:
+            levels, ends, xyz = data["levels"], data["ends"], data["xyz"]
+    except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile):
+        return None
+    starts = np.concatenate([[0], ends[:-1]]).astype(int)
+    return [(float(v), xyz[a:b]) for v, a, b in zip(levels, starts, ends.astype(int))]
+
+
+def _save_contours(path: Path, rows: list, dataset_id: str) -> None:
+    """Keep ``rows`` at ``path`` and drop the dataset's older contour files (never raises)."""
+    levels = np.array([v for v, _xyz in rows], dtype=float)
+    ends = np.cumsum([len(xyz) for _v, xyz in rows]).astype(np.int64)
+    xyz = np.concatenate([xyz for _v, xyz in rows]) if rows else np.zeros((0, 3))
+    tmp = path.with_name(path.name + ".part")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "wb") as f:
+            np.savez(f, levels=levels, ends=ends, xyz=xyz)
+        os.replace(tmp, path)
+        for old in path.parent.glob(f"{dataset_id}-*.contours.npz"):
+            if old != path:
+                old.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _contour_features(layer, store, profile, dataset, section_layer, topo,
+                      signature) -> list[QgsFeature]:
+    from ..core.colors import ColorScale
+    from ..section.display_render import CONTOUR_DARKER
+    scale = section_layer.style.scale or ColorScale.auto(section_layer.mesh.values)
     out = []
-    for level, xyz in field_contours(grid, profile.chainage, scale, levels):
+    for level, xyz in _contour_rows(store, profile, dataset, section_layer, topo, signature):
         r, g, b = (int(c) for c in scale.rgba([level])[0][:3])
         f = QgsFeature(layer.fields())
         f.setGeometry(QgsGeometry(QgsLineString(xyz[:, 0].tolist(), xyz[:, 1].tolist(),
@@ -1141,7 +1188,8 @@ def _sync_contours(store, project, chosen, may_create, topo_of):
         if d.id in built and built[d.id][0] == signature:
             continue
         try:
-            features = _contour_features(layer, profile, d, section_layer, topo)
+            features = _contour_features(layer, store, profile, d, section_layer, topo,
+                                         signature)
         except Exception as exc:
             _log(f"3D view: contours of '{d.name or d.id}' could not be shown: {exc}")
             _drop(layer, built, d.id)

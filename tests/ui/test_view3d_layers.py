@@ -629,6 +629,25 @@ def test_contours_alone_are_lines_only(setup):
     assert not out.get("clouds") and "models" not in out
 
 
+def test_contours_come_from_the_cache_after_a_restart(setup, monkeypatch):
+    """A project opened again rebuilds "Contours in 3D" (a memory layer) from the contour
+    lines kept beside the clouds, without gridding the models again."""
+    from groundwork_geophysics.core import view3d
+    from groundwork_geophysics.ui import view3d_layers
+    from groundwork_geophysics.ui.view3d_layers import cloud_folder, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "contours")
+    _choose(prj, ["d"])
+    n = sync(st, provider, prj, create=True)["contours"].featureCount()
+    assert n > 0 and list(cloud_folder(st).glob("d-*.contours.npz"))
+    calls = []
+    real = view3d.field_contours
+    monkeypatch.setattr(view3d, "field_contours", lambda *a, **k: calls.append(1) or real(*a, **k))
+    view3d_layers._built.clear()                     # as after QGIS was restarted
+    assert sync(st, provider, prj)["contours"].featureCount() == n
+    assert calls == []
+
+
 def test_switching_back_to_cells_removes_the_cloud(setup):
     from qgis.core import QgsPointCloudLayer
 
