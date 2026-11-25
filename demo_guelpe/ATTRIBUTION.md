@@ -8,7 +8,11 @@ without changing its values.
   June 2024 in the Lower Havel Inner Delta near Lake Gülpe, Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983478. `data/ert/T*/dcinv.result.vtk` are the authors' BERT
   inversion results, unchanged; `data/stations/*.csv` are their DGPS electrode positions
-  (*derived*: reformatted).
+  (*derived*: reformatted). **Transect 4, corrected:** its DGPS file lists the positions (E, N)
+  from the north-east end, while its heights, the field notes (standing water at 30–60 m and
+  144–190 m) and the authors' sketch put electrode 1 in the south-west. The demo turns the
+  positions round and keeps the heights in order; so read, the heights agree with the DGM1
+  (0.09 m spread instead of 0.45 m), as on the other transects.
 - **Cores**: Köhler, A.; Kaniecki, M.; Schneider, B.; Zielhofer, C. (2025): Field based and
   laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
   https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =

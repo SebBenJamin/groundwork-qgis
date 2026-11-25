@@ -145,3 +145,14 @@ def test_a_value_below_the_detection_limit_is_a_gap():
     [_, sample] = parse_samples("\n".join(lines[:-1] + ["\t".join(cols)]) + "\n")
     assert "ts" not in sample[4] and sample[4]["toc"] == 4.9604
     assert sample[4]["clay"] > 0
+
+
+def test_reversed_positions_keep_the_heights_in_electrode_order():
+    """Transect 4's published DGPS file lists E/N from the far end (its heights, the field
+    notes and the authors' sketch put electrode 1 in the south-west): the positions are turned
+    round, the heights and numbers stay."""
+    from guelpe_data import reversed_positions
+    xyz = np.array([[0.0, 0.0, 24.1], [1.0, 0.5, 24.2], [2.0, 1.0, 24.9]])
+    out = reversed_positions(xyz)
+    assert out[:, :2].tolist() == [[2.0, 1.0], [1.0, 0.5], [0.0, 0.0]]
+    assert out[:, 2].tolist() == [24.1, 24.2, 24.9]

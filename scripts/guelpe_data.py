@@ -179,6 +179,17 @@ def match_electrodes(electrodes_xz: np.ndarray, numbers: np.ndarray, xyz: np.nda
     return np.array(out, dtype=int)
 
 
+def reversed_positions(xyz: np.ndarray) -> np.ndarray:
+    """``xyz`` with its E/N turned round and the heights kept in order. Transect 4's
+    published DGPS file lists the positions from the north-east end while its heights, the
+    field notes (standing water at 30-60 m and 144-190 m) and the authors' sketch put electrode
+    1 in the south-west; read in reverse, the heights agree with the DGM1 (0.09 m instead of
+    0.45 m spread), as the other transects do."""
+    out = np.array(xyz, dtype=float, copy=True)
+    out[:, :2] = out[::-1, :2]
+    return out
+
+
 def write_stations_csv(path: Path, numbers, xyz) -> None:
     lines = ["number,x,y,z"] + [f"{int(n)},{x:.3f},{y:.3f},{z:.3f}"
                                 for n, (x, y, z) in zip(numbers, xyz)]

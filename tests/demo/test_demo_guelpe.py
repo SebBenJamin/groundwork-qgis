@@ -4,6 +4,7 @@ import sys
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -263,3 +264,17 @@ def test_demo_draws_organic_carbon_on_a_log_scale():
     # grain sizes filled from the left, like the share of the sample they are
     assert all(styles[f"k:{n}"].fill == "left" for n in ("sand", "silt", "clay"))
     assert all(not s.log for k, s in styles.items() if k != "k:toc")
+
+
+def test_every_transects_stations_follow_the_dgm():
+    """The electrode heights (the authors' DGPS) agree with the DGM1 under each electrode:
+    a transect placed back to front (T4 as published) would not."""
+    from osgeo import gdal
+    demo = REPO / "demo_guelpe"
+    ds = gdal.Open(str(demo / "context/dgm1.tif"))
+    gt, a = ds.GetGeoTransform(), ds.GetRasterBand(1).ReadAsArray().astype(float)
+    for t in (1, 2, 3, 4):
+        d = np.loadtxt(demo / f"data/stations/T{t}_electrodes.csv", delimiter=",", skiprows=1)
+        cols = ((d[:, 1] - gt[0]) / gt[1]).astype(int)
+        rows = ((d[:, 2] - gt[3]) / gt[5]).astype(int)
+        assert np.std(d[:, 3] - a[rows, cols]) < 0.15, f"Transect {t}"

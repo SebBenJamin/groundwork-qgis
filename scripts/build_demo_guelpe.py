@@ -37,6 +37,8 @@ MISFIT_INPUTS = ROOT / "scripts" / "data" / "guelpe"
 CRS = "EPSG:25833"
 STORE_NAME, PROJECT_NAME = "guelpe_groundwork.gpkg", "guelpe_project.qgz"
 SPACING = {1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0}
+#: transects whose published DGPS positions run back to front (guelpe_data.reversed_positions)
+REVERSED_POSITIONS = {4}
 MAX_CHAINAGE_MISFIT = 0.5             # m, station chainage against the model's electrode x
 OSM_URI = "type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0"
 BPK_WFS = "https://inspire.brandenburg.de/services/bpk_wfs"
@@ -65,7 +67,11 @@ without changing its values.
   June 2024 in the Lower Havel Inner Delta near Lake Gülpe, Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983478. `data/ert/T*/dcinv.result.vtk` are the authors' BERT
   inversion results, unchanged; `data/stations/*.csv` are their DGPS electrode positions
-  (*derived*: reformatted).
+  (*derived*: reformatted). **Transect 4, corrected:** its DGPS file lists the positions (E, N)
+  from the north-east end, while its heights, the field notes (standing water at 30–60 m and
+  144–190 m) and the authors' sketch put electrode 1 in the south-west. The demo turns the
+  positions round and keeps the heights in order; so read, the heights agree with the DGM1
+  (0.09 m spread instead of 0.45 m), as on the other transects.
 - **Cores**: Köhler, A.; Kaniecki, M.; Schneider, B.; Zielhofer, C. (2025): Field based and
   laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
   https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =
@@ -116,6 +122,8 @@ def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
                 dgps = _unzip_member(zf, f"DGPS_Transect{i}.txt", Path(tmp) / f"dgps{i}.txt")
                 topo = _unzip_member(zf, "_topo.data", Path(tmp) / f"topo{i}.data")
             numbers, xyz = guelpe_data.read_dgps(dgps)
+            if i in REVERSED_POSITIONS:                 # a fault of the published file
+                xyz = guelpe_data.reversed_positions(xyz)
             guelpe_data.match_electrodes(guelpe_data.read_topo_electrodes(topo), numbers, xyz,
                                          SPACING[i])
             guelpe_data.write_stations_csv(out / f"data/stations/T{i}_electrodes.csv",
