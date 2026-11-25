@@ -30,3 +30,37 @@ def test_open_workbench_project_errors_are_shown(qgis_app, fake_iface, tmp_path,
         assert plugin.provider is None and plugin.source is None
     finally:
         plugin.unload()
+
+
+def test_a_models_section_style_comes_back_with_the_project(qgis_app, fake_iface, tmp_path,
+                                                            store_with_model):
+    """A style changed in the section is kept in the project file and is there again when
+    the project is opened next time."""
+    from dataclasses import replace
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui.project_actions import write_store_entry
+
+    st, _p, _src = store_with_model
+    project = QgsProject.instance()
+    project.setFileName(str(tmp_path / "p.qgz"))
+    write_store_entry(project, st.path)
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        style = replace(plugin.provider.style("d1"), mode="smooth",
+                        scale=ColorScale("viridis", 3.0, 300.0, True))
+        plugin.provider.set_style("d1", style)
+        assert project.write()
+        project.clear()
+        assert project.read(str(tmp_path / "p.qgz"))
+        assert plugin.provider is not None
+        got = plugin.provider.style("d1")
+        assert got.mode == "smooth" and got.scale == style.scale
+    finally:
+        plugin.unload()
+        project.clear()

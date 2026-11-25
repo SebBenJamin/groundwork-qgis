@@ -76,6 +76,8 @@ ZOOM_MAP_TIP = "Zoom the map to the open profile's line"
 ZOOM_MAP_OFF_TIP = "Open a profile first; then this zooms the map to its line"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
+APPLIED_ALL = ("Style applied to {n} other {what}(s) of the project. Ctrl+Z in the "
+               "panel takes it back.")
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
 
 
@@ -198,6 +200,7 @@ class SectionDock(QDockWidget):
         self.canvas.scene().addItem(self.cursor_marker)
 
         self.layer_list = LayerList()
+        self.layer_list.apply_all_requested.connect(self.apply_style_to_all)
         self.readout = _Readout()
         self._reference_error: str | None = None     # set while a reference step applies
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -766,6 +769,29 @@ class SectionDock(QDockWidget):
         profile_id, keys, hidden = state
         if self.provider is not None:
             self.provider.set_boreholes_hidden(profile_id, keys, hidden)
+
+    def apply_style_to_all(self, dataset_id: str) -> None:
+        """Give every other model of the same method (type, quantity and unit), on every
+        profile, ``dataset_id``'s style; whether each is shown stays. One step on the
+        panel's undo stack."""
+        from ..core.dataset_types import type_label
+        from .style_store import applied, same_method
+        if self.provider is None:
+            return
+        targets = same_method(self.provider.store, dataset_id)
+        if not targets:
+            return
+        source = self.provider.style(dataset_id)
+        before = {d.id: self.provider.style(d.id) for d in targets}
+        after = {i: applied(source, s) for i, s in before.items()}
+        self.interp.undo.push_with(self._apply_styles, "Apply style to all sections",
+                                   before, after)
+        self.readout.setText(APPLIED_ALL.format(n=len(targets),
+                                                what=type_label(targets[0].kind)))
+
+    def _apply_styles(self, styles, _other) -> None:
+        if self.provider is not None:
+            self.provider.set_styles(styles)
 
     def tool_hint_text(self) -> str:
         return self.readout.text()

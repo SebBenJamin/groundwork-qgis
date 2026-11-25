@@ -79,8 +79,18 @@ On the right, **Layers** lists the models on the profile, the top one drawn on t
 - the slider sets its opacity;
 - the colour button opens **Display…**.
 
-Right-click a model for **Display…**, **[Dataset info…](dataset-info.md)** and **Remove from
-profile…**. Removing takes the model off the profile; the file stays where it is.
+Right-click a model for **Display…**, **[Dataset info…](dataset-info.md)**, **Apply Style to
+All Sections** and **Remove from profile…**. Removing takes the model off the profile; the file
+stays where it is.
+
+A model's look (colours and their range, display, contours, interpolation, coverage fade,
+opacity, shown or hidden) is saved with the QGIS project and is there again when you open it.
+
+**Apply Style to All Sections** gives every other model of the same method, on every profile,
+this model's look: an ERT model's style goes to the other ERT models only, never to a refraction
+model, and only to models in the same unit. Whether each model is shown stays as it is. With
+one colour range on every line, the same colour means the same value everywhere. **Ctrl+Z** in
+the panel takes it back in one step.
 
 ## How a model is drawn
 

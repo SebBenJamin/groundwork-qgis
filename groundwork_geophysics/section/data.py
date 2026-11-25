@@ -229,20 +229,9 @@ def _layers_for_look(layers: list, look) -> list:
         m = by_id.get(la.dataset.id)
         if m is None or not m.visible:
             continue
-        style = _copy_style(la.style)
-        scale = style.scale
-        if m.scale:
-            try:
-                scale = ColorScale(**m.scale)
-            except (TypeError, ValueError):
-                pass
-        out.append(SectionLayer(la.dataset, la.mesh, replace(
-            style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale,
-            contour_step=m.contour_step, contour_major=tuple(m.contour_major),
-            contour_minor=tuple(m.contour_minor), grid_cell=m.grid_cell,
-            interpolation=Interpolation.from_dict(m.interpolation), fade_coverage=m.fade_coverage,
-            coverage_threshold=m.coverage_threshold, fade_mode=m.fade_mode,
-            shown=m.shown if m.shown is not None else style.shown), la.error))
+        from .style_store import styled
+        out.append(SectionLayer(la.dataset, la.mesh, styled(_copy_style(la.style), m),
+                                la.error))
     return out
 
 
@@ -490,9 +479,12 @@ def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
 class SectionDataProvider:
     """Assembles the section layers of each profile from a ``ProjectStore``."""
 
-    def __init__(self, store: ProjectStore):
+    def __init__(self, store: ProjectStore, styles: dict | None = None):
+        """``styles``: dataset id -> ``LayerStyle`` kept from before (the project's)."""
         self.store = store
         self.on_change: list[Callable[[], None]] = []
+        #: called after the user changed a style (to keep the styles in the project)
+        self.on_style: list[Callable[[], None]] = []
         self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
         #: Set and read on the main thread only (snapshots stay plain data).
@@ -501,7 +493,7 @@ class SectionDataProvider:
         #: an id)}, read from the borehole layers alone (``ContextGatherer.borehole_keys``);
         #: None: the whole context is gathered instead
         self.borehole_source: Callable[[list], dict] | None = None
-        self._styles: dict[str, LayerStyle] = {}
+        self._styles: dict[str, LayerStyle] = dict(styles or {})
         self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
         self._readings_seen: set[str] = set()
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
@@ -587,15 +579,29 @@ class SectionDataProvider:
     def style(self, dataset_id: str) -> LayerStyle:
         return self._styles.setdefault(dataset_id, LayerStyle())
 
+    def styles(self) -> dict[str, LayerStyle]:
+        """dataset id -> style, of the models drawn or styled so far (a copy)."""
+        return dict(self._styles)
+
     def set_style(self, dataset_id: str, style: LayerStyle) -> None:
-        self._styles[dataset_id] = style
+        self.set_styles({dataset_id: style})
+
+    def set_styles(self, styles: dict[str, LayerStyle]) -> None:
+        """Several models' styles at once: one redraw."""
+        self._styles.update(styles)
         self.notify_redraw(ties=True)
+        self._told_style()
+
+    def _told_style(self) -> None:
+        for callback in list(self.on_style):
+            callback()
 
     def remove_dataset(self, dataset_id: str) -> None:
         """Delete ``dataset_id`` from the store (the model file stays), forget its style
         and cached read, and tell the listeners."""
         self.store.delete_dataset(dataset_id)
-        self._styles.pop(dataset_id, None)
+        if self._styles.pop(dataset_id, None) is not None:
+            self._told_style()
         self._cache.pop(dataset_id, None)
         self._guesses.pop(dataset_id, None)
         self.notify_changed()

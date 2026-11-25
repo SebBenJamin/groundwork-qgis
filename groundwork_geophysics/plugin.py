@@ -250,8 +250,11 @@ class WorkbenchPlugin:
         self.provider = None
         self._view3d_stale = False
         if store is not None:
-            self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
+            from .section.style_store import load_styles, save_styles
+            self.provider = SectionDataProvider(store, styles=load_styles(project))
+            provider = self.provider
+            self.provider.on_style.append(lambda: save_styles(project, provider.styles()))
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
             ensure_3d_styles(store, project)            # before 0.14: no 3D style

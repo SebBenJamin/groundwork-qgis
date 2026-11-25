@@ -25,6 +25,10 @@ DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_min
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
 INFO_TEXT = "Dataset info…"
+APPLY_ALL_TEXT = "Apply Style to All Sections"
+APPLY_ALL_TIP = ("Give every other {what} of the project this model's colours, display "
+                 "and contours (shown or hidden stays as it is)")
+APPLY_ALL_OFF_TIP = "There is no other {what} in the project to apply this style to"
 
 
 def _scale_text(layer: SectionLayer) -> str:
@@ -128,6 +132,8 @@ class LayerList(QWidget):
 
     style_changed = pyqtSignal(str)
     dataset_removed = pyqtSignal(str)
+    #: Apply Style to All Sections chosen for a model (the panel applies it, undoably)
+    apply_all_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -255,8 +261,22 @@ class LayerList(QWidget):
                 lambda: self.show_misfit(dataset_id))
         menu.addAction(INFO_TEXT).triggered.connect(lambda: self.edit_info(dataset_id))
         menu.addSeparator()
+        self._add_apply_all(menu, dataset_id)
+        menu.addSeparator()
         menu.addAction(REMOVE_TEXT).triggered.connect(lambda: self.remove_dataset(dataset_id))
         return menu
+
+    def _add_apply_all(self, menu: QMenu, dataset_id: str) -> None:
+        from ..core.dataset_types import type_label
+        from .style_store import same_method
+        targets = same_method(self.provider.store, dataset_id) if self.provider else []
+        layer = self._layers.get(dataset_id)
+        what = type_label(layer.dataset.kind) if layer is not None else "model"
+        action = menu.addAction(APPLY_ALL_TEXT)
+        action.setEnabled(bool(targets))
+        action.setToolTip((APPLY_ALL_TIP if targets else APPLY_ALL_OFF_TIP).format(what=what))
+        menu.setToolTipsVisible(True)
+        action.triggered.connect(lambda: self.apply_all_requested.emit(dataset_id))
 
     def edit_info(self, dataset_id: str) -> None:
         """Dataset info…: method, array, spacing, inversion, reference (for provenance)."""

@@ -155,6 +155,10 @@ def _model(d) -> ModelLook | None:
                      else None)
 
 
+#: a model's look from its stored dict, or None when unusable (the section styles use it too)
+model_look_from_dict = _model
+
+
 def _levels(v) -> list:
     return [x for x in (_num(i) for i in v) if x is not None] if isinstance(v, list) else []
 

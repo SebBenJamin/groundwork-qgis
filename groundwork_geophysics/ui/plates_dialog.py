@@ -9,7 +9,6 @@ from __future__ import annotations
 import copy
 import datetime
 import uuid
-from dataclasses import asdict
 from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt
@@ -21,7 +20,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialo
                                  QWidget)
 
 from .help import add_help_button
-from ..core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+from ..core.plates import FrameLook, FrameSpec, PlateSpec
 from ..plates.build import DETAILS, STALE_PROPERTY, TEMPLATES, create_or_update_plate, \
     find_plate_layout, plate_details, plate_logo, plate_name, set_plate_details, set_plate_logo
 from ..plates.sources import detach_frame_items, read_plates, write_plates
@@ -38,17 +37,8 @@ def _new_id() -> str:
 
 def panel_look(provider, profile_id: str) -> FrameLook:
     """The section panel's current look of ``profile_id``, copied (not shared)."""
-    models = []
-    for d in provider.store.datasets(profile_id):
-        style = provider.style(d.id)
-        models.append(ModelLook(d.id, style.visible, style.opacity,
-                                asdict(style.scale) if style.scale is not None else None,
-                                style.mode, style.contour_step, style.grid_cell,
-                                style.fade_coverage, style.coverage_threshold, style.fade_mode,
-                                style.shown, list(style.contour_major),
-                                list(style.contour_minor),
-                                None if style.interpolation.is_linear
-                                else style.interpolation.to_dict()))
+    from ..section.style_store import look_of
+    models = [look_of(d.id, provider.style(d.id)) for d in provider.store.datasets(profile_id)]
     return FrameLook(models, getattr(provider, "interp_version_id", None), True,
                      bool(provider.show_field_notes), True)
 
