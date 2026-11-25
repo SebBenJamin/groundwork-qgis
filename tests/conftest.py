@@ -78,6 +78,32 @@ def no_modal_boxes():
         pytest.fail(f"real modal boxes were opened: {opened}", pytrace=False)
 
 
+@pytest.fixture(autouse=True)
+def models_read_at_once(request, monkeypatch):
+    """The plugin reads models in a QGIS task; a test about something else gets them at
+    once (as if the task had finished). Tests marked ``background_reads`` use the task."""
+    if request.node.get_closest_marker("background_reads"):
+        yield
+        return
+    from groundwork_geophysics.section.data import run_job
+    from groundwork_geophysics.section.model_reading import ModelReader
+
+    def at_once(self, profile_ids, done):
+        jobs = [j for j in self.provider.unread(profile_ids)
+                if (j.dataset_id, j.key) not in self._failed]
+        if not jobs:
+            return False
+        for job in jobs:
+            try:
+                self.provider.take(job, run_job(job))
+            except Exception:
+                self._failed.add((job.dataset_id, job.key))
+        done(True)
+        return True
+    monkeypatch.setattr(ModelReader, "request", at_once)
+    yield
+
+
 @pytest.fixture(scope="session")
 def qgis_app():
     from qgis.core import QgsApplication

@@ -21,6 +21,7 @@ class ReadModelsTask(QgsTask):
         super().__init__(TASK_TITLE, QgsTask.Flag.CanCancel)
         self.jobs = jobs
         self.results: list[tuple[ReadJob, object]] = []
+        self.failed: list[ReadJob] = []
         self.current = jobs[0] if jobs else None
 
     def run(self) -> bool:
@@ -31,7 +32,7 @@ class ReadModelsTask(QgsTask):
             try:
                 self.results.append((job, run_job(job)))
             except Exception:                   # noqa: BLE001 - drawing the section says why
-                pass
+                self.failed.append(job)
             self.setProgress(100.0 * (i + 1) / len(self.jobs))
         return not self.isCanceled()
 
@@ -54,6 +55,8 @@ class ModelReader(QObject):
         super().__init__(parent)
         self.provider = provider
         self._batches: list[_Batch] = []        # the first one runs
+        #: reads that failed in a task: left to the main thread, which reports why
+        self._failed: set[tuple] = set()
 
     @property
     def busy(self) -> bool:
@@ -63,7 +66,8 @@ class ModelReader(QObject):
         """Read what ``profile_ids`` still need, then call ``done(True)`` (``False``: the
         reading was cancelled). False when there is nothing to read: ``done`` is not
         called."""
-        wanted = self.provider.unread(profile_ids)
+        wanted = [j for j in self.provider.unread(profile_ids)
+                  if (j.dataset_id, j.key) not in self._failed]
         if not wanted:
             return False
         queued = set().union(*(b.ids for b in self._batches)) if self._batches else set()
@@ -105,6 +109,7 @@ class ModelReader(QObject):
     def _finished(self, batch: _Batch, ok: bool) -> None:
         for job, result in batch.task.results:
             self.provider.take(job, result)
+        self._failed.update((j.dataset_id, j.key) for j in batch.task.failed)
         if self._batches and self._batches[0] is batch:
             self._batches.pop(0)
         for done in batch.done:

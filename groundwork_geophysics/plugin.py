@@ -48,6 +48,8 @@ class WorkbenchPlugin:
         self.provider: SectionDataProvider | None = None
         self.source = None
         self.gatherer: ContextGatherer | None = None
+        #: reads models in the background for the section panel and the 3D view
+        self.model_reader = None
         self.style_watch: StyleWatch | None = None
         self._context_logged: set[tuple[str, str]] = set()
         self.dock: SectionDock | None = None
@@ -146,6 +148,7 @@ class WorkbenchPlugin:
         self.dock.view3d_button.setVisible(hasattr(self.iface, "mapCanvases3D"))
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
+            self.dock.set_reader(self.model_reader)
 
         project = QgsProject.instance()
         for signal, slot in ((project.readProject, self._project_read),
@@ -247,12 +250,21 @@ class WorkbenchPlugin:
         self._drop_plate_sources()
         self._drop_source()
         self._close_gatherer()
+        if self.model_reader is not None:
+            self.model_reader.cancel()
+            self.model_reader = None
         self.provider = None
         self._view3d_stale = False
         if store is not None:
             project = QgsProject.instance()
+            from .section.model_reading import ModelReader
             from .section.style_store import load_styles, save_styles
             self.provider = SectionDataProvider(store, styles=load_styles(project))
+            self.model_reader = ModelReader(self.provider)
+            reader, provider_ = self.model_reader, self.provider
+            # ties to crossing profiles: drawn at once, their columns once those are read
+            self.provider.on_unread_ties = lambda ids: reader.request(
+                ids, lambda ok: provider_.notify_redraw(ties=True))
             provider = self.provider
             self.provider.on_style.append(lambda: save_styles(project, provider.styles()))
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
@@ -286,6 +298,7 @@ class WorkbenchPlugin:
             self.source = register_source(self.provider)
             if self.dock is not None:
                 self.dock.set_provider(self.provider, self.source)
+                self.dock.set_reader(self.model_reader)
             self.attach_plates()
         self._update_actions()
 

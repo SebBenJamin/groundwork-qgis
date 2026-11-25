@@ -1,2 +1,3 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["background_reads: the test reads models in a real QGIS task (others read them at once)"]

@@ -5,6 +5,8 @@ import pytest
 
 from tests.section.test_read_cache_use import counted  # noqa: F401  (fixture)
 
+pytestmark = pytest.mark.background_reads
+
 
 def _wait(qgis_app, flag, seconds=30.0):
     import time
