@@ -90,8 +90,13 @@ changes when you change it there:
 | **Contours** | the contour lines, in **Contours in 3D** |
 | **Smooth + contours** | the point cloud and the contour lines |
 
-The colour scale and the coverage fade follow too: a faded cell stands see-through, a blanked
-one is left out, and the faded part of a point cloud is left out.
+The colour scale, the [interpolation](section-panel.md#interpolation) and the coverage fade
+follow too: a faded cell stands see-through, a blanked one is left out, and the faded part of a
+point cloud is left out.
+
+To see a whole survey alike in 3D, style one model, right-click it in the section's layer list
+→ **Apply Style to All Sections**, then tick the profiles in **Show in 3D…** with **As in the
+Section**.
 
 **Section pictures**: all models of a profile set to **Section Picture** are painted into one
 picture, stacked as the section stacks them, in the group **Section pictures in 3D**. With

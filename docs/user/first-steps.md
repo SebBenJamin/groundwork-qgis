@@ -89,8 +89,11 @@ See [The 3D view](howto/3d-view.md).
 
 1. **Groundwork → New Groundwork Project…** in your own QGIS project (see
    [Projects and profiles](howto/projects-and-profiles.md)).
-2. **Groundwork → Add Data…** for your model files (see [Add data](howto/add-data.md) and
-   [Methods and formats](formats/overview.md)).
+2. **Groundwork → Add Data…** for your model files, several at once if you like (see
+   [Add data](howto/add-data.md) and [Methods and formats](formats/overview.md)).
 3. **Groundwork → Context Layers…** for your boreholes, geology and elevation model (see
    [Boreholes and logs](howto/boreholes.md) and
    [Geology, crossing lines and ties](howto/context.md)).
+4. Style one model as in step 3, then right-click it in the **Layers** list → **Apply Style to
+   All Sections**: every line of the same method gets the same colours and display (see
+   [The section panel](howto/section-panel.md#the-layer-list)).

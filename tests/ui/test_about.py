@@ -13,8 +13,8 @@ def test_about_shows_version_and_links(qgis_app):
     from groundwork_geophysics.ui.help import SITE, release_note_url
     dlg = AboutDialog()
     text = " ".join(label.text() for label in dlg.findChildren(QLabel))
-    assert "Version 0.14.2" in text and "QGIS " in text
-    for url in (SITE, release_note_url("0.14.2"), GH + "/issues", GH, GH + "/blob/master/LICENSE"):
+    assert "Version 0.15.0" in text and "QGIS " in text
+    for url in (SITE, release_note_url("0.15.0"), GH + "/issues", GH, GH + "/blob/master/LICENSE"):
         assert f'href="{url}"' in text, url
     assert dlg.windowTitle() == "About Groundwork"
     dlg.deleteLater()
