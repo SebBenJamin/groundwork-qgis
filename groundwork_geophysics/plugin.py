@@ -191,6 +191,12 @@ class WorkbenchPlugin:
         if self.view3d_link is not None:
             self.view3d_link.unload()
             self.view3d_link = None
+        if self.model_reader is not None:              # no reading task calls back any more
+            self.model_reader.cancel()
+            self.model_reader = None
+        for task in list(self._prepare_tasks):
+            task.cancel()
+        self._prepare_tasks.clear()
         if self.dock is not None:
             self.dock.set_provider(None)                 # detach the source before unregistering
             self.iface.removeDockWidget(self.dock)

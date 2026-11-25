@@ -379,6 +379,8 @@ class SectionDock(QDockWidget):
         self.set_reader(value)
 
     def _reading_progress(self, done: int, total: int, _name: str) -> None:
+        if sip.isdeleted(self):                 # the panel went while a task read
+            return
         if self._wanted is not None:
             self.readout.setText(READING.format(name=self._wanted[1], done=done, total=total))
 
@@ -398,6 +400,8 @@ class SectionDock(QDockWidget):
         return True
 
     def _opened_after_read(self, profile_id: str, ok: bool) -> None:
+        if sip.isdeleted(self):                 # the panel went while a task read
+            return
         if self._wanted is None or self._wanted[0] != profile_id:
             return                              # another profile was chosen meanwhile
         self._wanted = None
@@ -447,6 +451,8 @@ class SectionDock(QDockWidget):
             self.readout.setText(settled)
 
     def _refreshed_after_read(self, ok: bool) -> None:
+        if sip.isdeleted(self):                 # the panel went while a task read
+            return
         self._wanted = None
         if ok:
             self._refresh_now()
