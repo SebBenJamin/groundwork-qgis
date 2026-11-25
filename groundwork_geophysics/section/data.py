@@ -536,6 +536,9 @@ class SectionDataProvider:
         #: forget the remembered strips from web layers and fetch them again; None: the
         #: context has no web layers to refresh (``has_web_layers`` says whether it has now)
         self.refresh_web_layers: Callable[[], None] | None = None
+        #: when set, ties never wait for a crossing profile's models: one not read yet is
+        #: tied without columns and its id passed here (to read it in the background)
+        self.on_unread_ties: Callable[[list], None] | None = None
         self.has_web_layers: Callable[[], bool] | None = None
         self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
@@ -1173,18 +1176,28 @@ class SectionDataProvider:
         ``notify_changed()``, failures recorded in ``context_errors``."""
         return self._gathered.items(profile, self.on_context_error)
 
-    def ties(self, profile_id: str) -> list[Tie]:
+    def ties(self, profile_id: str, defer: bool | None = None) -> list[Tie]:
         """Ties with every other profile in the store, columns from that profile's visible
         layers. Cached until ``notify_changed()`` or a new ``near_miss``."""
         from .ties_data import build_ties       # ties_data imports this module
         hit = self._ties.get(profile_id)
         if hit is not None and hit[0] == self.near_miss:
             return hit[1]
+        defer = self.on_unread_ties is not None if defer is None else defer
+        waiting: list[str] = []
+
+        def layers_of(pid: str) -> list:
+            if defer and self.unread([pid]):
+                waiting.append(pid)
+                return []
+            return self._assemble(pid)[0]
         # a profile without heights is not compared: its z means nothing next to another's
         ties = [] if self.is_local(profile_id) else [
-            t for t in build_ties(profile_id, self.store.profiles(), self.near_miss,
-                                  lambda pid: self._assemble(pid)[0])
+            t for t in build_ties(profile_id, self.store.profiles(), self.near_miss, layers_of)
             if not self.is_local(t.other_id)]
+        if waiting:                             # partial: asked again once those are read
+            self.on_unread_ties(waiting)
+            return ties
         self._ties[profile_id] = (self.near_miss, ties)
         return ties
 
@@ -1193,7 +1206,8 @@ class SectionDataProvider:
         profile = self._profile(profile_id)
         return profile is not None and self._items(profile).dem is not None
 
-    def context(self, profile_id: str, include_hidden: bool = False) -> ContextItems | None:
+    def context(self, profile_id: str, include_hidden: bool = False,
+                defer: bool | None = None) -> ContextItems | None:
         """Gathered context with the ties, in forward chainage; None for an unknown
         profile. Boreholes hidden in this profile are left out unless ``include_hidden``
         (the borehole viewer shows them faded). Shares the cached data: read-only."""
@@ -1202,7 +1216,8 @@ class SectionDataProvider:
             return None
         notes = [n for n in self.store.field_notes(profile_id) if n.shown] \
             if self.show_field_notes else []
-        items = replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
+        items = replace(self._items(profile), ties=self.ties(profile_id, defer),
+                        field_notes=notes)
         if self.note_looks is not None and notes:
             try:
                 items = replace(items, note_looks=self.note_looks())
@@ -1277,7 +1292,9 @@ class SectionDataProvider:
         layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
                   for la in layers]
         coverage = _coverage(sets, electrodes)
-        context = copy.deepcopy(self.context(profile_id))
+        # a plate waits for every crossing profile; the panel does not
+        context = copy.deepcopy(self.context(profile_id,
+                                             defer=False if look is not None else None))
         if look is not None and context is not None:
             # the plate's own notes switch, not the panel's
             notes = [n for n in self.store.field_notes(profile_id) if n.shown]
