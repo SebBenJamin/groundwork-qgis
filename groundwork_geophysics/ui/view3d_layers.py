@@ -1053,7 +1053,8 @@ def picture_plan(store, provider, profile, layers, topo, interpretation: bool, g
     layers = _section_order(provider, profile.id, layers)
     interp = _interpretation(provider, profile.id) if interpretation else None
     gap = gap or curtain_gap(profile.chainage.length)
-    path = cloud_folder(store) /         f"{profile.id}-{_picture_signature(layers, profile, topo, interp, gap)}.json"
+    signature = _picture_signature(layers, profile, topo, interp, gap)
+    path = cloud_folder(store) / f"{profile.id}-{signature}.json"
     return layers, interp, gap, path
 
 

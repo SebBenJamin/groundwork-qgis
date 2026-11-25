@@ -1,7 +1,7 @@
 """The 3D view's slow part, computed in a QGIS task: the point clouds, contour lines and
-section pictures of the chosen models that have no file yet. ``pending_3d`` lists them on the main thread (with
-plain copies of what they need), ``run_job3d`` computes one anywhere; filling the 3D layers
-afterwards (``view3d_layers.sync``) only picks up the files."""
+section pictures of the chosen models that have no file yet. ``pending_3d`` lists them on
+the main thread (with plain copies of what they need), ``run_job3d`` computes one anywhere;
+filling the 3D layers afterwards (``view3d_layers.sync``) only picks up the files."""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
