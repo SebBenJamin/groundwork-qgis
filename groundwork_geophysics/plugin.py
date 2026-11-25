@@ -262,9 +262,14 @@ class WorkbenchPlugin:
             ensure_note_layers(store, project)          # notes always have a layer to style
             migrate_note_styles(store, project)
             self.provider.note_looks = partial(note_looks, store, project)
+            from .section.data import cache_folder
             self.gatherer = ContextGatherer(project, store.crs_authid,
                                             on_change=self.provider.notify_changed,
-                                            exclude=lambda: own_layer_ids(store, project))
+                                            exclude=lambda: own_layer_ids(store, project),
+                                            cache_dir=cache_folder(store))
+            self.gatherer.background = True             # a web strip never freezes QGIS
+            self.provider.refresh_web_layers = self.gatherer.refresh_web_layers
+            self.provider.has_web_layers = self.gatherer.uses_web_layers
             self.provider.context_source = self.gatherer.items_for
             self.provider.borehole_source = self.gatherer.borehole_keys
             self.provider.interp_layers = lambda: interp_layers(store, project)

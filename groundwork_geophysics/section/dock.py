@@ -72,6 +72,9 @@ IMAGE_OFF_TIP = "Open a profile first; then its section can be copied or saved a
 COPY_IMAGE_TEXT = "Copy Section Image"
 SAVE_IMAGE_TEXT = "Save Section Image…"
 ZOOM_MAP_TEXT = "Zoom Map to Profile"
+REFRESH_WEB_TEXT = "Refresh Web Layers"
+REFRESH_WEB_TIP = ("Fetch the strips from web layers (e.g. a survey's live geology) again: "
+                   "they are remembered per profile")
 ZOOM_MAP_TIP = "Zoom the map to the open profile's line"
 ZOOM_MAP_OFF_TIP = "Open a profile first; then this zooms the map to its line"
 HIDE_IN_SECTION = "Hide in Section"
@@ -921,11 +924,29 @@ class SectionDock(QDockWidget):
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
+        if self._web_context():
+            action = menu.addAction(REFRESH_WEB_TEXT)
+            action.setToolTip(REFRESH_WEB_TIP)
+            menu.setToolTipsVisible(True)
+            action.triggered.connect(self._refresh_web)
         cut = self._cut_state()
         if cut is not None:
             menu.addSeparator()
             self._add_3d_entries(menu, cut)
         return menu
+
+    def _web_context(self) -> bool:
+        provider = self.provider
+        if provider is None or provider.refresh_web_layers is None:
+            return False
+        try:
+            return provider.has_web_layers is None or bool(provider.has_web_layers())
+        except Exception:                       # settings being rewritten: offer nothing
+            return False
+
+    def _refresh_web(self) -> None:
+        if self.provider is not None and self.provider.refresh_web_layers is not None:
+            self.provider.refresh_web_layers()
 
     def _cut_state(self) -> bool | None:
         """Whether a 3D view is cut along a profile; None without 3D views."""

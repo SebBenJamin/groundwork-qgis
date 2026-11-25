@@ -509,6 +509,10 @@ class SectionDataProvider:
         self.on_change: list[Callable[[], None]] = []
         #: called after the user changed a style (to keep the styles in the project)
         self.on_style: list[Callable[[], None]] = []
+        #: forget the remembered strips from web layers and fetch them again; None: the
+        #: context has no web layers to refresh (``has_web_layers`` says whether it has now)
+        self.refresh_web_layers: Callable[[], None] | None = None
+        self.has_web_layers: Callable[[], bool] | None = None
         self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
         #: Set and read on the main thread only (snapshots stay plain data).
