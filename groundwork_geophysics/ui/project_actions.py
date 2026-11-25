@@ -83,7 +83,9 @@ def resolve_entry(entry: str, project: QgsProject) -> Path:
 
 def attach_store(project: QgsProject) -> ProjectStore | None:
     """The workbench store ``project`` refers to, or ``None`` when it refers to none.
-    Raises ValueError (readable) when the file is missing or not a workbench project."""
+    Raises ValueError (readable) when the file is missing or not a workbench project.
+    A store with an interpretation gets its interpretation layers when the project lacks
+    them, as when the store is opened (else they came only with the next edit)."""
     entry = project.readEntry(SCOPE, STORE_KEY, "")[0]
     if not entry:
         return None
@@ -91,6 +93,9 @@ def attach_store(project: QgsProject) -> ProjectStore | None:
     if not path.is_file():
         raise ValueError(f"Groundwork project file not found: {path}")
     store = ProjectStore.open(path)
+    if store.has_interpretation():
+        from .interp_layers import add_interp_layers
+        add_interp_layers(store, project)
     protect_layers(store, project)
     return store
 
