@@ -68,3 +68,26 @@ def test_a_point_cloud_las_says_what_it_is(tmp_path):
     path.write_bytes(b"LASF" + bytes(300))
     with pytest.raises(ValueError, match="point cloud"):
         read_las_log(path)
+
+
+def test_las_1_2_keeps_the_well_name_after_the_colon(tmp_path):
+    """LAS 1.2 writes "WELL.  WELL:  ANY ET AL OIL WELL #12": the label first, the name
+    after the colon (as lasio's examples show)."""
+    from groundwork_geophysics.core.las_log import read_las_log
+    path = tmp_path / "old.las"
+    path.write_text("~VERSION\n VERS.  1.2: CWLS\n WRAP.  NO: one line\n~WELL\n"
+                    " STRT.M 1.0: START\n NULL.  -999.25: NULL VALUE\n"
+                    " WELL.  WELL:   ANY ET AL OIL WELL #12\n"
+                    " UWI .  UNIQUE WELL ID:   100091604920W300\n"
+                    "~CURVE\n DEPT.M : DEPTH\n GR.GAPI : GAMMA\n~A\n1.0 50\n")
+    log = read_las_log(path)
+    assert (log.well, log.uwi) == ("ANY ET AL OIL WELL #12", "100091604920W300")
+
+
+def test_las_1_2_written_like_2_0_still_gives_the_name(tmp_path):
+    from groundwork_geophysics.core.las_log import read_las_log
+    path = tmp_path / "mixed.las"
+    path.write_text("~V\n VERS. 1.2: x\n~W\n WELL. BH 4 : WELL\n UWI. : UWI\n"
+                    "~C\n DEPT.M :\n GR.GAPI :\n~A\n1.0 50\n")
+    log = read_las_log(path)
+    assert (log.well, log.uwi) == ("BH 4", "")

@@ -35,6 +35,9 @@ class LasLog:
     path: str = ""
 
 
+#: what the description says when it is only a label (the name is then before the colon)
+_LABELS = {"WELL", "WELL NAME", "UWI", "UNIQUE WELL ID", "API", "API NUMBER", ""}
+
 _LINE = re.compile(r"^\s*([^.\s][^.]*?)\s*\.(\S*)\s*(.*)$")
 
 
@@ -92,7 +95,9 @@ def read_las_log(path) -> LasLog:
         h = well.get(key)
         if h is None:
             return ""
-        return h[2] or (h[3] if vers.startswith("1") else "")      # 1.2: the name after ":"
+        if vers.startswith("1") and h[3].upper() not in _LABELS:
+            return h[3] or h[2]                 # 1.2: "WELL. WELL: the name" (label first)
+        return h[2]
     null = None
     if "NULL" in well:
         try:
