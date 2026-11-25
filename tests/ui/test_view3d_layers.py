@@ -547,6 +547,34 @@ def test_an_older_cloud_gets_the_finer_detail_once_and_the_users_own_stays(setup
     assert _screen_error(cloud) == pytest.approx(2.0)
 
 
+def test_a_cloud_made_with_the_old_half_pixel_gets_the_full_detail_once(setup):
+    """0.5 px (0.14) still left eleven JWD curtains black from a distance; 0.1 px shows
+    them in colour. A cloud made with 0.5 moves to 0.1 once; a value set later stays."""
+    from groundwork_geophysics.ui.view3d_layers import CLOUD_SCREEN_ERROR, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    assert CLOUD_SCREEN_ERROR == pytest.approx(0.1)
+
+    def set_error(value):
+        r3d = cloud.renderer3D().clone()
+        r3d.setMaximumScreenError(value)
+        cloud.setRenderer3D(r3d)
+    set_error(0.5)                                   # as made by 0.14
+    cloud.setCustomProperty(view3d_layers_flag(), True)   # 0.14's flag: "set once"
+    sync(st, provider, prj)
+    assert _screen_error(cloud) == pytest.approx(0.1)
+    set_error(0.5)                                   # now the user's own choice
+    sync(st, provider, prj)
+    assert _screen_error(cloud) == pytest.approx(0.5)
+
+
+def view3d_layers_flag():
+    from groundwork_geophysics.ui import view3d_layers
+    return view3d_layers._CLOUD_DETAIL_SET
+
+
 def test_a_cells_model_stays_cells(setup):
     from groundwork_geophysics.ui.view3d_layers import clouds_3d, sync
     st, p, provider, prj = setup

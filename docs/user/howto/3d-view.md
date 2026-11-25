@@ -141,8 +141,8 @@ A drag turns the view as usual, and QGIS's current 3D tool (identify, measure) s
 - **See-through of faded cells:** **Models in 3D** → **3D View** has two rules, **Cells** and
   **Faded cells (low coverage)**.
 - **Style a point cloud by value:** **Symbology** → **Attribute by Ramp** on **Log10Value** (or
-  **Value**). The point size and the **Maximum screen space error** (the plugin sets 0.5 px, so
-  distant curtains stay dense) are in its **3D View** properties.
+  **Value**). The point size and the **Maximum screen space error** (the plugin sets 0.1 px, so
+  distant curtains stay dense and in colour; a value you set stays) are in its **3D View** properties.
 - **Profile and borehole names:** each name's layer properties → **3D View** sets its text
   format or a callout line to the ground.
 - A style or size you set yourself stays when the plugin rebuilds a layer.

@@ -72,11 +72,14 @@ _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the l
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
 #: a point cloud's 3D level of detail (px): QGIS's default 3 shows a thinned-out cloud from a
-#: distance, and eye-dome lighting darkens each lone point until the curtain looks black
-CLOUD_SCREEN_ERROR = 0.5
-#: QGIS's own default, which a cloud made before 0.14 still carries
-_QGIS_SCREEN_ERROR = 3.0
-_CLOUD_DETAIL_SET = f"{LEGACY_ID}/view3d_cloud_detail_set"   # a cloud: the detail set once
+#: distance, and eye-dome lighting darkens each lone point until the curtain looks black; 0.5
+#: (0.14) still did so with eleven curtains in view. The curtains are small (about 150 000
+#: points each), so full detail costs little
+CLOUD_SCREEN_ERROR = 0.1
+#: what clouds made earlier carry: QGIS's own default (before 0.14), and 0.14's 0.5
+_EARLIER_SCREEN_ERRORS = (3.0, 0.5)
+#: a cloud: the detail the plugin last gave it (``True``: 0.14's 0.5)
+_CLOUD_DETAIL_SET = f"{LEGACY_ID}/view3d_cloud_detail_set"
 _SMOOTH, _LINES = ("smooth", "smooth+contours"), ("contours", "smooth+contours")
 #: features one 3D chunk may hold: QGIS shows a layer split into chunks in pieces when
 #: zoomed out, so a curtain layer is kept in one chunk
@@ -689,7 +692,7 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
         renderer.setMaximumScreenError(CLOUD_SCREEN_ERROR)
         layer.setRenderer3D(renderer)
         layer.setSync3DRendererTo2DRenderer(True)   # the 3D look follows the 2D style
-        layer.setCustomProperty(_CLOUD_DETAIL_SET, True)
+        layer.setCustomProperty(_CLOUD_DETAIL_SET, CLOUD_SCREEN_ERROR)
     except ImportError:                             # a QGIS built without 3D
         pass
     project.addMapLayer(layer, False)
@@ -697,12 +700,25 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
     return layer
 
 
+def _given_detail(layer) -> float | None:
+    """The detail the plugin last gave ``layer`` (0.14 stored ``True``: 0.5), or None."""
+    value = layer.customProperty(_CLOUD_DETAIL_SET)
+    if value in (None, "", False, "false"):
+        return None
+    if value is True or value == "true":
+        return 0.5
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _cloud_detail(layer) -> None:
-    """A cloud made before 0.14: the finer 3D level of detail, once, while it still has
-    QGIS's default (a value the user set stays)."""
-    if layer.customProperty(_CLOUD_DETAIL_SET):
+    """A cloud made earlier: today's 3D level of detail, once, while it still has the value
+    it was made with (QGIS's default, or 0.14's 0.5); a value the user set stays."""
+    if _given_detail(layer) == CLOUD_SCREEN_ERROR:
         return
-    layer.setCustomProperty(_CLOUD_DETAIL_SET, True)
+    layer.setCustomProperty(_CLOUD_DETAIL_SET, CLOUD_SCREEN_ERROR)
     try:
         from qgis._3d import QgsPointCloudLayer3DRenderer
         from qgis.core import QgsAbstract3DRenderer
@@ -710,7 +726,8 @@ def _cloud_detail(layer) -> None:
         return
     renderer = as_kind(layer.renderer3D(), "pointcloud", QgsAbstract3DRenderer,
                        QgsPointCloudLayer3DRenderer)
-    if renderer is None or abs(renderer.maximumScreenError() - _QGIS_SCREEN_ERROR) > 1e-9:
+    if renderer is None or all(abs(renderer.maximumScreenError() - v) > 1e-9
+                               for v in _EARLIER_SCREEN_ERRORS):
         return
     renderer = renderer.clone()
     renderer.setMaximumScreenError(CLOUD_SCREEN_ERROR)
