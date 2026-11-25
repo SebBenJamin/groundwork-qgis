@@ -31,9 +31,9 @@ DEMO_ERFURT = REPO / "demo_erfurt"
 DEMO_CALHOUN = REPO / "demo_calhoun"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
-#: folders by pattern: the 3D view's point clouds and section pictures beside a store, made
-#: again from the models wherever a 3D view needs them (git-ignored too)
-EXCLUDE_DIR_PATTERNS = ("*_groundwork_3d",)
+#: folders by pattern: the 3D view's point clouds and section pictures, and the remembered
+#: model reads, beside a store; made again wherever they are needed (git-ignored too)
+EXCLUDE_DIR_PATTERNS = ("*_groundwork_3d", "*_groundwork_cache")
 EXCLUDE_FILES = ("*.qto3settings", "*.pyc", "*.pyo", "*~", "*.bak", "*.qgs~", "*.qgz~", "*-wal", "*-shm",
                  "*-journal", "*.aux.xml", ".DS_Store", "Thumbs.db")
 #: a guard against data or build output leaking into the plugin zip (code and the FGDC

@@ -10,9 +10,11 @@ plain-data copy handed to profile-generator threads.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -27,6 +29,7 @@ from ..core.interpolators import Interpolation
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport
+from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
@@ -474,6 +477,27 @@ def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
         if len(s) >= 2:
             return s, z
     return None
+
+
+def cache_folder(store) -> Path:
+    """Where the models read for ``store`` are remembered: ``<store stem>_cache`` beside it."""
+    path = Path(store.path)
+    return path.with_name(path.stem + "_cache")
+
+
+def _cache_file(store, dataset_id: str, key: tuple) -> Path:
+    digest = hashlib.sha1(repr(key).encode("utf-8", "replace")).hexdigest()[:12]
+    return cache_folder(store) / f"{dataset_id}-{digest}.npz"
+
+
+def _forget_others(kept: Path, dataset_id: str) -> None:
+    """Delete the dataset's remembered reads other than ``kept`` (an older file or line)."""
+    try:
+        for old in kept.parent.glob(f"{dataset_id}-*.npz"):
+            if old != kept and old.stem.count("-") == kept.stem.count("-"):
+                old.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class SectionDataProvider:
@@ -967,17 +991,23 @@ class SectionDataProvider:
             raise ValueError("a file with map coordinates needs its profile line")
         line = (np.asarray(profile.xy, float).tobytes(), self.store.crs_authid) if on_map \
             else None
-        key = (d.id, os.stat(path).st_mtime, json.dumps(d.reader_options, sort_keys=True),
-               path, d.reader, _companion_mtime(path, d.reader_options), line)
+        st = os.stat(path)
+        key = (d.id, st.st_mtime, json.dumps(d.reader_options, sort_keys=True),
+               path, d.reader, _companion_mtime(path, d.reader_options), line, st.st_size)
         hit = self._cache.get(d.id)
         if hit is not None and hit[0] == key:
             return hit[1]
-        options = read_options(d.reader_options)
-        if on_map:
-            options["xy_to_distance"] = xy_to_distance_on(
-                profile, str(d.reader_options["columns"].get("crs") or ""),
-                self.store.crs_authid)
-        result = readers.read(path, reader=d.reader or None, **options)
+        kept = _cache_file(self.store, d.id, key)
+        result = load_result(kept)
+        if result is None:
+            options = read_options(d.reader_options)
+            if on_map:
+                options["xy_to_distance"] = xy_to_distance_on(
+                    profile, str(d.reader_options["columns"].get("crs") or ""),
+                    self.store.crs_authid)
+            result = readers.read(path, reader=d.reader or None, **options)
+            if save_result(kept, result):
+                _forget_others(kept, d.id)
         self._cache[d.id] = (key, result)
         return result
 

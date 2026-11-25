@@ -15,3 +15,4 @@ spikes/
 *.gpkg-shm
 # point-cloud curtains the 3D view writes beside a Groundwork file
 *_groundwork_3d/
+*_groundwork_cache/
