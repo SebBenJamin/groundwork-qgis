@@ -29,4 +29,4 @@ def test_dataset_info_says_from_what_to_what(qgis_app, store_with_model):
     st.save_dataset(d)
     after = DatasetInfoDialog(st, d.id)
     text = after.detected.text()
-    assert "averaged from 623241 cells of 0.25 × 0.1 m to 1 × 0.5 m" in text
+    assert "averaged from 623\u202f241 cells of 0.25 × 0.1 m to 1 × 0.5 m" in text

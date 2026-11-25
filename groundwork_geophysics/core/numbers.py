@@ -1,5 +1,6 @@
 """Numbers as the user reads and types them: in QGIS's locale (the same decimal separator as
-QGIS's own spin boxes), without thousands separators, never "-0". Qt is imported lazily, so
+QGIS's own spin boxes), without thousands separators (counts in text: ``fmt_count``), never
+"-0". Qt is imported lazily, so
 core stays importable without QGIS."""
 from __future__ import annotations
 
@@ -34,6 +35,17 @@ def fmt_trim(value: float, decimals: int = 2, locale=None) -> str:
     if decimals > 0:
         text = text.rstrip("0").rstrip(loc.decimalPoint())
     return text
+
+
+#: groups the digits of a count: a narrow no-break space reads the same in every locale
+#: (a "." or "," could be taken for a decimal point)
+COUNT_GROUP = " "
+
+
+def fmt_count(n) -> str:
+    """A count (cells, points, rows) grouped in threes: 2057769 -> "2 057 769". For text
+    only: counts are never typed back, so the group separator cannot be misread there."""
+    return f"{int(round(float(n))):,}".replace(",", COUNT_GROUP)
 
 
 def fmt_sig(value: float, digits: int = 3, locale=None) -> str:

@@ -27,7 +27,7 @@ from ..core.coverage import overhang_message
 from ..core.layout import model_stations
 from ..core.lines import line_from_cloud
 from ..core.model import Dataset
-from ..core.numbers import fmt, fmt_sig, fmt_trim
+from ..core.numbers import fmt, fmt_count, fmt_sig, fmt_trim
 from ..section.readout import format_value, unit_label
 from ..core.placement import Placement, fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
@@ -81,6 +81,15 @@ READINGS_METHOD_TIP = "Measured ERT data: the method is ERT"
 ERROR_STYLE = "color: #b00020;"
 
 
+def size_decimals(step: float) -> int:
+    """Decimals that show a multiple of the spacing ``step`` (0.25 -> 2, 0.1 -> 1), at most 2:
+    in field geophysics nothing is placed finer than a centimetre."""
+    for d in range(3):
+        if abs(step * 10 ** d - round(step * 10 ** d)) < 1e-6:
+            return d
+    return 2
+
+
 def guess_response(path) -> str:
     """The model-response file next to a data file, or "" when none or several fit.
 
@@ -116,7 +125,7 @@ def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) 
     values = mesh.values[np.isfinite(mesh.values)]
     z_word = {"elevation": "elevation", "depth": "depth",
               "local": "local height"}.get(z_kind, "Z meaning not set")
-    text = (f"{len(mesh.values)} cells · x {fmt(xmin)} – {fmt(xmax)} m, z {fmt(zmin)} – "
+    text = (f"{fmt_count(len(mesh.values))} cells · x {fmt(xmin)} – {fmt(xmax)} m, z {fmt(zmin)} – "
             f"{fmt(zmax)} m ({z_word}) · " +
             (f"values {format_value(values.min())} – {format_value(values.max())} "
              f"{unit_label(mesh.unit)}".rstrip()
@@ -415,14 +424,13 @@ class AddDataDialog(QDialog):
             self._coarse_for = (self._path(), grid)
             for spin, step, f in ((self.coarse_dx, grid.dx, block[0]),
                                   (self.coarse_dz, grid.dz, block[1])):
-                spin.setDecimals(next((d for d in range(3)        # 0.25 -> 2, 0.1 -> 1
-                                       if abs(step * 10 ** d - round(step * 10 ** d)) < 1e-6), 2))
+                spin.setDecimals(size_decimals(step))
                 spin.setSingleStep(step)
                 spin.setRange(step, step * 64)
                 spin.setToolTip(COARSE_SIZE_TIP.format(step=fmt_trim(step, 3)))
                 spin.setValue(f * step)
             self.coarse_check.setChecked(True)
-        self.coarse_note.setText(COARSE_NOTE.format(n=fmt(grid.n_points, 0),
+        self.coarse_note.setText(COARSE_NOTE.format(n=fmt_count(grid.n_points),
                                                     dx=fmt_trim(grid.dx, 3),
                                                     dz=fmt_trim(grid.dz, 3)))
         self._coarse_changed()
@@ -442,7 +450,7 @@ class AddDataDialog(QDialog):
         block = self._block()
         self.coarse_count.setText(
             "" if block is None or self._grid is None else
-            COARSE_COUNT.format(n=fmt(round(self._grid.n_points / (block[0] * block[1])), 0)))
+            COARSE_COUNT.format(n=fmt_count(self._grid.n_points / (block[0] * block[1]))))
 
     # -- file --------------------------------------------------------------------------------
     def _browse(self) -> None:
@@ -703,9 +711,10 @@ class AddDataDialog(QDialog):
         self._file_blocks[path] = block
         if block is None:
             return ""
-        # two decimals, as in the one-file box: a map file's spacing is walked along the
-        # ground, so it is not exactly round (0.502 m)
-        return f"{fmt_trim(block[0] * grid.dx, 2)} × {fmt_trim(block[1] * grid.dz, 2)} m"
+        # as in the one-file box: a map file's spacing is walked along the ground, so it is
+        # not exactly round (0.502 m: two decimals)
+        return (f"{fmt_trim(block[0] * grid.dx, size_decimals(grid.dx))} × "
+                f"{fmt_trim(block[1] * grid.dz, size_decimals(grid.dz))} m")
 
     def _file_placement(self, path: str, target) -> Placement:
         if target == FilesBox.NEW:                  # a line through the file's coordinates
