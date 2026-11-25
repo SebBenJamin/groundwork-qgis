@@ -232,3 +232,61 @@ def test_the_faces_follow_a_bend():
     front, _ = two_faces([5.0, 15.0, 15.0, 5.0], [0.0, 0.0, 1.0, 1.0], corner, 0.1)
     x, y, _z = front[1]                       # s = 15: 5 m up the northward leg
     assert (x, y) == pytest.approx((9.9, 5.0))                        # left of it is west
+
+
+def _mixed_mesh():
+    """Quads both ways round, triangles, a cell without a value, coverage below and above."""
+    verts = np.array([[0, 50], [5, 50], [5, 45], [0, 45], [10, 50], [10, 45], [12, 40],
+                      [3, 40]], dtype=float)
+    cells = np.array([[0, 1, 2, 3], [1, 4, 5, 2], [2, 5, 6, -1], [3, 2, 7, -1],
+                      [2, 6, 7, -1]])
+    return SectionMesh(verts, cells, np.array([10.0, 20.0, np.nan, 40.0, 50.0]),
+                       coverage=np.array([1.0, -2.0, 1.0, np.nan, -5.0]), coverage_cut=0.0)
+
+
+@pytest.mark.parametrize("threshold, gap, keep_faded", [
+    (None, 0.0, False), (None, 0.5, False), (0.0, 0.5, False), (0.0, 0.5, True)])
+def test_curtain_arrays_hold_the_same_cells_as_the_curtain_cells(threshold, gap, keep_faded):
+    # 3D cells of a big model are built as arrays (one Python object per cell took 26 s for
+    # 370 000 cells); they must be the very cells the curtain had
+    from groundwork_geophysics.core.view3d import curtain_arrays
+    mesh = _mixed_mesh()
+    rgba = np.array([[1, 2, 3, 255], [4, 5, 6, 255], [0, 0, 0, 0], [7, 8, 9, 255],
+                     [10, 11, 12, 255]], dtype=np.uint8)
+    cells = curtain_cells(mesh, L_SHAPE, rgba, threshold, gap, keep_faded=keep_faded)
+    arr = curtain_arrays(mesh, L_SHAPE, rgba, threshold, gap, keep_faded=keep_faded)
+    assert len(arr.index) == len(cells)
+    for k, cell in enumerate(cells):
+        n = int(arr.points[k])
+        assert np.allclose(arr.ring[k, :n], cell.ring)
+        assert float(arr.value[k]) == cell.value
+        assert (math.isnan(cell.coverage) and math.isnan(arr.coverage[k])) or \
+            arr.coverage[k] == cell.coverage
+        assert bool(arr.resolved[k]) == cell.resolved and bool(arr.faded[k]) == cell.faded
+        assert tuple(int(c) for c in arr.rgb[k]) == cell.rgb
+        if gap > 0:
+            assert np.allclose(arr.front[k, :n], cell.faces[0])
+            assert np.allclose(arr.back[k, :n], cell.faces[1])
+        else:
+            assert cell.faces == ()
+
+
+def test_the_faces_are_written_in_chunks_with_the_same_bytes(monkeypatch):
+    # 2 million cells at once took about 1 GB more: written a chunk of cells at a time
+    from groundwork_geophysics.core import view3d
+    a = view3d.curtain_arrays(_mixed_mesh(), L_SHAPE, np.full((5, 4), 255, np.uint8), None,
+                              0.5)
+    whole = view3d.faces_wkb(a)
+    monkeypatch.setattr(view3d, "_WKB_CHUNK", 1)
+    assert view3d.faces_wkb(a) == whole
+
+
+def test_the_3d_field_uses_the_models_gridding_method():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.core.view3d import field_grid
+    mesh = _grid_mesh()
+    linear = field_grid(mesh, None, _style(), None)
+    nearest = field_grid(mesh, None, _style(interpolation=Interpolation(
+        method="nearest", anisotropy=1.0)), None)
+    assert np.array_equal(np.isfinite(linear.values), np.isfinite(nearest.values))
+    assert not np.allclose(linear.values, nearest.values, equal_nan=True)

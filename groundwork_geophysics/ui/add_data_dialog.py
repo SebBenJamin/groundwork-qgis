@@ -14,23 +14,27 @@ from pathlib import Path
 
 import numpy as np
 from qgis.core import Qgis, QgsProject, QgsSettings
-from qgis.PyQt.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from qgis.gui import QgsDoubleSpinBox
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+                                 QFormLayout,
                                  QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                  QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget)
 
 from .help import add_help_button
+from .add_data_files import READY, FilesBox
 from .. import readers
 from ..core.coverage import overhang_message
 from ..core.layout import model_stations
 from ..core.lines import line_from_cloud
 from ..core.model import Dataset
-from ..core.numbers import fmt, fmt_sig, fmt_trim
+from ..core.numbers import fmt, fmt_count, fmt_sig, fmt_trim
 from ..section.readout import format_value, unit_label
-from ..core.placement import fit_report
+from ..core.placement import Placement, fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
 from ..ids import LEGACY_ID
 from ..readers.errors import plain_error
-from ..readers.text_columns import map_points
+from ..core.coarsen import proposed_block
+from ..readers.text_columns import grid_of_file, map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
@@ -54,6 +58,12 @@ RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response"
                   "dcinv.response")
 #: the last text-table settings, offered for the next file with the same columns
 SETTINGS_KEY = f"{LEGACY_ID}/import/last"
+COARSE_NOTE = "{n} cells of {dx} × {dz} m: far finer than an inversion resolves."
+COARSE_TEXT = "Read as cells of"
+COARSE_TIP = ("Average the file's points in blocks of this size: faster sections, plates and "
+              "3D. The file itself is not changed; untick to keep every point.")
+COARSE_SIZE_TIP = "Snaps to a whole multiple of the file's spacing ({step} m)"
+COARSE_COUNT = "(about {n} cells, averaged)"
 PREVIEW_ROWS = 20
 #: rows read for the preview and the first guess: the first rows of a model often share one
 #: depth, so 20 would hide the vertical column
@@ -69,6 +79,15 @@ NAMED_STATIONS = ("{Words}: taken from the shot and geophone points saved next t
 METHOD_TIP = "Method of the data, and of the station set made from the positions"
 READINGS_METHOD_TIP = "Measured ERT data: the method is ERT"
 ERROR_STYLE = "color: #b00020;"
+
+
+def size_decimals(step: float) -> int:
+    """Decimals that show a multiple of the spacing ``step`` (0.25 -> 2, 0.1 -> 1), at most 2:
+    in field geophysics nothing is placed finer than a centimetre."""
+    for d in range(3):
+        if abs(step * 10 ** d - round(step * 10 ** d)) < 1e-6:
+            return d
+    return 2
 
 
 def guess_response(path) -> str:
@@ -106,7 +125,7 @@ def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) 
     values = mesh.values[np.isfinite(mesh.values)]
     z_word = {"elevation": "elevation", "depth": "depth",
               "local": "local height"}.get(z_kind, "Z meaning not set")
-    text = (f"{len(mesh.values)} cells · x {fmt(xmin)} – {fmt(xmax)} m, z {fmt(zmin)} – "
+    text = (f"{fmt_count(len(mesh.values))} cells · x {fmt(xmin)} – {fmt(xmax)} m, z {fmt(zmin)} – "
             f"{fmt(zmax)} m ({z_word}) · " +
             (f"values {format_value(values.min())} – {format_value(values.max())} "
              f"{unit_label(mesh.unit)}".rstrip()
@@ -187,6 +206,10 @@ class AddDataDialog(QDialog):
         self._zero_chosen = False                   # the user chose where distance 0 lies
         self._confirm: list[str] = []               # asked before saving
         self._busy = False
+        self._files: list[str] = []                 # several files chosen: all of them
+        self._file_grids: dict = {}                 # path -> (key, grid) of the coarse check
+        self._file_blocks: dict = {}                # path -> proposed block or None
+        self.added: list = []                       # (profile, dataset) per file added
 
         self.file_edit = QLineEdit()
         self.file_edit.editingFinished.connect(self._file_typed)
@@ -250,20 +273,26 @@ class AddDataDialog(QDialog):
         self.electrode_label = _label("electrode_label")
         self.warning_label = _label("warning_label")
         self.warning_label.setStyleSheet(WARNING_STYLE)
+        self._build_coarse()
         QVBoxLayout(preview).addWidget(self.preview_table)
         # the verdict stays in view above the buttons; only the groups and the table scroll
         self.status_block = QWidget()
         self.status_block.setObjectName("status_block")
         status = QVBoxLayout(self.status_block)
         status.setContentsMargins(0, 0, 0, 0)
-        for w in (self.summary_label, self.fit_label, self.electrode_label,
-                  self.warning_label):
+        for w in (self.coarse_note, self.coarse_row, self.summary_label, self.fit_label,
+                  self.electrode_label, self.warning_label):
             status.addWidget(w)
+
+        self.files_box = FilesBox()
+        self.files_box.hide()                       # only when several files are chosen
+        self.files_box.changed.connect(self._refresh)
 
         self._page = page = QWidget()
         column = QVBoxLayout(page)
         column.addLayout(form)
-        for w in (self.table_options, self.columns_group, self.placement, preview):
+        for w in (self.files_box, self.table_options, self.columns_group, self.placement,
+                  preview):
             column.addWidget(w)
         column.addStretch(1)
         self._scroll = scroll = QScrollArea()
@@ -312,8 +341,12 @@ class AddDataDialog(QDialog):
     def _reader_options(self) -> dict:
         """The reader options as saved (the placement is added on saving)."""
         if self._is_table():
-            return {"table": self.table_options.options().to_dict(),
-                    "columns": self.columns_group.columns().to_dict()}
+            options = {"table": self.table_options.options().to_dict(),
+                       "columns": self.columns_group.columns().to_dict()}
+            block = self._block()
+            if block is not None:
+                options["block"] = list(block)
+            return options
         options = {"z_kind": self.z_combo.currentData()} if self.z_combo.currentData() else {}
         response = self.response_edit.text().strip()
         if self._reader() in RESPONSE_READERS and response:
@@ -322,11 +355,121 @@ class AddDataDialog(QDialog):
                                    data.parent.resolve() else str(resp))
         return options
 
+    def _sample_options(self) -> dict:
+        """The reader options for the preview, which reads a sample: never in blocks."""
+        return {k: v for k, v in self._reader_options().items() if k != "block"}
+
+    # -- coarser cells -----------------------------------------------------------------------
+    def _build_coarse(self) -> None:
+        """The offer to read an over-fine table as coarser cells (``core.coarsen``)."""
+        self.coarse_note = _label("coarse_note")
+        self.coarse_row = QWidget()
+        self.coarse_row.setObjectName("coarse_row")
+        row = QHBoxLayout(self.coarse_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.coarse_check = QCheckBox(COARSE_TEXT)
+        self.coarse_check.setObjectName("coarse_check")
+        self.coarse_check.setToolTip(COARSE_TIP)
+        self.coarse_dx, self.coarse_dz = QgsDoubleSpinBox(), QgsDoubleSpinBox()
+        for name, spin in (("coarse_dx", self.coarse_dx), ("coarse_dz", self.coarse_dz)):
+            spin.setObjectName(name)
+            spin.setDecimals(3)
+            spin.setSuffix(" m")
+            spin.setShowClearButton(False)
+            spin.editingFinished.connect(self._snap_coarse)
+        self.coarse_count = _label("coarse_count")
+        self.coarse_check.toggled.connect(self._coarse_changed)
+        row.addWidget(self.coarse_check)
+        row.addWidget(self.coarse_dx)
+        row.addWidget(QLabel("×"))
+        row.addWidget(self.coarse_dz)
+        row.addWidget(self.coarse_count, 1)
+        self.coarse_note.hide()
+        self.coarse_row.hide()
+        self._grid = self._grid_key = self._coarse_for = None
+
+    def _block(self) -> tuple[int, int] | None:
+        """The ticked block factors (fx, fz), or None (no offer, or unticked)."""
+        if self._grid is None or self.coarse_row.isHidden() or not self.coarse_check.isChecked():
+            return None
+        return (max(1, round(self.coarse_dx.value() / self._grid.dx)),
+                max(1, round(self.coarse_dz.value() / self._grid.dz)))
+
+    def _sync_coarse(self, columns_ok: bool) -> None:
+        """Offer coarser cells when the whole file's points form an over-fine grid; the
+        proposal is made again only for another file or a grid that differs."""
+        grid, key = None, None
+        if columns_ok:
+            path = Path(self._path())
+            cols = self.columns_group.columns()
+            try:
+                key = (str(path), path.stat().st_mtime,
+                       json.dumps(self.table_options.options().to_dict(), sort_keys=True),
+                       cols.position, cols.distance, cols.easting, cols.northing, cols.vertical)
+                if key != self._grid_key:
+                    self._grid = grid_of_file(path, self.table_options.options().to_dict(),
+                                              cols.to_dict())
+                    self._grid_key = key
+                grid = self._grid
+            except (OSError, ValueError):
+                grid = None
+        block = proposed_block(grid) if grid is not None else None
+        for w in (self.coarse_note, self.coarse_row):
+            w.setVisible(block is not None)
+        if block is None:
+            return
+        # proposed (and ticked) again only for another file or another grid: a choice the
+        # user made stays when an option that reads the same grid changes
+        if self._coarse_for != (self._path(), grid):
+            self._coarse_for = (self._path(), grid)
+            for spin, step, f in ((self.coarse_dx, grid.dx, block[0]),
+                                  (self.coarse_dz, grid.dz, block[1])):
+                spin.setDecimals(size_decimals(step))
+                spin.setSingleStep(step)
+                spin.setRange(step, step * 64)
+                spin.setToolTip(COARSE_SIZE_TIP.format(step=fmt_trim(step, 3)))
+                spin.setValue(f * step)
+            self.coarse_check.setChecked(True)
+        self.coarse_note.setText(COARSE_NOTE.format(n=fmt_count(grid.n_points),
+                                                    dx=fmt_trim(grid.dx, 3),
+                                                    dz=fmt_trim(grid.dz, 3)))
+        self._coarse_changed()
+
+    def _snap_coarse(self) -> None:
+        """A typed size goes to the nearest whole multiple of the file's spacing."""
+        if self._grid is None:
+            return
+        for spin, step in ((self.coarse_dx, self._grid.dx), (self.coarse_dz, self._grid.dz)):
+            spin.setValue(max(1, round(spin.value() / step)) * step)
+        self._coarse_changed()
+
+    def _coarse_changed(self, *_args) -> None:
+        on = self.coarse_check.isChecked()
+        self.coarse_dx.setEnabled(on)
+        self.coarse_dz.setEnabled(on)
+        block = self._block()
+        self.coarse_count.setText(
+            "" if block is None or self._grid is None else
+            COARSE_COUNT.format(n=fmt_count(self._grid.n_points / (block[0] * block[1]))))
+
     # -- file --------------------------------------------------------------------------------
     def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Data File", "", FILE_FILTER)
-        if path:
-            self.set_file(path)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Data Files", "", FILE_FILTER)
+        if paths:
+            self.set_files(paths)
+
+    def set_files(self, paths) -> None:
+        """One file: the dialog as always. Several: the first file's settings for all, and a
+        row per file saying which profile it goes to."""
+        paths = [str(p) for p in paths]
+        self._files = paths if len(paths) > 1 else []
+        if self._files:
+            self._file_blocks = {}
+            on_map = False                          # known once the first file is read
+            self.files_box.set_files(paths, [(p.id, p.name) for p in self.store.profiles()],
+                                     on_map)
+        self.files_box.setVisible(bool(self._files))
+        self.set_file(paths[0] if paths else "")
 
     def _browse_response(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Model Response File", "",
@@ -338,7 +481,7 @@ class AddDataDialog(QDialog):
 
     def _file_typed(self) -> None:
         if self._path() != self._file:
-            self.set_file(self._path())
+            self.set_files([self._path()])         # a typed path: one file
 
     @_guarded
     def set_file(self, path) -> None:
@@ -433,7 +576,7 @@ class AddDataDialog(QDialog):
             self._method_for = key
         if self._key(profile) != self._read_key:          # a text table: its sample only
             self._result, self._read_key = None, None
-            self._result = read_for(self.store, profile, path, reader, self._reader_options(),
+            self._result = read_for(self.store, profile, path, reader, self._sample_options(),
                                     SAMPLE_ROWS if self._is_table() else None)
             self._read_key = self._key(profile)
         return self._result
@@ -441,7 +584,7 @@ class AddDataDialog(QDialog):
     def _key(self, profile) -> tuple:
         line = None if profile is None else np.asarray(profile.xy, float).tobytes()
         return (self._path(), self._reader(),
-                json.dumps(self._reader_options(), sort_keys=True), line)
+                json.dumps(self._sample_options(), sort_keys=True), line)
 
     def _draft(self):
         """(profile, station sets, new station set) the placement gives; nothing saved."""
@@ -482,6 +625,14 @@ class AddDataDialog(QDialog):
                                     PREVIEW_ROWS)
             problems = self.columns_group.columns().problems(tab)
         self._sync_placement(not problems)
+        self._sync_coarse(table and bool(self._path()) and not problems)
+        several = bool(self._files)
+        self.placement.setVisible(not several)      # each file's row says where it goes
+        self._form.setRowVisible(self.name_edit, not several)   # each is named after its file
+        if several:
+            for w in (self.coarse_note, self.coarse_row):        # offered per file instead
+                w.hide()
+            self._check_files(not problems)
         if not self._path():
             self.summary_label.setText("Choose a data file.")
             return
@@ -508,7 +659,145 @@ class AddDataDialog(QDialog):
             self.z_combo.currentData()
         self.summary_label.setText(describe(result, z_kind,
                                             SAMPLE_ROWS if table and self._more else 0))
+        if several:                                 # the summary is the first file's
+            self.summary_label.setText(f"{Path(self._path()).name}: "
+                                       f"{self.summary_label.text()}")
+            return
         self._show_placement(result, z_kind)
+
+    # -- several files -----------------------------------------------------------------------
+    def _check_files(self, columns_ok: bool) -> None:
+        """Each file's row: the coarser cells offered for it and whether it is ready."""
+        box = self.files_box
+        box.set_on_map(self._on_map())
+        names = self._table.names if self._is_table() and self._table is not None else None
+        for row, (path, target) in enumerate(box.targets()):
+            problem = self._file_problem(path, target, names, columns_ok)
+            box.set_cells(row, "" if problem else self._cells_offer(path))
+            box.set_status(row, problem or READY)
+
+    def _file_problem(self, path: str, target, names, columns_ok: bool) -> str:
+        if not Path(path).is_file():
+            return "File not found"
+        if not columns_ok:
+            return "Assign the columns first (above)"
+        if names is not None and path != self._path():
+            try:
+                theirs = read_table(path, self.table_options.options(), max_rows=1).names
+            except (OSError, ValueError) as exc:
+                return str(exc)
+            if theirs != names:
+                return "Other columns than the first file"
+        if target is None:
+            return "Choose a profile"
+        return ""
+
+    def _cells_offer(self, path: str) -> str:
+        """The coarser cells proposed for an over-fine text table ("" for none)."""
+        if not self._is_table():
+            return ""
+        cols, options = self.columns_group.columns(), self.table_options.options()
+        try:
+            key = (Path(path).stat().st_mtime, json.dumps(options.to_dict(), sort_keys=True),
+                   cols.position, cols.distance, cols.easting, cols.northing, cols.vertical)
+            cached = self._file_grids.get(path)
+            if cached is None or cached[0] != key:
+                cached = (key, grid_of_file(path, options.to_dict(), cols.to_dict()))
+                self._file_grids[path] = cached
+            grid = cached[1]
+        except (OSError, ValueError):
+            grid = None
+        block = proposed_block(grid) if grid is not None else None
+        self._file_blocks[path] = block
+        if block is None:
+            return ""
+        # as in the one-file box: a map file's spacing is walked along the ground, so it is
+        # not exactly round (0.502 m: two decimals)
+        return (f"{fmt_trim(block[0] * grid.dx, size_decimals(grid.dx))} × "
+                f"{fmt_trim(block[1] * grid.dz, size_decimals(grid.dz))} m")
+
+    def _file_placement(self, path: str, target) -> Placement:
+        if target == FilesBox.NEW:                  # a line through the file's coordinates
+            cols = self.columns_group.columns()
+            xy = map_points(path, self.table_options.options().to_dict(), cols.to_dict())
+            line, _bends = line_from_cloud(xy_to_store(xy, cols.crs, self.store.crs_authid,
+                                                       self.project))
+            return Placement(line_xy=line)
+        return Placement(profile_id=target, zero="station1")
+
+    def _file_options(self, path: str, coarse: bool) -> dict:
+        options = {k: v for k, v in self._reader_options().items()
+                   if k not in ("block", "response")}
+        block = self._file_blocks.get(path)
+        if coarse and block is not None:
+            options["block"] = list(block)
+        if self._reader() in RESPONSE_READERS:
+            response = guess_response(path)         # each file's own, next to it
+            if response:
+                resp = Path(response)
+                options["response"] = (resp.name if resp.parent.resolve() ==
+                                       Path(path).parent.resolve() else str(resp))
+        return options
+
+    def _accept_files(self) -> None:
+        """Add every ready file, after asking when some are not; one message for all."""
+        self._refresh()
+        box = self.files_box
+        rows = box.targets()
+        ready = [i for i in range(len(rows)) if box.status(i) == READY]
+        left = [f"{Path(rows[i][0]).name} ({box.status(i).lower()})"
+                for i in range(len(rows)) if i not in ready]
+        if not ready:
+            self._error("No file can be added yet:\n" + "\n".join(left))
+            return
+        if left and QMessageBox.question(
+                self, self.windowTitle(),
+                f"{len(left)} of {len(rows)} files cannot be added yet:\n" + "\n".join(left)
+                + f"\n\nAdd the other {len(ready)} and leave these out?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        added, failed, notes = [], [], []
+        for i in ready:
+            path, target = rows[i]
+            try:
+                placement = self._file_placement(path, target)
+                try:
+                    profile, dataset = add_data(
+                        self.store, placement, Path(path), self._reader(),
+                        self._file_options(path, box.cells_checked(i)), Path(path).stem,
+                        self.method_combo.currentData(), self.project, self.provider)
+                except NotRefreshed as exc:         # saved: never reported as a failure
+                    profile, dataset = exc.saved
+                    notes.append(str(exc))
+            except Exception as exc:                # noqa: BLE001 - one file must not stop all
+                failed.append(plain_error(exc, path, CHOOSE_OTHER, MISSING_FILE))
+                continue
+            added.append((profile, dataset, placement.profile_id is None))
+            unplaced = unplaced_rows(dataset.provenance)
+            if unplaced:
+                notes.append(f"{_rows_word(unplaced)} of {Path(path).name} "
+                             f"{'has' if unplaced == 1 else 'have'} no map position (-9999) "
+                             f"and {'was' if unplaced == 1 else 'were'} left out.")
+        if not added:
+            self._error("\n".join(failed))
+            return
+        self.added = [(p, d) for p, d, _new in added]
+        self.created = any(new for *_pd, new in added)
+        self.profile, self.dataset = next(((p, d) for p, d, new in added if new),
+                                          self.added[0])
+        if left or failed or notes:
+            text = f"{len(added)} of {len(rows)} files added."
+            if left:
+                text += " Left out: " + ", ".join(left) + "."
+            if failed:
+                text += " Not added: " + " ".join(failed)
+            self._warn(" ".join([text] + notes))
+        if self._is_table():
+            QgsSettings().setValue(SETTINGS_KEY, json.dumps(
+                {"names": self._table.names, "table": self.table_options.options().to_dict(),
+                 "columns": self.columns_group.columns().to_dict()}))
+        super().accept()
 
     def _fit_width(self) -> None:
         """Wide enough for the groups shown, so only the height scrolls."""
@@ -711,6 +1000,12 @@ class AddDataDialog(QDialog):
 
     # -- saving ------------------------------------------------------------------------------
     def accept(self) -> None:
+        if self._files:
+            try:
+                self._accept_files()
+            except Exception as exc:                # noqa: BLE001 - a slot never raises
+                self._error(plain_error(exc, None, CHOOSE_OTHER, MISSING_FILE))
+            return
         path = self._path()
         try:
             try:

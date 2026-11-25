@@ -23,6 +23,7 @@ from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
 from ..core.dataset_types import method_of, station_words
+from ..core.interpolators import Interpolation
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport
@@ -97,7 +98,17 @@ def xy_to_distance_on(profile: Profile, file_crs: str, store_crs: str) -> Callab
                                            QgsProject.instance())
 
     def xy_to_distance(easting, northing):
-        xy = np.column_stack([np.asarray(easting, float), np.asarray(northing, float)])
+        # exports repeat each position for every depth row (2 million rows, 2 600 places):
+        # each place is transformed and projected once
+        e, n = np.asarray(easting, float).ravel(), np.asarray(northing, float).ravel()
+        places, inverse = np.unique(e + 1j * n, return_inverse=True)
+        inverse = inverse.ravel()
+        if len(places) < len(e):
+            s, offset, beyond = _place(np.column_stack([places.real, places.imag]))
+            return s[inverse], offset[inverse], beyond[inverse]
+        return _place(np.column_stack([e, n]))
+
+    def _place(xy):
         if transform is not None:
             from qgis.core import QgsPointXY
             xy = np.array([[q.x(), q.y()] for q in
@@ -146,6 +157,8 @@ class LayerStyle:
     contour_minor: tuple = ()
     #: grid cell of the smooth field in metres; None = automatic
     grid_cell: float | None = None
+    #: how the smooth field is gridded (``core.interpolators``); the default is linear
+    interpolation: Interpolation = Interpolation()
     #: fade (or blank) the model where its coverage is below ``coverage_threshold``
     fade_coverage: bool = False
     coverage_threshold: float | None = None     # None = 10th percentile of the coverage
@@ -216,19 +229,9 @@ def _layers_for_look(layers: list, look) -> list:
         m = by_id.get(la.dataset.id)
         if m is None or not m.visible:
             continue
-        style = _copy_style(la.style)
-        scale = style.scale
-        if m.scale:
-            try:
-                scale = ColorScale(**m.scale)
-            except (TypeError, ValueError):
-                pass
-        out.append(SectionLayer(la.dataset, la.mesh, replace(
-            style, visible=True, opacity=m.opacity, mode=m.mode, scale=scale,
-            contour_step=m.contour_step, contour_major=tuple(m.contour_major),
-            contour_minor=tuple(m.contour_minor), grid_cell=m.grid_cell, fade_coverage=m.fade_coverage,
-            coverage_threshold=m.coverage_threshold, fade_mode=m.fade_mode,
-            shown=m.shown if m.shown is not None else style.shown), la.error))
+        from .style_store import styled
+        out.append(SectionLayer(la.dataset, la.mesh, styled(_copy_style(la.style), m),
+                                la.error))
     return out
 
 
@@ -444,17 +447,28 @@ def matching_profiles(profiles: list[Profile], xy: np.ndarray,
     return out
 
 
+def _valued_cells(mesh: SectionMesh) -> SectionMesh:
+    """``mesh`` with only its cells that have a value (``mesh`` itself when all have)."""
+    keep = np.isfinite(mesh.values)
+    if keep.all() or not keep.any():
+        return mesh
+    return replace(mesh, cells=mesh.cells[keep], values=mesh.values[keep],
+                   coverage=None if mesh.coverage is None else mesh.coverage[keep])
+
+
 def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
                ) -> tuple[np.ndarray, np.ndarray] | None:
     """Top edge ``(s, z)`` of the first model of ``z_kind`` placed in ``placed``
     (``SectionDataProvider._placed``); None when there is none. A dataset that could not be
-    read, a readings dataset and a mesh without a usable top are skipped."""
+    read, a readings dataset and a mesh without a usable top are skipped. Only cells with
+    a value count: exports fill their rectangle above the terrain with -9999, and those
+    empty cells are no ground."""
     for d in datasets:
         item = placed.get(d.id)
         if not isinstance(item, tuple) or item[1] != z_kind or item[0].readings is not None:
             continue
         try:
-            s, z = item[0].top_edge()
+            s, z = _valued_cells(item[0]).top_edge()
         except Exception:                       # an odd mesh just gives no surface
             continue
         if len(s) >= 2:
@@ -465,14 +479,21 @@ def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
 class SectionDataProvider:
     """Assembles the section layers of each profile from a ``ProjectStore``."""
 
-    def __init__(self, store: ProjectStore):
+    def __init__(self, store: ProjectStore, styles: dict | None = None):
+        """``styles``: dataset id -> ``LayerStyle`` kept from before (the project's)."""
         self.store = store
         self.on_change: list[Callable[[], None]] = []
+        #: called after the user changed a style (to keep the styles in the project)
+        self.on_style: list[Callable[[], None]] = []
         self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
         #: Set and read on the main thread only (snapshots stay plain data).
         self.active_profile_id: str | None = None
-        self._styles: dict[str, LayerStyle] = {}
+        #: profiles -> {profile id: ``borehole_key`` of each borehole near it (None without
+        #: an id)}, read from the borehole layers alone (``ContextGatherer.borehole_keys``);
+        #: None: the whole context is gathered instead
+        self.borehole_source: Callable[[list], dict] | None = None
+        self._styles: dict[str, LayerStyle] = dict(styles or {})
         self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
         self._readings_seen: set[str] = set()
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
@@ -558,15 +579,29 @@ class SectionDataProvider:
     def style(self, dataset_id: str) -> LayerStyle:
         return self._styles.setdefault(dataset_id, LayerStyle())
 
+    def styles(self) -> dict[str, LayerStyle]:
+        """dataset id -> style, of the models drawn or styled so far (a copy)."""
+        return dict(self._styles)
+
     def set_style(self, dataset_id: str, style: LayerStyle) -> None:
-        self._styles[dataset_id] = style
+        self.set_styles({dataset_id: style})
+
+    def set_styles(self, styles: dict[str, LayerStyle]) -> None:
+        """Several models' styles at once: one redraw."""
+        self._styles.update(styles)
         self.notify_redraw(ties=True)
+        self._told_style()
+
+    def _told_style(self) -> None:
+        for callback in list(self.on_style):
+            callback()
 
     def remove_dataset(self, dataset_id: str) -> None:
         """Delete ``dataset_id`` from the store (the model file stays), forget its style
         and cached read, and tell the listeners."""
         self.store.delete_dataset(dataset_id)
-        self._styles.pop(dataset_id, None)
+        if self._styles.pop(dataset_id, None) is not None:
+            self._told_style()
         self._cache.pop(dataset_id, None)
         self._guesses.pop(dataset_id, None)
         self.notify_changed()
@@ -677,9 +712,25 @@ class SectionDataProvider:
         return self._surface_of(self._build(profile_id))
 
     def is_local(self, profile_id: str) -> bool:
-        """True when the profile has no real heights: its section is drawn in depth."""
+        """True when the profile has no real heights: its section is drawn in depth. Known
+        without reading a model when the stations have heights or a model is stored as an
+        elevation model (Show in 3D… asks every profile; reading each model took a minute
+        on a big project)."""
+        if self._has_heights(profile_id):
+            return False
         surface = self.surface(profile_id)
         return surface is not None and surface.local
+
+    def _has_heights(self, profile_id: str) -> bool:
+        """Stations with heights, or a model stored as an elevation model (not readings)."""
+        from ..core.dataset_types import READINGS_KINDS
+        if self._profile(profile_id) is None:
+            return False
+        if station_line(self.store.station_sets(profile_id)) is not None:
+            return True
+        return any(d.kind not in READINGS_KINDS
+                   and (d.reader_options or {}).get("z_kind") == "elevation"
+                   for d in self.store.datasets(profile_id))
 
     def topography(self, profile_id: str) -> tuple[np.ndarray, np.ndarray] | None:
         """The line of ``surface(profile_id)``; None only for an unknown profile."""
@@ -1080,6 +1131,32 @@ class SectionDataProvider:
             items = replace(items, points=[p for p in items.points
                                            if borehole_key(p) not in hidden])
         return items
+
+    def profiles_showing_boreholes(self, profile_ids) -> set[str]:
+        """Those of ``profile_ids`` whose section draws a borehole: near the line, not
+        hidden there, not a local section. The ties are not built (they read the crossing
+        profiles' models); a profile whose context is not gathered yet is answered from the
+        borehole layers alone (``borehole_source``), all such profiles in one go: gathering
+        whole contexts read live geology strips and the DEM too, a minute on a big project."""
+        out, light = set(), []
+        for pid in profile_ids:
+            profile = self._profile(pid)
+            if profile is None or self.is_local(pid):
+                continue
+            if self.borehole_source is not None and not self._gathered.has(pid):
+                light.append(profile)
+                continue
+            hidden = self.hidden_keys(pid)
+            if any(p.kind == "borehole" and borehole_key(p) not in hidden
+                   for p in self._items(profile).points):
+                out.add(pid)
+        if light:
+            keys = self.borehole_source(light)
+            for profile in light:
+                hidden = self.hidden_keys(profile.id)
+                if any(k is None or k not in hidden for k in keys.get(profile.id, [])):
+                    out.add(profile.id)
+        return out
 
     def drawn_context(self, profile_id: str, include_hidden: bool = False
                       ) -> ContextItems | None:

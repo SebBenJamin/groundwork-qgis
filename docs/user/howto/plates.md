@@ -21,10 +21,12 @@ Open **Groundwork → Plates…**.
 The parts in the order you use them:
 
 - ② **Template**: A4 or A3, portrait or landscape. You can also choose **Own template…** (see [Plate templates](../formats/plate-templates.md)).
+  Choosing another template for a plate that already has a layout makes the layout again,
+  after asking: changes made to it in QGIS's layout designer are lost.
 - ③ **Section frames**: each row is a profile with its own look. To show the ERT model and the seismics of the same line, add two rows with the same profile.
   - **From / To** limit the chainage range. Leave them empty for the full data range.
   - **Scale / VE** fix the scale (e.g. 2500 for 1:2500) or the vertical exaggeration. Leave them empty to fit the page.
-- ④ **Take from Section Panel**: the look covers which models are shown, their colour scale, display mode and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
+- ④ **Take from Section Panel**: the look covers which models are shown, their colour scale, display mode, interpolation and opacity, the interpretation version, and whether boreholes, field notes and context are shown. Restyling the panel later does not change the plate.
 - ⑤ **Plate Details…** sets project, client, job number, date, drawn (author), checked and revision, and a **logo** (an image file; **Clear** removes it).
   - They are entered once per project and shown on every plate.
   - A logo inside the project's folder is stored relative to it, so the folder can move; a logo that cannot be found leaves its cell empty.

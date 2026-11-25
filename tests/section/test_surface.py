@@ -260,3 +260,37 @@ def test_station_heights_surface_places_nothing(store_with_model, monkeypatch):
     provider.context_source = lambda pr: ContextItems(dem=(dem_s, np.full(6, 99.0)))
     assert provider.surface(pid).kind == "dem"
     assert calls == []
+
+
+def test_the_ground_of_an_export_rectangle_is_the_top_of_its_values(tmp_path):
+    # exports fill the rectangle above the terrain with -9999: those cells are no ground; the
+    # surface follows the top of the cells with a value, not the flat top of the rectangle
+    st, p = _drawn(tmp_path)
+    rows = []
+    for i, n_valued in enumerate([1, 1, 2, 2, 3]):            # the ground rises along the line
+        for k, z in enumerate((249.5, 250.5, 251.5)):
+            rows.append(f"{1.0 + 2.0 * i} {z} {100 if k < n_valued else -9999}\n")
+    path = tmp_path / "rectangle.txt"
+    path.write_text("".join(rows))
+    _add(st, p, path, "text_columns", _text("elevation"), "e")
+    provider, pid = SectionDataProvider(st), p.id
+    s = provider.surface(pid)
+    assert s.kind == "model"
+    assert float(np.interp(1.0, *s.line)) == pytest.approx(250.0)     # the lowest column
+    assert float(np.interp(9.0, *s.line)) == pytest.approx(252.0)     # the highest
+    assert s.line[1].min() == pytest.approx(250.0)
+
+
+def test_a_profile_with_an_elevation_model_has_heights_without_reading_it(tmp_path,
+                                                                           monkeypatch):
+    # Show in 3D… asks every profile whether it is local before it opens; reading each model
+    # for that took 55 s on an 11-line project
+    st, p = _drawn(tmp_path)
+    _add(st, p, _columns(tmp_path / "elev.txt", [250.0, 251.0]), "text_columns",
+         _text("elevation"), "e")
+    provider = SectionDataProvider(st)
+
+    def no_read(*_a, **_k):
+        raise AssertionError("model read")
+    monkeypatch.setattr(provider, "_read", no_read)
+    assert not provider.is_local(p.id)

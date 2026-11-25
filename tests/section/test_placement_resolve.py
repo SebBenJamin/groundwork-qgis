@@ -530,3 +530,24 @@ def test_a_refraction_profile_without_positions_asks_for_geophones(tmp_path):
     assert provider.station_method(p.id) == "srt"
     assert kind_text("guessed", "srt") == "geophones guessed from the model"
     assert kind_text("spacing", "ert", "2") == "electrodes from a spacing of 2 m"
+
+
+def test_map_points_repeated_for_every_depth_are_projected_once(monkeypatch):
+    """An export repeats each position for every depth row (2 million rows, 2 600 places):
+    each place is projected once, with the same result for every row."""
+    from groundwork_geophysics.core.chainage import Chainage
+    from groundwork_geophysics.core.model import Profile
+    from groundwork_geophysics.section.data import xy_to_distance_on
+
+    seen = []
+    real = Chainage.project
+    monkeypatch.setattr(Chainage, "project",
+                        lambda self, xy: seen.append(len(xy)) or real(self, xy))
+    p = Profile("p", "P", np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), CRS)
+    e = np.tile([-5.0, 5.0, 9.0], 100)
+    n = np.tile([1.0, -2.0, 15.0], 100)
+    s, offset, beyond = xy_to_distance_on(p, "", CRS)(e, n)
+    assert seen == [3]
+    assert s[:3] == pytest.approx([-5.0, 5.0, 25.0]) and len(s) == 300
+    assert (s.reshape(100, 3) == s[:3]).all() and beyond.reshape(100, 3).all(axis=0).tolist() \
+        == [True, False, True]

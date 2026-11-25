@@ -15,8 +15,18 @@ crossing lines and your interpretation.
 - click the button next to the list (**Pick Profile on Map**), then click the profile's line
   on the map.
 
+- The arrows on either side of the list, or **Page Up** / **Page Down** while the panel has
+  the focus, step to the previous or next profile in the list.
+
 Right-click the **Profile** list for **Profile Properties…** and **Delete Profile…** (see
 [Projects and profiles](projects-and-profiles.md)).
+
+## The section as a picture
+
+The picture button at the right end of the panel's top row copies the section, as shown, to
+the clipboard (**Copy Section Image**) or saves it as a PNG file (**Save Section Image…**):
+for an e-mail or a quick report. For a printed, scaled section use a
+[plate](plates.md).
 
 ## Moving around
 
@@ -27,6 +37,8 @@ Right-click the **Profile** list for **Profile Properties…** and **Delete Prof
 
 ## Section and map, linked
 
+- **Zoom Map to Profile** (the magnifier next to the **Profile** list, also in its right-click
+  menu) zooms the map to the open profile's line and flashes it.
 - Moving the mouse over the section moves a marker along the profile on the map.
 - With **Pick Profile on Map** on, moving the mouse near the open profile on the map moves a red
   dashed guide line through the section.
@@ -67,8 +79,18 @@ On the right, **Layers** lists the models on the profile, the top one drawn on t
 - the slider sets its opacity;
 - the colour button opens **Display…**.
 
-Right-click a model for **Display…**, **[Dataset info…](dataset-info.md)** and **Remove from
-profile…**. Removing takes the model off the profile; the file stays where it is.
+Right-click a model for **Display…**, **[Dataset info…](dataset-info.md)**, **Apply Style to
+All Sections** and **Remove from profile…**. Removing takes the model off the profile; the file
+stays where it is.
+
+A model's look (colours and their range, display, contours, interpolation, coverage fade,
+opacity, shown or hidden) is saved with the QGIS project and is there again when you open it.
+
+**Apply Style to All Sections** gives every other model of the same method, on every profile,
+this model's look: an ERT model's style goes to the other ERT models only, never to a refraction
+model, and only to models in the same unit. Whether each model is shown stays as it is. With
+one colour range on every line, the same colour means the same value everywhere. **Ctrl+Z** in
+the panel takes it back in one step.
 
 ## How a model is drawn
 
@@ -87,6 +109,8 @@ profile…**. Removing takes the model off the profile; the file stays where it 
    - **Contours**, with labels on the lines;
    - **Smooth field + contours**.
 - **Grid cell** of the smooth field: automatic, or your own size in metres.
+- **Interpolation**: how the smooth field and the contours are made from the model's cells
+  (see [Interpolation](#interpolation) below).
 - ③ **Contours**: automatic steps (1-2-5 per decade on a logarithmic scale), your own
   **Spacing**, or your own **Major levels** and **Minor levels**.
 - ④ **Coverage**: **Fade where coverage is low**, **Below** a threshold you set; **Fade** or
@@ -95,6 +119,41 @@ profile…**. Removing takes the model off the profile; the file stays where it 
 - **Show**, for measured data (BERT/pyGIMLi data files, R2/ResIPy misfit): **Measured apparent
   resistivity**, **Calculated apparent resistivity (model response)** or **Misfit**, drawn as
   **Points (one per reading)**.
+
+### Interpolation
+
+The smooth field and the contours are made on a fine grid over the model. **Interpolation**
+chooses how each point of that grid gets its value from the model's cells:
+
+| Method | What it does | Good for |
+|---|---|---|
+| **Linear (mesh)** (the default) | Blends the cells' values across the inversion's own mesh. | Showing the model as inverted, with nothing added. |
+| **Nearest neighbour** | Each point takes the value of the nearest cell. | Seeing the cells' own values, without blending. |
+| **Inverse distance** | Averages the nearby cells, nearer ones counting more (**Power**, 2 is usual; **Neighbours**, how many cells). | A quick, gentle smoothing. |
+| **Spline** | A smooth surface through the cells' values (**Kernel**; **Smoothing** 0 passes exactly through them, more smooths). | Smooth fields from few or uneven cells. |
+| **Ordinary kriging** | Weights the nearby cells by how values vary with distance in this model (its variogram). | Fields that respect the model's own structure, as geostatistics does it. |
+
+For **Ordinary kriging**:
+
+- **Variogram**: spherical, exponential or Gaussian.
+- **Fit to the data** (on by default) fits **Range**, **Sill** and **Nugget** to the model; untick
+  it to type your own. **Fit Now** shows the fit and puts it into the three fields.
+- **Neighbours**: how many cells each point is computed from (16 by default).
+
+**Anisotropy** (all but linear) is how much further values stay alike along the line than in
+depth. Layered ground has values that change faster with depth, so a larger anisotropy
+interpolates along the layers. **Automatic** uses the cells' own width over height; for
+kriging it is read from the model's variogram along and across the line.
+
+Whatever the method, the field stays inside the model: nothing past its outline, above the
+ground or into cells without a value, and the coverage fade still applies. On a logarithmic
+scale the methods work on the logarithm of the values, as the linear one does. When a method
+cannot be used on a model (kriging on values that do not vary, for example), the field is drawn
+linearly and the **Log Messages** panel (Groundwork tab) says why. Kriging and spline take a few
+seconds on large models.
+
+The setting is part of the model's look: the 3D view's smooth clouds and section pictures and
+the plates use it too.
 
 ## Boreholes on the section
 

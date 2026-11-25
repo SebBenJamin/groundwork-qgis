@@ -33,6 +33,26 @@ def _vertex_edge_scale(pts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     return scale
 
 
+def _same_rows(rows: np.ndarray) -> tuple[int, np.ndarray]:
+    """``(number of distinct rows, label of each row)``: equal rows (by value, -0.0 = 0.0)
+    share a label, as ``np.unique(rows, axis=0)`` groups them. One 64-bit fingerprint per
+    row is grouped instead of the rows (np.unique with axis=0 sorts raw rows: seconds on
+    millions of cell edges); every row is checked against its group, and should two
+    different rows ever share a fingerprint, the rows themselves are grouped."""
+    rows = np.ascontiguousarray(rows, dtype=float) + 0.0
+    bits = rows.view(np.uint64)
+    h = np.zeros(len(rows), dtype=np.uint64)
+    for k in range(bits.shape[1]):
+        h = (h ^ bits[:, k]) * np.uint64(0x100000001B3)
+        h ^= h >> np.uint64(29)
+    keys, first, labels = np.unique(h, return_index=True, return_inverse=True)
+    labels = labels.ravel()
+    if (rows == rows[first[labels]]).all():
+        return len(keys), labels
+    keys, labels = np.unique(rows, axis=0, return_inverse=True)
+    return len(keys), labels.ravel()
+
+
 def _steps(s: np.ndarray) -> bool:
     """True when the line ``s`` (ascending) has a vertical step: two points at one s."""
     return len(s) > 1 and bool((np.diff(s) == 0).any())
@@ -115,6 +135,9 @@ class SectionMesh:
     #: None when the file does not say
     coverage_cut: float | None = field(default=None, repr=False, compare=False)
     _bbox: np.ndarray | None = field(default=None, init=False, repr=False, compare=False)
+    #: what is worked out once per mesh (bounds, the automatic grid cell): a mesh is never
+    #: changed in place, and a copy (dataclasses.replace) starts with an empty memo
+    _memo: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def __post_init__(self):
         self.vertices = np.asarray(self.vertices, dtype=float)
@@ -293,9 +316,8 @@ class SectionMesh:
         if not n_up:
             return np.empty((0, 2)), np.empty((0, 2))
         both = np.vstack([edges[up], edges[down]])
-        _keys, inverse = np.unique(both, axis=0, return_inverse=True)
-        inverse = inverse.ravel()
-        covered = np.zeros(len(_keys), dtype=bool)
+        n_keys, inverse = _same_rows(both)
+        covered = np.zeros(n_keys, dtype=bool)
         covered[inverse[n_up:]] = True
         keep = ~covered[inverse[:n_up]]
         return edges[up][keep, :2], edges[up][keep, 2:]
@@ -315,9 +337,12 @@ class SectionMesh:
 
     # -- queries --------------------------------------------------------
     def bounds(self) -> tuple[float, float, float, float]:
-        used = self.vertices[np.unique(self.cells[self.cells >= 0])]
-        return (float(used[:, 0].min()), float(used[:, 0].max()),
-                float(used[:, 1].min()), float(used[:, 1].max()))
+        """(smin, smax, zmin, zmax) of the vertices the cells use."""
+        if "bounds" not in self._memo:
+            used = self.vertices[np.unique(self.cells[self.cells >= 0])]
+            self._memo["bounds"] = (float(used[:, 0].min()), float(used[:, 0].max()),
+                                    float(used[:, 1].min()), float(used[:, 1].max()))
+        return self._memo["bounds"]
 
     def _cell_bboxes(self) -> np.ndarray:
         if self._bbox is None:

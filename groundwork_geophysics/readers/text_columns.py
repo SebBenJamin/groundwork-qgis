@@ -20,7 +20,7 @@ import numpy as np
 from ..core.roles import ModelColumns
 from .base import (FILL_VALUE, Reader, ReaderResult, _no_position, chosen_z_kind, fill_mask,
                    mesh_from_points)
-from .texttable import TableOptions, guess_options, read_table, select_rows
+from .texttable import TableOptions, guess_options, read_numbers, read_table, select_rows
 
 
 def _options(path: Path, table: dict, columns: dict) -> tuple[TableOptions, ModelColumns]:
@@ -40,32 +40,102 @@ def _rows(path: Path, table: dict, columns: dict, max_rows: int | None = None
     the first ``max_rows`` data rows (all when None). ValueError when an assigned column is
     missing, unusable, or no row is usable."""
     opts, cols = _options(path, table, columns)
-    tab = read_table(path, opts, max_rows=max_rows)
+    required = cols.used()[:-1] if cols.coverage is not None else cols.used()
+    # the whole file of a big model: numbers alone (no text per cell); a file with anything
+    # else, or with a row to skip (its line is reported), is read as text
+    tab = read_numbers(path, opts) if max_rows is None else None
+    if tab is not None and not (all(0 <= i < tab.n_columns for i in cols.used()) and
+                                np.isfinite(tab.values[:, required]).all()):
+        tab = None
+    if tab is None:
+        tab = read_table(path, opts, max_rows=max_rows)
     for i in cols.used():
         if not 0 <= i < tab.n_columns:
             raise ValueError(f"{path.name}: column {i + 1} is not in the file any more")
     problems = cols.problems(tab)
     if problems:
         raise ValueError(f"{path.name}: " + "; ".join(problems))
-    required = cols.used()[:-1] if cols.coverage is not None else cols.used()
     try:
         arr, skipped, first = select_rows(tab, required)
     except ValueError as exc:
         raise ValueError(f"{path.name}: {exc}") from None
     if cols.coverage is not None:            # optional: never drops a row, keeps -inf
         kept = np.isfinite(np.column_stack([tab.numeric(c) for c in required])).all(axis=1)
-        cov = [_coverage_number(tab.cells[i][cols.coverage], tab.decimal_comma)
-               for i in np.flatnonzero(kept)]
-        arr = np.column_stack([arr, np.asarray(cov, dtype=float)])
+        arr = np.column_stack([arr, tab.raw(cols.coverage)[kept]])
     return cols, arr, skipped, first
 
 
-def _coverage_number(cell: str, decimal_comma: bool) -> float:
-    """A coverage cell as a float, -inf kept (no ray); nan when empty or not a number."""
-    try:
-        return float(cell.replace(",", ".") if decimal_comma else cell)
-    except ValueError:
-        return float("nan")
+def _coarse_mesh(path: Path, x, z, v, coverage, block, cols, kind: str, provenance: dict):
+    """``(mesh, n_masked, "rows")`` of the placed points averaged in ``block`` blocks
+    (``core.coarsen.coarsen_boxes``); the provenance records from what to what. Fill
+    values are never averaged in, a coverage of -inf (no ray) is kept; a depth model's
+    cells start at depth 0. ValueError when the points form no regular grid or no block
+    has a value."""
+    from ..core.cell_centres import quads
+    from ..core.coarsen import coarsen_boxes, point_grid
+    from ..core.section_mesh import SectionMesh
+    from .base import coverage_values
+    placed = ~(_no_position(x) | _no_position(z))        # -9999 or NaN: no position
+    grid = point_grid(x[placed], z[placed])
+    if grid is None:
+        raise ValueError(f"{path.name}: the points are not on a regular grid, so they "
+                         'cannot be read as coarser cells; untick "Read as cells of" in '
+                         "Add Data to read every point")
+    fx, fz = (max(1, int(f)) for f in block)
+    values = np.where(fill_mask(v), np.nan, v)[placed]
+    cov = None
+    if coverage is not None:
+        cov = np.asarray(coverage, float)[placed].copy()
+        cov[~np.isneginf(cov) & fill_mask(cov)] = np.nan
+    log = cols.quantity == "resistivity" or bool(cols.log10)
+    boxes, cv, ccov = coarsen_boxes(x[placed], z[placed], values, cov, (fx, fz), log)
+    if not np.isfinite(cv).any():
+        raise ValueError(f"{path.name}: no block of {fx} x {fz} points has a value")
+    if kind == "depth" and z[placed].min() >= 0:
+        # as cell_boxes does: the shallowest row reaches up to the surface (depth 0)
+        boxes[np.abs(boxes[:, 2] - boxes[:, 2].min()) <= 1e-9, 2] = 0.0
+        boxes[:, 2:] = np.maximum(boxes[:, 2:], 0.0)
+    verts, cells = quads(boxes)
+    mesh = SectionMesh(verts, cells, cv, quantity=cols.quantity, unit=cols.unit,
+                       coverage=None if ccov is None else coverage_values(ccov))
+    provenance.update({"block": [fx, fz], "cell_file": [grid.dx, grid.dz],
+                       "cell": [fx * grid.dx, fz * grid.dz], "n_points_file": grid.n_points})
+    return mesh, int((~np.isfinite(cv)).sum() + (~placed).sum()), "rows"
+
+
+def grid_of_file(path, table: dict, columns: dict):
+    """The regular grid (``core.coarsen.PointGrid``) the whole file's points sit on, or
+    None: for a file with no more than ``OFFER_ABOVE`` lines without reading it, or when
+    the points form no grid. A map file's position is the distance walked from one
+    distinct (easting, northing) to the next, in file order."""
+    from ..core.coarsen import OFFER_ABOVE, point_grid
+    path = Path(path)
+    if path.read_bytes().count(b"\n") <= OFFER_ABOVE:
+        return None
+    opts, cols = _options(path, table, columns)
+    # numbers alone or nothing: reading millions of rows as text would freeze Add Data
+    tab = read_numbers(path, opts)
+    if tab is None:
+        return None
+    k = 2 if cols.position == "map" else 1
+    used = cols.used()[:k + 1]
+    if any(not 0 <= i < tab.n_columns for i in used):
+        return None
+    arr = np.column_stack([tab.numeric(c) for c in used])
+    arr = arr[~_no_position(arr).any(axis=1)]           # -9999 or NaN: no position
+    if cols.position == "map":
+        xy = arr[:, :2]
+        # one complex number per position: a fast 1-D unique (axis=0 sorts raw rows)
+        _u, first, inverse = np.unique(xy[:, 0] + 1j * xy[:, 1], return_index=True,
+                                       return_inverse=True)
+        order = np.argsort(first)                       # distinct positions in file order
+        steps = np.r_[0.0, np.hypot(*np.diff(xy[first[order]], axis=0).T)]
+        along = np.empty(len(order))
+        along[order] = np.cumsum(steps)
+        x = along[inverse.ravel()]
+    else:
+        x = arr[:, 0]
+    return point_grid(x, arr[:, k])
 
 
 def map_points(path, table: dict, columns: dict, max_rows: int | None = None) -> np.ndarray:
@@ -100,8 +170,11 @@ class TextColumnsReader(Reader):
         return False
 
     def read(self, path: Path, table: dict, columns: dict, z_kind: str | None = None,
-             xy_to_distance=None, max_rows: int | None = None) -> ReaderResult:
-        """``max_rows``: read only the first data rows (a preview); never stored."""
+             xy_to_distance=None, max_rows: int | None = None,
+             block: list[int] | None = None) -> ReaderResult:
+        """``max_rows``: read only the first data rows (a preview); never stored.
+        ``block`` = [fx, fz]: the points (on a regular grid) averaged in blocks of fx
+        positions x fz levels before the cells are rebuilt (``core.coarsen``)."""
         path = Path(path)
         cols, arr, skipped, first = _rows(path, table, columns, max_rows)
         k = 2 if cols.position == "map" else 1           # vertical, value, [coverage]
@@ -135,9 +208,13 @@ class TextColumnsReader(Reader):
             z = _depth_magnitude(z, path.name)
         if cols.log10:
             v = np.where(fill_mask(v), v, 10.0 ** v)
-        mesh, n_masked, reconstruction = mesh_from_points(x, z, v, path.name, kind,
-                                                          cols.quantity, cols.unit,
-                                                          coverage=coverage)
+        if block:
+            mesh, n_masked, reconstruction = _coarse_mesh(path, x, z, v, coverage, block,
+                                                          cols, kind, provenance)
+        else:
+            mesh, n_masked, reconstruction = mesh_from_points(x, z, v, path.name, kind,
+                                                              cols.quantity, cols.unit,
+                                                              coverage=coverage)
         provenance["n_masked"] = n_masked
         provenance["reconstruction"] = reconstruction
         return ReaderResult(mesh, kind, provenance)

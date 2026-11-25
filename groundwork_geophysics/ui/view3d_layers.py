@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from qgis.core import (Qgis, QgsFeature, QgsFillSymbol, QgsGeometry,
-                       QgsLineString, QgsLineSymbol, QgsMessageLog, QgsPoint, QgsPolygon,
+                       QgsLineString, QgsLineSymbol, QgsMessageLog, QgsPolygon,
                        QgsProject, QgsProperty, QgsSingleSymbolRenderer, QgsSymbolLayer,
                        QgsVectorLayer, QgsWkbTypes)
 from qgis.PyQt.QtCore import Qt
@@ -72,11 +72,14 @@ _NEEDS = "groundwork3dNeeds"            # Qt property on the project: what the l
 #: points of a smooth curtain are at least this far apart (m), along and across
 CLOUD_SPACING = 0.05
 #: a point cloud's 3D level of detail (px): QGIS's default 3 shows a thinned-out cloud from a
-#: distance, and eye-dome lighting darkens each lone point until the curtain looks black
-CLOUD_SCREEN_ERROR = 0.5
-#: QGIS's own default, which a cloud made before 0.14 still carries
-_QGIS_SCREEN_ERROR = 3.0
-_CLOUD_DETAIL_SET = f"{LEGACY_ID}/view3d_cloud_detail_set"   # a cloud: the detail set once
+#: distance, and eye-dome lighting darkens each lone point until the curtain looks black; 0.5
+#: (0.14) still did so with eleven curtains in view. The curtains are small (about 150 000
+#: points each), so full detail costs little
+CLOUD_SCREEN_ERROR = 0.1
+#: what clouds made earlier carry: QGIS's own default (before 0.14), and 0.14's 0.5
+_EARLIER_SCREEN_ERRORS = (3.0, 0.5)
+#: a cloud: the detail the plugin last gave it (``True``: 0.14's 0.5)
+_CLOUD_DETAIL_SET = f"{LEGACY_ID}/view3d_cloud_detail_set"
 _SMOOTH, _LINES = ("smooth", "smooth+contours"), ("contours", "smooth+contours")
 #: features one 3D chunk may hold: QGIS shows a layer split into chunks in pieces when
 #: zoomed out, so a curtain layer is kept in one chunk
@@ -482,25 +485,25 @@ def _threshold(section_layer) -> float | None:
 
 
 def _model_features(layer, profile, dataset, section_layer, gap: float) -> list[QgsFeature]:
-    from qgis.core import QgsMultiPolygon
-
     from ..core.colors import ColorScale
-    from ..core.view3d import curtain_cells
+    from ..core.view3d import curtain_arrays, faces_wkb
     mesh = section_layer.mesh
     scale = section_layer.style.scale or ColorScale.auto(mesh.values)
-    cells = curtain_cells(mesh, profile.chainage, scale.rgba(mesh.values),
-                          _threshold(section_layer), gap,
-                          keep_faded=section_layer.style.fade_mode != "blank")
+    cells = curtain_arrays(mesh, profile.chainage, scale.rgba(mesh.values),
+                           _threshold(section_layer), gap,
+                           keep_faded=section_layer.style.fade_mode != "blank")
+    fields = layer.fields()
+    head = [profile.id, profile.name, dataset.id, dataset.name or dataset.id]
+    colours = ["#%02x%02x%02x" % tuple(rgb) for rgb in cells.rgb.tolist()]
     out = []
-    for cell in cells:
-        f = QgsFeature(layer.fields())
-        both = QgsMultiPolygon()
-        for face in cell.faces:
-            both.addGeometry(QgsPolygon(QgsLineString([QgsPoint(*p) for p in face])))
-        f.setGeometry(QgsGeometry(both))
-        f.setAttributes([profile.id, profile.name, dataset.id, dataset.name or dataset.id,
-                         cell.value, cell.coverage, int(cell.resolved),
-                         QColor(*cell.rgb).name(), int(cell.faded)])
+    for wkb, value, cov, resolved, colour, faded in zip(
+            faces_wkb(cells), cells.value.tolist(), cells.coverage.tolist(),
+            cells.resolved.astype(int).tolist(), colours, cells.faded.astype(int).tolist()):
+        f = QgsFeature(fields)
+        geometry = QgsGeometry()
+        geometry.fromWkb(wkb)
+        f.setGeometry(geometry)
+        f.setAttributes(head + [value, cov, resolved, colour, faded])
         out.append(f)
     return out
 
@@ -646,7 +649,7 @@ def _cloud_signature(section_layer, profile, topo) -> str:
             h.update(np.ascontiguousarray(a, dtype=float).tobytes())
     h.update(repr((None if sc is None else (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp, sc.lut),
                    style.grid_cell, style.fade_coverage, style.coverage_threshold,
-                   style.fade_mode, CLOUD_SPACING)).encode())
+                   style.fade_mode, CLOUD_SPACING, style.interpolation.key())).encode())
     return h.hexdigest()[:10]
 
 
@@ -689,7 +692,7 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
         renderer.setMaximumScreenError(CLOUD_SCREEN_ERROR)
         layer.setRenderer3D(renderer)
         layer.setSync3DRendererTo2DRenderer(True)   # the 3D look follows the 2D style
-        layer.setCustomProperty(_CLOUD_DETAIL_SET, True)
+        layer.setCustomProperty(_CLOUD_DETAIL_SET, CLOUD_SCREEN_ERROR)
     except ImportError:                             # a QGIS built without 3D
         pass
     project.addMapLayer(layer, False)
@@ -697,12 +700,25 @@ def _new_cloud(project: QgsProject, path: Path, name: str, dataset_id: str):
     return layer
 
 
+def _given_detail(layer) -> float | None:
+    """The detail the plugin last gave ``layer`` (0.14 stored ``True``: 0.5), or None."""
+    value = layer.customProperty(_CLOUD_DETAIL_SET)
+    if value in (None, "", False, "false"):
+        return None
+    if value is True or value == "true":
+        return 0.5
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _cloud_detail(layer) -> None:
-    """A cloud made before 0.14: the finer 3D level of detail, once, while it still has
-    QGIS's default (a value the user set stays)."""
-    if layer.customProperty(_CLOUD_DETAIL_SET):
+    """A cloud made earlier: today's 3D level of detail, once, while it still has the value
+    it was made with (QGIS's default, or 0.14's 0.5); a value the user set stays."""
+    if _given_detail(layer) == CLOUD_SCREEN_ERROR:
         return
-    layer.setCustomProperty(_CLOUD_DETAIL_SET, True)
+    layer.setCustomProperty(_CLOUD_DETAIL_SET, CLOUD_SCREEN_ERROR)
     try:
         from qgis._3d import QgsPointCloudLayer3DRenderer
         from qgis.core import QgsAbstract3DRenderer
@@ -710,7 +726,8 @@ def _cloud_detail(layer) -> None:
         return
     renderer = as_kind(layer.renderer3D(), "pointcloud", QgsAbstract3DRenderer,
                        QgsPointCloudLayer3DRenderer)
-    if renderer is None or abs(renderer.maximumScreenError() - _QGIS_SCREEN_ERROR) > 1e-9:
+    if renderer is None or all(abs(renderer.maximumScreenError() - v) > 1e-9
+                               for v in _EARLIER_SCREEN_ERRORS):
         return
     renderer = renderer.clone()
     renderer.setMaximumScreenError(CLOUD_SCREEN_ERROR)
@@ -1477,16 +1494,11 @@ def profiles_with_boreholes_of(provider, profile_ids) -> set:
     """Those of ``profile_ids`` whose section shows boreholes (a profile whose context cannot
     be gathered just now counts as one that may: it is not left out for a passing
     error)."""
-    out = set()
-    for pid in profile_ids:
-        try:
-            items = provider.drawn_context(pid)
-        except Exception:
-            out.add(pid)
-            continue
-        if items is not None and any(p.kind == "borehole" for p in items.points):
-            out.add(pid)
-    return out
+    ids = list(profile_ids)
+    try:
+        return provider.profiles_showing_boreholes(ids)
+    except Exception:                       # cannot tell just now: none is left out
+        return set(ids)
 
 
 def _disc(x: float, y: float, z: float, radius: float, sides: int = 16) -> QgsPolygon:

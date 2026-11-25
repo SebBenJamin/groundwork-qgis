@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from qgis.core import (Qgis, QgsBasicNumericFormat, QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform, QgsExpressionBasedNumericFormat,
-                       QgsExpressionContextUtils, QgsLayerTreeUtils,
+                       QgsExpressionContextUtils, QgsFeatureRequest, QgsLayerTreeUtils,
                        QgsLayoutItemElevationProfile, QgsLayoutItemLabel, QgsLayoutItemLegend,
                        QgsLayoutItemMap, QgsLayoutPoint, QgsLayoutSize, QgsLayoutUtils,
                        QgsLineSymbol, QgsMapLayerStyle, QgsMarkerLineSymbolLayer,
@@ -239,6 +239,7 @@ def _optimise_intervals(item) -> None:
 
 
 LABEL_LINE_MM = 3.3     # one row of section labels (2.6 mm font) on a plate
+PLATE_PX_PER_MM = 300.0 / 25.4      # a plate's resolution for sizes laid out in pixels
 
 
 def label_room_mm(snap) -> float:
@@ -253,8 +254,12 @@ def label_room_mm(snap) -> float:
     if not (labels or ctx.band):
         return 0.0
     from ..core.context import strips_of
-    return context_headroom_px(1.0, LABEL_LINE_MM, labels, max(1, len(strips_of(ctx.band)))) \
-        + lanes_px(1.0, ctx.field_notes)
+    # worked out at a plate's resolution: the panel's layout has minimum sizes in screen
+    # pixels, which read at 1 px per mm left three short frames no room for their sections
+    px = PLATE_PX_PER_MM
+    return (context_headroom_px(px, LABEL_LINE_MM * px, labels,
+                                max(1, len(strips_of(ctx.band))))
+            + lanes_px(px, ctx.field_notes)) / px
 
 
 def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float,
@@ -369,7 +374,7 @@ def field_notes_text(store, plate, names: dict) -> str:
             text = " ".join(n.text.split())
             head = f"{names[pid]} · " if len(pids) > 1 else ""
             lines.append(f"{head}{where} · {text}")
-    return "\n".join(["Field notes"] + (lines or ["(none)"]))
+    return "\n".join(["Field notes"] + lines) if lines else ""     # no empty block printed
 
 
 NOT_FIT = "does not fit the frame at this scale: part of the section is cut off"
@@ -407,12 +412,18 @@ def _update_interp_legend(layout, store, project, plate, versions: dict) -> None
     pairs = sorted({(pid, v) for pid, v in versions.items() if v})
     expr = " OR ".join(f"(\"profile_id\" = {_quoted(pid)} AND \"version_id\" = {_quoted(v)})"
                        for pid, v in pairs) or "FALSE"
+    shown = False                               # any feature to list (else no empty heading)
     for name in INTERP_LEGEND_LAYERS:
         layer = layers.get(name)
         if layer is None:
             continue
         node = root.addLayer(layer)
         QgsLayerTreeUtils.setLegendFilterByExpression(node, expr)
+        if not shown:
+            request = QgsFeatureRequest().setFilterExpression(expr).setLimit(1)
+            request.setFlags(QgsFeatureRequest.Flag.NoGeometry)
+            shown = any(True for _ in layer.getFeatures(request))
+    legend.setVisibility(shown)
     legend.setCustomProperty(WRITTEN, _legend_signature(root))
     legend.updateLegend()
 

@@ -547,6 +547,34 @@ def test_an_older_cloud_gets_the_finer_detail_once_and_the_users_own_stays(setup
     assert _screen_error(cloud) == pytest.approx(2.0)
 
 
+def test_a_cloud_made_with_the_old_half_pixel_gets_the_full_detail_once(setup):
+    """0.5 px (0.14) still left eleven JWD curtains black from a distance; 0.1 px shows
+    them in colour. A cloud made with 0.5 moves to 0.1 once; a value set later stays."""
+    from groundwork_geophysics.ui.view3d_layers import CLOUD_SCREEN_ERROR, sync
+    st, p, provider, prj = setup
+    _mode(provider, p, "smooth")
+    _choose(prj, ["d"])
+    cloud = sync(st, provider, prj, create=True)["clouds"]["d"]
+    assert CLOUD_SCREEN_ERROR == pytest.approx(0.1)
+
+    def set_error(value):
+        r3d = cloud.renderer3D().clone()
+        r3d.setMaximumScreenError(value)
+        cloud.setRenderer3D(r3d)
+    set_error(0.5)                                   # as made by 0.14
+    cloud.setCustomProperty(view3d_layers_flag(), True)   # 0.14's flag: "set once"
+    sync(st, provider, prj)
+    assert _screen_error(cloud) == pytest.approx(0.1)
+    set_error(0.5)                                   # now the user's own choice
+    sync(st, provider, prj)
+    assert _screen_error(cloud) == pytest.approx(0.5)
+
+
+def view3d_layers_flag():
+    from groundwork_geophysics.ui import view3d_layers
+    return view3d_layers._CLOUD_DETAIL_SET
+
+
 def test_a_cells_model_stays_cells(setup):
     from groundwork_geophysics.ui.view3d_layers import clouds_3d, sync
     st, p, provider, prj = setup
@@ -1596,3 +1624,70 @@ def test_a_borehole_name_layer_removed_by_hand_stays_removed(setup):
     assert not borehole_names_3d(prj)
     sync(st, provider, prj, create=True)             # OK in Show in 3D brings it back
     assert borehole_names_3d(prj)
+
+
+def test_each_cell_is_its_two_faces_with_its_value(setup):
+    # the cells' geometry is written in bulk (one QgsPoint per corner took 26 s for a
+    # 370 000-cell model); it must stay the cell's two faces, cell by cell
+    from qgis.core import QgsGeometry, QgsLineString, QgsMultiPolygon, QgsPoint, QgsPolygon
+
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.view3d import curtain_cells, curtain_gap
+    from groundwork_geophysics.ui.view3d_layers import sync
+    st, p, provider, prj = setup
+    _choose(prj, ["d"])
+    lyr = sync(st, provider, prj, create=True)["models"]
+    la = provider.layers(p.id)[0]
+    scale = la.style.scale or ColorScale.auto(la.mesh.values)
+    cells = curtain_cells(la.mesh, p.chainage, scale.rgba(la.mesh.values), None,
+                          curtain_gap(p.chainage.length))
+    want = []
+    for cell in cells:
+        both = QgsMultiPolygon()
+        for face in cell.faces:
+            both.addGeometry(QgsPolygon(QgsLineString([QgsPoint(*q) for q in face])))
+        want.append(QgsGeometry(both).asWkt(6))
+    features = list(lyr.getFeatures())
+    assert [f.geometry().asWkt(6) for f in features] == want
+    assert [f["value"] for f in features] == [c.value for c in cells]
+    assert [f["color"] for f in features] == ["#%02x%02x%02x" % c.rgb for c in cells]
+
+
+def test_which_profiles_show_boreholes_is_known_without_the_ties(setup, monkeypatch):
+    # Show in 3D… asks this for every profile before it opens: building the ties read the
+    # crossing profiles' models (seconds each on a big project)
+    from groundwork_geophysics.ui.view3d_layers import profiles_with_boreholes
+    st, p, provider, _prj = setup
+
+    calls = []
+    monkeypatch.setattr(provider, "ties", lambda *_a, **_k: calls.append(1) or [])
+    assert profiles_with_boreholes(st, provider) == {p.id}
+    assert calls == []
+
+
+def test_which_profiles_show_boreholes_asks_only_for_the_boreholes(setup):
+    from groundwork_geophysics.ui.view3d_layers import profiles_with_boreholes
+    st, p, provider, _prj = setup
+
+    def whole(_profile):
+        raise AssertionError("whole context gathered")
+    provider.context_source = whole
+    provider.borehole_source = lambda profiles: {q.id: [("layer", "B1")] for q in profiles}
+    assert profiles_with_boreholes(st, provider) == {p.id}
+    provider.borehole_source = lambda profiles: {q.id: [] for q in profiles}
+    assert profiles_with_boreholes(st, provider) == set()
+
+
+def test_a_clouds_signature_follows_the_gridding_method():
+    from types import SimpleNamespace
+
+    from groundwork_geophysics.core.interpolators import Interpolation
+    from groundwork_geophysics.core.section_mesh import SectionMesh
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.ui.view3d_layers import _cloud_signature
+    mesh = SectionMesh(np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                       np.array([[0, 1, 2, 3]]), np.array([5.0]), "x", "")
+    profile = SimpleNamespace(xy=np.array([[0.0, 0.0], [1.0, 0.0]]))
+    a = SimpleNamespace(mesh=mesh, style=LayerStyle())
+    b = SimpleNamespace(mesh=mesh, style=LayerStyle(interpolation=Interpolation(method="idw")))
+    assert _cloud_signature(a, profile, None) != _cloud_signature(b, profile, None)

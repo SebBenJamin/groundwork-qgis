@@ -250,8 +250,11 @@ class WorkbenchPlugin:
         self.provider = None
         self._view3d_stale = False
         if store is not None:
-            self.provider = SectionDataProvider(store)
             project = QgsProject.instance()
+            from .section.style_store import load_styles, save_styles
+            self.provider = SectionDataProvider(store, styles=load_styles(project))
+            provider = self.provider
+            self.provider.on_style.append(lambda: save_styles(project, provider.styles()))
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
             ensure_3d_styles(store, project)            # before 0.14: no 3D style
@@ -263,6 +266,7 @@ class WorkbenchPlugin:
                                             on_change=self.provider.notify_changed,
                                             exclude=lambda: own_layer_ids(store, project))
             self.provider.context_source = self.gatherer.items_for
+            self.provider.borehole_source = self.gatherer.borehole_keys
             self.provider.interp_layers = lambda: interp_layers(store, project)
             self.style_watch = StyleWatch(project, partial(_own_styled_layers, store, project),
                                           self.provider.notify_redraw)
@@ -314,6 +318,7 @@ class WorkbenchPlugin:
             self.style_watch = None
         if self.provider is not None:
             self.provider.context_source = None
+            self.provider.borehole_source = None
         if self.gatherer is not None:
             self.gatherer.close()
             self.gatherer = None

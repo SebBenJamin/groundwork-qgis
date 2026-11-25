@@ -15,6 +15,17 @@ AUTO_HEADROOM = 0.3             # Auto: label room at most this share (labels th
                                 # are left out by the label planner, not cut off)
 
 Extent = tuple[float, float, float, float]
+#: the longest text the exaggeration box shows when Auto picks the value
+LONGEST_AUTO_TEXT = "Auto (12.5×)"
+
+
+def keep_auto_text_whole(spin) -> None:
+    """Give an exaggeration box the width of its longest "Auto (…×)" text, so a crowded
+    toolbar cannot squeeze it to "to (1.1×)"."""
+    text = spin.specialValueText()
+    spin.setSpecialValueText(LONGEST_AUTO_TEXT)
+    spin.setMinimumWidth(spin.sizeHint().width())
+    spin.setSpecialValueText(text)
 
 
 class ViewFitter:

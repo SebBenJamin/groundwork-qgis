@@ -45,3 +45,16 @@ def test_remap_carries_the_part_beyond_the_ends_over():
     assert remap(old, moved, s) == pytest.approx(s)
     back = Chainage(np.array([[100, 1], [0, 1]], float))         # and running the other way
     assert remap(old, back, s) == pytest.approx([120.0, 110.0, 50.0, -15.0, -20.0])
+
+
+def test_projecting_many_points_works_in_chunks_with_the_same_result(monkeypatch):
+    # 2 million points on a 25-segment line needed two arrays of 785 MB at once
+    from groundwork_geophysics.core import chainage as ch
+    line = Chainage(np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [20.0, 15.0]]))
+    rng = np.random.default_rng(4)
+    pts = rng.uniform(-5, 25, size=(500, 2))
+    whole = line.project(pts)
+    monkeypatch.setattr(ch, "_PROJECT_CHUNK", 7)
+    parts = line.project(pts)
+    np.testing.assert_array_equal(parts[0], whole[0])
+    np.testing.assert_array_equal(parts[1], whole[1])

@@ -7,6 +7,7 @@ so canvas distance == forward profile chainage (what ``cursor_moved``, ``show_cu
 """
 from __future__ import annotations
 
+import os
 from functools import partial
 
 import numpy as np
@@ -34,11 +35,12 @@ from .profile_source import SOURCE_ID
 from .readout import format_readout
 from .topo_switch import TopoSwitch
 from .view_extent import data_extent, headroom_px
-from .view_fit import ViewFitter
+from .view_fit import ViewFitter, keep_auto_text_whole
 
 OBJECT_NAME = "GeophysicsWorkbenchSectionDock"
 AUTO_VE = 0.0                   # the VE box's "Auto": the exaggeration that fills the panel
 SPLITTER_KEY = f"{LEGACY_ID}/section/splitter"
+IMAGE_DIR_KEY = f"{LEGACY_ID}/section/image_dir"   # where Save Section Image… saved last
 DEFAULT_VE = AUTO_VE
 HINT_NO_PROJECT = "No project open."
 HINT_NO_PROFILE = "Choose a profile above, or pick one on the map."
@@ -60,8 +62,22 @@ UNCUT_3D_TEXT = "Remove 3D Cut"
 SHOW_3D_TEXT = "Show in 3D…"
 VIEW3D_BUTTON_TEXT = "3D"
 VIEW3D_BUTTON_TIP = "The open profile in QGIS's 3D view: look at it, cut the view along it"
+PREVIOUS_TIP = "Previous profile (Page Up)"
+NEXT_TIP = "Next profile (Page Down)"
+FIRST_TIP = "This is the first profile"
+LAST_TIP = "This is the last profile"
+NO_PROFILES_TIP = "No profiles yet: make one with New Profile… or Add Data…"
+IMAGE_TIP = "Copy the section as a picture, or save it as a PNG file"
+IMAGE_OFF_TIP = "Open a profile first; then its section can be copied or saved as a picture"
+COPY_IMAGE_TEXT = "Copy Section Image"
+SAVE_IMAGE_TEXT = "Save Section Image…"
+ZOOM_MAP_TEXT = "Zoom Map to Profile"
+ZOOM_MAP_TIP = "Zoom the map to the open profile's line"
+ZOOM_MAP_OFF_TIP = "Open a profile first; then this zooms the map to its line"
 HIDE_IN_SECTION = "Hide in Section"
 SHOW_IN_SECTION = "Show in Section"
+APPLIED_ALL = ("Style applied to {n} other {what}(s) of the project. Ctrl+Z in the "
+               "panel takes it back.")
 NO_ID_TIP = "This borehole has no id in its layer, so it cannot be hidden on its own."
 
 
@@ -105,6 +121,7 @@ class SectionDock(QDockWidget):
     #: (profile id, "look" | "cut" | "uncut" | "dialog"): the 3D button's and profile
     #: menu's entries
     view3d_requested = pyqtSignal(str, str)
+    zoom_map_requested = pyqtSignal(str)        # profile id: "Zoom Map to Profile"
 
     def __init__(self, parent=None):
         super().__init__("Geophysics section", parent)
@@ -142,6 +159,7 @@ class SectionDock(QDockWidget):
         self.ve_spin.setValue(DEFAULT_VE)
         self.ve_spin.setSuffix(" ×")
         self.ve_spin.setToolTip("Vertical exaggeration (Auto: fill the panel)")
+        keep_auto_text_whole(self.ve_spin)
         self.ve_spin.valueChanged.connect(self._ve_changed)
         zoom_button = QToolButton()
         zoom_button.setText("Zoom Full")
@@ -182,6 +200,7 @@ class SectionDock(QDockWidget):
         self.canvas.scene().addItem(self.cursor_marker)
 
         self.layer_list = LayerList()
+        self.layer_list.apply_all_requested.connect(self.apply_style_to_all)
         self.readout = _Readout()
         self._reference_error: str | None = None     # set while a reference step applies
         self.readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -195,11 +214,37 @@ class SectionDock(QDockWidget):
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Profile"))
+        # step through the profiles in list order: arrows beside the list, Page Up / Down
+        self.previous_button, self.next_button = QToolButton(), QToolButton()
+        self.previous_button.setArrowType(Qt.ArrowType.LeftArrow)
+        self.next_button.setArrowType(Qt.ArrowType.RightArrow)
+        for button, step in ((self.previous_button, -1), (self.next_button, 1)):
+            button.setAutoRaise(True)
+            button.clicked.connect(self._step_previous if step < 0 else self._step_next)
+        self.previous_shortcut = QShortcut(QKeySequence("PgUp"), self)
+        self.next_shortcut = QShortcut(QKeySequence("PgDown"), self)
+        for shortcut, slot in ((self.previous_shortcut, self._step_previous),
+                               (self.next_shortcut, self._step_next)):
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(slot)
+        top.addWidget(self.previous_button)
         top.addWidget(self.profile_combo)
+        top.addWidget(self.next_button)
         # Pick on Map next to the list (the plugin gives it its map tool action)
         self.pick_button = QToolButton()
         self.pick_button.setAutoRaise(True)
         top.addWidget(self.pick_button)
+        # the map follows the panel: zoom it to the open profile's line
+        self.zoom_map_button = QToolButton()
+        self.zoom_map_button.setAutoRaise(True)
+        self.zoom_map_button.setIcon(QgsApplication.getThemeIcon("/mActionZoomToSelected.svg"))
+        self.zoom_map_button.setText(ZOOM_MAP_TEXT)
+        self.zoom_map_button.clicked.connect(self._zoom_map)
+        self.profile_changed.connect(self._sync_zoom_map)
+        self.profile_changed.connect(self._sync_steps)
+        self._sync_zoom_map()
+        self._sync_steps()
+        top.addWidget(self.zoom_map_button)
         # the open profile in QGIS's 3D view: a drop-down, filled when it opens
         self.view3d_button = QToolButton()
         self.view3d_button.setText(VIEW3D_BUTTON_TEXT)
@@ -218,6 +263,18 @@ class SectionDock(QDockWidget):
         top.addWidget(QLabel("Vertical exaggeration"))
         top.addWidget(self.ve_spin)
         top.addWidget(zoom_button)
+        # the section as a picture: for an e-mail or a report, without making a plate
+        self.image_button = QToolButton()
+        self.image_button.setAutoRaise(True)
+        self.image_button.setIcon(QgsApplication.getThemeIcon("/mActionSaveMapAsImage.svg"))
+        self.image_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        image_menu = QMenu(self.image_button)
+        image_menu.addAction(COPY_IMAGE_TEXT).triggered.connect(self.copy_image)
+        image_menu.addAction(SAVE_IMAGE_TEXT).triggered.connect(self._save_image_clicked)
+        self.image_button.setMenu(image_menu)
+        self.profile_changed.connect(self._sync_image)
+        self._sync_image()
+        top.addWidget(self.image_button)
         # an empty panel says what to do instead of showing empty axes
         self.empty_hint = QLabel(HINT_NO_PROFILE)
         self.empty_hint.linkActivated.connect(self._hint_link)
@@ -342,6 +399,38 @@ class SectionDock(QDockWidget):
         index = self.profile_combo.findData(self.current_profile_id()) if self._profile else 0
         self.profile_combo.setCurrentIndex(max(0, index))
         self.profile_combo.blockSignals(False)
+        self._sync_steps()
+
+    def _step_index(self, step: int) -> int | None:
+        """The list index ``step`` profiles away from the open one (nothing open: Next is
+        the first profile, Previous the last), or None past either end."""
+        last = self.profile_combo.count() - 1       # index 0 is "Choose a profile…"
+        if last < 1:
+            return None
+        here = self.profile_combo.findData(self.current_profile_id()) if self._profile else -1
+        if here < 1:
+            return 1 if step > 0 else last
+        there = here + step
+        return there if 1 <= there <= last else None
+
+    def _step(self, step: int) -> None:
+        index = self._step_index(step)
+        if index is not None:
+            self.open_profile(self.profile_combo.itemData(index))
+
+    def _step_previous(self, *_args) -> None:
+        self._step(-1)
+
+    def _step_next(self, *_args) -> None:
+        self._step(1)
+
+    def _sync_steps(self, *_args) -> None:
+        for button, step, tip, end in ((self.previous_button, -1, PREVIOUS_TIP, FIRST_TIP),
+                                       (self.next_button, 1, NEXT_TIP, LAST_TIP)):
+            on = self._step_index(step) is not None
+            button.setEnabled(on)
+            button.setToolTip(tip if on else end if self.profile_combo.count() > 1
+                              else NO_PROFILES_TIP)
 
     def _combo_changed(self, index: int) -> None:
         pid = self.profile_combo.itemData(index)
@@ -681,6 +770,29 @@ class SectionDock(QDockWidget):
         if self.provider is not None:
             self.provider.set_boreholes_hidden(profile_id, keys, hidden)
 
+    def apply_style_to_all(self, dataset_id: str) -> None:
+        """Give every other model of the same method (type, quantity and unit), on every
+        profile, ``dataset_id``'s style; whether each is shown stays. One step on the
+        panel's undo stack."""
+        from ..core.dataset_types import type_label
+        from .style_store import applied, same_method
+        if self.provider is None:
+            return
+        targets = same_method(self.provider.store, dataset_id)
+        if not targets:
+            return
+        source = self.provider.style(dataset_id)
+        before = {d.id: self.provider.style(d.id) for d in targets}
+        after = {i: applied(source, s) for i, s in before.items()}
+        self.interp.undo.push_with(self._apply_styles, "Apply style to all sections",
+                                   before, after)
+        self.readout.setText(APPLIED_ALL.format(n=len(targets),
+                                                what=type_label(targets[0].kind)))
+
+    def _apply_styles(self, styles, _other) -> None:
+        if self.provider is not None:
+            self.provider.set_styles(styles)
+
     def tool_hint_text(self) -> str:
         return self.readout.text()
 
@@ -800,7 +912,12 @@ class SectionDock(QDockWidget):
         menu = QMenu()
         enabled = self.current_profile_id() is not None
         for text, slot in ((RENAME_TEXT, self._rename_open_profile),
-                           (DELETE_TEXT, self._delete_open_profile)):
+                           (DELETE_TEXT, self._delete_open_profile),
+                           (None, None),
+                           (ZOOM_MAP_TEXT, self._zoom_map)):
+            if text is None:
+                menu.addSeparator()
+                continue
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
@@ -860,6 +977,63 @@ class SectionDock(QDockWidget):
     def _delete_open_profile(self, *_args) -> None:
         if self.current_profile_id():
             self.delete_requested.emit(self.current_profile_id())
+
+    def _zoom_map(self, *_args) -> None:
+        if self.current_profile_id():
+            self.zoom_map_requested.emit(self.current_profile_id())
+
+    def _sync_image(self, *_args) -> None:
+        on = self.current_profile_id() is not None
+        self.image_button.setEnabled(on)
+        self.image_button.setToolTip(IMAGE_TIP if on else IMAGE_OFF_TIP)
+
+    def section_image(self):
+        """The section as shown (axes, models, context, interpretation), without the
+        mouse's guide line."""
+        shown = [item for item in (self.guide_line, self.cursor_marker) if item.isVisible()]
+        for item in shown:
+            item.hide()
+        try:
+            return self.canvas.grab()
+        finally:
+            for item in shown:
+                item.show()
+
+    def copy_image(self, *_args) -> None:
+        if self._profile is None:
+            return
+        from qgis.PyQt.QtWidgets import QApplication
+        QApplication.clipboard().setPixmap(self.section_image())
+        self.readout.setText(f"{self._profile.name}: section image copied to the clipboard")
+
+    def _save_image_clicked(self, *_args) -> None:
+        if self._profile is None:
+            return
+        from qgis.PyQt.QtWidgets import QFileDialog
+        folder = QgsSettings().value(IMAGE_DIR_KEY, "") or QgsProject.instance().homePath()
+        name = "".join(c if c.isalnum() or c in " -_." else "_" for c in self._profile.name)
+        path, _ = QFileDialog.getSaveFileName(self, SAVE_IMAGE_TEXT,
+                                              os.path.join(folder, f"{name}.png"),
+                                              "PNG image (*.png)")
+        if path:
+            QgsSettings().setValue(IMAGE_DIR_KEY, os.path.dirname(path))
+            self.save_image(path)
+
+    def save_image(self, path: str) -> None:
+        if self._profile is None:
+            return
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        if self.section_image().save(path, "PNG"):
+            self.readout.setText(f"{self._profile.name}: section image saved as {path}")
+        else:
+            self.readout.setText(f"Could not write {path}. Check that the folder exists and "
+                                 f"you may write to it.")
+
+    def _sync_zoom_map(self, *_args) -> None:
+        on = self.current_profile_id() is not None
+        self.zoom_map_button.setEnabled(on)
+        self.zoom_map_button.setToolTip(ZOOM_MAP_TIP if on else ZOOM_MAP_OFF_TIP)
 
     def _look_3d(self, *_args) -> None:
         if self.current_profile_id():

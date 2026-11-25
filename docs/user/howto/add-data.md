@@ -44,6 +44,25 @@ What happens to the points:
 
 To add surveyed positions afterwards, see [Placement on the electrodes](placement.md#adding-surveyed-positions-later).
 
+### (c) Several files at once
+
+Choose several files in **Browse…** (Ctrl or Shift while clicking). The dialog then shows a
+**Files** table, one row per file:
+
+- **Format, columns and method** are read from the first file and used for every file.
+  Set them as for one file.
+- **Profile**: where the file goes. It is guessed from the file's name: `JWD_L8_DD.csv` goes
+  to **Line 8**, `ERT02_model.dat` to **ERT02**, `T3_result.txt` to **Transect 3**. Change any
+  of them. A file with map coordinates and no matching profile gets **New profile from its
+  coordinates**, named after the file.
+- **Read as cells of**: for a very fine file, the coarser cells proposed for it (see
+  [Very fine models](#very-fine-models)); untick to keep every point.
+- **Status** says whether the file is ready: a file with other columns than the first one, or
+  without a profile, is not.
+
+**Add** adds the ready files, each named after its file. When some are not ready, it asks
+first and leaves them out; the message bar says which.
+
 ## The parts in detail
 
 ### File Format (text tables only)
@@ -113,3 +132,28 @@ Good to know:
 - The whole file is read when you press **Add**.
 - If something fails, nothing is saved.
 - Once the data are saved, a problem refreshing the view only shows a warning on the message bar ("Saved, but the view could not be refreshed: …"). The data are in the project, so do not add the file again.
+
+### Very fine models
+
+Some programs export a model interpolated onto a grid much finer than the inversion resolves,
+for example points every 0.25 m along the line and every 0.1 m in depth: hundreds of
+thousands of cells. Sections, plates and the 3D view then get slow, without showing more.
+
+When a text table has more than 100 000 points on such a regular grid, ⑤ says so and offers
+coarser cells, ticked:
+
+```
+623 241 cells of 0.25 × 0.1 m: far finer than an inversion resolves.
+[✓] Read as cells of [1.00 m] × [0.5 m]  (about 31 162 cells, averaged)
+```
+
+- The proposed size is a whole multiple of the file's own spacing, for about 50 000 cells or
+  fewer. Type another size: it snaps to the nearest multiple.
+- Each coarse cell is the average of the points in it: resistivity on the log scale (as its
+  colour bar), other values as the plain mean. A cell keeps a value when at least half of its
+  points have one, so the model's outline stays where it was.
+- The section, the readout, plates and the 3D view all use the coarser model.
+- The file itself is not changed. Untick to keep every point. To change the size later, add
+  the file again.
+- [Dataset info](dataset-info.md) and the plate's provenance line say what the cells were
+  averaged from and to.

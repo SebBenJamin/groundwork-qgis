@@ -60,3 +60,59 @@ def test_explicit_delimiter_reads_decimal_commas_only_when_asked(tmp_path):
     p.write_text("a;b\n1,5;2\n")
     assert read_table(p, TableOptions("semicolon", decimal_comma=True)).numeric(0).tolist() == [1.5]
     assert not read_table(p, TableOptions("semicolon")).is_numeric(0)
+
+
+def _numbers_match_the_text_table(path, opts):
+    import numpy as np
+
+    from groundwork_geophysics.readers.texttable import read_numbers
+    fast, slow = read_numbers(path, opts), read_table(path, opts)
+    assert fast is not None
+    assert fast.names == slow.names and fast.n_rows == slow.n_rows
+    for c in range(slow.n_columns):
+        np.testing.assert_array_equal(fast.numeric(c), slow.numeric(c))
+        assert fast.is_numeric(c) == slow.is_numeric(c)
+    return fast
+
+
+RES2D = ("JWDL9 merged - Resistivity model \n"
+         "Dist, X_NAD83UTMz16N, Y_NAD83UTMz16N, Elev, Log10Res, Shading \n"
+         "0.00, 703719.50, 3399129.47, -19.77, -9999, -9999 \n"
+         "\n"
+         "0.50, 703719.90, 3399129.80, -19.67, 1.92, -inf \n")
+
+
+def test_a_clean_table_is_read_as_numbers_alone(tmp_path):
+    # the full read of a big model keeps no text per cell: a 2-million-row export ran out of
+    # memory as text
+    _numbers_match_the_text_table(WILD / "east_north_depth_rho.csv",
+                                  guess_options(WILD / "east_north_depth_rho.csv"))
+    _numbers_match_the_text_table(WILD / "x_zero_depth_rho.txt", TableOptions(header=False))
+    p = tmp_path / "res2d.csv"
+    p.write_text(RES2D)
+    t = _numbers_match_the_text_table(p, TableOptions(skip=1))
+    assert t.names[0] == "Dist" and t.raw(5)[1] == float("-inf")
+
+
+@pytest.mark.parametrize("text, opts", [
+    ("a,b\n1,2\n3\n", TableOptions()),                                  # a short row
+    ("a,b\n1,2\n3,x\n", TableOptions()),                                # a text cell
+    ("a,b\n1,2 # note\n", TableOptions()),                              # a comment in a row
+])
+def test_a_table_the_numbers_alone_cannot_read_is_left_to_the_text_table(tmp_path, text,
+                                                                           opts):
+    from groundwork_geophysics.readers.texttable import read_numbers
+    p = tmp_path / "t.txt"
+    p.write_text(text)
+    assert read_numbers(p, opts) is None
+    read_table(p, opts)                                 # which reads it as before
+
+
+@pytest.mark.parametrize("opts", [TableOptions("semicolon", decimal_comma=True),
+                                  TableOptions()])
+def test_decimal_commas_are_read_as_numbers_alone(tmp_path, opts):
+    # German exports: 1,25;3,4;120,5 (by "detect" too: a semicolon table reads commas as
+    # decimal points)
+    p = tmp_path / "comma.txt"
+    p.write_text("x;z;rho\n1,25;3,4;120,5\n1,5;3,5;-9999\n")
+    _numbers_match_the_text_table(p, opts)

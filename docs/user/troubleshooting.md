@@ -52,6 +52,14 @@ at one place.
 | A profile is greyed out in **Show in 3D…** | A local section | Give it a [reference height](howto/reference-height.md) |
 | A curtain hides under the terrain | The terrain is on and the model lies below it | Switch the terrain off, or **Cut 3D View Along Profile** with the section panel's **3D** button |
 | The 3D view turns white or hangs | A large web layer (WFS) loads for the 3D view | Switch such layers off while you use the 3D view, or save a local copy (right-click → **Export → Save Features As…**) |
+| Point-cloud curtains look black from a distance | The cloud shows only some of its points; eye-dome lighting darkens each lone point | Layer properties → **3D View** → **Maximum screen space error** 0.1 px (the plugin sets this for its own clouds) |
+
+## Large models
+
+| What you see | Usual cause | Fix |
+|---|---|---|
+| QGIS stops responding for a while when a profile opens or the 3D view fills | Every model is read and drawn before QGIS goes on; large files on a slow drive (a USB stick) take longest | Read over-fine exports as [coarser cells](howto/add-data.md) when adding them; keep the data on a local drive |
+| The smooth field looks linear though another interpolation is chosen | The method could not be used for this model (for example, not enough memory) | **View → Panels → Log Messages**, tab **Groundwork**, says why; try **Inverse distance**, or a coarser grid cell |
 
 ## Demos
 

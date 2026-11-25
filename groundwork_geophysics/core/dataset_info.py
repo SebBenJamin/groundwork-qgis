@@ -25,6 +25,31 @@ def with_info(d, info: dict):
     return replace(d, provenance=provenance)
 
 
+def _size(v) -> str:
+    """A cell size in metres, up to 2 decimals without trailing zeros (1.0 -> "1")."""
+    return f"{float(v):.2f}".rstrip("0").rstrip(".")
+
+
+def cells_text(d) -> str:
+    """"1 × 0.5 m" when ``d``'s cells were averaged in blocks on reading, else ""."""
+    cell = (d.provenance or {}).get("cell")
+    if not (isinstance(cell, (list, tuple)) and len(cell) == 2):
+        return ""
+    return f"{_size(cell[0])} × {_size(cell[1])} m"
+
+
+def averaged_from_text(d) -> str:
+    """"averaged from 623241 cells of 0.25 × 0.1 m to 1 × 0.5 m", or "" (not averaged)."""
+    p, to = d.provenance or {}, cells_text(d)
+    was = p.get("cell_file")
+    if not to or not (isinstance(was, (list, tuple)) and len(was) == 2):
+        return ""
+    from .numbers import fmt_count
+    n = p.get("n_points_file")
+    count = fmt_count(n) if isinstance(n, (int, float)) and not isinstance(n, bool) else "?"
+    return f"averaged from {count} cells of {_size(was[0])} × {_size(was[1])} m to {to}"
+
+
 def provenance_line(profile_name: str, d) -> str:
     """e.g. "Transect 3 · ERT model: BERT inversion (Pohle et al. 2025) · dipole-dipole,
     1 m spacing · RMS 8.0 %"; parts with nothing known are left out."""
@@ -41,6 +66,8 @@ def provenance_line(profile_name: str, d) -> str:
                        if x)
     if layout:
         parts.append(layout)
+    if cells_text(d):
+        parts.append(f"averaged to {cells_text(d)} cells")
     rms = (d.provenance or {}).get("rms_percent")
     if isinstance(rms, (int, float)) and not isinstance(rms, bool):
         parts.append(f"RMS {rms:.1f} %")

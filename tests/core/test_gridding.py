@@ -142,3 +142,120 @@ def test_default_threshold_prefers_the_files_cut():
     assert default_threshold([0, 1, 2, 3], cut=1.5) == 1.5
     assert default_threshold([0, 1, 2, 3], cut=None) == default_threshold([0, 1, 2, 3])
     assert np.isfinite(default_threshold([np.nan, 1.0], cut=float("nan")))
+
+
+def test_automatic_grid_size_is_worked_out_once_per_mesh(monkeypatch):
+    # every redraw of a smooth or contour display asks for it
+    from groundwork_geophysics.core import gridding
+    m = regular_mesh()
+    calls = []
+    real = gridding._longest_edges
+    monkeypatch.setattr(gridding, "_longest_edges", lambda mesh: calls.append(1) or real(mesh))
+    assert grid_shape(m, None) == grid_shape(m, None)
+    assert len(calls) == 1
+    grid_shape(m, 0.5)                                  # an own cell needs no guess
+    assert len(calls) == 1
+
+
+def test_grid_nodes_are_located_as_matplotlib_locates_them():
+    # the grid's own locator (big models: matplotlib's TriFinder took 15 s) finds the same
+    # triangle for every node, or one that shares the edge the node lies on
+    import matplotlib.tri as mtri
+
+    from groundwork_geophysics.core.gridding import locate_nodes
+    rng = np.random.default_rng(3)
+    pts = rng.uniform([0, -20], [100, 0], size=(400, 2))
+    tri = mtri.Triangulation(pts[:, 0], pts[:, 1])
+    s, z = np.linspace(-5, 105, 137), np.linspace(-25, 3, 41)
+    S, Z = np.meshgrid(s, z)
+    t, w = locate_nodes(pts, tri.triangles, s, z)
+    ref = tri.get_trifinder()(S.ravel(), Z.ravel())
+    assert ((t >= 0) == (ref >= 0)).all()
+    inside = t >= 0
+    differ = inside & (t != ref)
+    assert (w[differ].min(axis=1) < 1e-9).all()             # only on a shared edge
+    corners = pts[tri.triangles[t[inside]]]
+    back = (w[inside, :, None] * corners).sum(axis=1)
+    assert np.allclose(back, np.column_stack([S.ravel(), Z.ravel()])[inside])
+
+
+# -- gridding methods (nearest, inverse distance, spline, kriging) ---------------------------
+def _layered(nx=12, nz=6):
+    return regular_mesh(nx, nz, fn=lambda s, z: 50 + 20 * np.sin(s / 3) + 4 * z)
+
+
+def test_linear_method_is_todays_grid():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = _layered()
+    a = grid_model(mesh, None, (25, 13), log=False)
+    b = grid_model(mesh, None, (25, 13), log=False, interp=Interpolation())
+    assert np.array_equal(a.values, b.values, equal_nan=True) and b.note == ""
+
+
+@pytest.mark.parametrize("method", ["nearest", "idw", "spline", "kriging"])
+def test_each_method_fills_the_same_nodes_as_linear(method):
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = _layered()
+    mesh.values[14] = np.nan                                       # one empty cell
+    topo = (np.array([0.0, 12.0]), np.array([1.0, -1.5]))          # cuts the top corner
+    linear = grid_model(mesh, topo, (49, 25), log=False, fill_to_ground=True)
+    other = grid_model(mesh, topo, (49, 25), log=False, fill_to_ground=True,
+                       interp=Interpolation(method=method))
+    assert other.note == ""
+    assert np.array_equal(np.isfinite(other.values), np.isfinite(linear.values))
+    assert np.nanmax(np.abs(other.values - linear.values)) < 15          # same field, roughly
+
+
+def test_nearest_grid_takes_the_cell_values():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = regular_mesh(fn=lambda s, z: 10 * s + z)
+    g = grid_model(mesh, None, (41, 21), log=False, interp=Interpolation(method="nearest"),)
+    i, j = list(g.s).index(2.5), list(g.z).index(-3.5)                # a cell centre
+    assert g.values[j, i] == pytest.approx(10 * 2.5 - 3.5)
+
+
+def test_a_failed_fit_falls_back_to_linear_and_says_so():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = regular_mesh(fn=lambda s, z: 7.0)                          # nothing varies
+    linear = grid_model(mesh, None, (21, 11), log=False)
+    g = grid_model(mesh, None, (21, 11), log=False, interp=Interpolation(method="kriging"))
+    assert np.array_equal(g.values, linear.values, equal_nan=True)
+    assert "kriging" in g.note.lower() and "linear" in g.note.lower()
+
+
+def test_methods_work_in_log10_on_a_log_scale():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    mesh = regular_mesh(2, 1, fn=lambda s, z: 10.0 if s < 1 else 1000.0)
+    g = grid_model(mesh, None, (21, 3), log=True,
+                   interp=Interpolation(method="idw", anisotropy=1.0))
+    mid = g.values[1, list(g.s).index(1.0)]
+    assert mid == pytest.approx(100.0, rel=1e-6)                     # geometric mean
+
+
+def test_kriging_reports_what_it_fitted():
+    from groundwork_geophysics.core.interpolators import Interpolation
+    g = grid_model(_layered(), None, (25, 13), log=False,
+                   interp=Interpolation(method="kriging"))
+    assert set(g.fitted) >= {"range", "sill", "nugget", "anisotropy"}
+
+
+def test_cell_aspect_is_the_default_anisotropy():
+    from groundwork_geophysics.core.gridding import cell_aspect
+    mesh = regular_mesh(4, 4, d=1.0)
+    mesh.vertices[:, 0] *= 3                                          # 3 m wide, 1 m tall
+    assert cell_aspect(mesh) == pytest.approx(3.0)
+
+
+def test_running_out_of_memory_falls_back_to_linear(monkeypatch):
+    from groundwork_geophysics.core import interpolators
+    from groundwork_geophysics.core.interpolators import Interpolation
+
+    def no_memory(*_a, **_k):
+        raise MemoryError()
+
+    monkeypatch.setattr(interpolators, "interpolate", no_memory)
+    mesh = _layered()
+    linear = grid_model(mesh, None, (25, 13), log=False)
+    g = grid_model(mesh, None, (25, 13), log=False, interp=Interpolation(method="idw"))
+    assert np.array_equal(g.values, linear.values, equal_nan=True)
+    assert "not enough memory" in g.note and "()" not in g.note

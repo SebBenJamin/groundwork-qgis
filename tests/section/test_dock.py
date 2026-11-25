@@ -88,6 +88,112 @@ def test_cursor_moves_map_marker(qgis_app, store_with_model, make_dock_and_link)
     assert not link.marker.isVisible()
 
 
+def test_zoom_map_button_zooms_map_to_open_profile(qgis_app, store_with_model,
+                                                  make_dock_and_link):
+    st, p, _ = store_with_model                 # the line runs (0, 0) -> (50, 0)
+    dock, link = make_dock_and_link(st)
+    assert not dock.zoom_map_button.isEnabled()         # no profile open yet
+    assert "open a profile" in dock.zoom_map_button.toolTip().lower()
+    link.map_canvas.setExtent(link.map_canvas.extent().buffered(5000))   # far out
+    dock.open_profile(p.id)
+    assert dock.zoom_map_button.isEnabled()
+    dock.zoom_map_button.click()
+    e = link.map_canvas.extent()
+    assert e.xMinimum() < 0 and e.xMaximum() > 50       # the whole line, with a margin
+    assert e.xMinimum() > -50 and e.xMaximum() < 100    # zoomed in, not left far out
+    assert e.yMinimum() < 0 < e.yMaximum()
+
+
+def test_profile_menu_offers_zoom_map(qgis_app, store_with_model, make_dock):
+    from groundwork_geophysics.section.dock import ZOOM_MAP_TEXT
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    menu = dock.profile_menu()
+    [entry] = [a for a in menu.actions() if a.text() == ZOOM_MAP_TEXT]
+    assert not entry.isEnabled()
+    dock.open_profile(p.id)
+    got = []
+    dock.zoom_map_requested.connect(got.append)
+    menu = dock.profile_menu()
+    [entry] = [a for a in menu.actions() if a.text() == ZOOM_MAP_TEXT]
+    entry.trigger()
+    assert got == [p.id]
+
+
+def _second_profile(st, name="P2"):
+    from groundwork_geophysics.core.model import profile_from_stations
+    p2, s2 = profile_from_stations(name, st.crs_authid,
+                                   np.array([[0, 10, 100], [50, 10, 101.0]]))
+    st.save_profile(p2)
+    st.save_station_set(s2)
+    return p2
+
+
+def test_previous_and_next_step_through_the_profiles(qgis_app, store_with_model, make_dock):
+    st, p, _ = store_with_model
+    p2 = _second_profile(st)
+    dock = make_dock(st)
+    order = [dock.profile_combo.itemData(i) for i in range(1, dock.profile_combo.count())]
+    assert set(order) == {p.id, p2.id}
+    assert dock.next_button.isEnabled()                 # nothing open: Next opens the first
+    dock.next_button.click()
+    assert dock.current_profile_id() == order[0]
+    assert not dock.previous_button.isEnabled()         # the first: nothing before it
+    dock.next_button.click()
+    assert dock.current_profile_id() == order[1]
+    assert not dock.next_button.isEnabled()             # the last: nothing after it
+    assert "last" in dock.next_button.toolTip().lower()
+    dock.previous_button.click()
+    assert dock.current_profile_id() == order[0]
+
+
+def test_page_keys_step_through_the_profiles(qgis_app, store_with_model, make_dock):
+    st, p, _ = store_with_model
+    _second_profile(st)
+    dock = make_dock(st)
+    dock.open_profile(dock.profile_combo.itemData(1))
+    assert dock.next_shortcut.key().toString() == "PgDown"
+    assert dock.previous_shortcut.key().toString() == "PgUp"
+    dock.next_shortcut.activated.emit()
+    assert dock.current_profile_id() == dock.profile_combo.itemData(2)
+    dock.previous_shortcut.activated.emit()
+    assert dock.current_profile_id() == dock.profile_combo.itemData(1)
+
+
+def test_section_image_copies_and_saves_the_section(qgis_app, store_with_model, make_dock,
+                                                    tmp_path):
+    from qgis.PyQt.QtGui import QImage
+    from qgis.PyQt.QtWidgets import QApplication
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    assert not dock.image_button.isEnabled()            # nothing open: nothing to copy
+    dock.open_profile(p.id)
+    _wait_generated(qgis_app, dock)
+    assert dock.image_button.isEnabled()
+    dock.copy_image()
+    copied = QApplication.clipboard().image()
+    assert not copied.isNull() and copied.width() >= dock.canvas.width() - 1
+    assert "clipboard" in dock.readout.text()
+    path = tmp_path / "P1 section"
+    dock.save_image(str(path))                          # ".png" added
+    saved = QImage(str(path) + ".png")
+    assert not saved.isNull() and saved.size() == copied.size()
+    assert "P1 section.png" in dock.readout.text()
+
+
+def test_ve_box_shows_its_whole_auto_text_at_laptop_width(qgis_app, store_with_model,
+                                                         make_dock):
+    st, p, _ = store_with_model
+    dock = make_dock(st)
+    dock.open_profile(p.id)
+    dock.ve_spin.setSpecialValueText("Auto (12.5×)")
+    dock.ve_spin.setValue(dock.ve_spin.minimum())
+    dock.resize(1000, 420)                      # narrower than a 1280 px laptop panel
+    qgis_app.processEvents()
+    edit = dock.ve_spin.lineEdit()
+    assert edit.width() >= edit.fontMetrics().horizontalAdvance("Auto (12.5×)")
+
+
 def test_hiding_layer_triggers_refresh(qgis_app, store_with_model, make_dock):
     st, p, _ = store_with_model
     dock = make_dock(st); dock.open_profile(p.id)

@@ -87,6 +87,127 @@ class TextTable:
         return any(row[col].strip() and not np.isfinite(v) for row, v in zip(self.cells, values))
 
 
+    def raw(self, col: int) -> np.ndarray:
+        """Column ``col`` as floats with -inf and inf kept (coverage: no ray), NaN where the
+        cell is not a number."""
+        return np.array([_raw_number(row[col], self.decimal_comma) for row in self.cells],
+                        dtype=float)
+
+
+def _raw_number(cell: str, decimal_comma: bool) -> float:
+    """A cell as a float, -inf kept (coverage: no ray); NaN when empty or not a number."""
+    try:
+        return float(cell.replace(",", ".") if decimal_comma else cell)
+    except ValueError:
+        return float("nan")
+
+
+@dataclass
+class NumericTable:
+    """A table of numbers alone (``read_numbers``): what the column checks and the model
+    readers ask of a ``TextTable``, without a text cell per value."""
+    names: list[str]
+    values: np.ndarray                  # (rows, columns), -inf/inf as in the file
+    decimal_comma: bool = False
+
+    @property
+    def n_columns(self) -> int:
+        return len(self.names)
+
+    @property
+    def n_rows(self) -> int:
+        return len(self.values)
+
+    def numeric(self, col: int) -> np.ndarray:
+        v = self.values[:, col]
+        return np.where(np.isfinite(v), v, np.nan)
+
+    def raw(self, col: int) -> np.ndarray:
+        return self.values[:, col].copy()
+
+    def is_numeric(self, col: int) -> bool:
+        return bool(self.n_rows) and int(np.isfinite(self.numeric(col)).sum()) * 2 > self.n_rows
+
+    def has_text(self, col: int) -> bool:
+        return False
+
+
+def _first_lines(text: str, n: int) -> str:
+    """The first ``n`` lines of ``text`` (split at \\n), without splitting the rest."""
+    pos = -1
+    for _ in range(n):
+        pos = text.find("\n", pos + 1)
+        if pos < 0:
+            return text
+    return text[:pos]
+
+
+def _line_start(text: str, line_no: int) -> int:
+    """Index in ``text`` where file line ``line_no`` (1-based, split at \\n) begins."""
+    pos = -1
+    for _ in range(line_no - 1):
+        pos = text.find("\n", pos + 1)
+        if pos < 0:
+            return len(text)
+    return pos + 1
+
+
+def _lines_from(text: str, start: int, decimal_comma: bool):
+    """The lines of ``text`` from index ``start`` on, one at a time (commas as points when
+    ``decimal_comma``)."""
+    pos, end = start, len(text)
+    while pos < end:
+        nl = text.find("\n", pos)
+        line = text[pos:] if nl < 0 else text[pos:nl]
+        yield line.replace(",", ".") if decimal_comma else line
+        if nl < 0:
+            return
+        pos = nl + 1
+
+
+def read_numbers(path, options: TableOptions = TableOptions()) -> NumericTable | None:
+    """The whole table as numbers alone, with numpy's own parser: fast and lean for a big
+    model export. None when the table holds anything else (a text cell, a short row, a
+    decimal comma, a comment inside a row): ``read_table`` reads those."""
+    import warnings
+    import re
+    text = decode_bytes(Path(path).read_bytes())
+    if re.search("[\x0b\x0c\x1c-\x1e\x85  ]|\r(?!\n)", text):
+        return None             # line breaks other than \n: the line numbers below could slip
+    # only the first lines are split (splitting a 2-million-line file ran out of memory)
+    head = _content_lines(_first_lines(text, options.skip + _VOTE_LINES), options.skip)
+    if not head:
+        return None
+    delim, decimal = _resolve(options, head)
+    names: list[str] = []
+    first = head[0][0]                                  # file line of the first table line
+    if options.header:
+        names = _split(head[0][1], delim)
+        if len(head) < 2:
+            return None
+        first = head[1][0]
+    start = _line_start(text, first)
+    if text.find("#", start) >= 0 or text.find("//", start) >= 0:
+        return None
+    # the parser takes the table's lines one by one from the text read: no copy of a big
+    # file is made (decimal commas, which are never the delimiter here, become points per line)
+    lines = _lines_from(text, start, decimal)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")              # an empty table: not for us
+            values = np.loadtxt(lines, delimiter=None if delim == " " else delim,
+                                dtype=float, ndmin=2, comments=None)
+    except (ValueError, UserWarning):
+        return None
+    if not len(values):
+        return None
+    width = max(len(names), values.shape[1])
+    if len(names) > values.shape[1]:
+        return None                                     # named columns with no cells
+    names = [n or f"column {i}" for i, n in enumerate(names + [""] * (width - len(names)), 1)]
+    return NumericTable(names, values, decimal)
+
+
 def _content_lines(text: str, skip: int) -> list[tuple[int, str]]:
     out = []
     for no, raw in enumerate(text.splitlines(), 1):

@@ -475,6 +475,8 @@ class BoreholeViewer(QWidget):
         self.ve_spin.setToolTip(VE_TIP)
         self.ve_spin.setPrefix("VE ")
         self.ve_spin.setSuffix("×")
+        from .view_fit import keep_auto_text_whole
+        keep_auto_text_whole(self.ve_spin)
         fit_btn = QPushButton("Fit")
         style_btn = QPushButton("Borehole Style…")
         curve_btn = QPushButton("Curve Style…")

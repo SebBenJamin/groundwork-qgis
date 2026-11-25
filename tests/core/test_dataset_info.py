@@ -31,3 +31,13 @@ def test_with_info_keeps_detected_values_and_only_known_fields():
     assert d.provenance["rms_percent"] == 8.0
     assert set(INFO_FIELDS) == {"method", "array", "spacing", "date", "software", "reference",
                                 "note"}
+
+
+AVERAGED = {"block": [4, 5], "cell_file": [0.25, 0.1], "cell": [1.0, 0.5],
+            "n_points_file": 623241}
+
+
+def test_the_plate_line_says_the_cells_were_averaged():
+    d = _dataset(provenance={**AVERAGED, "rms_percent": 8.0})
+    assert provenance_line("T3", d) == "T3 · ERT model · averaged to 1 × 0.5 m cells · RMS 8.0 %"
+    assert "averaged" not in provenance_line("T3", _dataset(provenance={"rms_percent": 8.0}))

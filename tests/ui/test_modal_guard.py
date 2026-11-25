@@ -32,3 +32,20 @@ def test_monkeypatch_undo_in_a_test_keeps_the_guard(qgis_app, monkeypatch, no_mo
     with pytest.raises(pytest.fail.Exception, match="QMessageBox.warning"):
         QMessageBox.warning(None, "Title", "Text")
     no_modal_boxes.clear()
+
+
+@pytest.mark.parametrize("owner, name", [
+    ("QFileDialog", "getOpenFileName"), ("QFileDialog", "getOpenFileNames"),
+    ("QFileDialog", "getSaveFileName"), ("QFileDialog", "getExistingDirectory"),
+    ("QInputDialog", "getText"), ("QInputDialog", "getItem"),
+    ("QColorDialog", "getColor"), ("QFontDialog", "getFont"),
+])
+def test_static_pickers_fail_the_test_instead_of_waiting(qgis_app, no_modal_boxes, owner,
+                                                        name):
+    """They run their own event loop in C++, past the patched exec: an unstubbed file picker
+    once held the suite for 10 minutes."""
+    from qgis.PyQt import QtWidgets
+    with pytest.raises(pytest.fail.Exception, match="stub it"):
+        getattr(getattr(QtWidgets, owner), name)(None, "x")
+    assert no_modal_boxes == [f"{owner}.{name}"]
+    no_modal_boxes.clear()

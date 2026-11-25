@@ -20,3 +20,7 @@ The dialog also shows what the readers found in the files, e.g. the RMS of a mis
 > Transect 3 · ERT model: BERT inversion (Pohle et al. 2025) · dipole-dipole, 1 m spacing · RMS 8.0 %
 
 Only what is known is shown. An empty field is left out; nothing is guessed.
+
+A model read as [coarser cells](add-data.md) says so in the dialog, e.g. "averaged from
+623 241 cells of 0.25 × 0.1 m to 1 × 0.5 m", and its provenance line on a plate ends with
+"averaged to 1 × 0.5 m cells".

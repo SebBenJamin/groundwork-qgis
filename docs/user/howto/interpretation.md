@@ -48,7 +48,8 @@ While you draw:
 - a point above the ground line is put down on the ground.
 
 The first piece you draw on a profile adds the interpretation layers to the project (see
-[On the map and in 3D](#on-the-map-and-in-3d)).
+[On the map and in 3D](#on-the-map-and-in-3d)). If they are missing when the project is opened
+(removed, or saved without them), they are added again; untick them to hide them.
 
 ### Snapping
 

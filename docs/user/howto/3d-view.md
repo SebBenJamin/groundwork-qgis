@@ -90,8 +90,13 @@ changes when you change it there:
 | **Contours** | the contour lines, in **Contours in 3D** |
 | **Smooth + contours** | the point cloud and the contour lines |
 
-The colour scale and the coverage fade follow too: a faded cell stands see-through, a blanked
-one is left out, and the faded part of a point cloud is left out.
+The colour scale, the [interpolation](section-panel.md#interpolation) and the coverage fade
+follow too: a faded cell stands see-through, a blanked one is left out, and the faded part of a
+point cloud is left out.
+
+To see a whole survey alike in 3D, style one model, right-click it in the section's layer list
+→ **Apply Style to All Sections**, then tick the profiles in **Show in 3D…** with **As in the
+Section**.
 
 **Section pictures**: all models of a profile set to **Section Picture** are painted into one
 picture, stacked as the section stacks them, in the group **Section pictures in 3D**. With
@@ -141,8 +146,8 @@ A drag turns the view as usual, and QGIS's current 3D tool (identify, measure) s
 - **See-through of faded cells:** **Models in 3D** → **3D View** has two rules, **Cells** and
   **Faded cells (low coverage)**.
 - **Style a point cloud by value:** **Symbology** → **Attribute by Ramp** on **Log10Value** (or
-  **Value**). The point size and the **Maximum screen space error** (the plugin sets 0.5 px, so
-  distant curtains stay dense) are in its **3D View** properties.
+  **Value**). The point size and the **Maximum screen space error** (the plugin sets 0.1 px, so
+  distant curtains stay dense and in colour; a value you set stays) are in its **3D View** properties.
 - **Profile and borehole names:** each name's layer properties → **3D View** sets its text
   format or a callout line to the ground.
 - A style or size you set yourself stays when the plugin rebuilds a layer.

@@ -926,3 +926,29 @@ def test_one_failing_strip_leaves_the_other(project, profile):
     items = g.items_for(profile)
     g.close()
     assert [(b.label, b.strip, b.title) for b in items.band] == [("Sand", 1, "Second")]
+
+
+def test_the_boreholes_near_a_line_are_found_without_the_rest_of_its_context(project,
+                                                                             profile):
+    # Show in 3D… asks every profile whether its section shows boreholes; gathering the whole
+    # context (live geology strips, crossing lines, the DEM) for that took a minute
+    from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
+                                                            ContextSettings)
+    bh = _layer(project, "Point", "BH", "bid:string")
+    _add(bh, "POINT(40 3)", ["B1"])
+    _add(bh, "POINT(40 300)", ["FAR"])
+    geology = _layer(project, "Polygon", "Geo", "unit:string")
+    _add(geology, "POLYGON((-10 -10, 110 -10, 110 10, -10 10, -10 -10))", ["sand"])
+    g = _gatherer(project, ContextSettings(boreholes=[BoreholeSetting(bh.id(), "bid")],
+                                           bands=[BandSetting(geology.id(), "unit")]))
+    calls = []
+    g._band = lambda *a, **k: calls.append(1) or []
+    from groundwork_geophysics.core.model import Profile
+    other = Profile("p2", "P2", np.array([[0.0, 290.0], [100.0, 290.0]]), AUTH)
+    requests = []
+    real = g._point_features
+    g._point_features = lambda *a, **k: requests.append(1) or real(*a, **k)
+    keys = g.borehole_keys([profile, other])
+    g.close()
+    assert keys == {"p1": [(bh.id(), "B1")], "p2": [(bh.id(), "FAR")]} and calls == []
+    assert len(requests) == 1                   # one request per layer for all profiles

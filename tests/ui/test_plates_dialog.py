@@ -82,6 +82,47 @@ def test_create_writes_specs_and_layouts(env):
     assert again.plate_list.count() == 1 and again.current_plate().title == "Line A"
 
 
+def _page_mm(layout):
+    size = layout.pageCollection().page(0).pageSize()
+    return round(size.width()), round(size.height())
+
+
+def test_new_template_for_an_existing_plate_remakes_its_layout(env):
+    """The template used to apply only when the layout was first made: a plate switched to
+    portrait stayed landscape without a word. Now the dialog asks and makes it again."""
+    st, p, prov, prj = env
+    dlg = _dialog(st, prov, prj, panel_profile=p.id)
+    dlg.add_plate()
+    dlg.template.setCurrentIndex(dlg.template.findData("A3_landscape"))
+    dlg.add_frame()
+    dlg.create_plates()
+    [layout] = prj.layoutManager().printLayouts()
+    assert _page_mm(layout) == (420, 297)
+    asked = []
+    dlg.confirm_remake = lambda plate: asked.append(plate.title) or True
+    dlg.template.setCurrentIndex(dlg.template.findData("A3_portrait"))
+    assert len(asked) == 1
+    [layout] = prj.layoutManager().printLayouts()
+    assert _page_mm(layout) == (297, 420)
+    assert layout.itemById("wb_frame_1") is not None
+    assert dlg.current_plate().template == "A3_portrait"
+
+
+def test_declined_template_change_keeps_layout_and_setting(env):
+    st, p, prov, prj = env
+    dlg = _dialog(st, prov, prj, panel_profile=p.id)
+    dlg.add_plate()
+    dlg.template.setCurrentIndex(dlg.template.findData("A3_landscape"))
+    dlg.add_frame()
+    dlg.create_plates()
+    dlg.confirm_remake = lambda plate: False
+    dlg.template.setCurrentIndex(dlg.template.findData("A3_portrait"))
+    [layout] = prj.layoutManager().printLayouts()
+    assert _page_mm(layout) == (420, 297)
+    assert dlg.current_plate().template == "A3_landscape"
+    assert dlg.template.currentData() == "A3_landscape"
+
+
 def test_plate_details_checked_and_logo(env, tmp_path):
     from qgis.core import QgsExpressionContextUtils
 

@@ -1,7 +1,7 @@
 """Gridded display of section models: smooth fields, contour lines, coverage fade (no QGIS)."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -60,6 +60,8 @@ class Grid:
     values: np.ndarray      # (nz, nx) model values, nan where nothing is drawn
     cell: np.ndarray        # (nz, nx) mesh cell under each node, -1 outside the mesh,
     #                         ABOVE_GROUND above the topography
+    note: str = ""          # why the chosen method fell back to linear ("" when it did not)
+    fitted: dict = field(default_factory=dict)      # what the method fitted (kriging)
 
 
 def next_to_empty(grid, mesh) -> np.ndarray:
@@ -93,14 +95,23 @@ def grid_shape(mesh, cell: float | None, max_nodes: int = 250_000) -> tuple[int,
     smin, smax, zmin, zmax = mesh.bounds()
     width, height = max(smax - smin, 1e-9), max(zmax - zmin, 1e-9)
     if cell is None or cell <= 0:
-        size = np.sort(_longest_edges(mesh))
-        # finer than the mesh, so the field looks smooth; never absurdly fine
-        cell = max(float(np.median(size[:max(1, len(size) // 20)])) / 4, width / 1500)
+        cell = _auto_cell(mesh, width)
     nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
     while nx * nz > max_nodes:
         cell *= np.sqrt(nx * nz / max_nodes) * 1.01
         nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
     return max(nx, 2), max(nz, 2)
+
+
+def _auto_cell(mesh, width: float) -> float:
+    """The automatic grid cell of ``mesh`` (see ``grid_shape``), worked out once per mesh."""
+    memo = getattr(mesh, "_memo", {})
+    if "auto_cell" not in memo:
+        size = np.sort(_longest_edges(mesh))
+        # finer than the mesh, so the field looks smooth; never absurdly fine
+        memo["auto_cell"] = max(float(np.median(size[:max(1, len(size) // 20)])) / 4,
+                                width / 1500)
+    return memo["auto_cell"]
 
 
 def width_of(verts: np.ndarray) -> float:
@@ -120,18 +131,144 @@ def _merged(mesh) -> tuple[np.ndarray, np.ndarray]:
     return v[first], renum
 
 
+#: candidate (triangle, node) pairs tested at once by ``locate_nodes``: bounds its memory
+_LOCATE_CHUNK = 4_000_000
+
+
+def locate_nodes(verts: np.ndarray, tris: np.ndarray, s: np.ndarray, z: np.ndarray
+                 ) -> tuple[np.ndarray, np.ndarray]:
+    """For each node of the regular grid ``s`` x ``z`` (row by row, z outer): the triangle
+    of ``tris`` it lies in (-1 outside every one) and its barycentric weights (n, 3) there.
+    Each triangle tests only the nodes inside its bounding box; a node on an edge shared by
+    two triangles takes either (the linear values agree there)."""
+    nx, nz = len(s), len(z)
+    t = np.full(nx * nz, -1, dtype=np.int64)
+    w = np.zeros((nx * nz, 3))
+    if not len(tris) or nx < 1 or nz < 1:
+        return t, w
+    ds = (s[-1] - s[0]) / (nx - 1) if nx > 1 else 1.0
+    dz = (z[-1] - z[0]) / (nz - 1) if nz > 1 else 1.0
+    ds, dz = (d if d > 0 else 1.0 for d in (ds, dz))
+    ax, az = verts[tris[:, 0], 0], verts[tris[:, 0], 1]
+    bx, bz = verts[tris[:, 1], 0], verts[tris[:, 1], 1]
+    cx, cz = verts[tris[:, 2], 0], verts[tris[:, 2], 1]
+    xs, zs = np.stack([ax, bx, cx]), np.stack([az, bz, cz])
+    i0 = np.clip(np.ceil((xs.min(0) - s[0]) / ds - 1e-9), 0, nx).astype(np.int64)
+    i1 = np.clip(np.floor((xs.max(0) - s[0]) / ds + 1e-9), -1, nx - 1).astype(np.int64)
+    j0 = np.clip(np.ceil((zs.min(0) - z[0]) / dz - 1e-9), 0, nz).astype(np.int64)
+    j1 = np.clip(np.floor((zs.max(0) - z[0]) / dz + 1e-9), -1, nz - 1).astype(np.int64)
+    ni, nj = np.maximum(i1 - i0 + 1, 0), np.maximum(j1 - j0 + 1, 0)
+    n = ni * nj
+    det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz)
+    ends = np.cumsum(n)
+    k0 = 0
+    while k0 < len(tris):
+        before = int(ends[k0 - 1]) if k0 else 0
+        k1 = max(int(np.searchsorted(ends, before + _LOCATE_CHUNK, side="right")), k0 + 1)
+        nn = n[k0:k1]
+        total = int(nn.sum())
+        if total:
+            tri = np.repeat(np.arange(k0, k1), nn)
+            off = np.arange(total) - np.repeat(np.cumsum(nn) - nn, nn)
+            ii = i0[tri] + off % ni[tri]
+            jj = j0[tri] + off // ni[tri]
+            px, pz = s[ii] - cx[tri], z[jj] - cz[tri]
+            l1 = ((bz - cz)[tri] * px + (cx - bx)[tri] * pz) / det[tri]
+            l2 = ((cz - az)[tri] * px + (ax - cx)[tri] * pz) / det[tri]
+            l3 = 1.0 - l1 - l2
+            ok = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+            node = jj[ok] * nx + ii[ok]
+            t[node] = tri[ok]
+            w[node] = np.column_stack([l1[ok], l2[ok], l3[ok]])
+        k0 = k1
+    return t, w
+
+
+def _triangles(mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(merged vertices, renumbered cells, triangles, the cell of each triangle) of
+    ``mesh``: quads split in two, triangles without an area left out. Once per mesh."""
+    memo = getattr(mesh, "_memo", {})
+    if "triangles" not in memo:
+        verts, c = _merged(mesh)
+        quad = c[:, 3] >= 0
+        tris = np.vstack([c[:, :3], c[quad][:, [0, 2, 3]]])
+        tri_cell = np.concatenate([np.arange(len(c)), np.flatnonzero(quad)])
+        p0, p1, p2 = (verts[tris[:, k]] for k in range(3))
+        area = np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
+                      - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
+        good = area > 1e-12 * max(width_of(verts), 1.0) ** 2
+        memo["triangles"] = (verts, c, tris[good], tri_cell[good])
+    return memo["triangles"]
+
+
+def _located(mesh, verts, tris, s, z) -> tuple[np.ndarray, np.ndarray]:
+    """``locate_nodes`` for ``mesh``'s grid; the last grid is kept, so the coverage of a
+    fade (same mesh, same grid) and the 3D view's grid reuse it."""
+    memo = getattr(mesh, "_memo", {})
+    key = (len(s), float(s[0]), float(s[-1]), len(z), float(z[0]), float(z[-1]))
+    hit = memo.get("located")
+    if hit is None or hit[0] != key:
+        hit = (key, *locate_nodes(verts, tris, s, z))
+        memo["located"] = hit
+    return hit[1], hit[2]
+
+
 def _to_log(v: np.ndarray) -> np.ndarray:
     return np.log10(np.where(v > 0, v, np.nan))
 
 
+def cell_centres(mesh) -> np.ndarray:
+    """(n, 2) mean of each cell's own corners (a triangle's -1 left out). Once per mesh."""
+    memo = getattr(mesh, "_memo", {})
+    if "centres" not in memo:
+        c = mesh.cells
+        corners = mesh.vertices[np.maximum(c, 0)]                  # (n, 4, 2)
+        own = (c >= 0)[..., None]
+        memo["centres"] = (corners * own).sum(axis=1) / own.sum(axis=1)
+    return memo["centres"]
+
+
+def cell_aspect(mesh) -> float:
+    """Median cell width over median cell height: the default anisotropy of the gridding
+    methods (inversion meshes are wider than tall where the ground is layered)."""
+    v, c = mesh.vertices, mesh.cells
+    corners = v[np.maximum(c, 0)]
+    own = (c >= 0)[..., None]
+    big, small = np.where(own, corners, -np.inf), np.where(own, corners, np.inf)
+    size = big.max(axis=1) - small.min(axis=1)                    # (n, 2) width, height
+    w, h = float(np.median(size[:, 0])), float(np.median(size[:, 1]))
+    return max(w / h, 1e-3) if h > 0 else 1.0
+
+
+def _scattered(mesh, v, nodes, interp) -> tuple[np.ndarray, dict]:
+    """``interp``'s values at ``nodes`` (m, 2) from the cell centres with a value ``v``
+    (already in log10 on a log scale), and what it fitted. ValueError when it fails."""
+    from .interpolators import estimate_anisotropy, interpolate
+    ok = np.isfinite(v)
+    if not ok.any():
+        raise ValueError("no cell has a value")
+    points = cell_centres(mesh)[ok]
+    aniso = interp.anisotropy
+    if aniso is None:           # Auto: kriging reads it from the data, the others the cells
+        aniso = (estimate_anisotropy(points, v[ok], interp.variogram)
+                 if interp.method == "kriging" else cell_aspect(mesh))
+    out, fitted = interpolate(points, v[ok], nodes, interp, aniso)
+    if not np.isfinite(out).all():
+        raise ValueError("it gave values that are not numbers")
+    return out, fitted
+
+
 def grid_model(mesh, topo, shape, log: bool, values=None,
-               fill_to_ground: bool = False) -> Grid:
+               fill_to_ground: bool = False, interp=None) -> Grid:
     """The mesh's values (or ``values`` per cell) on a regular grid. Cell values are
     averaged onto the mesh vertices and interpolated linearly inside each cell (in log10
     when ``log``). Nodes outside every cell, in a cell without a value, or above ``topo``
-    (s, z) stay nan: never extrapolates past the mesh or bridges gaps."""
-    import matplotlib.tri as mtri
+    (s, z) stay nan: never extrapolates past the mesh or bridges gaps.
 
+    ``interp`` (``core.interpolators.Interpolation``, None = linear) chooses another method:
+    the cell centres are interpolated onto the nodes that lie in a cell with a value; the
+    masks stay the same. A method that fails falls back to linear and says why in
+    ``Grid.note``."""
     nx, nz = shape
     smin, smax, zmin, zmax = mesh.bounds()
     s = np.linspace(smin, smax, nx)
@@ -147,23 +284,10 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
         top = zmin + dz * (nz - 1)
     z = np.linspace(zmin, top, nz)
     S, Z = np.meshgrid(s, z)
-    verts, c = _merged(mesh)
-    quad = c[:, 3] >= 0
-    tris = np.vstack([c[:, :3], c[quad][:, [0, 2, 3]]])
-    tri_cell = np.concatenate([np.arange(len(c)), np.flatnonzero(quad)])
-    p0, p1, p2 = (verts[tris[:, k]] for k in range(3))
-    area = np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
-                  - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
-    good = area > 1e-12 * max(width_of(verts), 1.0) ** 2
-    tris, tri_cell = tris[good], tri_cell[good]
+    verts, c, tris, tri_cell = _triangles(mesh)
     if not len(tris):
         raise ValueError("cannot grid this mesh: it has no cell with an area")
-    try:
-        tri_mesh = mtri.Triangulation(verts[:, 0], verts[:, 1], tris)
-        finder = tri_mesh.get_trifinder()
-        t = finder(S.ravel(), Z.ravel())
-    except (RuntimeError, ValueError) as exc:
-        raise ValueError(f"cannot grid this mesh: {exc}") from exc
+    t, weights = _located(mesh, verts, tris, s, z)
     cell = np.where(t >= 0, tri_cell[np.maximum(t, 0)], -1).reshape(S.shape)
 
     v = np.asarray(mesh.values if values is None else values, float)
@@ -183,15 +307,26 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
     inside = cell >= 0
     if np.isfinite(vert).any():
         filled = np.where(np.isfinite(vert), vert, 0.0)
-        interp = mtri.LinearTriInterpolator(tri_mesh, filled, trifinder=finder)
-        smooth = np.ma.filled(interp(S[inside], Z[inside]).astype(float), np.nan)
-        out[inside] = smooth
+        flat = inside.ravel()
+        out[inside] = (weights[flat] * filled[tris[t[flat]]]).sum(axis=1)
     own = v[cell[inside]]
     corner_nan = np.zeros(len(tris), bool)
     corner_nan |= ~np.isfinite(vert[tris]).all(axis=1)
     bad = corner_nan[np.maximum(t.reshape(S.shape)[inside], 0)]
     out[inside] = np.where(bad, own, out[inside])          # next to empty cells: own value
     out[inside] = np.where(np.isfinite(own), out[inside], np.nan)      # empty cells stay empty
+    note, fitted = "", {}
+    if interp is not None and not interp.is_linear:
+        # another method: the same nodes (in a cell with a value), other values
+        nodes = inside & np.isfinite(out)
+        try:
+            new, fitted = _scattered(mesh, v, np.column_stack([S[nodes], Z[nodes]]), interp)
+            out[nodes] = new
+        except (ValueError, np.linalg.LinAlgError, MemoryError) as exc:
+            from .interpolators import METHOD_NAMES
+            why = "not enough memory" if isinstance(exc, MemoryError) else str(exc)
+            note = (f"{METHOD_NAMES.get(interp.method, interp.method)} could not be used "
+                    f"here ({why}): the field is gridded linearly instead.")
     if fill_to_ground and has_topo:
         # flat-topped cells leave steps under the ground line: fill each column upward from
         # its top valid node to the ground (the surface layer reaches the surface)
@@ -211,7 +346,7 @@ def grid_model(mesh, topo, shape, log: bool, values=None,
         cell = np.where(above, ABOVE_GROUND, cell)
     if log:
         out = np.power(10.0, out)
-    return Grid(s, z, out, cell)
+    return Grid(s, z, out, cell, note, fitted)
 
 
 def _nice(x: float) -> float:

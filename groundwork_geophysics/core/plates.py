@@ -35,6 +35,8 @@ class ModelLook:
     shown: str | None = None                            # readings: misfit/measured/calculated
     contour_major: list = field(default_factory=list)   # typed levels (model's unit)
     contour_minor: list = field(default_factory=list)
+    #: how the smooth field is gridded (``Interpolation.to_dict``); None = linear
+    interpolation: dict | None = None
 
 
 @dataclass
@@ -148,7 +150,13 @@ def _model(d) -> ModelLook | None:
                      _num(d.get("grid_cell")), bool(d.get("fade_coverage", False)),
                      _num(d.get("coverage_threshold")), text("fade_mode", "fade"),
                      text("shown", None), _levels(d.get("contour_major")),
-                     _levels(d.get("contour_minor")))
+                     _levels(d.get("contour_minor")),
+                     d.get("interpolation") if isinstance(d.get("interpolation"), dict)
+                     else None)
+
+
+#: a model's look from its stored dict, or None when unusable (the section styles use it too)
+model_look_from_dict = _model
 
 
 def _levels(v) -> list:

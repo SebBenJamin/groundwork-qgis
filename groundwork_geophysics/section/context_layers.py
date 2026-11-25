@@ -183,6 +183,30 @@ class ContextGatherer:
         items.points.sort(key=lambda p: p.s)
         return items
 
+    def borehole_keys(self, profiles: list[Profile]) -> dict[str, list]:
+        """Per profile id: ``borehole_key`` of each borehole within the search distance of
+        its line (None for one without an id), read from the borehole layers alone (no logs,
+        DEM, strips or crossing lines), one request per layer for all ``profiles``. Show in
+        3D… asks this for every profile; a live layer once per profile took seconds each."""
+        out: dict[str, list] = {p.id: [] for p in profiles}
+        if not profiles:
+            return out
+        settings = read_settings(self._project)
+        pad = settings.buffer
+        xy_all = np.vstack([p.chainage.xy for p in profiles])
+        box = QgsRectangle(xy_all[:, 0].min() - pad, xy_all[:, 1].min() - pad,
+                           xy_all[:, 0].max() + pad, xy_all[:, 1].max() + pad)
+        for b in settings.boreholes:
+            def found_near(b=b):
+                layer = self._vector(b.layer_id, "point", (b.id_field,))
+                return self._point_features(layer, box, (b.id_field,))
+            found = self._try(b.layer_id, "borehole layer", found_near) or []
+            for p in profiles:
+                out[p.id] += [(b.layer_id, _id_text(f[b.id_field]))
+                              if _id_text(f[b.id_field]) else None
+                              for (f, _xy), _so in _project(p.chainage.xy, found, pad)]
+        return out
+
     def close(self) -> None:
         self._timer.stop()
         self._unwatch()

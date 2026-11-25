@@ -142,6 +142,32 @@ class MapLink:
         self.tool = ProfilePickTool(self.map_canvas, dock)
         dock.cursor_moved.connect(self._cursor_moved)
         dock.cursor_left.connect(self._cursor_left)
+        dock.zoom_map_requested.connect(self.zoom_to_profile)
+
+    def zoom_to_profile(self, profile_id: str) -> None:
+        """Zoom the map to the profile's line with a margin, and flash the line."""
+        from qgis.core import QgsGeometry, QgsRectangle
+        try:
+            profile = self.dock.provider.store.profile(profile_id)
+        except (AttributeError, KeyError):
+            return
+        xy = profile.chainage.xy
+        store_crs = _store_crs(self.dock)
+        box = QgsRectangle(float(xy[:, 0].min()), float(xy[:, 1].min()),
+                           float(xy[:, 0].max()), float(xy[:, 1].max()))
+        tr = _transform(store_crs, self.map_canvas.mapSettings().destinationCrs())
+        if tr is not None:
+            try:
+                box = tr.transformBoundingBox(box)
+            except Exception:                           # outside the CRS' valid area
+                return
+        # a margin of a fifth of the line's longer side on each side, at least 10 map units
+        # (a short, straight N–S or E–W line has a box of zero width)
+        margin = max(0.2 * max(box.width(), box.height()), 10.0)
+        self.map_canvas.setExtent(box.buffered(margin))
+        self.map_canvas.refresh()
+        line = QgsGeometry.fromPolylineXY([QgsPointXY(float(x), float(y)) for x, y in xy])
+        self.map_canvas.flashGeometries([line], store_crs)
 
     def _cursor_moved(self, s: float, _z: float) -> None:
         profile = self.dock.current_profile()
@@ -169,6 +195,7 @@ class MapLink:
         try:
             self.dock.cursor_moved.disconnect(self._cursor_moved)
             self.dock.cursor_left.disconnect(self._cursor_left)
+            self.dock.zoom_map_requested.disconnect(self.zoom_to_profile)
         except (TypeError, RuntimeError):           # dock already gone
             pass
         if self.tool is not None:
