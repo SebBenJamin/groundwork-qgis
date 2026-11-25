@@ -8,9 +8,8 @@ Writes under demo_guelpe/:
   data/ert/T{1..4}/dcinv.result.vtk   the authors' BERT inversions, byte-for-byte
   data/stations/T{1..4}_electrodes.csv all DGPS points (number,x,y,z), checked against the
                                       BERT electrode file (guelpe_data.match_electrodes)
-  context/cores.gpkg                  the 24 cores (layer cores, table core_logs)
-  context/synthetic_logs.gpkg         SYNTHETIC log curves for the cores (NOT measured;
-                                      scripts/make_synthetic_curves.py)
+  context/cores.gpkg                  the 24 cores (layer cores, table core_logs) and the
+                                      lab values of their samples (table core_lab)
   context/dgm1.tif                    DGM1 cropped to the transects + 100 m
   guelpe_groundwork.gpkg              store: Transect 1-4, one model each
   guelpe_project.qgz                  QGIS project (EPSG:25833), every path relative
@@ -29,7 +28,6 @@ import numpy as np
 
 import demo_extra
 import guelpe_data
-import make_synthetic_curves
 from fetch_demo_guelpe import CACHE, ERT_FILES, TRANSECTS_BBOX, dgm_tiles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +47,9 @@ GK_WMS = "https://inspire.brandenburg.de/services/gk_wms"
 GEOLOGY_MARGIN = 1500.0      # m around the transects: the GK 25 units the legend lists
 DOP_WMS = "https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms"
 TITLE = "Groundwork real-data demo: Gülpe (Havel)"
+#: the cores' lab values shown as curves (the table has all of guelpe_data.LAB_FIELDS)
+LAB_CURVES = ("toc", "tic", "sand", "silt", "clay")
+LAB_LAYER_NAME = "Core lab values (Köhler et al. 2025)"
 ATTRIBUTION = """# Sources and licences
 
 This demo uses only open data. Files marked *derived* were converted from the source
@@ -63,11 +64,11 @@ without changing its values.
 - **Cores**: Köhler, A.; Kaniecki, M.; Schneider, B.; Zielhofer, C. (2025): Field based and
   laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
   https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =
-  grain-size class and texture code; core-loss rows marked "offset" left out).
-- **Synthetic curves** (`context/synthetic_logs.gpkg`, layer "Synthetic curves (NOT measured)"):
-  made up for the demo, **not measured**. The cores have no geophysical logs; these seeded
-  random values only show how log curves look in the borehole viewer
-  (scripts/make_synthetic_curves.py).
+  grain-size class and texture code; core-loss rows marked "offset" left out). Its table
+  `core_lab` holds the lab values of the 62 core samples (C, N, S and grain-size fractions)
+  unchanged, each at the middle of its sample (to the centimetre) with the sample's top and
+  bottom; `sand`, `silt` and `clay` are the sums of their fractions (*derived*). Sulfur given
+  as "<0.0020" (below detection, five RK15 samples) is left empty.
 - Both are part of: Köhler, A. et al. (2025): Geophysical, Sedimentological and Geochemical Data
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
@@ -100,7 +101,7 @@ def _unzip_member(zf: zipfile.ZipFile, suffix: str, target: Path) -> Path:
 def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
     """Models, stations, cores and DGM1 from the cache (no QGIS)."""
     for sub in ("data", "context/cores.gpkg", "context/synthetic_logs.gpkg", "context/dgm1.tif",
-                "context/state_boreholes.gpkg"):
+                "context/state_boreholes.gpkg"):     # synthetic_logs: from builds before 0.16
         p = out / sub
         shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -120,10 +121,10 @@ def build_data(cache: Path = CACHE, out: Path = DEMO_GUELPE) -> None:
             _unzip_member(zf, "_topo.data", out / "data/ert/T3/T3_measured.data")
         for name in ("T3_response.vector", "T3_pygimli.json"):
             shutil.copy(MISFIT_INPUTS / name, out / "data/ert/T3" / name)
-    sites, logs = guelpe_data.parse_cores((cache / "cores.tab").read_text(encoding="utf-8"))
+    cores_text = (cache / "cores.tab").read_text(encoding="utf-8")
+    sites, logs = guelpe_data.parse_cores(cores_text)
     guelpe_data.write_cores_gpkg(out / "context/cores.gpkg", sites, logs)
-    make_synthetic_curves.write(out / "context/synthetic_logs.gpkg",
-                                make_synthetic_curves.read_logs(out / "context/cores.gpkg"))
+    guelpe_data.write_lab_table(out / "context/cores.gpkg", guelpe_data.parse_samples(cores_text))
     guelpe_data.mosaic_dgm([cache / "dgm" / f"{t}.zip" for t in dgm_tiles(TRANSECTS_BBOX)],
                            TRANSECTS_BBOX, out / "context/dgm1.tif")
     # a copy around the transects, not the live state-wide WFS: a QGIS 3D view asks a web
@@ -276,18 +277,18 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
                           geology: str, geology_field: str | None, dem: str,
                           guek: str = "", guek_field: str | None = None):
     """The demo's Context layers settings (layer ids in): the cores with their logs and the
-    synthetic curves, and the LBGR boreholes as a second entry drawn to their total depth."""
+    lab values of their samples as curves, and the LBGR boreholes as a second entry drawn to
+    their total depth."""
     from groundwork_geophysics.core.context_settings import (BandSetting, BoreholeSetting,
                                                             ContextSettings, CurveField,
                                                             CurveTableSetting, LineLayerSetting)
-    synthetic = CurveTableSetting(curves, "core_id", "depth",
-                                  [CurveField("gamma_synthetic", "API (synthetic)"),
-                                   CurveField("cond_synthetic", "mS/m (synthetic)")])
+    lab = CurveTableSetting(curves, "core_id", "depth",
+                            [CurveField(name, "%") for name in LAB_CURVES])
     return ContextSettings(
         line_layers=[LineLayerSetting(water, "name", checked=True)],
         point_layers=[],
         boreholes=[BoreholeSetting(cores, "id", "elevation", logs, "core_id", "top", "bottom",
-                                   "lithology", curve_tables=[synthetic]),
+                                   "lithology", curve_tables=[lab]),
                    BoreholeSetting(bpk, "Bohrungsname", total_depth_field="Teufe_in_m")],
         bands=([BandSetting(guek, guek_field, "GÜK 300")] if guek_field else [])
         + ([BandSetting(geology, geology_field, "GK 25")] if geology_field else []),
@@ -380,9 +381,8 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
                                   "outline_color": "20,20,20", "size": "2.6"})
         demo_extra._labels(cores, '"id"', 8.0, (20, 20, 20))
         logs = QgsVectorLayer(f"{ctx / 'cores.gpkg'}|layername=core_logs", "Core logs", "ogr")
-        curves = QgsVectorLayer(f"{ctx / 'synthetic_logs.gpkg'}|layername="
-                                f"{make_synthetic_curves.LAYER}",
-                                "Synthetic curves (NOT measured)", "ogr")
+        curves = QgsVectorLayer(f"{ctx / 'cores.gpkg'}|layername={guelpe_data.LAB_TABLE}",
+                                LAB_LAYER_NAME, "ogr")
         state = ctx / "state_boreholes.gpkg"
         bpk = QgsVectorLayer(f"{state}|layername=with_log", "State boreholes with log (LBGR)",
                              "ogr")

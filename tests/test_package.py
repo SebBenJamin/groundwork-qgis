@@ -160,11 +160,11 @@ def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
     fresh = root / ".cache" / "test_guelpe_fresh"
     shutil.rmtree(fresh, ignore_errors=True)
     shutil.copytree(root / "demo_guelpe", fresh)
-    (fresh / "context" / "synthetic_logs.gpkg").write_bytes(b"x")
+    (fresh / "context" / "only_in_the_build.gpkg").write_bytes(b"x")
     try:
         zips = package.build(tmp_path, guelpe_src=fresh)
         names = zipfile.ZipFile(zips[2]).namelist()
-        assert "context/synthetic_logs.gpkg" in names and "guelpe_project.qgz" in names
+        assert "context/only_in_the_build.gpkg" in names and "guelpe_project.qgz" in names
     finally:
         shutil.rmtree(fresh, ignore_errors=True)
 

@@ -97,3 +97,51 @@ def test_mosaic_dgm_crops_and_keeps_1m(tmp_path):
     assert gt[1] == 1.0 and gt[0] == 8.0 and ds.RasterXSize == 24 and ds.RasterYSize == 14
     ds = None
     assert not list(tmp_path.glob("*.aux.xml"))
+
+
+def test_lab_samples_keep_the_authors_values():
+    """The cores' lab values (C/N/S and grain sizes) per sample, from the same table."""
+    from guelpe_data import LAB_FIELDS, parse_samples
+    samples = parse_samples(FIXTURE("cores_lab_snippet.tab"))
+    assert [s[:4] for s in samples] == [("RK1", 0.30, 0.41, "G_RK1_1"),
+                                        ("RK1", 0.41, 0.60, "G_RK1_2")]
+    first = samples[0][4]
+    assert (first["tn"], first["tc"], first["tic"], first["toc"], first["ts"]) == (
+        0.6066, 9.209, 0.0, 9.209, 0.4352)
+    assert first["fc_lt0_2um"] == 18.6                  # the finest fraction, as given
+    # sand, silt and clay are the sums of their fractions (derived)
+    assert first["sand"] == pytest.approx(0.2 + 1.6 + 3.5 + 12.6)
+    assert first["silt"] == pytest.approx(9.9 + 8.2 + 12.4)
+    assert first["clay"] == pytest.approx(16.7 + 14.6 + 18.6)
+    assert set(first) == {f for f, _u, _d in LAB_FIELDS}
+
+
+def test_lab_table_written_beside_the_cores(tmp_path):
+    from osgeo import ogr
+
+    from guelpe_data import LAB_TABLE, parse_samples, write_cores_gpkg, write_lab_table
+    sites, logs = parse_cores(FIXTURE("cores_snippet.tab"))
+    path = tmp_path / "cores.gpkg"
+    write_cores_gpkg(path, sites, logs)
+    write_lab_table(path, parse_samples(FIXTURE("cores_lab_snippet.tab")))
+    with ogr.ExceptionMgr():
+        ds = ogr.Open(str(path))
+        assert ds.GetLayerByName("cores").GetFeatureCount() == 3     # the cores stay
+        table = ds.GetLayerByName(LAB_TABLE)
+        rows = [(f["core_id"], f["depth"], f["top"], f["bottom"], f["sample_id"], f["toc"])
+                for f in table]
+    # depth: the sample's middle, to the centimetre; top and bottom as the authors give them
+    assert rows == [("RK1", 0.36, 0.30, 0.41, "G_RK1_1", 9.209),
+                    ("RK1", 0.51, 0.41, 0.60, "G_RK1_2", 4.9604)]
+
+
+def test_a_value_below_the_detection_limit_is_a_gap():
+    """"<0.0020" (sulfur below detection in RK15) stays empty: no number is made up for it,
+    and the grain sizes of that sample still add up."""
+    from guelpe_data import parse_samples
+    lines = FIXTURE("cores_lab_snippet.tab").splitlines()
+    cols = lines[-1].split("\t")
+    cols[20] = "<0.0020"
+    [_, sample] = parse_samples("\n".join(lines[:-1] + ["\t".join(cols)]) + "\n")
+    assert "ts" not in sample[4] and sample[4]["toc"] == 4.9604
+    assert sample[4]["clay"] > 0

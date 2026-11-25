@@ -12,11 +12,11 @@ without changing its values.
 - **Cores**: Köhler, A.; Kaniecki, M.; Schneider, B.; Zielhofer, C. (2025): Field based and
   laboratory data of sediment cores from the Lower Havel Inner Delta near Lake Gülpe. PANGAEA,
   https://doi.org/10.1594/PANGAEA.983887. `context/cores.gpkg` (*derived*: layer label =
-  grain-size class and texture code; core-loss rows marked "offset" left out).
-- **Synthetic curves** (`context/synthetic_logs.gpkg`, layer "Synthetic curves (NOT measured)"):
-  made up for the demo, **not measured**. The cores have no geophysical logs; these seeded
-  random values only show how log curves look in the borehole viewer
-  (scripts/make_synthetic_curves.py).
+  grain-size class and texture code; core-loss rows marked "offset" left out). Its table
+  `core_lab` holds the lab values of the 62 core samples (C, N, S and grain-size fractions)
+  unchanged, each at the middle of its sample (to the centimetre) with the sample's top and
+  bottom; `sand`, `silt` and `clay` are the sums of their fractions (*derived*). Sulfur given
+  as "<0.0020" (below detection, five RK15 samples) is left empty.
 - Both are part of: Köhler, A. et al. (2025): Geophysical, Sedimentological and Geochemical Data
   from the Lower Havel Inner Delta (Gülpe Island), Brandenburg (Germany). PANGAEA,
   https://doi.org/10.1594/PANGAEA.983208; data paper: Data in Brief 112372,
