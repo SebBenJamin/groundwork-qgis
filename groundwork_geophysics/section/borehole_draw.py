@@ -195,6 +195,12 @@ def _ticks(painter, rc, col: QRectF, y_of_depth, depth: float) -> None:
                                  y + fm.ascent() / 2 - 1), text)
 
 
+def track_header_px(font: QFont) -> float:
+    """How far a curve track's header (its name and scale lines) reaches above the track."""
+    from qgis.PyQt.QtGui import QFontMetricsF
+    return 2 * QFontMetricsF(font).height() + 2
+
+
 def layer_text_width(p, font: QFont) -> float:
     """How far right of the column (and its tracks) ``p``'s layer text reaches: the gap and
     the widest text; 0 when no layer has text."""

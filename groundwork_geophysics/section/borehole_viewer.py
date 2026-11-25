@@ -27,7 +27,8 @@ from ..core.borehole_layout import (ViewTransform, column_depth, even_gap, exten
 from ..core.context import borehole_key, collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
 from .borehole_draw import (ColumnOptions, SymbolPool, draw_borehole, draw_flag,
-                            layer_text_width, shown_curve_keys, text_font)
+                            layer_text_width, shown_curve_keys, text_font,
+                            track_header_px)
 from ..core.numbers import fmt
 from ..ids import LEGACY_ID
 
@@ -213,6 +214,7 @@ class BoreholeCanvas(QWidget):
         styles = v.items.curve_styles if v.items is not None else {}
         ranges = v.curve_ranges(keys)
         xs = self._x_layout(points)
+        header = track_header_px(text_font(painter, rc))   # above a borehole's curve tracks
         pending = []                      # labels, placed after all columns (no overlaps)
         with SymbolPool(rc) as pool:      # each interval symbol started once per frame
             for p, x in zip(points, xs):
@@ -245,7 +247,8 @@ class BoreholeCanvas(QWidget):
                 self.column_rects.append((p, col))
                 if v.show_check["flags"].isChecked() and p.flagged:
                     draw_flag(painter, px, col.top(), 5.0)
-                pending.append((p, px, col.top(), z_top, highlight))
+                label_y = col.top() - (header if shown_curve_keys(p, keys) else 0.0)
+                pending.append((p, px, label_y, z_top, highlight))
         self._draw_labels(painter, pending)
         self._axis(painter)
         if v.mode == "true":

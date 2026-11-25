@@ -62,3 +62,19 @@ def test_reserved_and_odd_mnemonics_become_plain_field_names(qgis_app, tmp_path)
                          LasCurve("RES-DEEP:1", "OHMM", "", np.array([2.0]))])
     _t, curves = write_las_table(tmp_path / "p.gpkg", [("A", log, 0)])
     assert [c for c, _u in curves] == ["id_log", "res_deep_1"]
+
+
+def test_two_files_of_one_well_share_rows_at_the_same_depth(qgis_app, tmp_path):
+    """A well logged in two runs (e.g. caliper, then gamma + resistivity) on the same depth
+    grid: one row per depth with both curves, so neither curve breaks into dots."""
+    from groundwork_geophysics.core.las_log import LasCurve, LasLog
+    from groundwork_geophysics.store.las_table import write_las_table
+    cal = LasLog(well="W", depth=np.array([1.0, 1.5, 2.0]),
+                 curves=[LasCurve("CALI", "IN", "", np.array([6.0, 6.1, 6.2]))])
+    gam = LasLog(well="W", depth=np.array([1.5, 2.0, 2.5]),
+                 curves=[LasCurve("GR", "API", "", np.array([50.0, np.nan, 70.0]))])
+    gpkg = tmp_path / "p.gpkg"
+    table, _curves = write_las_table(gpkg, [("W1", cal, 0.0), ("W1", gam, 0.0)])
+    _names, rows = _rows(gpkg, table)
+    got = [(r["depth"], r["cali"], r["gr"]) for r in rows]
+    assert got == [(1.0, 6.0, None), (1.5, 6.1, 50.0), (2.0, 6.2, None), (2.5, None, 70.0)]

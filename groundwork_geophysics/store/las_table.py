@@ -71,21 +71,29 @@ def write_las_table(gpkg: Path, entries) -> tuple[str, list[tuple[str, str]]]:
         for name, _unit in columns:
             lyr.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
         defn = lyr.GetLayerDefn()
-        lyr.StartTransaction()
+        # one row per borehole and depth: runs of one well on the same depth grid share
+        # rows (else each curve would have an empty value at the other run's depths and
+        # break into dots); a later file only fills fields still empty
+        rows: dict[tuple[str, float], dict] = {}
         for bid, log, offset in entries:
             fields = [(by_curve[(c.mnemonic.upper(), c.unit.upper())], c.values)
                       for c in log.curves]
             for i, d in enumerate(np.asarray(log.depth, dtype=float)):
                 if not np.isfinite(d):
                     continue
-                f = ogr.Feature(defn)
-                f["id"] = str(bid)
-                f["depth"] = float(d) - float(offset or 0.0)
+                depth = float(d) - float(offset or 0.0)
+                row = rows.setdefault((str(bid), round(depth, 6)), {"depth": depth})
                 for name, values in fields:
                     v = float(values[i])
-                    if np.isfinite(v):
-                        f[name] = v
-                lyr.CreateFeature(f)
+                    if np.isfinite(v) and name not in row:
+                        row[name] = v
+        lyr.StartTransaction()
+        for (bid, _key), row in sorted(rows.items()):
+            f = ogr.Feature(defn)
+            f["id"] = bid
+            for name, value in row.items():
+                f[name] = value
+            lyr.CreateFeature(f)
         lyr.CommitTransaction()
         return table, columns
     finally:
