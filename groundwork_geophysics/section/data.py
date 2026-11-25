@@ -500,6 +500,30 @@ def _forget_others(kept: Path, dataset_id: str) -> None:
         pass
 
 
+@dataclass
+class ReadJob:
+    """One model read, prepared on the main thread so that any thread can run it."""
+    dataset_id: str
+    name: str
+    profile_name: str
+    path: str
+    reader: str | None
+    options: dict
+    key: tuple
+    cache_file: Path
+
+
+def run_job(job: ReadJob) -> readers.ReaderResult:
+    """Read ``job`` (any thread): from the remembered read when there is one, else from the
+    file, which is then remembered."""
+    result = load_result(job.cache_file)
+    if result is None:
+        result = readers.read(job.path, reader=job.reader, **job.options)
+        if save_result(job.cache_file, result):
+            _forget_others(job.cache_file, job.dataset_id)
+    return result
+
+
 class SectionDataProvider:
     """Assembles the section layers of each profile from a ``ProjectStore``."""
 
@@ -987,6 +1011,17 @@ class SectionDataProvider:
         """Reader result in data coordinates (map-coordinate files: in ``profile``'s
         chainage), cached per dataset until the file, the options or, for a map file, the
         profile's line change. Raises FileNotFoundError / ValueError / OSError."""
+        job = self._job(d, profile)
+        hit = self._cache.get(d.id)
+        if hit is not None and hit[0] == job.key:
+            return hit[1]
+        result = run_job(job)
+        self.take(job, result)
+        return result
+
+    def _job(self, d: Dataset, profile: Profile | None) -> "ReadJob":
+        """What reading ``d`` needs, worked out on the main thread (the distance function of
+        a map file is made here). Raises FileNotFoundError / ValueError / OSError."""
         path = self.source_path(d)
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
@@ -998,22 +1033,35 @@ class SectionDataProvider:
         st = os.stat(path)
         key = (d.id, st.st_mtime, json.dumps(d.reader_options, sort_keys=True),
                path, d.reader, _companion_mtime(path, d.reader_options), line, st.st_size)
-        hit = self._cache.get(d.id)
-        if hit is not None and hit[0] == key:
-            return hit[1]
-        kept = _cache_file(self.store, d.id, key)
-        result = load_result(kept)
-        if result is None:
-            options = read_options(d.reader_options)
-            if on_map:
-                options["xy_to_distance"] = xy_to_distance_on(
-                    profile, str(d.reader_options["columns"].get("crs") or ""),
-                    self.store.crs_authid)
-            result = readers.read(path, reader=d.reader or None, **options)
-            if save_result(kept, result):
-                _forget_others(kept, d.id)
-        self._cache[d.id] = (key, result)
-        return result
+        options = read_options(d.reader_options)
+        if on_map:
+            options["xy_to_distance"] = xy_to_distance_on(
+                profile, str(d.reader_options["columns"].get("crs") or ""),
+                self.store.crs_authid)
+        return ReadJob(d.id, d.name or d.id, "" if profile is None else (profile.name or ""),
+                       path, d.reader or None, options, key,
+                       _cache_file(self.store, d.id, key))
+
+    def unread(self, profile_ids) -> list["ReadJob"]:
+        """The reads ``profile_ids``' datasets still need (their current file, options and
+        line are not in memory). A dataset that cannot be read is left out: drawing the
+        section reports it."""
+        out = []
+        for pid in profile_ids:
+            profile = self._profile(pid)
+            for d in self.store.datasets(pid):
+                try:
+                    job = self._job(d, profile)
+                except Exception:               # noqa: BLE001 - reported when drawn
+                    continue
+                hit = self._cache.get(d.id)
+                if hit is None or hit[0] != job.key:
+                    out.append(job)
+        return out
+
+    def take(self, job: "ReadJob", result: readers.ReaderResult) -> None:
+        """Keep a read made elsewhere (a reading task) as ``job``'s result."""
+        self._cache[job.dataset_id] = (job.key, result)
 
     def _place(self, d: Dataset, dmap: DistanceMap | None,
                profile: Profile | None = None) -> tuple[SectionMesh, str]:
