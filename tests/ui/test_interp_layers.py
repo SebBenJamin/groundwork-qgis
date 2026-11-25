@@ -38,6 +38,38 @@ def test_add_interp_layers_once(qgis_app, interp_store):
     prj.clear()
 
 
+def test_opening_a_project_without_the_layers_adds_them(qgis_app, interp_store):
+    """A saved project that lacks the interpretation layers gets them on opening, holding
+    the stored pieces at once (not only after the next edit)."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.interp_layers import interp_layers
+    from groundwork_geophysics.ui.project_actions import attach_store, write_store_entry
+
+    prj = QgsProject()
+    write_store_entry(prj, interp_store.path)
+    st = attach_store(prj)
+    layers = interp_layers(st, prj)
+    assert len(layers) == 5
+    assert layers["interp_polygons_3d"].featureCount() == 1
+    assert len(attach_store(prj) and interp_layers(st, prj)) == 5      # not added twice
+    assert len(prj.mapLayers()) == 5
+    prj.clear()
+
+
+def test_opening_a_project_without_interpretation_adds_no_layers(qgis_app, tmp_path):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    from groundwork_geophysics.ui.project_actions import attach_store, write_store_entry
+
+    prj = QgsProject()
+    write_store_entry(prj, ProjectStore.create(tmp_path / "w.gpkg", "EPSG:25832").path)
+    attach_store(prj)
+    assert prj.mapLayers() == {}
+    prj.clear()
+
+
 def test_interp_layers_are_not_crossing_line_candidates(qgis_app, interp_store):
     from qgis.core import QgsProject
 
