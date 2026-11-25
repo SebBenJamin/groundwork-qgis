@@ -882,7 +882,9 @@ class WorkbenchPlugin:
         project = QgsProject.instance()
         dialog = ContextDialog(self.iface, project,
                                exclude=own_layer_ids(self.store, project),
-                               current_boreholes=self._current_boreholes)
+                               current_boreholes=self._current_boreholes,
+                               store_path=lambda: None if self.store is None
+                               else self.store.path)
         dialog.applied.connect(self._context_applied)
         dialog.finished.connect(lambda _r, d=dialog: self._context_finished(d))
         self._context_dialog = dialog

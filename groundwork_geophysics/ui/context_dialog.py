@@ -89,7 +89,7 @@ class ContextDialog(QDialog):
 
     def __init__(self, iface, project: QgsProject | None = None, parent=None,
                  exclude: set[str] = frozenset(),
-                 current_boreholes=lambda: ([], "")):
+                 current_boreholes=lambda: ([], ""), store_path=lambda: None):
         super().__init__(parent if parent is not None else iface.mainWindow())
         self.setWindowTitle("Context layers")
         self.iface = iface
@@ -120,7 +120,8 @@ class ContextDialog(QDialog):
         self._add_tab("Points", [box])
 
         self.boreholes = BoreholeEntries(self.project, vectors, by_geom["point"],
-                                         current_boreholes, self.applied.emit)
+                                         current_boreholes, self.applied.emit,
+                                         store_path=store_path)
         self._add_tab("Boreholes", [self.boreholes])
 
         self.strips = StripRows(self.project, by_geom["polygon"])
