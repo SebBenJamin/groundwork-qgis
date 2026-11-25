@@ -101,6 +101,14 @@ def models_read_at_once(request, monkeypatch):
         done(True)
         return True
     monkeypatch.setattr(ModelReader, "request", at_once)
+    from groundwork_geophysics.ui import view3d_prepare
+    real_pending = view3d_prepare.pending_3d
+
+    def prepared_at_once(*args):
+        for job in real_pending(*args):
+            view3d_prepare.run_job3d(job)
+        return []
+    monkeypatch.setattr(view3d_prepare, "pending_3d", prepared_at_once)
     yield
 
 

@@ -655,7 +655,13 @@ def _cloud_signature(section_layer, profile, topo) -> str:
     return h.hexdigest()[:10]
 
 
-def _write_cloud(path: Path, store, profile, section_layer, topo) -> int:
+def cloud_path(store, dataset_id: str, profile, section_layer, topo) -> Path:
+    """Where the model's point cloud is (or will be): named by what it is made of."""
+    signature = _cloud_signature(section_layer, profile, topo)
+    return cloud_folder(store) / f"{dataset_id}-{signature}.las"
+
+
+def _write_cloud(path: Path, crs_authid: str, profile, section_layer, topo) -> int:
     """The model's smooth field as a LAS file at ``path``; the number of points (0: none)."""
     from qgis.core import QgsCoordinateReferenceSystem
 
@@ -665,7 +671,7 @@ def _write_cloud(path: Path, store, profile, section_layer, topo) -> int:
     pts = field_points(grid, profile.chainage, scale, CLOUD_SPACING)
     if not len(pts.value):
         return 0
-    wkt = QgsCoordinateReferenceSystem(store.crs_authid).toWkt(Qgis.CrsWktVariant.Wkt1Gdal)
+    wkt = QgsCoordinateReferenceSystem(crs_authid).toWkt(Qgis.CrsWktVariant.Wkt1Gdal)
     with np.errstate(divide="ignore", invalid="ignore"):
         log10 = np.log10(np.where(pts.value > 0, pts.value, np.nan))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -784,7 +790,6 @@ def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -
     for did, layer in existing.items():
         if did not in wanted:
             _drop_cloud(project, layer)
-    folder = cloud_folder(store)
     out = {}
     for did, (profile, d, section_layer) in wanted.items():
         layer = existing.get(did)
@@ -796,14 +801,13 @@ def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -
         topo = topo_of(profile.id)
         failed = False
         try:
-            signature = _cloud_signature(section_layer, profile, topo)
-            path = folder / f"{did}-{signature}.las"
+            path = cloud_path(store, did, profile, section_layer, topo)
             if layer is not None and layer.isValid() and Path(layer.source()) == path \
                     and path.exists():
                 out[did] = layer
                 continue
             # the same signature always gives the same file: one already there is reused
-            count = 1 if path.exists() else _write_cloud(path, store, profile,
+            count = 1 if path.exists() else _write_cloud(path, store.crs_authid, profile,
                                                          section_layer, topo)
         except Exception as exc:
             _log(f"3D view: '{d.name or d.id}' could not be shown smooth: {exc}")
@@ -1107,13 +1111,24 @@ def forget_shown(project: QgsProject) -> None:
     project.setProperty(_NEEDS, None)
 
 
-def _contour_rows(store, profile, dataset, section_layer, topo, signature) -> list:
-    """(level, xyz) of the model's 3D contour lines, kept beside the clouds as
-    ``<dataset id>-<signature>.contours.npz`` so a project opened again is not re-gridded."""
+def contour_signature(profile, dataset, section_layer, topo) -> tuple:
+    """What a model's 3D contour lines depend on."""
+    style = section_layer.style
+    return (_cloud_signature(section_layer, profile, topo), style.contour_step,
+            tuple(style.contour_major), tuple(style.contour_minor), profile.name, dataset.name)
+
+
+def contours_path(store, dataset_id: str, signature: tuple) -> Path:
+    """Where a model's 3D contour lines are kept: ``<dataset id>-<hash>.contours.npz``."""
+    digest = hashlib.sha1(repr(signature).encode("utf-8", "replace")).hexdigest()[:10]
+    return cloud_folder(store) / f"{dataset_id}-{digest}.contours.npz"
+
+
+def _contour_rows(path: Path, profile, dataset, section_layer, topo) -> list:
+    """(level, xyz) of the model's 3D contour lines, kept at ``path`` so a project opened
+    again is not re-gridded."""
     from ..core.gridding import contour_levels
     from ..core.view3d import field_contours
-    digest = hashlib.sha1(repr(signature).encode("utf-8", "replace")).hexdigest()[:10]
-    path = cloud_folder(store) / f"{dataset.id}-{digest}.contours.npz"
     rows = _load_contours(path)
     if rows is not None:
         return rows
@@ -1161,7 +1176,8 @@ def _contour_features(layer, store, profile, dataset, section_layer, topo,
     from ..section.display_render import CONTOUR_DARKER
     scale = section_layer.style.scale or ColorScale.auto(section_layer.mesh.values)
     out = []
-    for level, xyz in _contour_rows(store, profile, dataset, section_layer, topo, signature):
+    path = contours_path(store, dataset.id, signature)
+    for level, xyz in _contour_rows(path, profile, dataset, section_layer, topo):
         r, g, b = (int(c) for c in scale.rgba([level])[0][:3])
         f = QgsFeature(layer.fields())
         f.setGeometry(QgsGeometry(QgsLineString(xyz[:, 0].tolist(), xyz[:, 1].tolist(),
@@ -1182,9 +1198,7 @@ def _sync_contours(store, project, chosen, may_create, topo_of):
     built = _fresh(layer)
     for profile, d, section_layer in chosen:
         style, topo = section_layer.style, topo_of(profile.id)
-        signature = (_cloud_signature(section_layer, profile, topo), style.contour_step,
-                     tuple(style.contour_major), tuple(style.contour_minor),
-                     profile.name, d.name)
+        signature = contour_signature(profile, d, section_layer, topo)
         if d.id in built and built[d.id][0] == signature:
             continue
         try:
