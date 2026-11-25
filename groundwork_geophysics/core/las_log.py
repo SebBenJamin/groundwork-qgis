@@ -69,6 +69,9 @@ def read_las_log(path) -> LasLog:
     used."""
     path = Path(path)
     raw = path.read_bytes()
+    if raw[:4] == b"LASF":
+        raise ValueError(f"{path.name} is a point cloud (lidar LAS), not a well log; well "
+                         "logs are LAS text files (Log ASCII Standard)")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:

@@ -60,3 +60,11 @@ def test_wells_are_matched_to_borehole_ids():
     assert guess_borehole(log(), "jw2_10_gamma", ids) == "JW2-10"       # by the file name
     assert guess_borehole(log("Well 5"), "w5", ids) is None             # nothing fits
     assert guess_borehole(log("JW1"), "x", ["JW1A", "JW1B"]) is None    # not unique
+
+
+def test_a_point_cloud_las_says_what_it_is(tmp_path):
+    from groundwork_geophysics.core.las_log import read_las_log
+    path = tmp_path / "cloud.las"
+    path.write_bytes(b"LASF" + bytes(300))
+    with pytest.raises(ValueError, match="point cloud"):
+        read_las_log(path)
