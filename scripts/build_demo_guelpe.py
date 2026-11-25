@@ -50,6 +50,11 @@ TITLE = "Groundwork real-data demo: Gülpe (Havel)"
 #: the cores' lab values shown as curves (the table has all of guelpe_data.LAB_FIELDS)
 LAB_CURVES = ("toc", "tic", "sand", "silt", "clay")
 LAB_LAYER_NAME = "Core lab values (Köhler et al. 2025)"
+LAB_LOG_CURVES = ("toc",)
+#: the demo's curve looks: colour and fill per lab curve
+LAB_CURVE_LOOKS = {"toc": ("#3d2b1f", "none"), "tic": ("#2f6db5", "none"),
+                   "sand": ("#d4a017", "left"), "silt": ("#8f8f5a", "left"),
+                   "clay": ("#a0522d", "left")}
 ATTRIBUTION = """# Sources and licences
 
 This demo uses only open data. Files marked *derived* were converted from the source
@@ -295,6 +300,17 @@ def demo_context_settings(water: str, bpk: str, cores: str, logs: str, curves: s
         dem_layer_id=dem, buffer=5.0, near_miss=10.0, dem_tolerance=0.5)
 
 
+def demo_curve_styles(curves_id: str) -> dict:
+    """The lab curves' looks by curve key (the demo's choice; restyle in Curve Style…):
+    TOC (about 0.02 to 11 %) on a log scale, carbonate as a line, and sand, silt and clay
+    filled from the left in colours after the material."""
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    return {f"{curves_id}:{name}": CurveStyle(colour=colour, fill=fill,
+                                              fill_colour=colour + "55",
+                                              log=name in LAB_LOG_CURVES)
+            for name, (colour, fill) in LAB_CURVE_LOOKS.items()}
+
+
 def apply_core_style(project, logs_id: str, style: Path) -> None:
     """Store the cores' borehole style (``context/core_logs_style.qml``) for the core log
     table, as Borehole style… would. FGDC patterns are kept by name (the plugin's pattern
@@ -421,6 +437,8 @@ def build_qgis_project(out: Path = DEMO_GUELPE) -> tuple[Path, str]:
             water.id(), bpk.id(), cores.id(), logs.id(), curves.id(), geology.id(),
             geology_field, dem.id(), guek.id(), guek_field))
         apply_core_style(project, logs.id(), ctx / "core_logs_style.qml")
+        from groundwork_geophysics.section.borehole_style import save_curve_styles
+        save_curve_styles(project, demo_curve_styles(curves.id()))
         store = use_store(ProjectStore.open(out / STORE_NAME), project)   # group on top
         add_demo_plate(project, store)
         xy = np.vstack([p.xy for p in store.profiles()])

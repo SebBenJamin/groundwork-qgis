@@ -98,6 +98,10 @@ are read, also wrapped files; LAS 3.0 and logs indexed by time are refused with 
 
   - **A class only applies to values that are exactly that code** ("fS, ms, u'" is not "fS"). To style by the main component, add a column in QGIS's field calculator with `trim(regexp_substr("lithology", '^[^,;]+'))` and style by that column.
 - **Curve Style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
+  - Until you style a curve, each curve gets its own colour from QGIS: the project's default colour ramp (Project Properties › Styles), else ColorBrewer's *Dark2*. The colours follow the order of the curves in Context Layers.
+  - Without your own min/max, a track's scale reaches from the smallest to the largest value of the boreholes in view, rounded outward to readable ends (e.g. 0–12 %, or whole decades such as 0.01–100 on a log scale).
+  - A borehole gets a track only for the curves it has values for: cores without lab samples stay narrow.
+  - To read curves side by side, use **Spacing › Even**. At true distance, tracks of boreholes close together can lie behind the next column.
 - **Leaving a borehole out of one section**: right-click its column in the section → **Hide in Section**. It leaves that profile's section and plates only; the map, other profiles and your layer are not changed. The borehole viewer still shows it, faded and marked "hidden in section". There, click a column to select it (Ctrl+click for several) and right-click → **Hide in Section** or **Show in Section**. **Show › Hidden boreholes** switches the hidden ones off in the viewer. A borehole whose id field is empty cannot be hidden on its own.
 - Without a saved style, each layer text gets its own neutral colour. The plugin never guesses a colour from the words.
 

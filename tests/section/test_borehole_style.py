@@ -204,3 +204,41 @@ def test_class_switched_off_is_left_unfilled(qgis_app):
     from qgis.PyQt.QtCore import Qt
     assert off.symbolLayer(0).brushStyle() == Qt.BrushStyle.NoBrush
     assert _rgb(other) == label_colour("Clay")
+
+
+def _two_curves():
+    from groundwork_geophysics.core.context_settings import (BoreholeSetting, ContextSettings,
+                                                            CurveField, CurveTableSetting)
+    return ContextSettings(boreholes=[BoreholeSetting("bh", "id", curve_tables=[
+        CurveTableSetting("t", "id", "d", [CurveField("toc", "%"), CurveField("clay", "%")])])])
+
+
+def test_each_curve_without_a_style_gets_its_own_colour(project):
+    """Curves nobody styled yet differ in colour (from QGIS's colour ramps, in the order of
+    the Context layers settings), so two curves side by side are told apart."""
+    from groundwork_geophysics.section.borehole_style import curve_styles
+    styles = curve_styles(project, _two_curves())
+    assert set(styles) == {"t:toc", "t:clay"}
+    assert styles["t:toc"].colour != styles["t:clay"].colour
+    assert styles["t:toc"].fill_colour.startswith(styles["t:toc"].colour)   # same hue, see-through
+    assert curve_styles(project, _two_curves()) == styles                   # stable
+
+
+def test_a_saved_curve_style_is_kept_over_the_default(project):
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.section.borehole_style import curve_styles, save_curve_styles
+    save_curve_styles(project, {"t:clay": CurveStyle(colour="#8b4513", fill="left")})
+    styles = curve_styles(project, _two_curves())
+    assert styles["t:clay"] == CurveStyle(colour="#8b4513", fill="left")
+    assert styles["t:toc"].colour != "#8b4513"
+
+
+def test_the_curve_style_dialog_starts_from_the_curves_own_colours(project):
+    from groundwork_geophysics.section.borehole_style import curve_styles
+    from groundwork_geophysics.ui.context_dialog import write_settings
+    from groundwork_geophysics.ui.curve_style_dialog import CurveStyleDialog
+    write_settings(project, _two_curves())
+    dlg = CurveStyleDialog(project, {"t:toc": "toc %", "t:clay": "clay %"}, lambda: None)
+    shown = {k: row.style().colour for k, row in dlg.rows.items()}
+    assert shown == {k: s.colour for k, s in curve_styles(project, _two_curves()).items()}
+    dlg.deleteLater()

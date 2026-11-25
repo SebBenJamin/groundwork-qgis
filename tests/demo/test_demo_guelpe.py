@@ -251,3 +251,15 @@ def test_demo_build_adds_one_plate_and_no_field_notes(tmp_path, qgis_app):
     assert QgsExpressionContextUtils.projectScope(prj).variable("wb_project") == "Gülpe demo"
     assert st.field_notes() == []                        # no invented field observations
     prj.clear()
+
+
+def test_demo_draws_organic_carbon_on_a_log_scale():
+    """TOC spans about 0.02 to 11 %: on a linear track most samples would hug the left edge."""
+    import build_demo_guelpe
+    styles = build_demo_guelpe.demo_curve_styles("k")
+    assert styles["k:toc"].log
+    assert set(styles) == {f"k:{n}" for n in build_demo_guelpe.LAB_CURVES}
+    assert len({s.colour for s in styles.values()}) == len(styles)     # each its own colour
+    # grain sizes filled from the left, like the share of the sample they are
+    assert all(styles[f"k:{n}"].fill == "left" for n in ("sand", "silt", "clay"))
+    assert all(not s.log for k, s in styles.items() if k != "k:toc")

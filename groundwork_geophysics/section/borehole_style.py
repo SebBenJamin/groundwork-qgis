@@ -22,8 +22,50 @@ OUTLINE_MM = 0.15
 CURVE_STYLES_KEY = "borehole_curve_styles"
 
 
-def curve_styles(project) -> dict:
-    """The user's curve styles by curve key; unusable entries are skipped."""
+def curve_styles(project, settings=None) -> dict:
+    """The user's curve styles by curve key; unusable entries are skipped. With the Context
+    layers ``settings``, each of their curves nobody styled yet gets its own colour
+    (``default_curve_styles``)."""
+    saved = _saved_curve_styles(project)
+    if settings is None:
+        return saved
+    out = default_curve_styles(settings, project)
+    out.update(saved)
+    return out
+
+
+#: QGIS's own colour scheme for curves when the project sets no default colour ramp
+CURVE_SCHEME, CURVE_SCHEME_COLOURS = "Dark2", 8
+FILL_ALPHA_HEX = "40"
+
+
+def _curve_colours(project, n: int) -> list[str]:
+    """``n`` colours "#rrggbb" from the project's default colour ramp, else ColorBrewer's
+    Dark2 (dark enough for a thin line on white); repeated after eight."""
+    from qgis.core import QgsColorBrewerColorRamp
+    ramp = None
+    try:
+        ramp = project.styleSettings().defaultColorRamp()
+    except AttributeError:
+        ramp = None
+    if ramp is None:
+        ramp = QgsColorBrewerColorRamp(CURVE_SCHEME, CURVE_SCHEME_COLOURS)
+    steps = CURVE_SCHEME_COLOURS
+    return [ramp.color((i % steps) / (steps - 1)).name() for i in range(n)]
+
+
+def default_curve_styles(settings, project) -> dict:
+    """A style per curve of the Context layers ``settings`` (in their order), each in its own
+    colour, its fill the same colour see-through."""
+    from ..core.borehole_curves import CurveStyle
+    from ..core.context_settings import curve_key
+    keys = list(dict.fromkeys(curve_key(t.layer_id, c.field) for b in settings.boreholes
+                              for t in b.curve_tables for c in t.curves))
+    return {k: CurveStyle(colour=c, fill_colour=c + FILL_ALPHA_HEX)
+            for k, c in zip(keys, _curve_colours(project, len(keys)))}
+
+
+def _saved_curve_styles(project) -> dict:
     import json
     from dataclasses import fields
 

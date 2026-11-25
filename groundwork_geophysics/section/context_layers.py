@@ -273,7 +273,7 @@ class ContextGatherer:
                 s, xy, box, settings.buffer)) or []
         from .borehole_style import curve_styles
         items.borehole_views = borehole_views(settings)
-        items.curve_styles = curve_styles(self._project)
+        items.curve_styles = curve_styles(self._project, settings)
         for index, b in enumerate(settings.boreholes):
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
                 b, xy, box, settings.buffer, dem_layer, index, settings.dem_tolerance)) or []
