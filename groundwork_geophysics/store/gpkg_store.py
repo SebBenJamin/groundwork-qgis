@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import threading
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -265,10 +266,43 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
         return f"{self.path}|layername={name}"
 
     # -- plumbing ----------------------------------------------------------------------------
+    def _pass(self):
+        """This thread's state of ``reading`` (made on first use)."""
+        local = self.__dict__.get("_reads")
+        if local is None:
+            local = self.__dict__.setdefault("_reads", threading.local())
+        return local
+
+    @contextmanager
+    def reading(self):
+        """Reads inside share one open file (in this thread): a pass that asks the store many
+        small questions (the 3D layers, a section's assembly) opens it once instead of each
+        time, which is slow on a USB stick. A write in between closes it, so the next read
+        sees what was written. Nested passes are one pass."""
+        local = self._pass()
+        local.depth = getattr(local, "depth", 0) + 1
+        try:
+            yield self
+        finally:
+            local.depth -= 1
+            if not local.depth:
+                local.ds = None
+
     @contextmanager
     def _ds(self, write: bool = False):
+        local = self._pass()
+        if getattr(local, "depth", 0):
+            if write:
+                local.ds = None                 # what is written must be read afresh
+            elif getattr(local, "ds", None) is not None:
+                yield local.ds
+                return
         with _exceptions():
             ds = ogr.Open(str(self.path), 1 if write else 0)
+            if not write and getattr(local, "depth", 0):
+                local.ds = ds                   # kept for the rest of the pass
+                yield ds
+                return
             try:
                 yield ds
             finally:

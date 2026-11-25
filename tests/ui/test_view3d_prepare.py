@@ -96,3 +96,51 @@ def test_a_refill_while_preparing_waits_for_the_task(qgis_app, fake_iface, store
     finally:
         plugin.unload()
         project.clear()
+
+
+def test_a_section_picture_is_painted_by_the_job_not_the_fill(setup, monkeypatch):  # noqa: F811
+    """Show in 3D with every model as a Section Picture: the picture is listed with the
+    other files to prepare, the job paints it, and filling the 3D layers only picks it up."""
+    from groundwork_geophysics.ui import view3d_layers
+    from groundwork_geophysics.ui.view3d_prepare import pending_3d, run_job3d
+    st, p, provider, prj = setup
+    _choose(prj, ["d"], looks={"d": "picture"})
+    jobs = pending_3d(st, provider, prj)
+    assert [j.kind for j in jobs] == ["picture"]
+    for job in jobs:
+        run_job3d(job)
+    assert jobs[0].path.exists() and jobs[0].path.with_suffix(".glb").exists()
+    assert pending_3d(st, provider, prj) == []
+    monkeypatch.setattr(view3d_layers, "_write_picture",
+                        lambda *a, **k: pytest.fail("painted while filling the 3D layers"))
+    out = view3d_layers.sync(st, provider, prj, create=True)
+    assert out["pictures"][p.id].isValid()
+
+
+def test_the_plugin_paints_section_pictures_off_the_main_thread(qgis_app, fake_iface,
+                                                                store_with_model, monkeypatch):
+    import threading
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui import view3d_layers
+    from groundwork_geophysics.ui.view3d_layers import Choice, pictures_3d, write_choice
+    main = threading.get_ident()
+    on_main = []
+    real = view3d_layers._write_picture
+    monkeypatch.setattr(view3d_layers, "_write_picture", lambda *a, **k: on_main.append(
+        threading.get_ident() == main) or real(*a, **k))
+    st, p, _src = store_with_model
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    project = QgsProject.instance()
+    try:
+        plugin.set_store(st)
+        write_choice(project, Choice(frozenset(["d1"]), looks={"d1": "picture"}))
+        assert plugin._sync_3d(create=True) == {}           # nothing waited for
+        _wait(qgis_app, lambda: p.id in pictures_3d(project), 60.0)
+        assert on_main and not any(on_main)
+    finally:
+        plugin.unload()
+        project.clear()

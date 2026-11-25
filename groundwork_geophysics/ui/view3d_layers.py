@@ -913,11 +913,12 @@ def _png(image) -> bytes:
     return bytes(data)
 
 
-def _write_picture(path: Path, store, project, profile, layers, topo,
-                   interpretation=None, gap: float | None = None) -> bool:
+def _write_picture(path: Path, crs_authid: str, transform_context, profile, layers, topo,
+                   interpretation=None, gap: float | None = None, base=None) -> bool:
     """The profile's section picture of ``layers`` (bottom first; with ``interpretation``
     over them) as a tileset at ``path`` (and its glTF beside it), each face ``gap`` back from
-    the plane; False when nothing is painted."""
+    the plane, on the colour ``base``; False when nothing is painted. Runs in any thread when
+    given copies (a "Preparing 3D" task paints the pictures)."""
     from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                            QgsVector3D)
 
@@ -927,7 +928,7 @@ def _write_picture(path: Path, store, project, profile, layers, topo,
     bends = bend_chainages(profile.chainage)
     gap = gap or curtain_gap(profile.chainage.length)
     raw = []
-    for pic in section_pictures(layers, topo, interpretation):
+    for pic in section_pictures(layers, topo, interpretation, base):
         if not pic.alpha.any():
             continue
         sz, tris = picture_strip(pic.alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
@@ -943,8 +944,9 @@ def _write_picture(path: Path, store, project, profile, layers, topo,
     side = left_normals(profile.chainage, sz[:, 0]) * gap
     first = np.concatenate([np.r_[np.ones(r[3]), -np.ones(r[3])] for r in raw])
     xy = xy + side * first[:, None]
-    to_ecef = QgsCoordinateTransform(QgsCoordinateReferenceSystem(store.crs_authid),
-                                     QgsCoordinateReferenceSystem("EPSG:4978"), project)
+    to_ecef = QgsCoordinateTransform(QgsCoordinateReferenceSystem(crs_authid),
+                                     QgsCoordinateReferenceSystem("EPSG:4978"),
+                                     transform_context)
     ecef = np.array([[q.x(), q.y(), q.z()] for q in
                      (to_ecef.transform(QgsVector3D(float(x), float(y), float(z)))
                       for (x, y), z in zip(xy, sz[:, 1]))])
@@ -1043,12 +1045,36 @@ def _section_order(provider, profile_id: str, layers: list) -> list:
     return sorted(layers, key=lambda la: order.get(la.dataset.id, len(order)))
 
 
+def picture_plan(store, provider, profile, layers, topo, interpretation: bool, gap):
+    """What a profile's section picture of ``layers`` needs: (its layers in the section's
+    order, the interpretation or None, its gap, its file). The same plan gives the same file,
+    so a picture painted beforehand (``view3d_prepare``) is picked up by the fill."""
+    from ..core.view3d import curtain_gap
+    layers = _section_order(provider, profile.id, layers)
+    interp = _interpretation(provider, profile.id) if interpretation else None
+    gap = gap or curtain_gap(profile.chainage.length)
+    path = cloud_folder(store) /         f"{profile.id}-{_picture_signature(layers, profile, topo, interp, gap)}.json"
+    return layers, interp, gap, path
+
+
+def pictured_by_profile(provider, gathered, choice) -> dict:
+    """profile id -> (profile, its shown models to picture, its picture's gap)."""
+    look = {d.id: choice.look_of(d.id) for _p, d, _la in gathered}
+    cells = [(p, d, la) for p, d, la in gathered
+             if look[d.id] == "section" and _shown(la) and _as_cells(la)]
+    pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture" and _shown(la)]
+    _cell_gaps, gaps = _stack_gaps(provider, cells, pictured)
+    out: dict = {}
+    for profile, _d, section_layer in pictured:
+        out.setdefault(profile.id, [profile, [], gaps.get(profile.id)])[1].append(section_layer)
+    return {pid: tuple(v) for pid, v in out.items()}
+
+
 def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_create, retry,
                    topo_of, gaps: dict) -> dict:
     """One section picture per profile of the ``chosen`` models (shown ones), all of them in
     it as the section stacks them; with ``interpretation``, the profile's interpretation
     painted over them; ``gaps[profile id]`` back from the plane. By profile id."""
-    from ..core.view3d import curtain_gap
     wanted: dict = {}
     for profile, _d, section_layer in chosen:
         if _shown(section_layer):
@@ -1058,7 +1084,6 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
         pid = layer.customProperty(_PROFILE)
         if pid not in wanted or existing.get(pid) is not layer:
             _drop_picture(project, layer)           # also one saved per model, before 0.14
-    folder = cloud_folder(store)
     out = {}
     for pid, (profile, layers) in wanted.items():
         layer = existing.get(pid)
@@ -1068,19 +1093,18 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
         if layer is not None:
             _follow_name(layer, profile.name)
         topo = topo_of(pid)
-        layers = _section_order(provider, pid, layers)
         failed = False
         try:
-            interp = _interpretation(provider, pid) if interpretation else None
-            gap = gaps.get(pid) or curtain_gap(profile.chainage.length)
-            path = folder / f"{pid}-{_picture_signature(layers, profile, topo, interp, gap)}.json"
+            layers, interp, gap, path = picture_plan(store, provider, profile, layers, topo,
+                                                     interpretation, gaps.get(pid))
             if layer is not None and layer.isValid() and _picture_file(layer) == path \
                     and path.exists():
                 out[pid] = layer
                 continue
             # the same signature always gives the same files: ones already there are reused
             painted = (path.exists() and path.with_suffix(".glb").exists()) or \
-                _busy(_write_picture, path, store, project, profile, layers, topo, interp, gap)
+                _busy(_write_picture, path, store.crs_authid, project.transformContext(),
+                      profile, layers, topo, interp, gap)
         except Exception as exc:
             _log(f"3D view: the section picture of '{profile.name}' could not be drawn: {exc}")
             painted, failed = False, True
@@ -1752,6 +1776,11 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     project was opened; it is removed when nothing needs it any more. Ids that no longer
     exist are ignored; a model that cannot be read is left out (and logged). Without
     ``boreholes`` (only a section style changed) the borehole layer is left as it is."""
+    with store.reading():                       # one open store for all its questions
+        return _sync(store, provider, project, create, boreholes)
+
+
+def _sync(store, provider, project: QgsProject, create: bool, boreholes: bool) -> dict:
     choice = read_choice(project)
     gathered = _gather(store, provider, choice)
     _settle_groups(project)
