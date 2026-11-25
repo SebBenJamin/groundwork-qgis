@@ -21,6 +21,16 @@ crossing lines and your interpretation.
 Right-click the **Profile** list for **Profile Properties…** and **Delete Profile…** (see
 [Projects and profiles](projects-and-profiles.md)).
 
+The first time a profile's models are read, the panel says so ("Reading Line 7 (2 of 4)…")
+and draws the profile when they are in; QGIS stays usable meanwhile, and its status bar shows
+the progress with a cancel button. After that the models are remembered beside the project
+and open at once. Crossing profiles show their tie at once and its column when they are read.
+
+A strip from a web layer (a survey's live geology) is fetched in the background the first
+time, and the section is drawn again with it; afterwards it is remembered per profile.
+Right-click the **Profile** list → **Refresh Web Layers** to fetch the strips again, e.g. after
+the service has changed.
+
 ## The section as a picture
 
 The picture button at the right end of the panel's top row copies the section, as shown, to
