@@ -48,8 +48,10 @@ class FakeDock:
     def raise_(self):
         self.calls.append(("raise",))
 
-    def open_profile(self, pid):
+    def open_profile(self, pid, after=None):
         self.calls.append(("open", pid))
+        if after is not None:                       # opened at once (nothing to read)
+            after()
         return True
 
     def show_cursor(self, s):

@@ -513,6 +513,17 @@ class ReadJob:
     cache_file: Path
 
 
+#: changes when what a remembered read holds changes
+CACHE_FORMAT = 1
+
+
+def _cache_version() -> str:
+    """The plugin version and cache format a remembered read was made with: a new plugin
+    (a fixed reader) reads every file again."""
+    from ..ui.help import plugin_version
+    return f"{plugin_version()}/{CACHE_FORMAT}"
+
+
 def run_job(job: ReadJob) -> readers.ReaderResult:
     """Read ``job`` (any thread): from the remembered read when there is one, else from the
     file, which is then remembered."""
@@ -539,6 +550,9 @@ class SectionDataProvider:
         #: when set, ties never wait for a crossing profile's models: one not read yet is
         #: tied without columns and its id passed here (to read it in the background)
         self.on_unread_ties: Callable[[list], None] | None = None
+        #: finish the context fetches still running (web strips) and say whether any were:
+        #: a plate waits for them, the panel does not
+        self.finish_context_fetches: Callable[[], bool] | None = None
         self.has_web_layers: Callable[[], bool] | None = None
         self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
@@ -549,6 +563,7 @@ class SectionDataProvider:
         #: None: the whole context is gathered instead
         self.borehole_source: Callable[[list], dict] | None = None
         self._styles: dict[str, LayerStyle] = dict(styles or {})
+        self._failed: set[tuple] = set()        # (dataset id, key) of failed background reads
         self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
         self._readings_seen: set[str] = set()
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
@@ -1035,7 +1050,8 @@ class SectionDataProvider:
             else None
         st = os.stat(path)
         key = (d.id, st.st_mtime, json.dumps(d.reader_options, sort_keys=True),
-               path, d.reader, _companion_mtime(path, d.reader_options), line, st.st_size)
+               path, d.reader, _companion_mtime(path, d.reader_options), line, st.st_size,
+               _cache_version())
         options = read_options(d.reader_options)
         if on_map:
             options["xy_to_distance"] = xy_to_distance_on(
@@ -1058,9 +1074,15 @@ class SectionDataProvider:
                 except Exception:               # noqa: BLE001 - reported when drawn
                     continue
                 hit = self._cache.get(d.id)
-                if hit is None or hit[0] != job.key:
+                if (hit is None or hit[0] != job.key) and \
+                        (job.dataset_id, job.key) not in self._failed:
                     out.append(job)
         return out
+
+    def mark_failed(self, job: "ReadJob") -> None:
+        """A background read of ``job`` failed: it is not offered again (the section reads
+        it on the main thread, where the error is shown) until the file or options change."""
+        self._failed.add((job.dataset_id, job.key))
 
     def take(self, job: "ReadJob", result: readers.ReaderResult) -> None:
         """Keep a read made elsewhere (a reading task) as ``job``'s result."""
@@ -1280,6 +1302,12 @@ class SectionDataProvider:
         ``core.plates.FrameLook``) replaces the panel's look: only its models, with its scale,
         mode and opacity; its interpretation version; boreholes, notes, context as it says."""
         layers, sets, surface = self._assemble(profile_id)
+        if look is not None and self.finish_context_fetches is not None:
+            profile = self._profile(profile_id)
+            if profile is not None:
+                self._items(profile)            # starts the strip fetches it needs
+                if self.finish_context_fetches():
+                    self._gathered.clear()      # gathered again, with the strips now in
         topo = None if surface is None else surface.line
         local = surface is not None and surface.local
         if look is not None:

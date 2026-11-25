@@ -168,7 +168,8 @@ def _save_strip(path: Path, segments: list[BandSegment]) -> None:
             for s in segments]
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".part")
+        from ..core.read_cache import _temporary
+        tmp = _temporary(path)
         tmp.write_text(json.dumps(rows), encoding="utf-8")
         tmp.replace(path)
     except OSError:
@@ -222,6 +223,9 @@ class ContextGatherer:
         #: section is drawn without it meanwhile) instead of waiting for it
         self.background = False
         self._fetching: dict[Path, object] = {}         # cache file -> its running task
+        self._fetched_strips: dict[Path, list] = {}     # also when it could not be written
+        self._failed_strips: set[Path] = set()          # until Refresh Web Layers
+        self._closed = False
         self._exclude = exclude
         self._crs_authid = crs_authid
         self._on_change = on_change
@@ -305,6 +309,7 @@ class ContextGatherer:
         return out
 
     def close(self) -> None:
+        self._closed = True
         self._timer.stop()
         for task in list(self._fetching.values()):
             try:
@@ -640,17 +645,22 @@ class ContextGatherer:
         layer: a WFS would download it all). A strip from a web layer is remembered in the
         cache folder, and fetched in the background when ``background`` is set."""
         layer = self._vector(setting.layer_id, "polygon", (setting.label_field,))
-        job = self._band_job(layer, setting, xy, box, strip)
         if self._cache_dir is None or not is_remote(layer):
-            return run_band(job)
+            return run_band(self._band_job(layer, setting, xy, box, strip))
         path = self._strip_file(layer, setting, xy, box, strip)
-        kept = _load_strip(path)
+        kept = self._fetched_strips.get(path)
+        if kept is None:
+            kept = _load_strip(path)
         if kept is not None:
             return kept
+        if path in self._failed_strips:
+            return []                           # asked again with Refresh Web Layers
+        job = self._band_job(layer, setting, xy, box, strip)
         if self.background:
             self._fetch_later(path, job)
             return []
         segments = run_band(job)
+        self._fetched_strips[path] = segments
         _save_strip(path, segments)
         return segments
 
@@ -698,12 +708,19 @@ class ContextGatherer:
         QgsApplication.taskManager().addTask(task)
 
     def _fetched(self, path: Path, task) -> None:
+        if self._closed or path in self._fetched_strips:
+            self._fetching.pop(path, None)
+            return
         self._fetching.pop(path, None)
+        self._fetched_strips[path] = task.segments
         _save_strip(path, task.segments)
         self._kick()
 
     def _fetch_failed(self, path: Path, task) -> None:
         self._fetching.pop(path, None)
+        if self._closed:
+            return
+        self._failed_strips.add(path)           # a dead service is not asked on every change
         if task.error is not None:
             self._warn(str(path), f"strip layer '{task.job.layer_name}' could not be "
                                   f"fetched: {task.error}")
@@ -716,8 +733,24 @@ class ContextGatherer:
                 return True
         return False
 
+    def finish_fetches(self) -> bool:
+        """Wait for the strip fetches still running and keep what they got (a plate must
+        not go out without its strip); whether there were any."""
+        running = list(self._fetching.items())
+        for path, task in running:
+            task.waitForFinished(120000)
+            if task.status() == QgsTask.TaskStatus.Complete:
+                self._fetched_strips[path] = task.segments
+                _save_strip(path, task.segments)
+            else:
+                self._failed_strips.add(path)
+            self._fetching.pop(path, None)
+        return bool(running)
+
     def refresh_web_layers(self) -> None:
         """Forget the remembered strips from web layers and fetch them again."""
+        self._fetched_strips.clear()
+        self._failed_strips.clear()
         if self._cache_dir is not None:
             for old in self._cache_dir.glob("strip-*.json"):
                 try:

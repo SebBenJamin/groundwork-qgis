@@ -118,7 +118,8 @@ class _Readout(QLabel):
 
 class SectionDock(QDockWidget):
     _reader = None                              # a ModelReader: models read in the background
-    _wanted = None                              # (profile id, name) read before it opens
+    _wanted = None                              # (profile id, name, token) read before it opens
+    _refresh_token = None                       # the read a refresh waits for
     cursor_moved = pyqtSignal(float, float)     # forward chainage, elevation
     cursor_left = pyqtSignal()                  # the mouse left the section
     profile_changed = pyqtSignal(object)        # open profile id, or None when closed
@@ -384,29 +385,25 @@ class SectionDock(QDockWidget):
         if self._wanted is not None:
             self.readout.setText(READING.format(name=self._wanted[1], done=done, total=total))
 
-    def _read_first(self, profile, then) -> bool:
+    def _read_first(self, profile, then) -> int | None:
         """Read ``profile``'s models in the background and call ``then(ok)`` on the main
-        thread; False when there is nothing to read (or no reader)."""
+        thread (perhaps at once); the number of reads, or None when there is nothing to read
+        (or no reader)."""
         if self.reader is None:
-            return False
+            return None
         total = len(self.provider.unread([profile.id]))
-        name = profile.name or profile.id
-        wanted = self._wanted = (profile.id, name)
         if not self.reader.request([profile.id], then):
-            self._wanted = None
-            return False
-        if self._wanted == wanted:              # still reading (``then`` may come at once)
-            self.readout.setText(READING.format(name=name, done=0, total=total))
-        return True
+            return None
+        return total
 
-    def _opened_after_read(self, profile_id: str, ok: bool) -> None:
+    def _opened_after_read(self, profile_id: str, token, after, ok: bool) -> None:
         if sip.isdeleted(self):                 # the panel went while a task read
             return
-        if self._wanted is None or self._wanted[0] != profile_id:
+        if self._wanted is None or self._wanted[2] is not token:
             return                              # another profile was chosen meanwhile
         self._wanted = None
         if ok and self.provider is not None:
-            self.open_profile(profile_id)
+            self.open_profile(profile_id, after)
             return
         self.readout.setText(READ_CANCELLED)
         self._fill_combo()                      # the list shows what is open again
@@ -430,16 +427,18 @@ class SectionDock(QDockWidget):
         self._layers = self._ctx = None
         self._fill_combo()
         self.topo.sync()
-        if self._profile is None:
-            return
+        if self._profile is None or self._wanted is not None:
+            return                              # nothing open, or another one opens soon
         try:
             profile = self.provider.store.profile(self._profile.id)
         except KeyError:                        # profile deleted from the project
             self._close_profile()
             self._set_hint()
             return
-        if self._read_first(profile, self._refreshed_after_read):
+        token = self._refresh_token = object()
+        if self._read_first(profile, partial(self._refreshed_after_read, token)) is not None:
             return                              # drawn again when the new data are read
+        self._refresh_token = None
         settled = self._settle(profile)
         if not np.array_equal(profile.xy, self._profile.xy):
             self._profile = profile
@@ -450,13 +449,13 @@ class SectionDock(QDockWidget):
         if settled:
             self.readout.setText(settled)
 
-    def _refreshed_after_read(self, ok: bool) -> None:
-        if sip.isdeleted(self):                 # the panel went while a task read
-            return
-        self._wanted = None
+    def _refreshed_after_read(self, token, ok: bool) -> None:
+        if sip.isdeleted(self) or token is not self._refresh_token:
+            return                              # the panel went, or a newer read is on
+        self._refresh_token = None
         if ok:
             self._refresh_now()
-        else:
+        elif self._wanted is None:
             self.readout.setText(READ_CANCELLED)
 
     # -- profiles ----------------------------------------------------------------------------
@@ -470,7 +469,9 @@ class SectionDock(QDockWidget):
             self.profile_combo.clear()
             for pid, name in wanted:
                 self.profile_combo.addItem(name, pid)
-        index = self.profile_combo.findData(self.current_profile_id()) if self._profile else 0
+        shown = self._wanted[0] if self._wanted is not None else (
+            self.current_profile_id() if self._profile else None)
+        index = self.profile_combo.findData(shown) if shown is not None else 0
         self.profile_combo.setCurrentIndex(max(0, index))
         self.profile_combo.blockSignals(False)
         self._sync_steps()
@@ -517,10 +518,13 @@ class SectionDock(QDockWidget):
     def current_profile(self):
         return self._profile
 
-    def open_profile(self, profile_id: str) -> bool:
+    def open_profile(self, profile_id: str, after=None) -> bool:
         """Show ``profile_id``: curve in the profile's own direction, CRS of the project
         store, zoomed to the full extent of the data and topography. A profile missing from
-        the store shows a message and refreshes the list instead (returns False)."""
+        the store shows a message and refreshes the list instead (returns False). Models
+        not read yet are read in the background first; ``after()`` is called once the
+        profile is open (at once when nothing had to be read), never when another profile
+        was chosen meanwhile or the reading was cancelled."""
         if self.provider is None:
             raise RuntimeError("no project is open")
         try:
@@ -530,10 +534,18 @@ class SectionDock(QDockWidget):
             self._fill_combo()
             self.readout.setText(MISSING_PROFILE)
             return False
-        if self._read_first(profile, partial(self._opened_after_read, profile.id)):
-            self.profile_combo.blockSignals(True)
-            self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(profile.id)))
-            self.profile_combo.blockSignals(False)
+        token = object()
+        name = profile.name or profile.id
+        self._wanted = (profile.id, name, token)
+        total = self._read_first(profile, partial(self._opened_after_read, profile.id, token,
+                                                  after))
+        if total is not None:
+            if self._wanted is not None and self._wanted[2] is token:   # still reading
+                self.readout.setText(READING.format(name=name, done=0, total=total))
+                self.profile_combo.blockSignals(True)
+                self.profile_combo.setCurrentIndex(
+                    max(0, self.profile_combo.findData(profile.id)))
+                self.profile_combo.blockSignals(False)
             return True
         self._wanted = None
         self._profile = profile
@@ -557,6 +569,8 @@ class SectionDock(QDockWidget):
         self.profile_changed.emit(profile_id)
         if settled:
             self.readout.setText(settled)
+        if after is not None:
+            after()
         return True
 
     # -- reference height and the interpretation of a profile without heights ----------------

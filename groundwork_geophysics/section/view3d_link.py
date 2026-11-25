@@ -173,13 +173,16 @@ class View3dLink(QObject):
             profile = profile_at((x, y, p.z()), dock.provider.store.profiles())
             if profile is None:
                 return
-            if profile.id != dock.current_profile_id() and not dock.open_profile(profile.id):
+            def show() -> None:
+                dock.show()
+                dock.raise_()
+                self._show(hit)
+            if profile.id != dock.current_profile_id():
+                dock.open_profile(profile.id, after=show)   # once its models are read
                 return
         except Exception:                        # the store cannot be read just now
             return
-        dock.show()
-        dock.raise_()
-        self._show(hit)
+        show()
 
     def _can_show(self) -> bool:
         """A ray is worth casting: the panel is shown with a profile open."""

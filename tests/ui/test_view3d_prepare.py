@@ -62,3 +62,37 @@ def test_show_in_3d_reads_and_grids_in_the_background(qgis_app, fake_iface, stor
     finally:
         plugin.unload()
         project.clear()
+
+
+def test_a_refill_while_preparing_waits_for_the_task(qgis_app, fake_iface, store_with_model,
+                                                      monkeypatch):
+    """A style change during "Preparing 3D" never makes the clouds on the main thread."""
+    import threading
+    from dataclasses import replace
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui import view3d_layers
+    from groundwork_geophysics.ui.view3d_layers import Choice, clouds_3d, write_choice
+    main = threading.get_ident()
+    on_main = []
+    real = view3d_layers._write_cloud
+    monkeypatch.setattr(view3d_layers, "_write_cloud", lambda *a: on_main.append(
+        threading.get_ident() == main) or real(*a))
+    st, _p, _src = store_with_model
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    project = QgsProject.instance()
+    try:
+        plugin.set_store(st)
+        plugin.provider.set_style("d1", replace(plugin.provider.style("d1"), mode="smooth"))
+        write_choice(project, Choice(frozenset(["d1"])))
+        plugin._sync_3d(create=True)
+        _wait(qgis_app, lambda: plugin._prepare_tasks or "d1" in clouds_3d(project))
+        plugin._sync_3d(create=True)                    # a refill while it runs
+        _wait(qgis_app, lambda: "d1" in clouds_3d(project), 60.0)
+        assert on_main and not any(on_main)
+    finally:
+        plugin.unload()
+        project.clear()

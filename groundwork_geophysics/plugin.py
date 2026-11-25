@@ -52,6 +52,7 @@ class WorkbenchPlugin:
         self.model_reader = None
         self._prepared_3d: set = set()          # cloud / contour files a task has made
         self._prepare_tasks: list = []          # the running "Preparing 3D" tasks
+        self._waiting_3d: list = []             # refills asked for while one prepares
         self.style_watch: StyleWatch | None = None
         self._context_logged: set[tuple[str, str]] = set()
         self.dock: SectionDock | None = None
@@ -292,6 +293,7 @@ class WorkbenchPlugin:
             self.gatherer.background = True             # a web strip never freezes QGIS
             self.provider.refresh_web_layers = self.gatherer.refresh_web_layers
             self.provider.has_web_layers = self.gatherer.uses_web_layers
+            self.provider.finish_context_fetches = self.gatherer.finish_fetches
             self.provider.context_source = self.gatherer.items_for
             self.provider.borehole_source = self.gatherer.borehole_keys
             self.provider.interp_layers = lambda: interp_layers(store, project)
@@ -419,6 +421,9 @@ class WorkbenchPlugin:
         ``then(layers)`` is called after the fill, at once or after the tasks."""
         if self.provider is None or self._syncing_3d:
             return {}
+        if self._prepare_tasks:                 # filled when the running preparation is done
+            self._waiting_3d.append((create, boreholes, then))
+            return {}
         if (create or view3d_view.views_open(self.iface)) and \
                 self._prepare_3d_first(create, boreholes, then):
             return {}
@@ -459,7 +464,14 @@ class WorkbenchPlugin:
         def finished(ok: bool) -> None:
             if task in self._prepare_tasks:
                 self._prepare_tasks.remove(task)
+            for error in task.errors:
+                QgsMessageLog.logMessage(f"3D view: {error}", MENU_TITLE,
+                                         Qgis.MessageLevel.Warning)
+            waiting, self._waiting_3d[:] = list(self._waiting_3d), []
             again(ok)
+            for w_create, w_boreholes, w_then in waiting:     # refills asked for meanwhile
+                if self.provider is provider:
+                    self._sync_3d(w_create, w_boreholes, w_then)
         task.taskCompleted.connect(lambda: finished(True))
         task.taskTerminated.connect(lambda: finished(False))
         from qgis.core import QgsApplication

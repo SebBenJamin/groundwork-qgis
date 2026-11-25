@@ -89,15 +89,14 @@ def models_read_at_once(request, monkeypatch):
     from groundwork_geophysics.section.model_reading import ModelReader
 
     def at_once(self, profile_ids, done):
-        jobs = [j for j in self.provider.unread(profile_ids)
-                if (j.dataset_id, j.key) not in self._failed]
+        jobs = self.provider.unread(profile_ids)
         if not jobs:
             return False
         for job in jobs:
             try:
                 self.provider.take(job, run_job(job))
             except Exception:
-                self._failed.add((job.dataset_id, job.key))
+                self.provider.mark_failed(job)
         done(True)
         return True
     monkeypatch.setattr(ModelReader, "request", at_once)

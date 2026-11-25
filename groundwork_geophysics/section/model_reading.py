@@ -55,8 +55,6 @@ class ModelReader(QObject):
         super().__init__(parent)
         self.provider = provider
         self._batches: list[_Batch] = []        # the first one runs
-        #: reads that failed in a task: left to the main thread, which reports why
-        self._failed: set[tuple] = set()
 
     @property
     def busy(self) -> bool:
@@ -66,8 +64,7 @@ class ModelReader(QObject):
         """Read what ``profile_ids`` still need, then call ``done(True)`` (``False``: the
         reading was cancelled). False when there is nothing to read: ``done`` is not
         called."""
-        wanted = [j for j in self.provider.unread(profile_ids)
-                  if (j.dataset_id, j.key) not in self._failed]
+        wanted = self.provider.unread(profile_ids)
         if not wanted:
             return False
         queued = set().union(*(b.ids for b in self._batches)) if self._batches else set()
@@ -109,7 +106,8 @@ class ModelReader(QObject):
     def _finished(self, batch: _Batch, ok: bool) -> None:
         for job, result in batch.task.results:
             self.provider.take(job, result)
-        self._failed.update((j.dataset_id, j.key) for j in batch.task.failed)
+        for job in batch.task.failed:
+            self.provider.mark_failed(job)
         if self._batches and self._batches[0] is batch:
             self._batches.pop(0)
         for done in batch.done:

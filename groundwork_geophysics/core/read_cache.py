@@ -6,10 +6,16 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import zipfile
 from pathlib import Path
 
 import numpy as np
+
+
+def _temporary(path: Path) -> Path:
+    """A temporary name beside ``path`` that no other writer (thread, process) uses."""
+    return path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.part")
 
 
 def cacheable(result) -> bool:
@@ -29,7 +35,7 @@ def save_result(path: Path, result) -> bool:
     if mesh.coverage is not None:
         arrays["coverage"] = np.asarray(mesh.coverage, dtype=float)
     path = Path(path)
-    tmp = path.with_name(path.name + ".part")
+    tmp = _temporary(path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(tmp, "wb") as f:

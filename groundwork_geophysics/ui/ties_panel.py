@@ -229,5 +229,5 @@ class TiesPanel(QDockWidget):
             return
         self.section_dock.show()                # a hidden or closed section panel comes back
         self.section_dock.raise_()
-        self.section_dock.open_profile(row.a_id)
-        self.section_dock.show_cursor(row.s_a)
+        dock = self.section_dock
+        dock.open_profile(row.a_id, after=lambda: dock.show_cursor(row.s_a))

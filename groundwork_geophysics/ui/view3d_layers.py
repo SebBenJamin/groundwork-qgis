@@ -1157,7 +1157,8 @@ def _save_contours(path: Path, rows: list, dataset_id: str) -> None:
     levels = np.array([v for v, _xyz in rows], dtype=float)
     ends = np.cumsum([len(xyz) for _v, xyz in rows]).astype(np.int64)
     xyz = np.concatenate([xyz for _v, xyz in rows]) if rows else np.zeros((0, 3))
-    tmp = path.with_name(path.name + ".part")
+    from ..core.read_cache import _temporary
+    tmp = _temporary(path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(tmp, "wb") as f:
