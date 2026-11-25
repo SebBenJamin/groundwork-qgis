@@ -56,3 +56,11 @@ def test_fmt_trim(qgis_app):
     de = QLocale(QLocale.Language.German, QLocale.Country.Germany)
     assert fmt_trim(2.0, 2, de) == "2" and fmt_trim(1.25, 2, de) == "1,25"
     assert fmt_trim(115.0, 1, QLocale.c()) == "115"
+
+
+def test_counts_are_grouped_in_threes_the_same_in_every_locale(qgis_app):
+    from groundwork_geophysics.core.numbers import fmt_count
+    thin = "\u202f"
+    assert fmt_count(2057769) == f"2{thin}057{thin}769"
+    assert fmt_count(999) == "999" and fmt_count(1000) == f"1{thin}000"
+    assert fmt_count(0) == "0" and fmt_count(12.0) == "12"

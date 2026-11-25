@@ -44,8 +44,10 @@ def averaged_from_text(d) -> str:
     was = p.get("cell_file")
     if not to or not (isinstance(was, (list, tuple)) and len(was) == 2):
         return ""
-    return (f"averaged from {p.get('n_points_file', '?')} cells of {_size(was[0])} × "
-            f"{_size(was[1])} m to {to}")
+    from .numbers import fmt_count
+    n = p.get("n_points_file")
+    count = fmt_count(n) if isinstance(n, (int, float)) and not isinstance(n, bool) else "?"
+    return f"averaged from {count} cells of {_size(was[0])} × {_size(was[1])} m to {to}"
 
 
 def provenance_line(profile_name: str, d) -> str:

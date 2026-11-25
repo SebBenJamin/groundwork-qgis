@@ -842,3 +842,12 @@ def test_an_unticked_offer_stays_unticked_when_the_file_format_changes(
     assert dlg.table_options.options().delimiter == "space"
     assert not dlg.coarse_row.isHidden() and not dlg.coarse_check.isChecked()
     assert "block" not in dlg._reader_options()
+
+
+def test_cell_counts_are_grouped_in_threes(qgis_app, make_dialog, project_store, tmp_path,
+                                           selected_line):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(_fine_export(tmp_path))
+    assert dlg.coarse_note.text().startswith("101\u202f000 cells")
+    assert "25\u202f250" in dlg.coarse_count.text()
