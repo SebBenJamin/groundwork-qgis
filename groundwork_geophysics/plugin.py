@@ -236,7 +236,7 @@ class WorkbenchPlugin:
         return action
 
     # -- project store -------------------------------------------------------------------------
-    def set_store(self, store):
+    def set_store(self, store, from_project: bool = False):
         """Show ``store`` (a ``ProjectStore``) in the section panel; ``None`` tears down.
 
         The canvas is detached before the old source is unregistered, because
@@ -246,7 +246,9 @@ class WorkbenchPlugin:
         self._close_view3d_dialog()            # it lists the old store's profiles
         view3d_layers.forget_shown(QgsProject.instance())   # a new store starts afresh
         old = derived_layers.derived_layer(QgsProject.instance())
-        if old is not None:                    # the old store's electrodes
+        # a project just read keeps its own (refilled below): removing a layer while QGIS
+        # restores a 3D map view that holds it crashes QGIS
+        if old is not None and not (from_project and store is not None):
             QgsProject.instance().removeMapLayer(old.id())
         self._close_profile_dialog()
         self._close_data_dialog()             # it adds to the old store
@@ -298,7 +300,7 @@ class WorkbenchPlugin:
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error
             self.provider.on_data_change.append(self._schedule_derived)
-            self._sync_derived(create=True)
+            self._sync_derived(create=True, keep=from_project)
             self.provider.on_change.append(self._schedule_3d)
             self.provider.on_data_change.append(lambda: self._schedule_3d(boreholes=True))
             self._sync_3d()
@@ -368,7 +370,7 @@ class WorkbenchPlugin:
         except ValueError as exc:
             store = None
             self._warn(str(exc))
-        self.set_store(store)
+        self.set_store(store, from_project=True)
 
     def _schedule_derived(self) -> None:
         """Data changed: refill the derived layer once after the event loop turn."""
@@ -378,7 +380,7 @@ class WorkbenchPlugin:
             self._derived_timer.timeout.connect(self._sync_derived)
         self._derived_timer.start(0)
 
-    def _sync_derived(self, create: bool = False) -> None:
+    def _sync_derived(self, create: bool = False, keep: bool = False) -> None:
         """Show the derived electrodes as a temporary map layer (never stored). Only a store
         being opened creates the layer; it never raises out of opening or a notification."""
         if self.provider is None or self._syncing_derived:
@@ -386,7 +388,7 @@ class WorkbenchPlugin:
         self._syncing_derived = True            # adding the layer must not set off a rebuild
         try:
             derived_layers.sync(self.provider.store, self.provider, QgsProject.instance(),
-                                create=create)
+                                create=create, keep=keep)
         except Exception as exc:
             QgsMessageLog.logMessage(f"Derived electrodes layer: {exc}", MENU_TITLE,
                                      Qgis.MessageLevel.Warning)
