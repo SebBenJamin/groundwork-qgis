@@ -35,17 +35,24 @@ def store_with_model(tmp_path):
 
 
 _BOXES = ("warning", "question", "information", "critical")
+#: Qt's static pickers run their own event loop in C++, past a patched ``exec``
+_PICKERS = {"QFileDialog": ("getOpenFileName", "getOpenFileNames", "getSaveFileName",
+                            "getExistingDirectory"),
+            "QInputDialog": ("getText", "getItem", "getInt", "getDouble", "getMultiLineText"),
+            "QColorDialog": ("getColor",), "QFontDialog": ("getFont",)}
 
 
 @pytest.fixture(autouse=True)
 def no_modal_boxes():
     """Fail the test at once when it would open a real modal box (a static
-    QMessageBox.warning/question/information/critical, QMessageBox.exec or QDialog.exec)
-    that the test did not stub: offscreen, such a box blocks the whole suite. Autouse
+    QMessageBox.warning/question/information/critical, QMessageBox.exec, QDialog.exec, or a
+    static file, input, colour or font picker) that the test did not stub: offscreen, such a
+    box blocks the whole suite. Autouse
     fixtures run first, so a test's own stubs (``warnings_shown``, monkeypatches of a
     dialog's ``exec``) replace these; the guard has its own MonkeyPatch, so a test's
     ``monkeypatch.undo()`` does not lift it. Unstubbed calls are also failed at teardown,
     in case a slot swallowed the first failure. Yields the list of boxes refused."""
+    from qgis.PyQt import QtWidgets
     from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 
     opened = []
@@ -62,6 +69,10 @@ def no_modal_boxes():
             guard.setattr(QMessageBox, name, staticmethod(refuse(f"QMessageBox.{name}")))
         guard.setattr(QMessageBox, "exec", refuse("QMessageBox.exec"))
         guard.setattr(QDialog, "exec", refuse("QDialog.exec"))
+        for owner, names in _PICKERS.items():
+            cls = getattr(QtWidgets, owner)
+            for name in names:
+                guard.setattr(cls, name, staticmethod(refuse(f"{owner}.{name}")))
         yield opened
     if opened:
         pytest.fail(f"real modal boxes were opened: {opened}", pytrace=False)
