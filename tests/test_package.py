@@ -53,7 +53,15 @@ def test_package_builds_guelpe_demo_zip(tmp_path):
     import package
 
     zips = package.build(tmp_path)
-    assert len(zips) == 5
+    assert len(zips) == 6
+    assert zips[5].name == f"groundwork_geophysics-demo-vaud-{package.version()}.zip"
+    vaud_names = zipfile.ZipFile(zips[5]).namelist()
+    for need in ("vaud_project.qgz", "vaud_groundwork.gpkg", "ATTRIBUTION.md",
+                 "data/VD-P760057_stack.sgy", "data/VD-P760068_stack.sgy",
+                 "context/dem_swissalti3d_10m.tif"):
+        assert need in vaud_names
+    assert not any(".cache" in n or "_groundwork_3d/" in n or "_groundwork_cache/" in n
+                   for n in vaud_names)
     calhoun_names = zipfile.ZipFile(zips[4]).namelist()
     assert zips[4].name.startswith("groundwork_geophysics-demo-calhoun-")
     for need in ("calhoun_project.qgz", "calhoun_groundwork.gpkg", "ATTRIBUTION.md",

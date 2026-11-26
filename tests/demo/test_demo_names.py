@@ -10,7 +10,8 @@ DEMOS = [("demo", "demo_project.qgz", "demo_groundwork.gpkg", "demo_workbench.gp
          ("demo_guelpe", "guelpe_project.qgz", "guelpe_groundwork.gpkg", "guelpe_workbench.gpkg"),
          ("demo_erfurt", "erfurt_project.qgz", "erfurt_groundwork.gpkg", "erfurt_workbench.gpkg"),
          ("demo_calhoun", "calhoun_project.qgz", "calhoun_groundwork.gpkg",
-          "calhoun_workbench.gpkg")]
+          "calhoun_workbench.gpkg"),
+         ("demo_vaud", "vaud_project.qgz", "vaud_groundwork.gpkg", "vaud_workbench.gpkg")]
 
 
 def _qgs_text(qgz):
