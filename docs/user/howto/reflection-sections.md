@@ -4,7 +4,7 @@ A processed seismic reflection section (a stack or a migrated section) comes in 
 SEG-Y file and stands on its profile in depth, next to the ground line, boreholes, resistivity
 models and crossing lines. You pick horizons on it with the same tools as on any other section.
 
-![Line VD-P760057 of the Vaud demo: a stack 8.5 km long, from its datum at 500 m down to about 5 km depth, with the ground line just above its top and the crossing line VD-P760068](../../images/howto/reflection-section.jpg)
+![Line VD-P760057 of the Vaud demo: a stack 8.5 km long, from its top near the 500 m datum down to almost 10 km below sea level, with the ground line just above its top and the crossing line VD-P760068](../../images/howto/reflection-section.jpg)
 
 *The Vaud demo, line VD-P760057. Data: Federal Office of Topography swisstopo.*
 
@@ -74,12 +74,21 @@ What this means for accuracy:
 - The error grows with depth. A velocity 10 % too low puts every reflector 10 % too shallow:
   5 m at 50 m depth, 300 m at 3 km.
 - A plate always states the velocity used, in the line under the section, for example
-  *depth from v = 3000 m/s*. A reader of the plate can judge the depth from it.
+  *depth from v = 2500 m/s* or *depth from a velocity function (3199–5387 m/s)*. A reader of
+  the plate can judge the depth from it.
 
 You can change the velocity, the sample step and where time zero lies later in
 [Dataset info](dataset-info.md). The picture moves; nothing is read again. Drawings are stored
 at their heights, so they stay where they are: when the profile has drawings, Groundwork asks
 before it moves the section.
+
+### Where to find the velocity and the datum
+
+The processing report, or the title block of the original paper section, usually states the
+datum plane, the replacement velocity and a table of two-way time against velocity. Type these
+into the dialog; paste the table with Ctrl+V. For the Vaud demo they were read from the scanned
+section that comes with the swisstopo download: a datum of 500 m, a replacement velocity of
+4000 m/s, and average velocities from about 3200 m/s near the top to about 5400 m/s at 3.8 s.
 
 ### Where time zero lies
 
@@ -98,11 +107,12 @@ before it moves the section.
 A processed land section has a flat top at its datum. Processing moved every trace to that
 height with a replacement velocity, so the ground shows only as the blank zone above the first
 data. When the datum lies below the ground, as in the Vaud demo, the section starts below the
-ground line ([picture below](#picking-horizons)).
+ground line: the uppermost part of the ground is not in the data
+([picture below](#picking-horizons)).
 
 **At a fixed height, corrected to the ground** undoes this for the picture: the time the
 ground has in the data, 2 × (datum − ground) ÷ replacement velocity, is put on the ground
-line. Reflectors then follow the real topography.
+line. Reflectors then follow the real topography. The Vaud demo is shown this way.
 
 - On a deep line the difference is small. On a Swiss exploration line with a datum of 700 m
   and ground between 560 and 730 m, using a velocity of 3000 m/s and a replacement velocity of
@@ -156,7 +166,7 @@ Horizons are drawn with the [interpretation tools](interpretation.md): **Line** 
 reflector or a fault, **Polygon** for a body, **Point** for a pick. Give each a type and a
 name; the drawings become QGIS layers on the map and in 3D, as for any other section.
 
-![3 km of VD-P760057 zoomed in, in Edit: a reflector at about −330 m drawn as line R1; the ground line lies some 50 to 100 m above the section's flat top at 500 m](../../images/howto/reflection-horizon.jpg)
+![3 km of VD-P760057 zoomed in, in Edit: a reflector at about −400 m drawn as line R1; the ground line lies some 30 to 80 m above the section's top, which lies just above 500 m](../../images/howto/reflection-horizon.jpg)
 
 *Data: Federal Office of Topography swisstopo.*
 
@@ -218,10 +228,15 @@ To find your QGIS profile folder: **Settings → User Profiles → Open Active P
    and VD-P760068, on a 10 m elevation model of swissALTI3D.
 2. **Groundwork → Show Section Panel** and open **VD-P760057**. The crossing line is marked
    where it crosses.
-3. Zoom in near the top: the ground line lies some 50 to 100 m above the section's flat top
-   at 500 m, the datum of the processing.
-4. Right-click the section → **Dataset info…** to see the velocity and the datum. The velocity
-   of 3000 m/s is an assumption of the demo, not a value from swisstopo.
+3. Zoom in near the top: the section's top lies near 500 m, the datum of the processing, and
+   the ground line up to about 80 m above it. The uppermost part of the ground is not in the
+   data.
+4. Right-click the section → **Dataset info…** to see the velocity function and the datum.
+   The datum of 500 m, the replacement velocity of 4000 m/s and the average velocities come
+   from the original section sheet of VD-P760057, which swisstopo ships with the line. The
+   sheet gives five velocity columns for different stretches of the line; the demo uses one
+   function for the whole line, the median of the five. VD-P760068 has no such sheet; it is
+   from the same 1976 survey, and the demo uses the same values for it as an assumption.
 
 The data are swisstopo's open reflection lines ("2D and 3D reflection seismic in
 Switzerland", opendata.swiss) and swissALTI3D. Data: Federal Office of Topography swisstopo.

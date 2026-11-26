@@ -10,7 +10,7 @@ written, and local edits to it never show), opens it offscreen and writes to ``o
 - ``reflection-add-data.png``: Add Data with the stack of VD-P760057 chosen, its parts
   numbered in a gutter as in render_doc_images.py (``ADD_DATA_PARTS``);
 - ``reflection-display.png``: the section's Display… dialog, numbered (``DISPLAY_PARTS``);
-- ``reflection-horizon.jpg``: 3 km of VD-P760057 from the ground to -475 m, in Edit, with one
+- ``reflection-horizon.jpg``: 3 km of VD-P760057 from the ground to -575 m, in Edit, with one
   reflector drawn as a line.
 
 segyio is looked for in .testlibs/ as the tests do (scripts/test.ps1 says how to put it
@@ -39,14 +39,14 @@ STACK = f"data/{LINE}_stack.sgy"
 PANEL = (1400, 560)
 JPEG_QUALITY = 88           # the panel pictures: seismic grey compresses poorly as PNG
 #: the horizon picture: from s, to s, top of the view, exaggeration
-ZOOM = (3900.0, 6900.0, 750.0, 1.0)
+ZOOM = (3900.0, 6900.0, 650.0, 1.0)
 #: the reflector drawn as a line: a strong, nearly flat positive reflector at about this
 #: height (read off the section's mean trace), picked on its strongest amplitude within
 #: HORIZON_WINDOW of that height from HORIZON_START to HORIZON_END, a point every HORIZON_STEP
-HORIZON_START = (4000.0, -334.0)
+HORIZON_START = (4000.0, -400.0)
 HORIZON_END = 6800.0
 HORIZON_STEP = 200.0
-HORIZON_WINDOW = 9.0        # m up and down (one and a half samples at 3000 m/s)
+HORIZON_WINDOW = 14.0       # m up and down (about one and a half samples near 0.5 s)
 DIALOG_WIDTH = 760
 DISPLAY_WIDTH = 520
 #: Add Data's parts in marker order: rows of the SEG-Y box by their key, or dialog parts by
