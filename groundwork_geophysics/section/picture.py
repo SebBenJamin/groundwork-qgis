@@ -19,6 +19,14 @@ MAX_PIXELS = 8_000_000          # per model: long lines get coarser instead of h
 #: (each picture is held by the graphics card, and decoded again for every 2D map redraw)
 MAX_PX = 8192                   # the longest side of one piece
 LABEL_SHARE = 1 / 25            # contour label text height as a share of the picture height
+#: ... and never more than this share of its length: a section as deep as it is long (a
+#: seismic line of 8 km reaching 10 km down) would otherwise get text 400 m tall
+LENGTH_SHARE = 1 / 100
+
+
+def label_height(s0: float, s1: float, z0: float, z1: float) -> float:
+    """Text height in metres for a picture of this extent (line widths scale with it)."""
+    return min(LABEL_SHARE * (z1 - z0), LENGTH_SHARE * (s1 - s0))
 
 
 @dataclass
@@ -81,7 +89,7 @@ def section_pictures(layers, topo, interpretation=None, base=None) -> list[Pictu
     pieces = list(interpretation[0]) if interpretation else []
     s0, s1, z0, z1 = joint_extent(layers, topo, pieces)
     ppm, cuts = layout(s0, s1, z0, z1)
-    label_px = LABEL_SHARE * (z1 - z0) * ppm
+    label_px = label_height(s0, s1, z0, z1) * ppm
     out = []
     for a, b in zip(cuts[:-1], cuts[1:]):
         painted = _paint(drawings, interpretation if pieces else None, a, b, z0, z1, ppm,

@@ -942,8 +942,8 @@ def _picture_signature(layers, profile, topo, interpretation=None, gap: float = 
         h.update(repr((section_layer.dataset.id, style.mode, style.contour_step,
                        tuple(style.contour_major), tuple(style.contour_minor),
                        style.opacity)).encode())
-    h.update(repr((picture.PX_PER_M, picture.MAX_PIXELS, picture.LABEL_SHARE, 2,
-                   round(gap, 6))).encode())
+    h.update(repr((picture.PX_PER_M, picture.MAX_PIXELS, picture.LABEL_SHARE,
+                   picture.LENGTH_SHARE, 2, round(gap, 6))).encode())
     h.update(_interp_signature(interpretation).encode())
     return h.hexdigest()[:10]
 
