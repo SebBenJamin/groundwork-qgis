@@ -130,3 +130,31 @@ def test_an_amplitude_key_survives_saving_the_project(env, tmp_path):
     gc.collect()
     numbered, keys = _bars(find_plate_layout(prj, plate))
     assert [b.dataset_id for b in numbered] == ["d1"] and [b.dataset_id for b in keys] == ["s1"]
+
+
+def test_the_stamp_says_processing_for_a_section_and_inversion_for_a_model():
+    from groundwork_geophysics.core.dataset_info import with_info
+    from groundwork_geophysics.core.model import Dataset
+    from groundwork_geophysics.core.plates import PlateSpec
+    from groundwork_geophysics.plates.stamp import stamp_texts
+    plate = PlateSpec("pl1", "1", "Line", "A3_landscape", [])
+    section = with_info(Dataset("s1", "p1", "", "refl_section", "a.sgy", 0.0, "", "segy",
+                                {"velocity": 1500.0}, {}), {"software": "migrated stack"})
+    model = with_info(Dataset("d1", "p1", "", "ert_model", "a.dat", 0.0, "", "r2", {}, {}),
+                      {"software": "BERT"})
+    assert "Processing: migrated stack" in stamp_texts(plate, ["P1"], [section], [], "", "")["survey"]
+    assert "Inversion: BERT" in stamp_texts(plate, ["P1"], [model], [], "", "")["survey"]
+
+
+def test_traces_text_counts_like_the_add_data_summary(tmp_path):
+    from groundwork_geophysics.core.dataset_info import traces_text
+    from groundwork_geophysics.core.model import Dataset
+    from groundwork_geophysics.readers.segy import SegyReader
+    from groundwork_geophysics.ui.add_data_dialog import describe_traces
+    a = np.zeros((1970, 3), np.float32)
+    a[:, 1] = 1.0
+    path = write_segy(tmp_path / "big.sgy", a, dt_us=4000, fmt=5)
+    result = SegyReader().read(path, position="spacing", spacing=1.0)
+    d = Dataset("s1", "p1", "", "refl_section", str(path), 0.0, "", "segy", {}, result.provenance)
+    counts = describe_traces(result.traces).split(" · ")[0]
+    assert traces_text(d).startswith(counts) and "1" in counts and "970" in counts

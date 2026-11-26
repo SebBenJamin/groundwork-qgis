@@ -24,6 +24,10 @@ LABELS = {"method": "Method", "array": "Array", "spacing": "Electrode / geophone
 HINTS = {"method": "e.g. ERT, seismic refraction", "array": "e.g. dipole-dipole, Wenner",
          "spacing": "e.g. 1 m", "date": "e.g. 2024-06-12",
          "software": "e.g. BERT, λ = 100, robust", "reference": "e.g. Pohle et al. 2025"}
+#: a reflection section's words for the same info keys (it is processed, not inverted, and
+#: has no electrode array); the stored keys stay ``software`` and ``spacing``
+SECTION_LABELS = {"software": "Processing software and settings", "spacing": "Trace spacing"}
+SECTION_HINTS = {"software": "e.g. migrated stack, contractor, year", "spacing": "e.g. 2 m"}
 SECTION_TITLE = "Section"
 #: the reader options edited here: how the samples are read (a change reads the file again)
 #: and how the section is hung (``section.data.HANG_KEYS``; never read again)
@@ -105,8 +109,11 @@ class DatasetInfoDialog(QDialog):
                 w.setMaximumHeight(70)
             else:
                 w = QLineEdit(info.get(key, ""))
-                w.setPlaceholderText(HINTS.get(key, ""))
-            form.addRow(LABELS[key], w)
+                w.setPlaceholderText((SECTION_HINTS if trace else {}).get(key, HINTS.get(key, "")))
+            form.addRow((SECTION_LABELS if trace else {}).get(key, LABELS[key]), w)
+            if trace and key == "array":            # a section has no array: kept, not shown
+                form.labelForField(w).hide()
+                w.hide()
             self.fields[key] = w
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)

@@ -60,7 +60,9 @@ def _survey(datasets: list, fits: list, crs_authid: str, crs_description: str) -
         lines.append(first[0].upper() + first[1:])
     software, reference = shared("software"), shared("reference")
     if software:
-        head = f"Inversion: {software}" + (f" ({reference})" if reference else "")
+        # a reflection section was processed, not inverted
+        word = "Processing" if all(is_trace_kind(d.kind) for d in datasets) else "Inversion"
+        head = f"{word}: {software}" + (f" ({reference})" if reference else "")
     else:
         head = f"Reference: {reference}" if reference else ""
     second = " · ".join(x for x in (head, _shared([_rms(d) for d in datasets])) if x)

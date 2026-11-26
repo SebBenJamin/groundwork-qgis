@@ -166,3 +166,43 @@ def test_a_model_has_no_section_group(qgis_app, store_with_model):
     st, p, _ = store_with_model
     dlg = DatasetInfoDialog(st, st.datasets(p.id)[0].id)
     assert dlg.segy_box is None
+
+
+def test_a_section_speaks_of_processing_and_trace_spacing(qgis_app, tmp_path):
+    import pytest
+    pytest.importorskip("segyio")
+    from qgis.PyQt.QtWidgets import QFormLayout, QLabel
+
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _trace_store(tmp_path)
+    dlg = DatasetInfoDialog(st, "s1", provider=provider)
+    dlg.show()
+    form = dlg.findChild(QFormLayout)
+
+    def label(key):
+        return form.labelForField(dlg.fields[key])
+    assert label("software").text() == "Processing software and settings"
+    assert dlg.fields["software"].placeholderText() == "e.g. migrated stack, contractor, year"
+    assert label("spacing").text() == "Trace spacing"
+    assert dlg.fields["spacing"].placeholderText() == "e.g. 2 m"
+    assert dlg.fields["array"].isHidden() and label("array").isHidden()
+    shown = [w.text() for w in dlg.findChildren(QLabel) if not w.isHidden()]
+    assert "Inversion software and settings" not in shown and "Array" not in shown
+    dlg.fields["software"].setText("migrated stack")
+    dlg.fields["spacing"].setText("2 m")
+    dlg.accept()
+    from groundwork_geophysics.core.dataset_info import dataset_info
+    assert dataset_info(st.datasets(p.id)[0]) == {"software": "migrated stack", "spacing": "2 m"}
+    dlg.close()
+
+
+def test_a_model_keeps_its_inversion_wording(qgis_app, store_with_model):
+    from qgis.PyQt.QtWidgets import QFormLayout
+
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, _ = store_with_model
+    dlg = DatasetInfoDialog(st, st.datasets(p.id)[0].id)
+    form = dlg.findChild(QFormLayout)
+    assert form.labelForField(dlg.fields["software"]).text() == "Inversion software and settings"
+    assert form.labelForField(dlg.fields["spacing"]).text() == "Electrode / geophone spacing"
+    assert not dlg.fields["array"].isHidden()
