@@ -1155,6 +1155,8 @@ class SectionDataProvider:
         for r in self._resolved(profile, sets, datasets).values():
             if r.note:
                 return r.note
+        if all(is_trace_kind(d.kind) for d in datasets):
+            return ""                       # a processed section lacks nothing
         if not sets and self.electrodes(profile_id) is None:
             return NO_STATIONS_NOTE.format(word=station_words(self.station_method(profile_id))[0])
         return ""

@@ -216,6 +216,23 @@ def test_a_profile_with_only_a_section_has_geophone_words(make):
     assert provider.electrodes(pid) is not None
 
 
+def test_a_profile_with_only_sections_has_no_missing_geophones_note(make):
+    provider, _store, pid = make({"zero": "datum", "datum": 500.0}, heights=False)
+    assert provider.placement_note(pid) == ""
+
+
+def test_a_model_without_stations_keeps_the_missing_positions_note(tmp_path):
+    store = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p = profile_from_polyline("P1", "EPSG:25832", np.array([[0.0, 0.0], [100.0, 0.0]]))
+    store.save_profile(p)
+    model = tmp_path / "f001_res.vtk"                      # triangulated: no electrodes
+    shutil.copy(FIXTURES / "ert" / "f001_res.vtk", model)
+    _add(store, p.id, "", model, {"z_kind": "elevation"}, did="m1", kind="ert_model",
+         reader="vtk_legacy")
+    note = SectionDataProvider(store).placement_note(p.id)
+    assert note == "No electrode positions: import them or type the spacing in Profile Properties"
+
+
 def test_velocity_change_moves_the_picture_without_a_new_dataset(make):
     provider, store, pid = make({"zero": "datum", "datum": 500.0})
     assert layer_bounds(provider.layers(pid)[0])[2] == pytest.approx(500.0 - 49.0)
