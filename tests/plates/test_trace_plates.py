@@ -132,6 +132,27 @@ def test_an_amplitude_key_survives_saving_the_project(env, tmp_path):
     assert [b.dataset_id for b in numbered] == ["d1"] and [b.dataset_id for b in keys] == ["s1"]
 
 
+def test_a_deep_section_that_does_not_fit_keeps_its_top_in_the_frame(env, tmp_path):
+    # 8 km long, 10 km deep on A4 landscape: at the coarsest scale and VE 1 the depth does
+    # not fit; the top of the section stays in the frame and the bottom is cut
+    from groundwork_geophysics.core.model import profile_from_polyline
+    from groundwork_geophysics.core.plates import FrameLook, FrameSpec, ModelLook, PlateSpec
+    from groundwork_geophysics.plates.build import NOT_FIT, create_or_update_plate
+    st, _p, prov, prj = env
+    deep = profile_from_polyline("Deep", st.crs_authid, np.array([[0.0, 0.0], [8000.0, 0.0]]))
+    st.save_profile(deep)
+    a = np.sin(np.arange(81 * 101, dtype=np.float32) / 3.0).reshape(81, 101)
+    _add_section(st, deep, tmp_path, amplitudes=a, did="s9", spacing=100.0, domain="depth",
+                 sample_step=100.0, datum=500.0)
+    plate = PlateSpec("pl9", "9", "Deep", "A4_landscape",
+                      [FrameSpec("f9", deep.id, FrameLook([ModelLook("s9")]))])
+    layout = create_or_update_plate(prj, st, prov, plate)
+    plot = layout.itemById("wb_frame_1").plot()
+    text = layout.itemById("wb_provenance_1").text()
+    assert plot.yMaximum() >= 500.0                          # the top is in the frame
+    assert plot.yMinimum() > -9500.0 and NOT_FIT in text     # the bottom is cut, said aloud
+
+
 def test_the_stamp_says_processing_for_a_section_and_inversion_for_a_model():
     from groundwork_geophysics.core.dataset_info import with_info
     from groundwork_geophysics.core.model import Dataset

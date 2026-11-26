@@ -268,8 +268,9 @@ def label_room_mm(snap) -> float:
 def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float,
               top_mm: float = 0.0) -> None:
     """Set the plot range so the plot area shows 1:``scale`` horizontally and ``ve`` times
-    that vertically: the data and ``top_mm`` above it for the labels, centred (axis labels
-    change the plot area: settle three times)."""
+    that vertically: the data and ``top_mm`` above it for the labels, centred; data deeper
+    than the frame keep their top (and the label room) in it and are cut at the bottom
+    (axis labels change the plot area: settle three times)."""
     plot = item.plot()
     for _ in range(3):
         w_mm, h_mm = _interior_mm(item)
@@ -277,7 +278,8 @@ def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: 
         span_z = h_mm * scale / (1000.0 * ve)
         room = top_mm * scale / (1000.0 * ve)
         sc = (s0 + s1) / 2.0
-        y_min = z0 - (span_z - (z1 - z0) - room) / 2.0
+        spare = span_z - (z1 - z0) - room
+        y_min = z0 - spare / 2.0 if spare >= 0 else z1 + room - span_z
         plot.setXMinimum(sc - span_s / 2.0)
         plot.setXMaximum(sc + span_s / 2.0)
         plot.setYMinimum(y_min)
