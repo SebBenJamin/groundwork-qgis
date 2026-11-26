@@ -164,7 +164,9 @@ class ContextItems:
             points=sorted((replace(p, s=length - p.s) for p in self.points), key=lambda p: p.s),
             band=sorted((replace(b, s0=length - b.s1, s1=length - b.s0) for b in self.band),
                         key=lambda b: b.s0),
-            ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
+            ties=sorted((replace(t, s=length - t.s, stretch=None if t.stretch is None else
+                                 (length - t.stretch[1], length - t.stretch[0]))
+                         for t in self.ties), key=lambda t: t.s),
             dem=dem, dem_tolerance=self.dem_tolerance,
             borehole_views=dict(self.borehole_views), curve_styles=dict(self.curve_styles),
             field_notes=sorted((_mirrored_note(n, length) for n in self.field_notes),
@@ -282,12 +284,69 @@ def polygon_intervals(profile_xy, polygons, labels: list[str]) -> list[BandSegme
     return out
 
 
-def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float]]:
-    """Ties between two profiles as (s_a, s_b, distance). True crossings have
-    distance 0; without one, the single closest approach if within ``near_miss``."""
+#: crossings of the same two profiles closer than this along the profile (metres, or this
+#: share of its length when that is more) follow each other ...
+STRETCH_GAP_M = 10.0
+STRETCH_GAP_SHARE = 0.05
+#: ... and this many of them in a row are one shared stretch
+STRETCH_MIN_CROSSINGS = 3
+
+
+@dataclass
+class TieHit:
+    """Where two profiles tie: ``s`` on the first, ``s_other`` on the second, their gap there
+    (0 at a crossing); ``stretch`` (start, end on the first) when they run along each other,
+    the tie then at the stretch's middle."""
+    s: float
+    s_other: float
+    distance: float
+    stretch: tuple[float, float] | None = None
+
+
+def _groups(s: list[float], gap: float) -> list[list[int]]:
+    """Indices of ``s`` (ascending) in runs whose neighbours are less than ``gap`` apart."""
+    out: list[list[int]] = []
+    for i, v in enumerate(s):
+        if out and v - s[out[-1][-1]] < gap:
+            out[-1].append(i)
+        else:
+            out.append([i])
+    return out
+
+
+def tie_hits(a_xy, b_xy, near_miss: float) -> list[TieHit]:
+    """Ties between two profiles: every true crossing (distance 0), except that crossings
+    following each other closely (``STRETCH_GAP_M`` / ``STRETCH_GAP_SHARE``), at least
+    ``STRETCH_MIN_CROSSINGS`` in a row, are one shared stretch with one tie at its middle (on
+    the other profile: the point there nearest to that middle). Without a crossing, the
+    single closest approach if within ``near_miss``. Every tie between profiles (markers,
+    tie strips, the ties panel, interpretation marks) comes from here."""
     hits = _intersections(a_xy, b_xy)
-    if hits:
-        return [(sa, sb, 0.0) for sa, sb, _ang in hits]
+    if not hits:
+        near = _near_miss(a_xy, b_xy, near_miss)
+        return [] if near is None else [TieHit(*near)]
+    gap = max(STRETCH_GAP_M, STRETCH_GAP_SHARE * float(_cum(np.asarray(a_xy, float))[-1]))
+    out = []
+    for group in _groups([h[0] for h in hits], gap):
+        if len(group) < STRETCH_MIN_CROSSINGS:
+            out += [TieHit(hits[i][0], hits[i][1], 0.0) for i in group]
+            continue
+        s0, s1 = hits[group[0]][0], hits[group[-1]][0]
+        mid = 0.5 * (s0 + s1)
+        s_other = Chainage(b_xy).project(Chainage(a_xy).to_xy(mid)[None, :])[0]
+        out.append(TieHit(mid, float(np.ravel(s_other)[0]), 0.0, (s0, s1)))
+    return out
+
+
+def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float]]:
+    """Ties between two profiles as (s_a, s_b, distance) (``tie_hits`` without the
+    stretches)."""
+    return [(h.s, h.s_other, h.distance) for h in tie_hits(a_xy, b_xy, near_miss)]
+
+
+def _near_miss(a_xy, b_xy, near_miss: float) -> tuple[float, float, float] | None:
+    """(s_a, s_b, distance) of the closest approach of two profiles that do not cross, when
+    within ``near_miss``."""
     ca, cb = Chainage(a_xy), Chainage(b_xy)
     best = None   # (distance, s_a, s_b)
     for one, other, flip in ((ca, cb, False), (cb, ca, True)):
@@ -300,5 +359,5 @@ def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float
         if best is None or cand[0] < best[0]:
             best = cand
     if best is not None and best[0] <= near_miss:
-        return [(best[1], best[2], best[0])]
-    return []
+        return best[1], best[2], best[0]
+    return None
