@@ -1,6 +1,8 @@
 # Runs pytest inside QGIS 4.2.3's Python. Extra args are passed through.
 # pytest is not bundled with QGIS; install it locally with:
 #   $env:PYTHONNOUSERSITE=1; python-qgis.bat -m pip install --target .testlibs pytest
+# The SEG-Y tests need the optional library segyio (--no-deps: QGIS's own NumPy is used):
+#   $env:PYTHONNOUSERSITE=1; python-qgis.bat -m pip install --target .testlibs --no-deps segyio
 $ErrorActionPreference = "Stop"
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:PYTHONNOUSERSITE = "1"

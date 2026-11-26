@@ -88,7 +88,9 @@ class WorkbenchPlugin:
         return None if self.provider is None else self.provider.store
 
     def initGui(self):
+        from . import libs
         from .patterns import register_svg_path
+        libs.ensure_on_path()                            # optional libraries the user installed
         from .plates import items as plate_items
         from .plates.sources import read_plates
         register_svg_path()                              # FGDC patterns in the SVG pickers
