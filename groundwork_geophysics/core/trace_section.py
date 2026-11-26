@@ -290,7 +290,22 @@ def place(section: TraceSection, z_top, velocity: Velocity | None) -> PlacedTrac
     return PlacedTraces(section, np.ascontiguousarray(zt), depths)
 
 
-def _agc_into(src: np.ndarray, dst: np.ndarray, window: int) -> np.ndarray:
+#: AGC and trace balance divide by at least this share of the section's RMS: a muted or dead
+#: part (zeros and numerical leftovers) stays quiet instead of being lifted to full strength
+QUIET_SHARE = 0.001
+
+
+def quiet_floor(amplitudes) -> float:
+    """``QUIET_SHARE`` of the RMS of the finite, non-zero samples (a subsample of at most
+    ``SAMPLE_LIMIT``); 0 when there are none."""
+    v = _sample(amplitudes).astype(np.float64)
+    v = v[np.isfinite(v) & (v != 0)]
+    if not v.size:
+        return 0.0
+    return QUIET_SHARE * float(np.sqrt(np.mean(v * v)))
+
+
+def _agc_into(src: np.ndarray, dst: np.ndarray, window: int, floor: float) -> np.ndarray:
     """``src`` with AGC written to ``dst`` (float32, may be ``src`` itself), block by block."""
     n = src.shape[1]
     window = max(1, int(window))
@@ -306,17 +321,20 @@ def _agc_into(src: np.ndarray, dst: np.ndarray, window: int) -> np.ndarray:
         np.cumsum(ok, axis=1, out=cnt[:, 1:])
         num = cnt[:, hi] - cnt[:, lo]
         with np.errstate(invalid="ignore", divide="ignore"):
-            rms = np.sqrt(np.maximum(sq[:, hi] - sq[:, lo], 0.0) / num)
+            rms = np.fmax(np.sqrt(np.maximum(sq[:, hi] - sq[:, lo], 0.0) / num), floor)
             out = np.where(rms > 0, a / rms, np.where(ok, 0.0, a))
         dst[r0:r1] = out
     return dst
 
 
-def agc(amplitudes: np.ndarray, window: int) -> np.ndarray:
+def agc(amplitudes: np.ndarray, window: int, floor: float | None = None) -> np.ndarray:
     """A float32 copy with each sample divided by the RMS of the ``window`` samples centred on
-    it (fewer at the ends of a trace); where that RMS is zero the sample becomes zero."""
+    it (fewer at the ends of a trace), but by no less than ``floor`` (None: ``quiet_floor``,
+    so muted and dead parts stay quiet; 0: the plain division). Where the divisor is zero the
+    sample becomes zero."""
     src = np.asarray(amplitudes)
-    return _agc_into(src, np.empty(src.shape, np.float32), window)
+    floor = quiet_floor(src) if floor is None else float(floor)
+    return _agc_into(src, np.empty(src.shape, np.float32), window, floor)
 
 
 @dataclass(frozen=True)
@@ -363,15 +381,16 @@ def display_values(section: TraceSection, gain: DisplayGain) -> np.ndarray:
             f = np.abs(section.sample_axis()) ** gain.time_power
         out *= np.where(np.isfinite(f), f, 0.0).astype(np.float32)
     if gain.agc_window is not None and gain.agc_window > 0:
-        _agc_into(out, out, max(1, round(gain.agc_window / section.step)))
+        _agc_into(out, out, max(1, round(gain.agc_window / section.step)), quiet_floor(out))
     if gain.balance_traces:
+        floor = quiet_floor(out)                # a dead trace stays dead
         for r0, r1 in _row_blocks(out.shape[0], out.shape[1]):
             a = out[r0:r1].astype(np.float64)
             ok = np.isfinite(a)
             n = ok.sum(axis=1)
             with np.errstate(invalid="ignore", divide="ignore"):
                 rms = np.sqrt(np.where(ok, a * a, 0.0).sum(axis=1) / n)
-            rms = np.where(np.isfinite(rms) & (rms > 0), rms, 1.0)
+            rms = np.where(np.isfinite(rms) & (rms > 0), np.fmax(rms, floor), 1.0)
             out[r0:r1] = a / rms[:, None]
     if gain.reverse_polarity:
         np.negative(out, out=out)

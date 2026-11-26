@@ -242,8 +242,10 @@ def trace_limits(layer_or_placed, style: LayerStyle, values=None) -> tuple[float
 
 def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
     """Automatic scale of a trace layer: grey, symmetric for signed data; reversed grey from 0
-    for data that are never negative (strong is dark either way)."""
-    lo, hi = trace_limits(placed, style)
+    for data that are never negative (strong is dark either way). Taken from the file's own
+    values, never a gained copy (main thread): it fixes the ramp and a first guess; the
+    drawing works out the limits as drawn."""
+    lo, hi = trace_limits(placed, style, values=placed.section.amplitudes)
     return ColorScale("gray" if lo < 0 else "gray_r", lo, hi, False)
 
 

@@ -247,3 +247,52 @@ def test_large_sections_are_sampled_for_clip_and_sign():
     a[::7, ::3] = -1.0
     s = TraceSection(a, np.arange(2000.0), 0.0, 0.001, "time")
     assert s.signed() and s.clip(50.0) == 1.0
+
+
+# -- AGC and trace balance keep dead and muted parts quiet ---------------------------------
+def _half_dead(rng_seed=3):
+    """Two traces: a signal in the first half, exact zeros plus leftovers of 1e-6 of the
+    signal's size in the second half."""
+    rng = np.random.default_rng(rng_seed)
+    n = 400
+    sig = np.sin(np.arange(n) / 2.0)
+    a = np.outer(np.ones(2), sig)
+    a[:, n // 2:] = 0.0
+    a[:, n // 2::7] = 1e-6 * rng.standard_normal(a[:, n // 2::7].shape)
+    return a.astype(np.float32)
+
+
+def test_agc_keeps_a_muted_part_quiet():
+    a = _half_dead()
+    g = agc(a, 21)
+    level = np.abs(g[:, 20:180]).max()
+    assert level > 0.5
+    assert np.abs(g[:, 230:]).max() < 0.01 * level
+
+
+def test_agc_floor_zero_is_the_plain_division():
+    a = _half_dead()
+    assert np.abs(agc(a, 21, floor=0.0)[:, 230:]).max() > 0.1
+
+
+def test_agc_of_dead_data_is_zero():
+    g = agc(np.zeros((3, 60), np.float32), 11)
+    assert not np.isnan(g).any() and not g.any()
+    assert not np.isnan(display_values(_section(np.zeros((3, 60), np.float32)),
+                                       DisplayGain(agc_window=0.01, balance_traces=True))).any()
+
+
+def test_trace_balance_keeps_a_dead_trace_dead():
+    a = np.outer(np.ones(3), np.sin(np.arange(100) / 2.0)).astype(np.float32)
+    a[1] = 1e-6 * np.sin(np.arange(100) / 2.0)        # a dead trace with leftovers
+    a[2] = 0.0                                         # an exactly zero one
+    g = display_values(_section(a), DisplayGain(balance_traces=True))
+    assert np.abs(g[0]).max() > 0.5
+    assert np.abs(g[1]).max() < 0.01 * np.abs(g[0]).max() and not g[2].any()
+
+
+def test_gain_with_time_never_lifts_a_dead_trace():
+    a = np.outer(np.ones(2), np.sin(np.arange(100) / 2.0)).astype(np.float32)
+    a[1] = 1e-6 * a[0]
+    g = display_values(_section(a, step=0.01), DisplayGain(time_power=2.0))
+    assert np.abs(g[1]).max() <= 1e-5 * np.abs(g[0]).max()

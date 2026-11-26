@@ -39,26 +39,17 @@ def _scale_text(layer: SectionLayer) -> str:
     scale = layer.style.scale
     if scale is None:
         return "Scale…"
-    lo, hi = scale.vmin, scale.vmax
     if layer.traces is not None and layer.style.clip_percent is not None:
-        lo, hi = _clipped(layer, lo, hi)
+        return clip_text(layer.style.clip_percent)
     log = " log" if scale.log else ""
-    return f"{format_value(lo)}–{format_value(hi)}{log}"
+    return f"{format_value(scale.vmin)}–{format_value(scale.vmax)}{log}"
 
 
-def _clipped(layer: SectionLayer, lo: float, hi: float) -> tuple[float, float]:
-    """A trace layer's clipped limits as drawn (a style applied from another section keeps that
-    section's numbers in its scale): from the drawing's values, or the file's own without a
-    display option; the scale's while a gained picture is not made yet."""
-    from .data import trace_limits
-    from .display_render import shown_values
-    values = shown_values(layer)
-    if values is None and layer.style.gain.active():
-        return lo, hi
-    try:
-        return trace_limits(layer, layer.style, values=values)
-    except ValueError:
-        return lo, hi
+def clip_text(percent: float) -> str:
+    """"clip 98 %": a trace layer's clip, with at most one decimal, in the QGIS locale."""
+    from qgis.PyQt.QtCore import QLocale
+    p = round(float(percent), 1)
+    return f"clip {QLocale().toString(p, 'f', 0 if p == int(p) else 1)} %"
 
 
 def _exec_once(menu: QMenu, pos) -> None:

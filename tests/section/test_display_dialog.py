@@ -278,14 +278,26 @@ def test_the_row_menu_of_a_trace_layer(qgis_app, make_trace_layer):
         ll.deleteLater()
 
 
-def test_a_trace_row_shows_the_limits_as_drawn(qgis_app, make_trace_layer):
-    # a style applied from another section brings that section's numbers in its scale
+def test_a_trace_row_shows_its_clip(qgis_app, make_trace_layer):
+    # a percent the user chose, never numbers from another section or a stale gain
     from groundwork_geophysics.core.colors import ColorScale
-    from groundwork_geophysics.core.trace_section import color_limits
-    from groundwork_geophysics.section.layer_list import _scale_text
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.layer_list import _scale_text, clip_text
     from groundwork_geophysics.section.readout import format_value
-    layer = make_trace_layer(scale=ColorScale("gray", -500.0, 500.0, False))
-    lo, hi = color_limits(layer.traces.section, 98.0)
-    assert _scale_text(layer) == f"{format_value(lo)}–{format_value(hi)}"
+    layer = make_trace_layer(scale=ColorScale("gray", -500.0, 500.0, False),
+                             gain=DisplayGain(agc_window=0.01))
+    assert _scale_text(layer) == "clip 98 %"
+    assert clip_text(97.25) == "clip 97.2 %" or clip_text(97.25) == "clip 97.3 %"
+    assert clip_text(0.1) == "clip 0.1 %" and clip_text(100.0) == "clip 100 %"
     typed = replace(layer, style=replace(layer.style, clip_percent=None))
     assert _scale_text(typed) == f"{format_value(-500.0)}–{format_value(500.0)}"
+
+
+def test_the_first_scale_never_builds_a_gained_copy(make_trace_layer, monkeypatch):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section import data
+    calls = []
+    real = data.display_values
+    monkeypatch.setattr(data, "display_values", lambda *a: calls.append(a) or real(*a))
+    layer = make_trace_layer(gain=DisplayGain(agc_window=0.01))
+    assert layer.style.scale.cmap == "gray" and calls == []
