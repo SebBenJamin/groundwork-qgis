@@ -187,10 +187,12 @@ def _slots(area, count: int, portrait: bool, bars: list[int]) -> list[dict]:
 def snapshot_extent(snap, length: float) -> tuple[float, float, float, float]:
     """(s0, s1, z0, z1) of a frame's data, like the panel's "Zoom Full"."""
     from ..section.context_render import context_z_values
+    from ..section.data import layer_bounds
     s, z = [0.0, float(length)], []
     for layer in snap.layers:
-        if layer.mesh is not None:
-            s0, s1, z0, z1 = layer.mesh.bounds()
+        bounds = layer_bounds(layer)
+        if bounds is not None:
+            s0, s1, z0, z1 = bounds
             s += [s0, s1]
             z += [z0, z1]
     if snap.topo is not None and len(snap.topo[0]):

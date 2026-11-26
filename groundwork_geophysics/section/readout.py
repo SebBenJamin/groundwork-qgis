@@ -28,7 +28,9 @@ BEYOND = "beyond stations"
 def format_readout(s: float, z: float | None = None, depth: float | None = None,
                    xy=None, hits=(), beyond: bool = False, extra=()) -> str:
     """``s = 123.4 m · z = 61.2 m · depth = 3.8 m · X 432105.2 Y 5851234.9 · P1 model: 27.3 Ω·m``.
-    Parts whose input is ``None`` are left out; ``hits`` are ``identify`` dicts. ``beyond``
+    Parts whose input is ``None`` are left out; ``hits`` are ``identify`` dicts (a trace
+    section's: ``Line 1: 0.42 · trace 123 · 245.0 ms · 183.8 m``, the depth below time
+    zero; no time for a depth section). ``beyond``
     (s outside the station coverage) appends `` · beyond stations``. ``extra`` (context lines)
     follow on a second line, joined by `` · ``."""
     parts = [f"s = {fmt(s, 1)} m"]
@@ -41,6 +43,12 @@ def format_readout(s: float, z: float | None = None, depth: float | None = None,
     for hit in hits:
         unit = unit_label(hit.get("unit", ""))
         text = f"{hit['name']}: {format_value(hit['value'])}" + (f" {unit}" if unit else "")
+        trace = hit.get("trace")
+        if trace:                                  # a trace section: trace, time, depth
+            text += f"{SEP}trace {trace['number']}"
+            if trace.get("time") is not None:
+                text += f"{SEP}{fmt(trace['time'] * 1000.0, 1)} ms"
+            text += f"{SEP}{fmt(trace['depth'], 1)} m"
         reading = hit.get("reading")
         if reading:
             abmn = " ".join(f"{k.upper()} {fmt(reading[k], 1)}" for k in "abmn"

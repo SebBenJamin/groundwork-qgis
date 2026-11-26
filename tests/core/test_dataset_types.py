@@ -47,3 +47,20 @@ def test_method_of_a_profile():
     assert method_of(["srt_model", "ert_model"]) == "ert"        # mixed: ERT words stay
     assert method_of([]) == "ert"
     assert method_of(["ert_model"], ["srt"]) == "srt"            # its station set decides
+
+
+def test_reflection_section_type():
+    from groundwork_geophysics.core.dataset_types import METHODS, is_trace_kind, method_of
+    assert type_label("refl_section") == "Seismic reflection section"
+    assert model_kind("refl") == "refl_section" and ("Seismic reflection", "refl") in METHODS
+    assert method_of(["refl_section"]) == "refl" and method_of(["refl_section", "ert_model"]) == "ert"
+    assert is_trace_kind("refl_section") and not is_trace_kind("srt_model")
+    assert station_words("refl") == ("geophone", "geophones")
+    assert quantity_label("amplitude") == "Amplitude"
+    t = TYPES["refl_section"]
+    assert (t.quantity, t.unit, t.log) == ("amplitude", "", False)
+
+
+def test_reversed_grey_is_offered():
+    from groundwork_geophysics.core.colors import COLORMAPS, ColorScale
+    assert "gray_r" in COLORMAPS and ColorScale("gray_r", 0.0, 1.0, False).rgba([0.0])[0, 0] == 255

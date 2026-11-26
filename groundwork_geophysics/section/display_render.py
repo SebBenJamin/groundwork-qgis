@@ -185,8 +185,10 @@ def build_drawing(layer, topo) -> LayerDrawing:
     from .data import cell_path_groups
     from .profile_source import _path_from_elements
     st = layer.style
-    threshold = _fade(layer)
     drawing = LayerDrawing(float(st.opacity))
+    if layer.mesh is None:                      # a trace section: no cells, no field
+        return drawing
+    threshold = _fade(layer)
     pv = getattr(layer.mesh, "point_values", None)
     if st.mode == "points" and pv is not None:          # one marker per reading
         rgba = st.scale.rgba(pv)

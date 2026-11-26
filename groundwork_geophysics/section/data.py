@@ -24,7 +24,7 @@ from ..readers.errors import plain_error
 from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
-from ..core.dataset_types import method_of, station_words
+from ..core.dataset_types import is_trace_kind, method_of, station_words
 from ..core.interpolators import Interpolation
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
@@ -32,14 +32,23 @@ from ..core.placement import DistanceMap, FitReport
 from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
+from ..core.trace_section import (NO_VELOCITY, DisplayGain, PlacedTraces, TraceSection,
+                                  Velocity, color_limits, place)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
 from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local_surface,
                          station_line, station_marks, topo_set)
 
-#: reader_options keys applied by the provider, not passed to the reader as such
-WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement")
+#: reader_options keys applied by the provider, not passed to the reader as such: the
+#: placement, and how a trace section is hung (velocity, the height of time zero)
+WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement", "velocity", "velocity_table",
+                  "velocity_kind", "zero", "datum")
+#: z kind of a placed trace section in ``SectionDataProvider._placed`` (never a model's)
+TRACES = "traces"
+#: a time section without a velocity, and one hung from a datum without a height
+NO_VELOCITY_TEXT = NO_VELOCITY + " Set it in Dataset Info."
+NO_DATUM_TEXT = "The height of time zero is missing. Set it in Dataset Info."
 
 
 def read_options(reader_options: dict) -> dict:
@@ -52,9 +61,20 @@ def read_options(reader_options: dict) -> dict:
 
 
 def is_map_dataset(d: Dataset) -> bool:
-    """True for a free-text dataset positioned by map coordinates (easting, northing)."""
+    """True for a dataset positioned by map coordinates (easting, northing): a free-text
+    table with map columns, or a section placed from its headers or a coordinate file."""
     columns = d.reader_options.get("columns")
-    return isinstance(columns, dict) and columns.get("position") == "map"
+    if isinstance(columns, dict) and columns.get("position") == "map":
+        return True
+    return d.reader_options.get("position") in ("map", "table")
+
+
+def _map_crs(d: Dataset) -> str:
+    """The CRS of a map dataset's coordinates ("" = the store's)."""
+    columns = d.reader_options.get("columns")
+    if isinstance(columns, dict) and columns.get("position") == "map":
+        return str(columns.get("crs") or "")
+    return str(d.reader_options.get("crs") or "")
 
 
 def _past_ends(xy: np.ndarray, line: np.ndarray, tol: float = 1e-6) -> np.ndarray:
@@ -169,14 +189,58 @@ class LayerStyle:
     #: readings layers: "misfit", "measured" or "calculated"; None = misfit when the file
     #: has calculated values, else measured
     shown: str | None = None
+    #: trace sections: the colour limits clip at this percentile of the absolute values;
+    #: None: the user typed the limits
+    clip_percent: float | None = 98.0
+    #: trace sections: how they are shown (display only; the samples stay as read)
+    gain: DisplayGain = DisplayGain()
 
 
 @dataclass
 class SectionLayer:
     dataset: Dataset
-    mesh: SectionMesh | None                # chainage/elevation; None when error is set
+    #: chainage/elevation; None when error is set, and for a trace section
+    mesh: SectionMesh | None
     style: LayerStyle
     error: str | None
+    #: a trace section hung in the profile (then ``mesh`` is None)
+    traces: PlacedTraces | None = None
+
+
+def layer_bounds(layer: SectionLayer) -> tuple[float, float, float, float] | None:
+    """(smin, smax, zmin, zmax) of the layer's mesh or trace section; None for a layer that
+    failed (or holds neither)."""
+    if layer.error is not None:
+        return None
+    if layer.mesh is not None:
+        return tuple(float(v) for v in layer.mesh.bounds())
+    if layer.traces is not None:
+        return layer.traces.bounds()
+    return None
+
+
+def trace_limits(layer_or_placed, style: LayerStyle) -> tuple[float, float]:
+    """Colour limits of a trace layer (or a ``PlacedTraces``): the section's values clipped at
+    the style's percentile (98 when the user typed the limits)."""
+    placed = getattr(layer_or_placed, "traces", layer_or_placed)
+    percent = style.clip_percent if style.clip_percent is not None else 98.0
+    return color_limits(placed.section, percent)
+
+
+def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
+    """Automatic scale of a trace layer: grey, symmetric for signed data; reversed grey from 0
+    for data that are never negative (strong is dark either way)."""
+    lo, hi = trace_limits(placed, style)
+    return ColorScale("gray" if lo < 0 else "gray_r", lo, hi, False)
+
+
+def _mirrored_traces(placed: PlacedTraces, length: float) -> PlacedTraces:
+    """``placed`` with chainage s -> length - s, traces still in increasing order (views of
+    the same samples)."""
+    sec = placed.section
+    flipped = replace(sec, amplitudes=sec.amplitudes[::-1], x=length - sec.x[::-1],
+                      numbers=None if sec.numbers is None else sec.numbers[::-1])
+    return PlacedTraces(flipped, np.ascontiguousarray(placed.z_top[::-1]), placed.depths)
 
 
 @dataclass
@@ -233,8 +297,7 @@ def _layers_for_look(layers: list, look) -> list:
         if m is None or not m.visible:
             continue
         from .style_store import styled
-        out.append(SectionLayer(la.dataset, la.mesh, styled(_copy_style(la.style), m),
-                                la.error))
+        out.append(replace(la, style=styled(_copy_style(la.style), m)))
     return out
 
 
@@ -265,15 +328,21 @@ def layer_name(dataset: Dataset) -> str:
     return dataset.name or os.path.basename(dataset.source_path)
 
 
-def _companion_mtime(path: str, options: dict) -> float | None:
-    """Modification time of a file read together with the data file (a model response):
-    re-inverting rewrites it, and the misfit must follow."""
-    response = (options or {}).get("response")
-    if not response:
+def _companion_mtime(path: str, options: dict):
+    """Modification time of a file read together with the data file (a model response, a
+    section's coordinate file): re-inverting rewrites a response, and the misfit must follow;
+    -1.0 for a missing one, None without any, a tuple when there are several."""
+    times = []
+    for key in ("response", "positions_file"):
+        companion = (options or {}).get(key)
+        if not companion:
+            continue
+        full = companion if os.path.isabs(companion) else os.path.join(os.path.dirname(path),
+                                                                       companion)
+        times.append(os.stat(full).st_mtime if os.path.isfile(full) else -1.0)
+    if not times:
         return None
-    resp = response if os.path.isabs(response) else os.path.join(os.path.dirname(path),
-                                                                  response)
-    return os.stat(resp).st_mtime if os.path.isfile(resp) else -1.0
+    return times[0] if len(times) == 1 else tuple(times)
 
 
 def _auto_scale(mesh: SectionMesh, d: Dataset) -> ColorScale:
@@ -316,12 +385,34 @@ def _reading_hit(layer: SectionLayer, s: float, z: float) -> dict | None:
                "error": None if r.error is None else float(r.error[i])}}
 
 
+def _trace_hit(layer: SectionLayer, s: float, z: float) -> dict | None:
+    """The sample of ``layer``'s trace section under (s, z), as an identify dict."""
+    hit = layer.traces.hit(s, z)
+    if hit is None or not np.isfinite(hit["amplitude"]):
+        return None
+    d, sec = layer.dataset, layer.traces.section
+    number = hit["number"] if hit["number"] is not None else hit["trace"] + 1
+    return {"name": layer_name(d), "value": hit["amplitude"], "unit": sec.unit,
+            "version": d.version, "quantity": sec.quantity, "dataset_id": d.id,
+            "s": float(s), "z": float(z),
+            "trace": {"number": int(number), "time": hit["time"], "depth": hit["depth"]}}
+
+
 def identify_layers(layers: list[SectionLayer], s: float, z: float) -> list[dict]:
     """Values under (s, z), topmost (last drawn) layer first. Hidden layers, layers
-    with errors and cells without a value are skipped."""
+    with errors and cells without a value are skipped. A trace section's hit also gives
+    ``"trace"``: its number, the sample's two-way time (s; None for a depth section) and its
+    depth below time zero (m)."""
     out = []
     for layer in reversed(layers):
-        if not layer.style.visible or layer.error is not None or layer.mesh is None:
+        if not layer.style.visible or layer.error is not None:
+            continue
+        if layer.traces is not None:
+            hit = _trace_hit(layer, s, z)
+            if hit is not None:
+                out.append(hit)
+            continue
+        if layer.mesh is None:
             continue
         if layer.mesh.readings is not None:
             hit = _reading_hit(layer, s, z)
@@ -365,6 +456,11 @@ def cell_path_groups(mesh: SectionMesh, scale: ColorScale,
     splits = np.cumsum(np.bincount(inverse, minlength=len(colours)))[:-1]
     rgba_u = ((colours[:, None] >> np.array([24, 16, 8, 0], dtype=np.uint64)) & 255).astype(np.uint8)
     return [(c, g.reshape(-1)) for c, g in zip(rgba_u, np.split(elems, splits))]
+
+
+class _Plain(ValueError):
+    """A message for the user that already names its next step: shown as it is, after the
+    file's name."""
 
 
 @dataclass(frozen=True)
@@ -463,12 +559,13 @@ def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
                ) -> tuple[np.ndarray, np.ndarray] | None:
     """Top edge ``(s, z)`` of the first model of ``z_kind`` placed in ``placed``
     (``SectionDataProvider._placed``); None when there is none. A dataset that could not be
-    read, a readings dataset and a mesh without a usable top are skipped. Only cells with
-    a value count: exports fill their rectangle above the terrain with -9999, and those
-    empty cells are no ground."""
+    read, a readings dataset, a trace section and a mesh without a usable top are skipped.
+    Only cells with a value count: exports fill their rectangle above the terrain with
+    -9999, and those empty cells are no ground."""
     for d in datasets:
         item = placed.get(d.id)
-        if not isinstance(item, tuple) or item[1] != z_kind or item[0].readings is not None:
+        if (not isinstance(item, tuple) or item[1] != z_kind
+                or not isinstance(item[0], SectionMesh) or item[0].readings is not None):
             continue
         try:
             s, z = _valued_cells(item[0]).top_edge()
@@ -798,7 +895,7 @@ class SectionDataProvider:
             return False
         if station_line(self.store.station_sets(profile_id)) is not None:
             return True
-        return any(d.kind not in READINGS_KINDS
+        return any(d.kind not in READINGS_KINDS and not is_trace_kind(d.kind)
                    and (d.reader_options or {}).get("z_kind") == "elevation"
                    for d in self.store.datasets(profile_id))
 
@@ -911,10 +1008,12 @@ class SectionDataProvider:
         for d in datasets:
             if out.readings is not None and out.layout.guess is not None:
                 break
-            if is_map_dataset(d):
-                continue
+            if is_map_dataset(d) or is_trace_kind(d.kind):
+                continue                        # a trace section gives no electrodes
             try:                                # one odd dataset just gives no layout
                 result = self._read(d)
+                if result.mesh is None:         # a trace section stored under another kind
+                    continue
                 if result.mesh.readings is not None:
                     electrode_x = result.provenance.get("electrode_x")
                     if out.readings is None and electrode_x is not None:
@@ -1054,9 +1153,8 @@ class SectionDataProvider:
                _cache_version())
         options = read_options(d.reader_options)
         if on_map:
-            options["xy_to_distance"] = xy_to_distance_on(
-                profile, str(d.reader_options["columns"].get("crs") or ""),
-                self.store.crs_authid)
+            options["xy_to_distance"] = xy_to_distance_on(profile, _map_crs(d),
+                                                          self.store.crs_authid)
         return ReadJob(d.id, d.name or d.id, "" if profile is None else (profile.name or ""),
                        path, d.reader or None, options, key,
                        _cache_file(self.store, d.id, key))
@@ -1089,10 +1187,14 @@ class SectionDataProvider:
         self._cache[job.dataset_id] = (job.key, result)
 
     def _place(self, d: Dataset, dmap: DistanceMap | None,
-               profile: Profile | None = None) -> tuple[SectionMesh, str]:
+               profile: Profile | None = None) -> tuple:
         """(``d``'s mesh in chainage, its z kind): file x through ``dmap`` (None for a
-        map-coordinate file, whose x is already chainage), z as read."""
+        map-coordinate file, whose x is already chainage), z as read. A trace section gives
+        (its ``TraceSection`` in chainage, ``TRACES``); it is hung in ``_layer``."""
         result = self._read(d, profile)
+        if result.traces is not None:
+            traces = result.traces
+            return (traces if dmap is None else traces.with_x(dmap)), TRACES
         base = result.mesh
         if base.readings is not None:
             base = self._shown_mesh(d, base)
@@ -1157,6 +1259,8 @@ class SectionDataProvider:
         style = self.style(d.id)
         if isinstance(placed, _Failed):
             return SectionLayer(d, None, style, placed.message)
+        if placed[1] == TRACES:
+            return self._trace_layer(d, placed[0], surface, style)
         try:
             mesh = self._load_mesh(d, placed, surface)
             if mesh.readings is not None and d.id not in self._readings_seen:
@@ -1170,9 +1274,44 @@ class SectionDataProvider:
             return SectionLayer(d, None, style, self._error_text(d, exc))
         return SectionLayer(d, mesh, style, None)
 
+    def _trace_layer(self, d: Dataset, section: TraceSection, surface: Surface | None,
+                     style: LayerStyle) -> SectionLayer:
+        """``d``'s trace section (in chainage) hung in the profile: time zero (or depth zero)
+        at the stored datum (``zero`` "datum"), else on the profile's surface at each trace
+        (0 on an unknown profile), with sample depths from the stored velocity."""
+        options = d.reader_options or {}
+        try:
+            if options.get("zero") == "datum":
+                try:
+                    z_top = float(options.get("datum"))
+                except (TypeError, ValueError):
+                    z_top = float("nan")
+                if not np.isfinite(z_top):
+                    raise _Plain(NO_DATUM_TEXT)
+            elif surface is None:
+                z_top = 0.0
+            else:
+                z_top = np.interp(section.x, *surface.line)
+            try:
+                placed = place(section, z_top, Velocity.from_options(options))
+            except ValueError as exc:
+                if str(exc) == NO_VELOCITY:
+                    raise _Plain(NO_VELOCITY_TEXT) from None
+                raise
+            if style.scale is None:
+                style.scale = _trace_scale(placed, style)
+        except Exception as exc:                # never raise from layers()
+            return SectionLayer(d, None, style, self._error_text(d, exc))
+        return SectionLayer(d, None, style, None, placed)
+
     def _error_text(self, d: Dataset, exc: BaseException) -> str:
         """The plain message a layer shows for what reading, placing or hanging raised."""
+        from ..libs import MissingLibrary
+        if isinstance(exc, MissingLibrary):
+            return str(exc)
         src = self.source_path(d)
+        if isinstance(exc, _Plain):
+            return f"{os.path.basename(src)}: {exc}"
         if isinstance(exc, FileNotFoundError):
             return plain_error(FileNotFoundError(2, "No such file", src), src)
         if isinstance(exc, OSError) and not isinstance(exc, ValueError):
@@ -1317,8 +1456,7 @@ class SectionDataProvider:
         stations, heights = station_marks(sets, electrodes)
         if topo is not None:
             topo = (topo[0].copy(), topo[1].copy())
-        layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
-                  for la in layers]
+        layers = [replace(la, style=_copy_style(la.style)) for la in layers]
         coverage = _coverage(sets, electrodes)
         # a plate waits for every crossing profile; the panel does not
         context = copy.deepcopy(self.context(profile_id,
@@ -1341,6 +1479,8 @@ class SectionDataProvider:
             for la in layers:
                 if la.mesh is not None:
                     la.mesh = la.mesh.with_x(lambda x: length - x)
+                if la.traces is not None:
+                    la.traces = _mirrored_traces(la.traces, length)
             if topo is not None:
                 topo = (length - topo[0][::-1], topo[1][::-1].copy())
             stations = [(length - s, label) for s, label in stations]

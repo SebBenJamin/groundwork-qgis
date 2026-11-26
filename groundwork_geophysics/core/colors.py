@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from matplotlib import colormaps
 
-COLORMAPS: list[str] = ["Spectral_r", "turbo", "jet", "viridis", "RdYlBu_r", "gray"]
+COLORMAPS: list[str] = ["Spectral_r", "turbo", "jet", "viridis", "RdYlBu_r", "gray", "gray_r"]
 
 
 @dataclass

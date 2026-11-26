@@ -22,7 +22,8 @@ from qgis.PyQt.QtGui import (QBrush, QColor, QFont, QPaintEngine, QPainter, QPai
 
 from ..ids import LEGACY_ID, NAME
 from .context_render import context_z_values, draw_band, draw_over_stations
-from .data import SectionDataProvider, SectionSnapshot, identify_layers, matching_profiles
+from .data import (SectionDataProvider, SectionSnapshot, identify_layers, layer_bounds,
+                   matching_profiles)
 from .topography import measured_line
 
 SOURCE_ID = LEGACY_ID
@@ -452,11 +453,12 @@ class WorkbenchProfileGenerator(QgsAbstractProfileGenerator):
             for layer in snap.layers:
                 if self._feedback.isCanceled():
                     return False
-                if layer.mesh is None or not layer.style.visible or layer.style.scale is None:
+                bounds = layer_bounds(layer)
+                if bounds is None or not layer.style.visible or layer.style.scale is None:
                     continue
                 from .display_render import build_drawing
                 layers.append(build_drawing(layer, snap.topo))
-                smin, smax, zmin, zmax = layer.mesh.bounds()
+                smin, smax, zmin, zmax = bounds
                 ss.extend((smin, smax))
                 zs.extend((zmin, zmax))
                 tops.append(zmax)
