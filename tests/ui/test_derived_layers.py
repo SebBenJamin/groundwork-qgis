@@ -177,3 +177,44 @@ def test_notifications_sync_on_data_changes_only_and_once(qgis_app, fake_iface, 
     finally:
         plugin.unload()
         QgsProject.instance().clear()
+
+
+def test_opening_a_project_keeps_its_derived_layer(qgis_app, fake_iface, drawn, tmp_path):
+    """A project opened with its derived-electrodes layer keeps that layer object and refills
+    it: removing it while QGIS restores a 3D map view that holds it crashed QGIS."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui.derived_layers import derived_layer
+    from groundwork_geophysics.ui.project_actions import use_store
+    st, _p, _provider, _prj = drawn
+    project = QgsProject.instance()
+    project.clear()
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        project.setFileName(str(tmp_path / "p.qgz"))
+        plugin.set_store(use_store(st, project))
+        assert derived_layer(project) is not None
+        assert project.write()
+        project.clear()
+        removed = []
+        project.layersWillBeRemoved.connect(removed.extend)
+        assert project.read(str(tmp_path / "p.qgz"))
+        layer = derived_layer(project)
+        assert removed == [] and layer is not None and layer.featureCount() == 6
+    finally:
+        plugin.unload()
+        project.clear()
+
+
+def test_a_derived_layer_with_nothing_to_show_is_kept_empty_when_asked(drawn):
+    """While a project is being read the layer is emptied, not removed."""
+    from groundwork_geophysics.ui.derived_layers import sync
+    st, p, provider, prj = drawn
+    layer = sync(st, provider, prj)
+    for d in st.datasets(p.id):
+        st.delete_dataset(d.id)
+    provider.notify_changed()
+    assert sync(st, provider, prj, keep=True) is layer
+    assert layer.featureCount() == 0 and prj.mapLayer(layer.id()) is layer

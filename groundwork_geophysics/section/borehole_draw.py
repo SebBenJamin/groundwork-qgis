@@ -15,7 +15,7 @@ from qgis.core import Qgis, QgsFeature, QgsFields
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPen, QPolygonF
 
-from ..core.borehole_curves import CurveStyle, data_range, track_fraction
+from ..core.borehole_curves import CurveStyle, data_range, nice_range, track_fraction
 from ..core.borehole_layout import column_depth, spread_texts
 from .borehole_style import default_symbol
 
@@ -44,6 +44,15 @@ class ColumnOptions:
     curve_keys: tuple = ()
     track_px: float = 40
     highlight: bool = False
+    #: fill behind each curve track (rgb), so a neighbour's track behind it does not mix
+    #: with its line; None: see-through (the section, where the model lies behind)
+    track_backdrop: tuple | None = None
+
+
+def shown_curve_keys(p, keys) -> tuple:
+    """Those of ``keys`` borehole ``p`` has values for: only they get a track."""
+    have = {c.key for c in p.curves if len(c.depth)}
+    return tuple(k for k in keys if k in have)
 
 
 def qcolor(text: str) -> QColor:
@@ -115,9 +124,11 @@ def draw_borehole(painter, rc, x_px: float, y_of_depth: Callable[[float], float]
         if opts.ticks:
             _ticks(painter, rc, col, y_of_depth, column_depth(p))
         right = col.right()
-        for key in opts.curve_keys:
+        for key in shown_curve_keys(p, opts.curve_keys):
             track = QRectF(right + TRACK_GAP_PX, col.top(), float(opts.track_px), col.height())
             curve = next((c for c in p.curves if c.key == key), None)
+            if opts.track_backdrop is not None:
+                painter.fillRect(track, QColor(*opts.track_backdrop))
             _track(painter, rc, track, y_of_depth, curve, styles.get(key) or CurveStyle(),
                    ranges.get(key))
             right = track.right()
@@ -184,6 +195,12 @@ def _ticks(painter, rc, col: QRectF, y_of_depth, depth: float) -> None:
                                  y + fm.ascent() / 2 - 1), text)
 
 
+def track_header_px(font: QFont) -> float:
+    """How far a curve track's header (its name and scale lines) reaches above the track."""
+    from qgis.PyQt.QtGui import QFontMetricsF
+    return 2 * QFontMetricsF(font).height() + 2
+
+
 def layer_text_width(p, font: QFont) -> float:
     """How far right of the column (and its tracks) ``p``'s layer text reaches: the gap and
     the widest text; 0 when no layer has text."""
@@ -219,9 +236,15 @@ def _texts(painter, rc, x: float, col: QRectF, y_of_depth, p) -> QRectF:
 
 def curve_range(curve, style: CurveStyle, given) -> tuple[float, float] | None:
     """The track's scale: the style's own min/max, else ``given`` (the data range of the
-    boreholes in view), else this curve's own data."""
+    boreholes in view), else this curve's own data; ends taken from the data are rounded
+    outward (``nice_range``), the user's own are kept."""
     lo, hi = given if given is not None else (data_range([curve], style.log) if curve
                                               else None) or (None, None)
+    if style.log and lo is not None and lo <= 0 and curve is not None:
+        positive = data_range([curve], True)
+        lo = positive[0] if positive is not None else lo
+    if lo is not None and hi is not None:
+        lo, hi = nice_range(lo, hi, style.log)
     lo = style.vmin if style.vmin is not None else lo
     hi = style.vmax if style.vmax is not None else hi
     if lo is None or hi is None:
@@ -230,7 +253,7 @@ def curve_range(curve, style: CurveStyle, given) -> tuple[float, float] | None:
         positive = data_range([curve], True) if curve is not None else None
         if positive is None or hi <= 0:
             return None
-        lo = positive[0]
+        lo = nice_range(positive[0], max(hi, positive[0]), True)[0]   # from the data: rounded
     return float(lo), float(hi)
 
 

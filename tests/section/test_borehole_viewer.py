@@ -585,3 +585,49 @@ def test_all_hidden_says_so(fake_dock, qgis_app):
         v.show_check["hidden"].setChecked(True)
         v.close()
         v.deleteLater()
+
+
+def test_only_boreholes_with_the_curve_get_room_for_its_track(fake_dock, qgis_app):
+    """Even spacing leaves room for a curve track only where the borehole has the curve."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.section.borehole_viewer import COLUMN_PX, BoreholeViewer
+    prj = QgsProject.instance()
+    _two_entries(prj)
+    _curve_bh(qgis_app, fake_dock)
+    v = BoreholeViewer(fake_dock, prj)
+    v.show_profile("p1")
+    v.curve_check("t:gr").setChecked(True)
+    with_curve = [p for p in v.boreholes if p.curves]
+    widths = dict(zip((p.label for p in v.boreholes), v.canvas._widths(v.boreholes)))
+    assert with_curve and widths[with_curve[0].label] > COLUMN_PX
+    assert all(widths[p.label] == COLUMN_PX for p in v.boreholes if not p.curves)
+    v.deleteLater()
+
+
+def test_a_label_sits_above_the_curve_headers(fake_dock, qgis_app, monkeypatch):
+    """With curve tracks shown, a borehole's name goes above their headers (name and scale
+    lines), not into them."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.section.borehole_draw import track_header_px
+    from groundwork_geophysics.section.borehole_viewer import BoreholeViewer
+    prj = QgsProject.instance()
+    _two_entries(prj)
+    _curve_bh(qgis_app, fake_dock)
+    v = BoreholeViewer(fake_dock, prj)
+    v.show_profile("p1")
+    seen = {}
+    monkeypatch.setattr(type(v.canvas), "_draw_labels",
+                        lambda self, painter, pending: seen.update(
+                            {p.label: y for p, _x, y, _z, _h in pending}))
+    v.canvas.render_image((800, 600))
+    plain = dict(seen)
+    v.curve_check("t:gr").setChecked(True)
+    v.canvas.render_image((800, 600))
+    with_curve = next(p.label for p in v.boreholes if p.curves)
+    header = track_header_px(v.canvas.layer_font())
+    assert seen[with_curve] == pytest.approx(plain[with_curve] - header, abs=1)
+    assert all(seen[p.label] == pytest.approx(plain[p.label], abs=1)
+               for p in v.boreholes if not p.curves and p.label in plain)   # drawn ones
+    v.deleteLater()

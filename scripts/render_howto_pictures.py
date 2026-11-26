@@ -13,7 +13,10 @@ show), opens Transect 3 and writes to ``out_dir`` (default docs/images/howto):
 - ``interpretation.png``: the section panel in Edit with a polygon named A drawn around the
   high-resistivity body (interpretation.md, first-steps.md);
 - ``borehole-viewer.png``: the borehole viewer with the transect's cores (boreholes.md,
-  first-steps.md).
+  first-steps.md);
+- ``borehole-viewer-curves.png``: the same with every curve ticked (release note 0.16.0);
+- ``import-las.png``: Import LAS… with three small example files, one of them without a
+  borehole yet (boreholes.md).
 
 The geology strips come from a live WFS and need the internet; without it they are missing.
 """
@@ -46,8 +49,16 @@ CAPTION_H = 26
 BODY = [(117, 24.4), (125, 24.9), (133, 24.9), (141, 24.0), (142, 22.2), (135, 21.0),
         (126, 21.3), (118, 22.6)]
 VIEWER = (1100, 620)
+VIEWER_CURVES = (1560, 620)              # every core and its curve tracks, in even spacing
+CURVES_SHOWN = ("toc", "sand", "silt", "clay")
 DISPLAY_WIDTH = 520
 FADE_PERCENTILE = 30                     # of the model's coverage: the fade shows clearly
+#: Import LAS…: the example files (tests/fixtures/las) under the names shown, and the
+#: boreholes offered; the last file names no well, so it waits for a borehole
+LAS_FILES = (("bh1_feet.las", "jw11_gamma.las"), ("wrapped_metres.las", "B7_logs.las"),
+             ("no_name.las", "run3.las"))
+LAS_BOREHOLES = ("B7", "JW11", "JW12")
+LAS_SIZE = (860, 230)
 
 
 def look(app, dock, **changes) -> None:
@@ -161,6 +172,32 @@ def render(demo: Path, out_dir: Path) -> None:
         viewer.resize(*VIEWER)
         rr.spin(app, 3.0)
         rr.save(viewer, out_dir / "borehole-viewer.png")
+        # the cores' lab values as curves, in even spacing (tracks need the room)
+        viewer.mode_combo.setCurrentIndex(viewer.mode_combo.findData("even"))
+        viewer.resize(*VIEWER_CURVES)
+        for key in list(viewer._curve_checks):          # ticking one makes the boxes anew
+            if viewer.curve_check(key).text().split()[0].lower() in CURVES_SHOWN:
+                viewer.curve_check(key).setChecked(True)
+                app.processEvents()
+        viewer.canvas.fit_view()
+        viewer.canvas.update()
+        rr.spin(app, 2.0)
+        rr.save(viewer, out_dir / "borehole-viewer-curves.png")
+
+        from groundwork_geophysics.ui.las_import_dialog import LasImportDialog
+        las_dir = demo.parent / "las"
+        las_dir.mkdir()
+        for source, shown in LAS_FILES:
+            shutil.copy(REPO / "tests" / "fixtures" / "las" / source, las_dir / shown)
+        las = LasImportDialog([las_dir / shown for _s, shown in LAS_FILES], LAS_BOREHOLES)
+        las.show()
+        try:
+            las.resize(*LAS_SIZE)
+            rr.spin(app, 0.5)
+            rd.check_no_private_path(las, [str(demo.parent), str(Path.home())])
+            rr.save(las, out_dir / "import-las.png")
+        finally:
+            las.reject()
     finally:
         # no plugin.unload() / project.clear(): with live web requests still open they can
         # hang; the process ends with os._exit right after this
@@ -180,6 +217,10 @@ def main() -> int:
         shutil.copytree(REPO / "demo_guelpe", demo,
                         ignore=shutil.ignore_patterns("*.gpkg-wal", "*.gpkg-shm"))
         rr.committed_store(demo / rr.STORE)
+        import subprocess                       # the project as committed, too
+        (demo / "guelpe_project.qgz").write_bytes(subprocess.run(
+            [rr.GIT, "show", "HEAD:demo_guelpe/guelpe_project.qgz"], cwd=REPO,
+            capture_output=True, check=True).stdout)
         render(demo, out_dir)
         return 0
     except Exception as exc:

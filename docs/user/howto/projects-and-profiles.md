@@ -18,6 +18,12 @@ Save the QGIS project afterwards so it remembers the Groundwork project.
 Your model files are not copied into the GeoPackage: each model is a link to its file, read
 again when the file changes. Keep the files where they are.
 
+A model read once is remembered in a folder next to the Groundwork file, named after it with
+`_cache` (for `site_groundwork.gpkg`: `site_groundwork_cache`), so opening the project again
+does not read every file again. Strips from web layers (a survey's live geology) are
+remembered there too. The folder is never needed: deleting it only means the files are read
+again, and you need not pass it on with the project.
+
 ## A new profile
 
 A profile is a line on the map with a name. Models, stations, boreholes and interpretation

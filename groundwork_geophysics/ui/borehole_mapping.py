@@ -17,6 +17,12 @@ from ..core.context_settings import (BoreholeSetting, CurveField, CurveTableSett
 
 NONE = "None"
 MISSING = "(not in project)"
+IMPORT_LAS_TEXT = "Import LAS…"
+IMPORT_LAS_TIP = ("Read well logs from LAS files into a curve table of this entry (one "
+                  "well per file, matched to the borehole ids)")
+IMPORT_LAS_NO_STORE = "Open or create a Groundwork project first: the curves are kept in it"
+IMPORT_LAS_NO_LAYER = "Choose the borehole layer and its id field first"
+LAS_LAYER_NAME = "LAS curves"
 
 
 def fill_layer_combo(combo: QComboBox, layers, current: str = "") -> None:
@@ -144,9 +150,10 @@ class BoreholeGroup(QGroupBox):
 
     def __init__(self, project, vector_layers: list[QgsVectorLayer], point_layers,
                  current_boreholes: Callable[[], tuple] = lambda: ([], ""), on_styled=None,
-                 on_layer_changed=None):
+                 on_layer_changed=None, store_path: Callable[[], object] = lambda: None):
         super().__init__("Borehole Entry")
         self.project = project
+        self.store_path = store_path        # the Groundwork GeoPackage, or None
         self.vector_layers = vector_layers
         self.current_boreholes, self.on_styled = current_boreholes, on_styled
         self.loaded = None                  # the saved setting, kept for layers now missing
@@ -189,9 +196,16 @@ class BoreholeGroup(QGroupBox):
         add_curves = QPushButton("Add Curve Table")
         add_curves.setObjectName("add_curve_table")
         add_curves.clicked.connect(lambda: self.add_curve_table())
-        form.addRow(add_curves)
+        self.import_las_button = QPushButton(IMPORT_LAS_TEXT)
+        self.import_las_button.setObjectName("import_las")
+        self.import_las_button.clicked.connect(lambda: self.import_las())
+        curve_buttons = QHBoxLayout()
+        curve_buttons.addWidget(add_curves)
+        curve_buttons.addWidget(self.import_las_button)
+        form.addRow(curve_buttons)
         self.curve_editors: list[CurveTableEditor] = []
         self.layer_combo.currentIndexChanged.connect(lambda _i: self._refill_borehole())
+        self.id_combo.currentIndexChanged.connect(lambda _i: self._sync_import_las())
         self.log_combo.currentIndexChanged.connect(lambda _i: self._refill_log())
         if on_layer_changed is not None:
             self.layer_combo.currentIndexChanged.connect(lambda _i: on_layer_changed(self))
@@ -210,6 +224,67 @@ class BoreholeGroup(QGroupBox):
                          setting.total_depth_field if setting else "")
         for combo in (self.id_combo, self.elevation_combo, self.total_depth_combo):
             combo.setEnabled(layer is not None)
+        self._sync_import_las()
+
+    # -- LAS files -----------------------------------------------------------------------------
+    def _sync_import_las(self) -> None:
+        if not hasattr(self, "import_las_button"):
+            return
+        if self.store_path() is None:
+            ok, tip = False, IMPORT_LAS_NO_STORE
+        elif self._layer(self.layer_combo) is None or not field_of(self.id_combo):
+            ok, tip = False, IMPORT_LAS_NO_LAYER
+        else:
+            ok, tip = True, IMPORT_LAS_TIP
+        self.import_las_button.setEnabled(ok)
+        self.import_las_button.setToolTip(tip)
+
+    def _borehole_ids(self) -> list[str]:
+        layer, field_name = self._layer(self.layer_combo), field_of(self.id_combo)
+        if layer is None or not field_name:
+            return []
+        from qgis.core import QgsFeatureRequest
+        request = QgsFeatureRequest().setFlags(QgsFeatureRequest.Flag.NoGeometry)
+        request.setSubsetOfAttributes([field_name], layer.fields())
+        return sorted({str(f[field_name]).strip() for f in layer.getFeatures(request)
+                       if f[field_name] is not None and str(f[field_name]).strip()})
+
+    def import_las(self) -> CurveTableEditor | None:
+        """Pick LAS files, match them to this entry's boreholes, keep their curves as a new
+        table in the Groundwork project and add it as this entry's curve table."""
+        from qgis.PyQt.QtWidgets import QDialog, QFileDialog
+
+        from ..store.las_table import write_las_table
+        from .las_import_dialog import LasImportDialog
+        from .project_actions import plugin_group
+        gpkg = self.store_path()
+        if gpkg is None:
+            return None
+        paths, _f = QFileDialog.getOpenFileNames(self, "LAS Files", "",
+                                                 "LAS files (*.las *.LAS);;All files (*)")
+        if not paths:
+            return None
+        dialog = LasImportDialog(paths, self._borehole_ids(), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.entries():
+            return None
+        try:
+            table, curves = write_las_table(gpkg, dialog.entries())
+        except (OSError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Import LAS", f"The curves could not be saved: {exc}")
+            return None
+        layer = QgsVectorLayer(f"{gpkg}|layername={table}", LAS_LAYER_NAME, "ogr")
+        if not layer.isValid():
+            QMessageBox.warning(self, "Import LAS", f"QGIS cannot open the table {table}")
+            return None
+        self.project.addMapLayer(layer, False)
+        plugin_group(self.project.layerTreeRoot()).addLayer(layer)
+        self.vector_layers.append(layer)
+        editor = self.add_curve_table()
+        editor.set_layer(layer.id())
+        editor.set_fields("id", "depth")
+        for name, unit in curves:
+            editor.check_curve(name, unit)
+        return editor
 
     def _refill_log(self, setting: BoreholeSetting | None = None):
         layer = self._layer(self.log_combo)
@@ -313,8 +388,10 @@ class BoreholeEntries(QWidget):
     """The borehole entries: a list on the left, the selected entry's editor on the right."""
 
     def __init__(self, project, vector_layers, point_layers,
-                 current_boreholes: Callable[[], tuple] = lambda: ([], ""), on_styled=None):
+                 current_boreholes: Callable[[], tuple] = lambda: ([], ""), on_styled=None,
+                 store_path: Callable[[], object] = lambda: None):
         super().__init__()
+        self.store_path = store_path
         self.project, self.vector_layers, self.point_layers = project, vector_layers, point_layers
         self.current_boreholes, self.on_styled = current_boreholes, on_styled
         self.list = QListWidget()
@@ -353,7 +430,8 @@ class BoreholeEntries(QWidget):
 
     def add_entry(self, setting: BoreholeSetting | None = None) -> BoreholeGroup:
         group = BoreholeGroup(self.project, self.vector_layers, self.point_layers,
-                              self.current_boreholes, self.on_styled, self._relabel)
+                              self.current_boreholes, self.on_styled, self._relabel,
+                              store_path=self.store_path)
         group.load(setting)
         self.groups.append(group)
         self.stack.addWidget(group)

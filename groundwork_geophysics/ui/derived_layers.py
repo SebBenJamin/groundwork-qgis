@@ -92,12 +92,28 @@ def save_style(project: QgsProject) -> None:
         project.writeEntry(SCOPE, STYLE_KEY, entry)
 
 
-def _create(store, project: QgsProject) -> QgsVectorLayer:
+def _new_layer(store, project: QgsProject) -> QgsVectorLayer:
     layer = QgsVectorLayer(f"Point?crs={store.crs_authid}{_FIELDS}", DERIVED_NAME, "memory")
     layer.setCustomProperty(_FLAG, True)
     layer.setReadOnly(True)
     layer.setCustomProperty("skipMemoryLayersCheck", 1)    # no "scratch layer" warning on close
     layer.setRenderer(_default_renderer(project, store))
+    return layer
+
+
+def _adopt(layer: QgsVectorLayer, store, project: QgsProject) -> None:
+    """A derived layer read back from the project file: kept (removing a layer while QGIS
+    restores a 3D map view that holds it crashes QGIS), with the default style to compare
+    with and its style changes kept in the project."""
+    if layer.id() in _defaults:
+        return
+    _defaults[layer.id()] = _qml(_new_layer(store, project))
+    layer.setReadOnly(True)
+    layer.rendererChanged.connect(lambda: save_style(project))
+
+
+def _create(store, project: QgsProject) -> QgsVectorLayer:
+    layer = _new_layer(store, project)
     project.addMapLayer(layer, False)
     root = project.layerTreeRoot()
     group = plugin_group(root)
@@ -117,22 +133,31 @@ def _contents(layer: QgsVectorLayer) -> list[tuple]:
                   for f in layer.getFeatures())
 
 
-def sync(store, provider, project: QgsProject, create: bool = True) -> QgsVectorLayer | None:
+def sync(store, provider, project: QgsProject, create: bool = True,
+         keep: bool = False) -> QgsVectorLayer | None:
     """Create (only when ``create``) or refill the derived layer; remove it when nothing is
-    derived. A layer the user removed stays gone until the store is opened again. Returns
-    the layer."""
+    derived (``keep``: empty it instead, while a project is being read: removing a layer
+    while QGIS restores a 3D map view that holds it crashes QGIS). A layer the user removed
+    stays gone until the store is opened again. Returns the layer."""
     layer = derived_layer(project)
     if layer is None and not create:
         return None
     rows = _rows(store, provider)
     if not rows:
+        if layer is not None and keep:
+            _adopt(layer, store, project)
+            layer.dataProvider().truncate()
+            layer.triggerRepaint()
+            return layer
         if layer is not None:
             project.removeMapLayer(layer.id())
         return None
     if layer is None:
         layer = _create(store, project)
-    elif _contents(layer) == sorted((r[0], r[1], r[2], r[3], round(r[4], 6), round(r[5], 6))
-                                    for r in rows):
+    else:
+        _adopt(layer, store, project)
+    wanted = sorted((r[0], r[1], r[2], r[3], round(r[4], 6), round(r[5], 6)) for r in rows)
+    if _contents(layer) == wanted:
         return layer                                # nothing changed: no refill, no repaint
     layer.dataProvider().truncate()
     features = []

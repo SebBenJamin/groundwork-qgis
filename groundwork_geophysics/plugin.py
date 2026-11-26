@@ -48,6 +48,11 @@ class WorkbenchPlugin:
         self.provider: SectionDataProvider | None = None
         self.source = None
         self.gatherer: ContextGatherer | None = None
+        #: reads models in the background for the section panel and the 3D view
+        self.model_reader = None
+        self._prepared_3d: set = set()          # cloud / contour files a task has made
+        self._prepare_tasks: list = []          # the running "Preparing 3D" tasks
+        self._waiting_3d: list = []             # refills asked for while one prepares
         self.style_watch: StyleWatch | None = None
         self._context_logged: set[tuple[str, str]] = set()
         self.dock: SectionDock | None = None
@@ -146,6 +151,7 @@ class WorkbenchPlugin:
         self.dock.view3d_button.setVisible(hasattr(self.iface, "mapCanvases3D"))
         if self.provider is not None:
             self.dock.set_provider(self.provider, self.source)
+            self.dock.set_reader(self.model_reader)
 
         project = QgsProject.instance()
         for signal, slot in ((project.readProject, self._project_read),
@@ -186,6 +192,12 @@ class WorkbenchPlugin:
         if self.view3d_link is not None:
             self.view3d_link.unload()
             self.view3d_link = None
+        if self.model_reader is not None:              # no reading task calls back any more
+            self.model_reader.cancel()
+            self.model_reader = None
+        for task in list(self._prepare_tasks):
+            task.cancel()
+        self._prepare_tasks.clear()
         if self.dock is not None:
             self.dock.set_provider(None)                 # detach the source before unregistering
             self.iface.removeDockWidget(self.dock)
@@ -225,7 +237,7 @@ class WorkbenchPlugin:
         return action
 
     # -- project store -------------------------------------------------------------------------
-    def set_store(self, store):
+    def set_store(self, store, from_project: bool = False):
         """Show ``store`` (a ``ProjectStore``) in the section panel; ``None`` tears down.
 
         The canvas is detached before the old source is unregistered, because
@@ -235,7 +247,9 @@ class WorkbenchPlugin:
         self._close_view3d_dialog()            # it lists the old store's profiles
         view3d_layers.forget_shown(QgsProject.instance())   # a new store starts afresh
         old = derived_layers.derived_layer(QgsProject.instance())
-        if old is not None:                    # the old store's electrodes
+        # a project just read keeps its own (refilled below): removing a layer while QGIS
+        # restores a 3D map view that holds it crashes QGIS
+        if old is not None and not (from_project and store is not None):
             QgsProject.instance().removeMapLayer(old.id())
         self._close_profile_dialog()
         self._close_data_dialog()             # it adds to the old store
@@ -247,12 +261,21 @@ class WorkbenchPlugin:
         self._drop_plate_sources()
         self._drop_source()
         self._close_gatherer()
+        if self.model_reader is not None:
+            self.model_reader.cancel()
+            self.model_reader = None
         self.provider = None
         self._view3d_stale = False
         if store is not None:
             project = QgsProject.instance()
+            from .section.model_reading import ModelReader
             from .section.style_store import load_styles, save_styles
             self.provider = SectionDataProvider(store, styles=load_styles(project))
+            self.model_reader = ModelReader(self.provider)
+            reader, provider_ = self.model_reader, self.provider
+            # ties to crossing profiles: drawn at once, their columns once those are read
+            self.provider.on_unread_ties = lambda ids: reader.request(
+                ids, lambda ok: provider_.notify_redraw(ties=True))
             provider = self.provider
             self.provider.on_style.append(lambda: save_styles(project, provider.styles()))
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
@@ -262,9 +285,15 @@ class WorkbenchPlugin:
             ensure_note_layers(store, project)          # notes always have a layer to style
             migrate_note_styles(store, project)
             self.provider.note_looks = partial(note_looks, store, project)
+            from .section.data import cache_folder
             self.gatherer = ContextGatherer(project, store.crs_authid,
                                             on_change=self.provider.notify_changed,
-                                            exclude=lambda: own_layer_ids(store, project))
+                                            exclude=lambda: own_layer_ids(store, project),
+                                            cache_dir=cache_folder(store))
+            self.gatherer.background = True             # a web strip never freezes QGIS
+            self.provider.refresh_web_layers = self.gatherer.refresh_web_layers
+            self.provider.has_web_layers = self.gatherer.uses_web_layers
+            self.provider.finish_context_fetches = self.gatherer.finish_fetches
             self.provider.context_source = self.gatherer.items_for
             self.provider.borehole_source = self.gatherer.borehole_keys
             self.provider.interp_layers = lambda: interp_layers(store, project)
@@ -273,7 +302,7 @@ class WorkbenchPlugin:
             self.provider.near_miss = read_settings(project).near_miss
             self.provider.on_context_error = self._log_context_error
             self.provider.on_data_change.append(self._schedule_derived)
-            self._sync_derived(create=True)
+            self._sync_derived(create=True, keep=from_project)
             self.provider.on_change.append(self._schedule_3d)
             self.provider.on_data_change.append(lambda: self._schedule_3d(boreholes=True))
             self._sync_3d()
@@ -281,6 +310,7 @@ class WorkbenchPlugin:
             self.source = register_source(self.provider)
             if self.dock is not None:
                 self.dock.set_provider(self.provider, self.source)
+                self.dock.set_reader(self.model_reader)
             self.attach_plates()
         self._update_actions()
 
@@ -342,7 +372,7 @@ class WorkbenchPlugin:
         except ValueError as exc:
             store = None
             self._warn(str(exc))
-        self.set_store(store)
+        self.set_store(store, from_project=True)
 
     def _schedule_derived(self) -> None:
         """Data changed: refill the derived layer once after the event loop turn."""
@@ -352,7 +382,7 @@ class WorkbenchPlugin:
             self._derived_timer.timeout.connect(self._sync_derived)
         self._derived_timer.start(0)
 
-    def _sync_derived(self, create: bool = False) -> None:
+    def _sync_derived(self, create: bool = False, keep: bool = False) -> None:
         """Show the derived electrodes as a temporary map layer (never stored). Only a store
         being opened creates the layer; it never raises out of opening or a notification."""
         if self.provider is None or self._syncing_derived:
@@ -360,7 +390,7 @@ class WorkbenchPlugin:
         self._syncing_derived = True            # adding the layer must not set off a rebuild
         try:
             derived_layers.sync(self.provider.store, self.provider, QgsProject.instance(),
-                                create=create)
+                                create=create, keep=keep)
         except Exception as exc:
             QgsMessageLog.logMessage(f"Derived electrodes layer: {exc}", MENU_TITLE,
                                      Qgis.MessageLevel.Warning)
@@ -378,13 +408,77 @@ class WorkbenchPlugin:
                 lambda: self._sync_3d(boreholes=self._view3d_boreholes))
         self._view3d_timer.start(300)
 
-    def _sync_3d(self, create: bool = False, boreholes: bool = True) -> dict:
+    def _sync_3d(self, create: bool = False, boreholes: bool = True, then=None) -> dict:
         """Refill the Show in 3D layers (created only when the user asks); never raises out
         of opening or a notification. Without ``create`` and with no 3D map view open, it
         only takes out what belongs to deleted or unticked models and profiles and notes
         that the layers are out of date: point clouds and pictures are files, rewritten on
         every style change, and nobody would see them. The next 3D view that opens, or OK in
-        Show in 3D…, brings them up to date."""
+        Show in 3D…, brings them up to date.
+
+        Models not read yet and point clouds or contour lines not computed yet are done in
+        QGIS tasks first; the layers are filled when those are done (returns {} meanwhile).
+        ``then(layers)`` is called after the fill, at once or after the tasks."""
+        if self.provider is None or self._syncing_3d:
+            return {}
+        if self._prepare_tasks:                 # filled when the running preparation is done
+            self._waiting_3d.append((create, boreholes, then))
+            return {}
+        if (create or view3d_view.views_open(self.iface)) and \
+                self._prepare_3d_first(create, boreholes, then):
+            return {}
+        layers = self._fill_3d(create, boreholes)
+        if then is not None:
+            then(layers)
+        return layers
+
+    def _prepare_3d_first(self, create: bool, boreholes: bool, then) -> bool:
+        """Read the chosen models and compute missing clouds and contour lines in QGIS
+        tasks, then fill the 3D layers; False when nothing needs doing first."""
+        if self.model_reader is None:
+            return False
+        project = QgsProject.instance()
+        store, provider = self.provider.store, self.provider
+        choice = view3d_layers.read_choice(project)
+        ids = sorted({p.id for p, _d in view3d_layers._chosen_models(store, choice)})
+
+        def again(ok: bool = True) -> None:
+            if ok and self.provider is provider:
+                self._sync_3d(create, boreholes, then)
+        if ids and self.model_reader.request(ids, again):
+            return True
+        from .ui.view3d_prepare import Prepare3DTask, pending_3d
+        try:
+            jobs = [j for j in pending_3d(store, provider, project)
+                    if j.path not in self._prepared_3d]
+        except Exception as exc:                # never raises out of a notification
+            QgsMessageLog.logMessage(f"3D view layers: {exc}", MENU_TITLE,
+                                     Qgis.MessageLevel.Warning)
+            return False
+        if not jobs:
+            return False
+        self._prepared_3d.update(j.path for j in jobs)     # once: an empty cloud is no file
+        task = Prepare3DTask(jobs)
+        self._prepare_tasks.append(task)
+
+        def finished(ok: bool) -> None:
+            if task in self._prepare_tasks:
+                self._prepare_tasks.remove(task)
+            for error in task.errors:
+                QgsMessageLog.logMessage(f"3D view: {error}", MENU_TITLE,
+                                         Qgis.MessageLevel.Warning)
+            waiting, self._waiting_3d[:] = list(self._waiting_3d), []
+            again(ok)
+            for w_create, w_boreholes, w_then in waiting:     # refills asked for meanwhile
+                if self.provider is provider:
+                    self._sync_3d(w_create, w_boreholes, w_then)
+        task.taskCompleted.connect(lambda: finished(True))
+        task.taskTerminated.connect(lambda: finished(False))
+        from qgis.core import QgsApplication
+        QgsApplication.taskManager().addTask(task)
+        return True
+
+    def _fill_3d(self, create: bool, boreholes: bool) -> dict:
         if self.provider is None or self._syncing_3d:
             return {}
         if not create and not view3d_view.views_open(self.iface):
@@ -487,15 +581,18 @@ class WorkbenchPlugin:
         # the chosen size, or one fitting the stations imported since
         project_actions.fit_station_spheres(self.store, project,
                                             (choice.station_size or 0) / 2 or None)
-        layers = self._sync_3d(create=True)
         if not choice.models and not choice.boreholes:
+            self._sync_3d(create=True)
             self._info("Nothing is shown in 3D.")
             return
-        summary = f"Shown in 3D: {view3d_layers.shown_summary(layers)}"
-        if not layers:
-            self._info(f"{summary}.")
-            return
-        self._show_3d_view(project, summary)
+
+        def shown(layers: dict) -> None:
+            summary = f"Shown in 3D: {view3d_layers.shown_summary(layers)}"
+            if not layers:
+                self._info(f"{summary}.")
+                return
+            self._show_3d_view(project, summary)
+        self._sync_3d(create=True, then=shown)
 
     def _view3d_cut_state(self) -> bool | None:
         """For the profile menu: whether a 3D view is cut along a profile; None in a QGIS
@@ -785,7 +882,9 @@ class WorkbenchPlugin:
         project = QgsProject.instance()
         dialog = ContextDialog(self.iface, project,
                                exclude=own_layer_ids(self.store, project),
-                               current_boreholes=self._current_boreholes)
+                               current_boreholes=self._current_boreholes,
+                               store_path=lambda: None if self.store is None
+                               else self.store.path)
         dialog.applied.connect(self._context_applied)
         dialog.finished.connect(lambda _r, d=dialog: self._context_finished(d))
         self._context_dialog = dialog

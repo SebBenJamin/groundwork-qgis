@@ -27,7 +27,8 @@ from ..core.borehole_layout import (ViewTransform, column_depth, even_gap, exten
 from ..core.context import borehole_key, collar_height
 from ..core.context_settings import COLUMN_PX_RANGE, OPACITY_RANGE
 from .borehole_draw import (ColumnOptions, SymbolPool, draw_borehole, draw_flag,
-                            layer_text_width, text_font)
+                            layer_text_width, shown_curve_keys, text_font,
+                            track_header_px)
 from ..core.numbers import fmt
 from ..ids import LEGACY_ID
 
@@ -92,9 +93,9 @@ class BoreholeCanvas(QWidget):
     def _widths(self, points) -> list[float]:
         """Each column's drawn width: the column, its curve tracks and its layer text."""
         v = self.viewer
-        n_tracks = len(v.chosen_curves())
+        keys = tuple(v.chosen_curves())
         font = self.layer_font() if v.show_check["text"].isChecked() else None
-        return [COLUMN_PX + n_tracks * (TRACK_PX + 4)
+        return [COLUMN_PX + len(shown_curve_keys(p, keys)) * (TRACK_PX + 4)
                 + (layer_text_width(p, font) if font is not None else 0.0) for p in points]
 
     def _even_room(self) -> float:
@@ -213,6 +214,7 @@ class BoreholeCanvas(QWidget):
         styles = v.items.curve_styles if v.items is not None else {}
         ranges = v.curve_ranges(keys)
         xs = self._x_layout(points)
+        header = track_header_px(text_font(painter, rc))   # above a borehole's curve tracks
         pending = []                      # labels, placed after all columns (no overlaps)
         with SymbolPool(rc) as pool:      # each interval symbol started once per frame
             for p, x in zip(points, xs):
@@ -227,7 +229,8 @@ class BoreholeCanvas(QWidget):
                 highlight = v.highlight is not None and (p.entry, p.label) == v.highlight
                 opts = ColumnOptions(width_px=COLUMN_PX, layer_text=v.show_check["text"].isChecked(),
                                      ticks=v.show_check["ticks"].isChecked(), curve_keys=keys,
-                                     track_px=TRACK_PX, highlight=highlight)
+                                     track_px=TRACK_PX, highlight=highlight,
+                                     track_backdrop=BACKGROUND_RGB)
                 area = draw_borehole(painter, rc, px, y_of, drawn, opts, styles, ranges,
                                          pool)
                 if v.is_hidden(p):                # still shown here, faded: a wash of the
@@ -244,7 +247,8 @@ class BoreholeCanvas(QWidget):
                 self.column_rects.append((p, col))
                 if v.show_check["flags"].isChecked() and p.flagged:
                     draw_flag(painter, px, col.top(), 5.0)
-                pending.append((p, px, col.top(), z_top, highlight))
+                label_y = col.top() - (header if shown_curve_keys(p, keys) else 0.0)
+                pending.append((p, px, label_y, z_top, highlight))
         self._draw_labels(painter, pending)
         self._axis(painter)
         if v.mode == "true":

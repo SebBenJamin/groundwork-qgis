@@ -10,9 +10,11 @@ plain-data copy handed to profile-generator threads.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -27,6 +29,7 @@ from ..core.interpolators import Interpolation
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport
+from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..store.gpkg_store import ProjectStore
@@ -476,6 +479,62 @@ def _first_top(datasets: list[Dataset], placed: dict, z_kind: str
     return None
 
 
+def cache_folder(store) -> Path:
+    """Where the models read for ``store`` are remembered: ``<store stem>_cache`` beside it."""
+    path = Path(store.path)
+    return path.with_name(path.stem + "_cache")
+
+
+def _cache_file(store, dataset_id: str, key: tuple) -> Path:
+    digest = hashlib.sha1(repr(key).encode("utf-8", "replace")).hexdigest()[:12]
+    return cache_folder(store) / f"{dataset_id}-{digest}.npz"
+
+
+def _forget_others(kept: Path, dataset_id: str) -> None:
+    """Delete the dataset's remembered reads other than ``kept`` (an older file or line)."""
+    try:
+        for old in kept.parent.glob(f"{dataset_id}-*.npz"):
+            if old != kept and old.stem.count("-") == kept.stem.count("-"):
+                old.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+@dataclass
+class ReadJob:
+    """One model read, prepared on the main thread so that any thread can run it."""
+    dataset_id: str
+    name: str
+    profile_name: str
+    path: str
+    reader: str | None
+    options: dict
+    key: tuple
+    cache_file: Path
+
+
+#: changes when what a remembered read holds changes
+CACHE_FORMAT = 1
+
+
+def _cache_version() -> str:
+    """The plugin version and cache format a remembered read was made with: a new plugin
+    (a fixed reader) reads every file again."""
+    from ..ui.help import plugin_version
+    return f"{plugin_version()}/{CACHE_FORMAT}"
+
+
+def run_job(job: ReadJob) -> readers.ReaderResult:
+    """Read ``job`` (any thread): from the remembered read when there is one, else from the
+    file, which is then remembered."""
+    result = load_result(job.cache_file)
+    if result is None:
+        result = readers.read(job.path, reader=job.reader, **job.options)
+        if save_result(job.cache_file, result):
+            _forget_others(job.cache_file, job.dataset_id)
+    return result
+
+
 class SectionDataProvider:
     """Assembles the section layers of each profile from a ``ProjectStore``."""
 
@@ -485,6 +544,16 @@ class SectionDataProvider:
         self.on_change: list[Callable[[], None]] = []
         #: called after the user changed a style (to keep the styles in the project)
         self.on_style: list[Callable[[], None]] = []
+        #: forget the remembered strips from web layers and fetch them again; None: the
+        #: context has no web layers to refresh (``has_web_layers`` says whether it has now)
+        self.refresh_web_layers: Callable[[], None] | None = None
+        #: when set, ties never wait for a crossing profile's models: one not read yet is
+        #: tied without columns and its id passed here (to read it in the background)
+        self.on_unread_ties: Callable[[list], None] | None = None
+        #: finish the context fetches still running (web strips) and say whether any were:
+        #: a plate waits for them, the panel does not
+        self.finish_context_fetches: Callable[[], bool] | None = None
+        self.has_web_layers: Callable[[], bool] | None = None
         self.on_data_change: list[Callable[[], None]] = []   # notify_changed only
         #: profile shown in the section panel; wins when several profiles share a curve.
         #: Set and read on the main thread only (snapshots stay plain data).
@@ -494,6 +563,7 @@ class SectionDataProvider:
         #: None: the whole context is gathered instead
         self.borehole_source: Callable[[list], dict] | None = None
         self._styles: dict[str, LayerStyle] = dict(styles or {})
+        self._failed: set[tuple] = set()        # (dataset id, key) of failed background reads
         self._shown_meshes: dict = {}      # (dataset, read, shown) -> (read mesh, shown mesh)
         self._readings_seen: set[str] = set()
         self._cache: dict[str, tuple[tuple, readers.ReaderResult]] = {}
@@ -959,6 +1029,17 @@ class SectionDataProvider:
         """Reader result in data coordinates (map-coordinate files: in ``profile``'s
         chainage), cached per dataset until the file, the options or, for a map file, the
         profile's line change. Raises FileNotFoundError / ValueError / OSError."""
+        job = self._job(d, profile)
+        hit = self._cache.get(d.id)
+        if hit is not None and hit[0] == job.key:
+            return hit[1]
+        result = run_job(job)
+        self.take(job, result)
+        return result
+
+    def _job(self, d: Dataset, profile: Profile | None) -> "ReadJob":
+        """What reading ``d`` needs, worked out on the main thread (the distance function of
+        a map file is made here). Raises FileNotFoundError / ValueError / OSError."""
         path = self.source_path(d)
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
@@ -967,19 +1048,45 @@ class SectionDataProvider:
             raise ValueError("a file with map coordinates needs its profile line")
         line = (np.asarray(profile.xy, float).tobytes(), self.store.crs_authid) if on_map \
             else None
-        key = (d.id, os.stat(path).st_mtime, json.dumps(d.reader_options, sort_keys=True),
-               path, d.reader, _companion_mtime(path, d.reader_options), line)
-        hit = self._cache.get(d.id)
-        if hit is not None and hit[0] == key:
-            return hit[1]
+        st = os.stat(path)
+        key = (d.id, st.st_mtime, json.dumps(d.reader_options, sort_keys=True),
+               path, d.reader, _companion_mtime(path, d.reader_options), line, st.st_size,
+               _cache_version())
         options = read_options(d.reader_options)
         if on_map:
             options["xy_to_distance"] = xy_to_distance_on(
                 profile, str(d.reader_options["columns"].get("crs") or ""),
                 self.store.crs_authid)
-        result = readers.read(path, reader=d.reader or None, **options)
-        self._cache[d.id] = (key, result)
-        return result
+        return ReadJob(d.id, d.name or d.id, "" if profile is None else (profile.name or ""),
+                       path, d.reader or None, options, key,
+                       _cache_file(self.store, d.id, key))
+
+    def unread(self, profile_ids) -> list["ReadJob"]:
+        """The reads ``profile_ids``' datasets still need (their current file, options and
+        line are not in memory). A dataset that cannot be read is left out: drawing the
+        section reports it."""
+        out = []
+        for pid in profile_ids:
+            profile = self._profile(pid)
+            for d in self.store.datasets(pid):
+                try:
+                    job = self._job(d, profile)
+                except Exception:               # noqa: BLE001 - reported when drawn
+                    continue
+                hit = self._cache.get(d.id)
+                if (hit is None or hit[0] != job.key) and \
+                        (job.dataset_id, job.key) not in self._failed:
+                    out.append(job)
+        return out
+
+    def mark_failed(self, job: "ReadJob") -> None:
+        """A background read of ``job`` failed: it is not offered again (the section reads
+        it on the main thread, where the error is shown) until the file or options change."""
+        self._failed.add((job.dataset_id, job.key))
+
+    def take(self, job: "ReadJob", result: readers.ReaderResult) -> None:
+        """Keep a read made elsewhere (a reading task) as ``job``'s result."""
+        self._cache[job.dataset_id] = (job.key, result)
 
     def _place(self, d: Dataset, dmap: DistanceMap | None,
                profile: Profile | None = None) -> tuple[SectionMesh, str]:
@@ -1091,18 +1198,28 @@ class SectionDataProvider:
         ``notify_changed()``, failures recorded in ``context_errors``."""
         return self._gathered.items(profile, self.on_context_error)
 
-    def ties(self, profile_id: str) -> list[Tie]:
+    def ties(self, profile_id: str, defer: bool | None = None) -> list[Tie]:
         """Ties with every other profile in the store, columns from that profile's visible
         layers. Cached until ``notify_changed()`` or a new ``near_miss``."""
         from .ties_data import build_ties       # ties_data imports this module
         hit = self._ties.get(profile_id)
         if hit is not None and hit[0] == self.near_miss:
             return hit[1]
+        defer = self.on_unread_ties is not None if defer is None else defer
+        waiting: list[str] = []
+
+        def layers_of(pid: str) -> list:
+            if defer and self.unread([pid]):
+                waiting.append(pid)
+                return []
+            return self._assemble(pid)[0]
         # a profile without heights is not compared: its z means nothing next to another's
         ties = [] if self.is_local(profile_id) else [
-            t for t in build_ties(profile_id, self.store.profiles(), self.near_miss,
-                                  lambda pid: self._assemble(pid)[0])
+            t for t in build_ties(profile_id, self.store.profiles(), self.near_miss, layers_of)
             if not self.is_local(t.other_id)]
+        if waiting:                             # partial: asked again once those are read
+            self.on_unread_ties(waiting)
+            return ties
         self._ties[profile_id] = (self.near_miss, ties)
         return ties
 
@@ -1111,7 +1228,8 @@ class SectionDataProvider:
         profile = self._profile(profile_id)
         return profile is not None and self._items(profile).dem is not None
 
-    def context(self, profile_id: str, include_hidden: bool = False) -> ContextItems | None:
+    def context(self, profile_id: str, include_hidden: bool = False,
+                defer: bool | None = None) -> ContextItems | None:
         """Gathered context with the ties, in forward chainage; None for an unknown
         profile. Boreholes hidden in this profile are left out unless ``include_hidden``
         (the borehole viewer shows them faded). Shares the cached data: read-only."""
@@ -1120,7 +1238,8 @@ class SectionDataProvider:
             return None
         notes = [n for n in self.store.field_notes(profile_id) if n.shown] \
             if self.show_field_notes else []
-        items = replace(self._items(profile), ties=self.ties(profile_id), field_notes=notes)
+        items = replace(self._items(profile), ties=self.ties(profile_id, defer),
+                        field_notes=notes)
         if self.note_looks is not None and notes:
             try:
                 items = replace(items, note_looks=self.note_looks())
@@ -1183,6 +1302,12 @@ class SectionDataProvider:
         ``core.plates.FrameLook``) replaces the panel's look: only its models, with its scale,
         mode and opacity; its interpretation version; boreholes, notes, context as it says."""
         layers, sets, surface = self._assemble(profile_id)
+        if look is not None and self.finish_context_fetches is not None:
+            profile = self._profile(profile_id)
+            if profile is not None:
+                self._items(profile)            # starts the strip fetches it needs
+                if self.finish_context_fetches():
+                    self._gathered.clear()      # gathered again, with the strips now in
         topo = None if surface is None else surface.line
         local = surface is not None and surface.local
         if look is not None:
@@ -1195,7 +1320,9 @@ class SectionDataProvider:
         layers = [SectionLayer(la.dataset, la.mesh, _copy_style(la.style), la.error)
                   for la in layers]
         coverage = _coverage(sets, electrodes)
-        context = copy.deepcopy(self.context(profile_id))
+        # a plate waits for every crossing profile; the panel does not
+        context = copy.deepcopy(self.context(profile_id,
+                                             defer=False if look is not None else None))
         if look is not None and context is not None:
             # the plate's own notes switch, not the panel's
             notes = [n for n in self.store.field_notes(profile_id) if n.shown]

@@ -4,7 +4,7 @@ qgisMinimumVersion=4.2
 supportsQt6=True
 description=Groundwork: geophysical profiles in QGIS. Sections under the map with boreholes, geology and interpretation, also in 3D
 about=Load, display and interpret georeferenced geophysical profiles and sections (ERT and seismic refraction today; GPR and seismic reflection planned) in QGIS.
-version=0.15.0
+version=0.16.0
 author=Sebastian Benjamin
 email=8215349+SebBenJamin@users.noreply.github.com
 license=GPL-2.0-or-later
@@ -14,7 +14,8 @@ repository=https://github.com/SebBenJamin/groundwork-qgis
 tags=geophysics,ERT,resistivity,seismic,refraction,section,profile,borehole,geology,interpretation,3D
 experimental=True
 icon=icons/workbench.svg
-changelog=0.15.0: big models open fast (sections, contours, 3D, loading); Add Data offers coarser cells for over-fine exports and takes several files at once; Interpolation in Display… (linear, nearest, inverse distance, spline, kriging), also in 3D and on plates; section styles saved with the project and Apply Style to All Sections (same method only); Zoom Map to Profile, previous/next profile, copy or save the section as a picture; plates: new template remakes the layout, no empty legend blocks; interpretation layers back on opening; 3D clouds stay in colour from afar
+changelog=0.16.0: models are read in the background and remembered beside the project, so the section panel does not freeze; Show in 3D… reads, grids and paints its section pictures in a task, and the 3D button opens a saved 3D view again; strips from web layers fetched once and remembered (Refresh Web Layers); well logs from LAS 1.2/2.0 files (Import LAS… in Context Layers), log curves with their own colours, rounded scales and no empty tracks; Gülpe demo: measured lab curves on the cores, Transect 4 the right way round
+    0.15.0: big models open fast (sections, contours, 3D, loading); Add Data offers coarser cells for over-fine exports and takes several files at once; Interpolation in Display… (linear, nearest, inverse distance, spline, kriging), also in 3D and on plates; section styles saved with the project and Apply Style to All Sections (same method only); Zoom Map to Profile, previous/next profile, copy or save the section as a picture; plates: new template remakes the layout, no empty legend blocks; interpretation layers back on opening; 3D clouds stay in colour from afar
     0.14.2: text tables with map coordinates: rows whose easting or northing is -9999 (cells past the surveyed line in some exports) are left out and counted in Add Data; they no longer stretch the profile line to (-9999, -9999)
     0.14.1: Calhoun demo: Line 6 stands where it was measured (it was 23 m too early along its line, so its surface missed the elevation model); its elevation model represents an elevation surface
     0.14.0: the 3D view: Show in 3D… stands models as curtains under their profiles (cells, point clouds, contour lines or the section as a picture, with the interpretation painted in), boreholes as round columns with their names, the ground line and profile names; stations and the interpretation stand at their heights and follow their 2D style; pointing in 3D moves the section's cursor, a click opens that profile; look at or cut the 3D view along a profile with the section panel's 3D button; low-coverage cells see-through

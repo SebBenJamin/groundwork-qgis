@@ -38,11 +38,11 @@ CHAR_PX = 6.0               # a layer-text character, for hit tests and tie-stri
 def right_extent_px(items, p) -> float:
     """How far the section draws right of borehole ``p``'s column: its curve tracks and
     layer text (pixels; the text estimated from its longest line)."""
-    from .borehole_draw import TEXT_GAP_PX, TRACK_GAP_PX
+    from .borehole_draw import TEXT_GAP_PX, TRACK_GAP_PX, shown_curve_keys
     view = items.borehole_views.get(p.entry)
     if view is None:
         return 0.0
-    px = len(view.curve_keys) * (SECTION_TRACK_PX + TRACK_GAP_PX)
+    px = len(shown_curve_keys(p, view.curve_keys)) * (SECTION_TRACK_PX + TRACK_GAP_PX)
     if view.layer_text:
         px += TEXT_GAP_PX + CHAR_PX * max((len(iv.text) for iv in p.log), default=0)
     return px

@@ -60,6 +60,22 @@ def data_range(curves, log: bool) -> tuple[float, float] | None:
     return float(allv.min()), float(allv.max())
 
 
+def nice_range(lo: float, hi: float, log: bool) -> tuple[float, float]:
+    """``(lo, hi)`` widened to ends the eye can read: whole decades on a log scale, else
+    multiples of a 1-2-5 step of about a tenth of the span. A flat range stays as it is."""
+    if not hi > lo:
+        return float(lo), float(hi)
+    if log and lo > 0:
+        return (float(10.0 ** np.floor(np.log10(lo) + 1e-9)),
+                float(10.0 ** np.ceil(np.log10(hi) - 1e-9)))
+    raw = (hi - lo) / 10.0
+    power = 10.0 ** np.floor(np.log10(raw))
+    step = next(m * power for m in (1.0, 2.0, 5.0, 10.0) if m * power >= raw * (1 - 1e-9))
+    digits = max(0, int(-np.floor(np.log10(step))) + 1)
+    return (round(float(np.floor(lo / step + 1e-9) * step), digits) + 0.0,
+            round(float(np.ceil(hi / step - 1e-9) * step), digits) + 0.0)
+
+
 def value_at(curve, depth: float, log: bool = False) -> float | None:
     """The curve's value at ``depth``: linear between the two neighbouring samples, ``None``
     outside the samples or when either neighbour is a gap (on a ``log`` scale also a sample

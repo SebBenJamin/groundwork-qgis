@@ -40,10 +40,31 @@ The plugin reads boreholes from ordinary QGIS layers. You set those up once per 
 | ⑤ | Intervals: borehole id / top / bottom field | `id`, `top`, `bottom` |
 | ⑥ | Intervals: text field | `lithology` |
 | ⑦ | Borehole Style… | how the intervals look (see [Styling](#styling)) |
-| ⑧ | Add Curve Table | the curve table, its id and depth fields; tick each curve and give its unit |
+| ⑧ | Add Curve Table | the curve table, its id and depth fields; tick each curve and give its unit (or **Import LAS…** next to it, see [Logs from LAS files](#logs-from-las-files)) |
 | ⑨ | Search distance from the line | points and boreholes this close to the profile line are drawn on the section |
 
 Press **Apply** or **OK**. The section redraws with the boreholes as columns.
+
+### Logs from LAS files
+
+Well logs often come as LAS files (Log ASCII Standard), one file per well. **Import LAS…**
+in a borehole entry reads them into a curve table for you:
+
+1. Choose the borehole layer and its id field first.
+2. **Import LAS…**, pick all the LAS files at once.
+3. The table lists each file with the borehole it belongs to, found from the well name or
+   UWI in the file, or from the file name (`JW-11`, `jw11_gamma.las` → `JW11`). Change it
+   where it is wrong; a file without a borehole is left out.
+4. **Ground below zero**: 0 when the log's depths start at the ground. When they start
+   higher, e.g. at the drill floor (kelly bushing), enter how far below that the ground lies.
+5. **Import**. The curves go into a new table in the Groundwork project (`las_curves`, as the
+   layer "LAS curves"), set up as this entry's curve table with every curve ticked and its
+   unit. Press **Apply** or **OK**.
+
+![Import LAS: three files, two matched to their boreholes, one still without](../../images/howto/import-las.png)
+
+Depths in feet are converted to metres; null values (e.g. −999.25) are gaps. LAS 1.2 and 2.0
+are read, also wrapped files; LAS 3.0 and logs indexed by time are refused with a message.
 
 **The borehole viewer** shows the boreholes of the profile open in the section panel side by side. Open it with **Groundwork › Show Borehole Viewer**, or click a column in the section (that borehole is then framed).
 
@@ -79,6 +100,10 @@ Press **Apply** or **OK**. The section redraws with the boreholes as columns.
 
   - **A class only applies to values that are exactly that code** ("fS, ms, u'" is not "fS"). To style by the main component, add a column in QGIS's field calculator with `trim(regexp_substr("lithology", '^[^,;]+'))` and style by that column.
 - **Curve Style…** in the viewer sets each curve's colour, line, fill, and linear or log scale with min/max.
+  - Until you style a curve, each curve gets its own colour from QGIS: the project's default colour ramp (Project Properties › Styles), else ColorBrewer's *Dark2*. The colours follow the order of the curves in Context Layers.
+  - Without your own min/max, a track's scale reaches from the smallest to the largest value of the boreholes in view, rounded outward to readable ends (e.g. 0–12 %, or whole decades such as 0.01–100 on a log scale).
+  - A borehole gets a track only for the curves it has values for: cores without lab samples stay narrow.
+  - To read curves side by side, use **Spacing › Even**. At true distance, tracks of boreholes close together can lie behind the next column.
 - **Leaving a borehole out of one section**: right-click its column in the section → **Hide in Section**. It leaves that profile's section and plates only; the map, other profiles and your layer are not changed. The borehole viewer still shows it, faded and marked "hidden in section". There, click a column to select it (Ctrl+click for several) and right-click → **Hide in Section** or **Show in Section**. **Show › Hidden boreholes** switches the hidden ones off in the viewer. A borehole whose id field is empty cannot be hidden on its own.
 - Without a saved style, each layer text gets its own neutral colour. The plugin never guesses a colour from the words.
 

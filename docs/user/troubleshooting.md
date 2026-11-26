@@ -58,7 +58,9 @@ at one place.
 
 | What you see | Usual cause | Fix |
 |---|---|---|
-| QGIS stops responding for a while when a profile opens or the 3D view fills | Every model is read and drawn before QGIS goes on; large files on a slow drive (a USB stick) take longest | Read over-fine exports as [coarser cells](howto/add-data.md) when adding them; keep the data on a local drive |
+| "Reading Line 7 (2 of 4)…" for a while when a profile first opens | The models are read for the first time; large files on a slow drive (a USB stick) take longest | Wait, or cancel in QGIS's status bar; next time they come from the `_cache` folder at once. Read over-fine exports as [coarser cells](howto/add-data.md) when adding them |
+| The geology strip comes a moment after the section | It comes from a web layer and is fetched in the background the first time | Nothing to do: it is remembered per profile afterwards |
+| A change on a web service does not show in the strip | The strip is remembered per profile | Right-click the **Profile** list → **Refresh Web Layers** |
 | The smooth field looks linear though another interpolation is chosen | The method could not be used for this model (for example, not enough memory) | **View → Panels → Log Messages**, tab **Groundwork**, says why; try **Inverse distance**, or a coarser grid cell |
 
 ## Demos

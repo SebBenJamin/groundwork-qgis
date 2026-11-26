@@ -68,6 +68,80 @@ def parse_cores(text: str) -> tuple[list[CoreSite], dict[str, list[tuple[float, 
     return sites, logs
 
 
+#: the cores' lab samples: (field, unit, what it is); columns 16-30 of the cores table in this
+#: order, then the derived sums sand / silt / clay
+LAB_TABLE = "core_lab"
+LAB_FIELDS = (
+    ("tn", "%", "total nitrogen"), ("tc", "%", "total carbon"),
+    ("tic", "%", "total inorganic carbon (carbonate)"), ("toc", "%", "total organic carbon"),
+    ("ts", "%", "total sulfur"),
+    ("cs_2000_630um", "%", "coarse sand 2000-630 µm"),
+    ("ms_630_200um", "%", "medium sand 630-200 µm"),
+    ("fs_200_125um", "%", "fine sand 200-125 µm"), ("fs_125_64um", "%", "fine sand 125-64 µm"),
+    ("cu_63_20um", "%", "coarse silt 63-20 µm"), ("mu_20_6_3um", "%", "medium silt 20-6.3 µm"),
+    ("fu_6_3_2um", "%", "fine silt 6.3-2 µm"), ("cc_2_0_63um", "%", "coarse clay 2-0.63 µm"),
+    ("mc_0_63_0_2um", "%", "medium clay 0.63-0.2 µm"), ("fc_lt0_2um", "%", "fine clay < 0.2 µm"),
+    ("sand", "%", "sand 2000-64 µm (sum of the sand fractions)"),
+    ("silt", "%", "silt 63-2 µm (sum of the silt fractions)"),
+    ("clay", "%", "clay < 2 µm (sum of the clay fractions)"))
+C_SAMPLE, C_SAMPLE_TOP, C_SAMPLE_BOTTOM, C_LAB = 13, 14, 15, 16
+_MEASURED = 15                          # the first 15 fields are columns; the rest are sums
+
+
+def parse_samples(text: str) -> list[tuple[str, float, float, str, dict[str, float]]]:
+    """(core id, top, bottom, sample id, {field: value}) of each lab sample of the cores
+    table, values as the authors give them; sand/silt/clay are the sums of their fractions."""
+    _head, _, body = text.partition("\n*/\n")
+    out = []
+    for line in body.splitlines()[1:]:
+        cols = line.split("\t") + [""] * 32
+        if not cols[C_EVENT] or not cols[C_SAMPLE].strip():
+            continue
+        values = {}
+        for k, (name, _unit, _what) in enumerate(LAB_FIELDS[:_MEASURED]):
+            cell = cols[C_LAB + k].strip()
+            if cell and not cell.startswith("<"):       # "<0.0020": below detection, a gap
+                values[name] = float(cell)
+        names = [n for n, _u, _w in LAB_FIELDS[:_MEASURED]]
+        for total, parts in (("sand", names[5:9]), ("silt", names[9:12]),
+                             ("clay", names[12:15])):
+            if all(n in values for n in parts):
+                values[total] = sum(values[n] for n in parts)
+        out.append((cols[C_EVENT], float(cols[C_SAMPLE_TOP]), float(cols[C_SAMPLE_BOTTOM]),
+                    cols[C_SAMPLE].strip(), values))
+    return out
+
+
+def write_lab_table(path: Path, samples) -> None:
+    """Add ``LAB_TABLE`` to the cores GeoPackage: one row per sample at its middle depth (to
+    the centimetre), with its top, bottom and sample id."""
+    from osgeo import gdal, ogr
+
+    with gdal.ExceptionMgr(), ogr.ExceptionMgr(), \
+            gdal.config_option("OGR_CURRENT_DATE", "2026-11-25T00:00:00.000Z"):
+        ds = ogr.Open(str(path), update=1)
+        table = ds.CreateLayer(LAB_TABLE, None, ogr.wkbNone, options=[
+            "DESCRIPTION=Lab values of the core samples (Köhler et al. 2025, PANGAEA 983887); "
+            "depth = middle of the sample"])
+        for name, kind in (("core_id", ogr.OFTString), ("depth", ogr.OFTReal),
+                           ("top", ogr.OFTReal), ("bottom", ogr.OFTReal),
+                           ("sample_id", ogr.OFTString)):
+            table.CreateField(ogr.FieldDefn(name, kind))
+        for name, _unit, _what in LAB_FIELDS:
+            table.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+        for cid, top, bottom, sid, values in sorted(samples, key=lambda s: (int(s[0][2:]), s[1])):
+            f = ogr.Feature(table.GetLayerDefn())
+            f.SetField("core_id", cid)
+            f.SetField("depth", float(np.floor((top + bottom) / 2 * 100 + 0.5) / 100))
+            f.SetField("top", top)
+            f.SetField("bottom", bottom)
+            f.SetField("sample_id", sid)
+            for name, value in values.items():
+                f.SetField(name, value)
+            table.CreateFeature(f)
+        ds = None
+
+
 def read_dgps(path: Path) -> tuple[np.ndarray, np.ndarray]:
     """(numbers from the ID suffix, xyz) of a DGPS file with header ``E N H ID``."""
     numbers, xyz = [], []
@@ -103,6 +177,17 @@ def match_electrodes(electrodes_xz: np.ndarray, numbers: np.ndarray, xyz: np.nda
                              f"height {xyz[i, 2]}")
         out.append(n)
     return np.array(out, dtype=int)
+
+
+def reversed_positions(xyz: np.ndarray) -> np.ndarray:
+    """``xyz`` with its E/N turned round and the heights kept in order. Transect 4's
+    published DGPS file lists the positions from the north-east end while its heights, the
+    field notes (standing water at 30-60 m and 144-190 m) and the authors' sketch put electrode
+    1 in the south-west; read in reverse, the heights agree with the DGM1 (0.09 m instead of
+    0.45 m spread), as the other transects do."""
+    out = np.array(xyz, dtype=float, copy=True)
+    out[:, :2] = out[::-1, :2]
+    return out
 
 
 def write_stations_csv(path: Path, numbers, xyz) -> None:

@@ -138,8 +138,8 @@ def test_log_scale_with_min_at_or_below_zero_uses_the_smallest_positive_value(qg
     from groundwork_geophysics.core.context import Curve
     from groundwork_geophysics.section.borehole_draw import curve_range
     c = Curve("k", "res", "ohm.m", np.array([0.0, 1.0, 2.0]), np.array([0.0, 5.0, 500.0]))
-    assert curve_range(c, CurveStyle(log=True, vmin=0.0), None) == (5.0, 500.0)
-    assert curve_range(c, CurveStyle(log=True), (0.0, 500.0)) == (5.0, 500.0)
+    assert curve_range(c, CurveStyle(log=True, vmin=0.0), None) == (1.0, 1000.0)   # decades
+    assert curve_range(c, CurveStyle(log=True), (0.0, 500.0)) == (1.0, 1000.0)
     assert curve_range(Curve("k", "r", "", np.array([0.0]), np.array([-1.0])),
                        CurveStyle(log=True), None) is None
 
@@ -177,3 +177,67 @@ def test_moved_text_gets_a_leader(qgis_app):
     from groundwork_geophysics.section.borehole_draw import TEXT_GAP_PX, ColumnOptions
     img, _ = _draw(_thin_layers(), ColumnOptions(width_px=16, layer_text=True))
     assert _text_rows(img, 110, int(108 + TEXT_GAP_PX - 1))
+
+
+def test_the_users_own_scale_ends_are_kept(qgis_app):
+    from groundwork_geophysics.core.borehole_curves import CurveStyle
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.borehole_draw import curve_range
+    c = Curve("k", "toc", "%", np.array([0.0, 1.0]), np.array([0.0175, 10.964]))
+    assert curve_range(c, CurveStyle(), None) == (0.0, 12.0)              # rounded outward
+    assert curve_range(c, CurveStyle(vmin=0.5, vmax=11.5), None) == (0.5, 11.5)
+    assert curve_range(c, CurveStyle(vmax=11.5), None) == (0.0, 11.5)
+
+
+def test_a_borehole_without_the_curve_gets_no_empty_track(qgis_app):
+    """Tracks only where the borehole has values: cores without lab samples stay narrow."""
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions, shown_curve_keys
+    c = Curve("t:toc", "toc", "%", np.linspace(0, 4, 5), np.linspace(1, 5, 5))
+    keys = ("t:toc", "t:clay")
+    p = _bh([(0, 4, "a", None)], curves=[c])
+    assert shown_curve_keys(p, keys) == ("t:toc",)
+    assert shown_curve_keys(_bh([(0, 4, "a", None)]), keys) == ()
+    _, rect = _draw(p, ColumnOptions(width_px=16, curve_keys=keys, track_px=60))
+    assert 16 + 60 <= round(rect.width()) < 16 + 2 * 60          # one track, not two
+    _, bare = _draw(_bh([(0, 4, "a", None)]), ColumnOptions(width_px=16, curve_keys=keys,
+                                                            track_px=60))
+    assert round(bare.width()) == 16
+
+
+def test_a_track_backdrop_hides_what_lies_behind(qgis_app):
+    """The viewer's tracks are drawn on white, so a neighbour's track behind them (true
+    distance, cores close together) does not mix with this one's line."""
+    from qgis.core import QgsRenderContext
+    from qgis.PyQt.QtGui import QColor, QImage, QPainter
+
+    from groundwork_geophysics.core.context import Curve
+    from groundwork_geophysics.section.borehole_draw import ColumnOptions, draw_borehole
+    c = Curve("t:toc", "toc", "%", np.linspace(0, 4, 5), np.full(5, 1.0))   # line on the left
+    p = _bh([(0, 4, "a", None)], curves=[c])
+    for backdrop, expect_white in ((True, True), (False, False)):
+        img = QImage(400, 300, QImage.Format.Format_ARGB32)
+        img.fill(QColor(90, 90, 90))
+        painter = QPainter(img)
+        try:
+            rc = QgsRenderContext.fromQPainter(painter)
+            draw_borehole(painter, rc, 100.0, lambda d: 20.0 + 40.0 * d, p,
+                          ColumnOptions(width_px=16, curve_keys=("t:toc",), track_px=60,
+                                        track_backdrop=(255, 255, 255) if backdrop else None),
+                          {}, {"t:toc": (0.0, 2.0)})
+        finally:
+            painter.end()
+        assert _close(img.pixel(160, 100), (255, 255, 255)) is expect_white
+
+
+def test_section_room_right_of_a_column_counts_only_its_own_curves(qgis_app):
+    from groundwork_geophysics.core.context import BoreholeView, ContextItems, Curve
+    from groundwork_geophysics.section.borehole_draw import TRACK_GAP_PX
+    from groundwork_geophysics.section.context_render_points import (SECTION_TRACK_PX,
+                                                                      right_extent_px)
+    c = Curve("t:toc", "toc", "%", np.linspace(0, 4, 5), np.linspace(1, 5, 5))
+    with_lab, without = _bh([(0, 4, "a", None)], curves=[c]), _bh([(0, 4, "a", None)])
+    items = ContextItems(points=[with_lab, without],
+                         borehole_views={-1: BoreholeView(curve_keys=("t:toc", "t:clay"))})
+    assert right_extent_px(items, with_lab) == SECTION_TRACK_PX + TRACK_GAP_PX
+    assert right_extent_px(items, without) == 0.0

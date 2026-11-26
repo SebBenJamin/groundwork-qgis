@@ -41,6 +41,9 @@ Three tables, linked by a **borehole ID**. Column names are free: you pick them 
 | `depth` | yes | Metres below the ground, positive downwards. |
 | one column per curve | yes | e.g. `gamma_api`, `resistivity_ohmm`. Empty cells are gaps: the line breaks there. |
 
+Logs in **LAS files** need no curves table of your own: **Import LAS…** in Context Layers
+makes one (see [Logs from LAS files](../howto/boreholes.md#logs-from-las-files)).
+
 ### Rules the plugin follows
 
 - **IDs are compared as text, without leading or trailing spaces.** `7` (a number) in the collars matches `" 7 "` (text) in the layers.

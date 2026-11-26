@@ -72,6 +72,11 @@ IMAGE_OFF_TIP = "Open a profile first; then its section can be copied or saved a
 COPY_IMAGE_TEXT = "Copy Section Image"
 SAVE_IMAGE_TEXT = "Save Section Image…"
 ZOOM_MAP_TEXT = "Zoom Map to Profile"
+READING = "Reading {name} ({done} of {total})…"
+READ_CANCELLED = "Reading was cancelled. Open the profile again to read it."
+REFRESH_WEB_TEXT = "Refresh Web Layers"
+REFRESH_WEB_TIP = ("Fetch the strips from web layers (e.g. a survey's live geology) again: "
+                   "they are remembered per profile")
 ZOOM_MAP_TIP = "Zoom the map to the open profile's line"
 ZOOM_MAP_OFF_TIP = "Open a profile first; then this zooms the map to its line"
 HIDE_IN_SECTION = "Hide in Section"
@@ -112,6 +117,9 @@ class _Readout(QLabel):
 
 
 class SectionDock(QDockWidget):
+    _reader = None                              # a ModelReader: models read in the background
+    _wanted = None                              # (profile id, name, token) read before it opens
+    _refresh_token = None                       # the read a refresh waits for
     cursor_moved = pyqtSignal(float, float)     # forward chainage, elevation
     cursor_left = pyqtSignal()                  # the mouse left the section
     profile_changed = pyqtSignal(object)        # open profile id, or None when closed
@@ -339,6 +347,7 @@ class SectionDock(QDockWidget):
         self._refresh_timer.stop()
         self.provider = provider
         self._source = None
+        self.set_reader(None)
         self._close_profile()
         if provider is not None:
             self._source = source if source is not None else _registered_source_for(provider)
@@ -347,6 +356,57 @@ class SectionDock(QDockWidget):
                 self.canvas.setSources([self._source])
         self._fill_combo()
         self._set_hint()
+
+    def set_reader(self, reader) -> None:
+        """Read models in the background with ``reader`` (a ``ModelReader`` of this panel's
+        provider); None: read them on the main thread, as tests and plates do."""
+        old = getattr(self, "_reader", None)
+        if old is not None:
+            try:
+                old.progress.disconnect(self._reading_progress)
+            except (TypeError, RuntimeError):
+                pass
+        self._reader = reader
+        self._wanted = None                     # the profile being read before it opens
+        if reader is not None:
+            reader.progress.connect(self._reading_progress)
+
+    @property
+    def reader(self):
+        return getattr(self, "_reader", None)
+
+    @reader.setter
+    def reader(self, value) -> None:
+        self.set_reader(value)
+
+    def _reading_progress(self, done: int, total: int, _name: str) -> None:
+        if sip.isdeleted(self):                 # the panel went while a task read
+            return
+        if self._wanted is not None:
+            self.readout.setText(READING.format(name=self._wanted[1], done=done, total=total))
+
+    def _read_first(self, profile, then) -> int | None:
+        """Read ``profile``'s models in the background and call ``then(ok)`` on the main
+        thread (perhaps at once); the number of reads, or None when there is nothing to read
+        (or no reader)."""
+        if self.reader is None:
+            return None
+        total = len(self.provider.unread([profile.id]))
+        if not self.reader.request([profile.id], then):
+            return None
+        return total
+
+    def _opened_after_read(self, profile_id: str, token, after, ok: bool) -> None:
+        if sip.isdeleted(self):                 # the panel went while a task read
+            return
+        if self._wanted is None or self._wanted[2] is not token:
+            return                              # another profile was chosen meanwhile
+        self._wanted = None
+        if ok and self.provider is not None:
+            self.open_profile(profile_id, after)
+            return
+        self.readout.setText(READ_CANCELLED)
+        self._fill_combo()                      # the list shows what is open again
 
     def _keep_own_source(self, *_args) -> None:
         """QGIS adds every newly registered profile source (e.g. a plate frame's) to every
@@ -367,14 +427,18 @@ class SectionDock(QDockWidget):
         self._layers = self._ctx = None
         self._fill_combo()
         self.topo.sync()
-        if self._profile is None:
-            return
+        if self._profile is None or self._wanted is not None:
+            return                              # nothing open, or another one opens soon
         try:
             profile = self.provider.store.profile(self._profile.id)
         except KeyError:                        # profile deleted from the project
             self._close_profile()
             self._set_hint()
             return
+        token = self._refresh_token = object()
+        if self._read_first(profile, partial(self._refreshed_after_read, token)) is not None:
+            return                              # drawn again when the new data are read
+        self._refresh_token = None
         settled = self._settle(profile)
         if not np.array_equal(profile.xy, self._profile.xy):
             self._profile = profile
@@ -384,6 +448,15 @@ class SectionDock(QDockWidget):
         self.canvas.refresh()
         if settled:
             self.readout.setText(settled)
+
+    def _refreshed_after_read(self, token, ok: bool) -> None:
+        if sip.isdeleted(self) or token is not self._refresh_token:
+            return                              # the panel went, or a newer read is on
+        self._refresh_token = None
+        if ok:
+            self._refresh_now()
+        elif self._wanted is None:
+            self.readout.setText(READ_CANCELLED)
 
     # -- profiles ----------------------------------------------------------------------------
     def _fill_combo(self) -> None:
@@ -396,7 +469,9 @@ class SectionDock(QDockWidget):
             self.profile_combo.clear()
             for pid, name in wanted:
                 self.profile_combo.addItem(name, pid)
-        index = self.profile_combo.findData(self.current_profile_id()) if self._profile else 0
+        shown = self._wanted[0] if self._wanted is not None else (
+            self.current_profile_id() if self._profile else None)
+        index = self.profile_combo.findData(shown) if shown is not None else 0
         self.profile_combo.setCurrentIndex(max(0, index))
         self.profile_combo.blockSignals(False)
         self._sync_steps()
@@ -443,10 +518,13 @@ class SectionDock(QDockWidget):
     def current_profile(self):
         return self._profile
 
-    def open_profile(self, profile_id: str) -> bool:
+    def open_profile(self, profile_id: str, after=None) -> bool:
         """Show ``profile_id``: curve in the profile's own direction, CRS of the project
         store, zoomed to the full extent of the data and topography. A profile missing from
-        the store shows a message and refreshes the list instead (returns False)."""
+        the store shows a message and refreshes the list instead (returns False). Models
+        not read yet are read in the background first; ``after()`` is called once the
+        profile is open (at once when nothing had to be read), never when another profile
+        was chosen meanwhile or the reading was cancelled."""
         if self.provider is None:
             raise RuntimeError("no project is open")
         try:
@@ -456,6 +534,20 @@ class SectionDock(QDockWidget):
             self._fill_combo()
             self.readout.setText(MISSING_PROFILE)
             return False
+        token = object()
+        name = profile.name or profile.id
+        self._wanted = (profile.id, name, token)
+        total = self._read_first(profile, partial(self._opened_after_read, profile.id, token,
+                                                  after))
+        if total is not None:
+            if self._wanted is not None and self._wanted[2] is token:   # still reading
+                self.readout.setText(READING.format(name=name, done=0, total=total))
+                self.profile_combo.blockSignals(True)
+                self.profile_combo.setCurrentIndex(
+                    max(0, self.profile_combo.findData(profile.id)))
+                self.profile_combo.blockSignals(False)
+            return True
+        self._wanted = None
         self._profile = profile
         self.empty_hint.hide()
         self.canvas.show()
@@ -477,6 +569,8 @@ class SectionDock(QDockWidget):
         self.profile_changed.emit(profile_id)
         if settled:
             self.readout.setText(settled)
+        if after is not None:
+            after()
         return True
 
     # -- reference height and the interpretation of a profile without heights ----------------
@@ -921,11 +1015,29 @@ class SectionDock(QDockWidget):
             action = menu.addAction(text)
             action.setEnabled(enabled)
             action.triggered.connect(slot)
+        if self._web_context():
+            action = menu.addAction(REFRESH_WEB_TEXT)
+            action.setToolTip(REFRESH_WEB_TIP)
+            menu.setToolTipsVisible(True)
+            action.triggered.connect(self._refresh_web)
         cut = self._cut_state()
         if cut is not None:
             menu.addSeparator()
             self._add_3d_entries(menu, cut)
         return menu
+
+    def _web_context(self) -> bool:
+        provider = self.provider
+        if provider is None or provider.refresh_web_layers is None:
+            return False
+        try:
+            return provider.has_web_layers is None or bool(provider.has_web_layers())
+        except Exception:                       # settings being rewritten: offer nothing
+            return False
+
+    def _refresh_web(self) -> None:
+        if self.provider is not None and self.provider.refresh_web_layers is not None:
+            self.provider.refresh_web_layers()
 
     def _cut_state(self) -> bool | None:
         """Whether a 3D view is cut along a profile; None without 3D views."""

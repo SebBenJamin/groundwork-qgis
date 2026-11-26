@@ -19,7 +19,7 @@ def test_metadata_targets_qgis4():
     assert g["name"] == "Groundwork"
     assert g["qgisMinimumVersion"] == "4.2"
     assert g["supportsQt6"] == "True"
-    assert g["version"] == "0.15.0"
+    assert g["version"] == "0.16.0"
 
 
 def test_plugin_loads_and_unloads(fake_iface):
@@ -132,6 +132,19 @@ def test_the_3d_view_files_are_not_packaged(tmp_path):
     assert [p.name for p in package.files_under(tmp_path)] == ["site_groundwork.gpkg"]
 
 
+def test_remembered_reads_are_not_packaged(tmp_path):
+    """The read models kept beside a store are made again wherever a project is opened."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import package
+    (tmp_path / "site_groundwork.gpkg").write_bytes(b"x")
+    cache = tmp_path / "site_groundwork_cache"
+    cache.mkdir()
+    (cache / "d1-0123456789ab.npz").write_bytes(b"x")
+    assert [p.name for p in package.files_under(tmp_path)] == ["site_groundwork.gpkg"]
+
+
 def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
     """The Gülpe demo zip from a separately built folder (``--guelpe``), so a release ships
     a clean demo with all its files while the committed demo (the user's test drawings)
@@ -147,11 +160,11 @@ def test_guelpe_zip_can_come_from_a_fresh_build_folder(tmp_path):
     fresh = root / ".cache" / "test_guelpe_fresh"
     shutil.rmtree(fresh, ignore_errors=True)
     shutil.copytree(root / "demo_guelpe", fresh)
-    (fresh / "context" / "synthetic_logs.gpkg").write_bytes(b"x")
+    (fresh / "context" / "only_in_the_build.gpkg").write_bytes(b"x")
     try:
         zips = package.build(tmp_path, guelpe_src=fresh)
         names = zipfile.ZipFile(zips[2]).namelist()
-        assert "context/synthetic_logs.gpkg" in names and "guelpe_project.qgz" in names
+        assert "context/only_in_the_build.gpkg" in names and "guelpe_project.qgz" in names
     finally:
         shutil.rmtree(fresh, ignore_errors=True)
 

@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import zipfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -653,7 +655,13 @@ def _cloud_signature(section_layer, profile, topo) -> str:
     return h.hexdigest()[:10]
 
 
-def _write_cloud(path: Path, store, profile, section_layer, topo) -> int:
+def cloud_path(store, dataset_id: str, profile, section_layer, topo) -> Path:
+    """Where the model's point cloud is (or will be): named by what it is made of."""
+    signature = _cloud_signature(section_layer, profile, topo)
+    return cloud_folder(store) / f"{dataset_id}-{signature}.las"
+
+
+def _write_cloud(path: Path, crs_authid: str, profile, section_layer, topo) -> int:
     """The model's smooth field as a LAS file at ``path``; the number of points (0: none)."""
     from qgis.core import QgsCoordinateReferenceSystem
 
@@ -663,7 +671,7 @@ def _write_cloud(path: Path, store, profile, section_layer, topo) -> int:
     pts = field_points(grid, profile.chainage, scale, CLOUD_SPACING)
     if not len(pts.value):
         return 0
-    wkt = QgsCoordinateReferenceSystem(store.crs_authid).toWkt(Qgis.CrsWktVariant.Wkt1Gdal)
+    wkt = QgsCoordinateReferenceSystem(crs_authid).toWkt(Qgis.CrsWktVariant.Wkt1Gdal)
     with np.errstate(divide="ignore", invalid="ignore"):
         log10 = np.log10(np.where(pts.value > 0, pts.value, np.nan))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -782,7 +790,6 @@ def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -
     for did, layer in existing.items():
         if did not in wanted:
             _drop_cloud(project, layer)
-    folder = cloud_folder(store)
     out = {}
     for did, (profile, d, section_layer) in wanted.items():
         layer = existing.get(did)
@@ -794,14 +801,13 @@ def _sync_clouds(store, provider, project, chosen, may_create, retry, topo_of) -
         topo = topo_of(profile.id)
         failed = False
         try:
-            signature = _cloud_signature(section_layer, profile, topo)
-            path = folder / f"{did}-{signature}.las"
+            path = cloud_path(store, did, profile, section_layer, topo)
             if layer is not None and layer.isValid() and Path(layer.source()) == path \
                     and path.exists():
                 out[did] = layer
                 continue
             # the same signature always gives the same file: one already there is reused
-            count = 1 if path.exists() else _write_cloud(path, store, profile,
+            count = 1 if path.exists() else _write_cloud(path, store.crs_authid, profile,
                                                          section_layer, topo)
         except Exception as exc:
             _log(f"3D view: '{d.name or d.id}' could not be shown smooth: {exc}")
@@ -907,13 +913,26 @@ def _png(image) -> bytes:
     return bytes(data)
 
 
-def _write_picture(path: Path, store, project, profile, layers, topo,
-                   interpretation=None, gap: float | None = None) -> bool:
+def ecef_transform(crs_authid: str, transform_context):
+    """The transform from the store's CRS to the earth-centred one of 3D tiles (EPSG:4978).
+    Made on the main thread only: when the first transform of a QGIS session that involves
+    EPSG:4978 is made in another thread, the main thread gets invalid ones from then on
+    (QGIS 4.2), and the 3D view can no longer place any tiles."""
+    from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform
+    return QgsCoordinateTransform(QgsCoordinateReferenceSystem(crs_authid),
+                                  QgsCoordinateReferenceSystem("EPSG:4978"),
+                                  transform_context)
+
+
+def _write_picture(path: Path, crs_authid: str, transform_context, profile, layers, topo,
+                   interpretation=None, gap: float | None = None, base=None,
+                   to_ecef=None) -> bool:
     """The profile's section picture of ``layers`` (bottom first; with ``interpretation``
     over them) as a tileset at ``path`` (and its glTF beside it), each face ``gap`` back from
-    the plane; False when nothing is painted."""
-    from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,
-                           QgsVector3D)
+    the plane, on the colour ``base``; False when nothing is painted. Runs in any thread when
+    given copies and ``to_ecef`` (``ecef_transform``, made on the main thread): a
+    "Preparing 3D" task paints the pictures."""
+    from qgis.core import QgsCoordinateTransform, QgsVector3D
 
     from ..core.tiles3d import enu_axes, glb, tileset
     from ..core.view3d import bend_chainages, curtain_gap, left_normals, picture_strip
@@ -921,7 +940,7 @@ def _write_picture(path: Path, store, project, profile, layers, topo,
     bends = bend_chainages(profile.chainage)
     gap = gap or curtain_gap(profile.chainage.length)
     raw = []
-    for pic in section_pictures(layers, topo, interpretation):
+    for pic in section_pictures(layers, topo, interpretation, base):
         if not pic.alpha.any():
             continue
         sz, tris = picture_strip(pic.alpha, pic.s0, pic.s1, pic.z0, pic.z1, bends, step=0.5)
@@ -937,8 +956,10 @@ def _write_picture(path: Path, store, project, profile, layers, topo,
     side = left_normals(profile.chainage, sz[:, 0]) * gap
     first = np.concatenate([np.r_[np.ones(r[3]), -np.ones(r[3])] for r in raw])
     xy = xy + side * first[:, None]
-    to_ecef = QgsCoordinateTransform(QgsCoordinateReferenceSystem(store.crs_authid),
-                                     QgsCoordinateReferenceSystem("EPSG:4978"), project)
+    if to_ecef is None:
+        to_ecef = ecef_transform(crs_authid, transform_context)
+    else:
+        to_ecef = QgsCoordinateTransform(to_ecef)       # this thread's own copy
     ecef = np.array([[q.x(), q.y(), q.z()] for q in
                      (to_ecef.transform(QgsVector3D(float(x), float(y), float(z)))
                       for (x, y), z in zip(xy, sz[:, 1]))])
@@ -1037,12 +1058,37 @@ def _section_order(provider, profile_id: str, layers: list) -> list:
     return sorted(layers, key=lambda la: order.get(la.dataset.id, len(order)))
 
 
+def picture_plan(store, provider, profile, layers, topo, interpretation: bool, gap):
+    """What a profile's section picture of ``layers`` needs: (its layers in the section's
+    order, the interpretation or None, its gap, its file). The same plan gives the same file,
+    so a picture painted beforehand (``view3d_prepare``) is picked up by the fill."""
+    from ..core.view3d import curtain_gap
+    layers = _section_order(provider, profile.id, layers)
+    interp = _interpretation(provider, profile.id) if interpretation else None
+    gap = gap or curtain_gap(profile.chainage.length)
+    signature = _picture_signature(layers, profile, topo, interp, gap)
+    path = cloud_folder(store) / f"{profile.id}-{signature}.json"
+    return layers, interp, gap, path
+
+
+def pictured_by_profile(provider, gathered, choice) -> dict:
+    """profile id -> (profile, its shown models to picture, its picture's gap)."""
+    look = {d.id: choice.look_of(d.id) for _p, d, _la in gathered}
+    cells = [(p, d, la) for p, d, la in gathered
+             if look[d.id] == "section" and _shown(la) and _as_cells(la)]
+    pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture" and _shown(la)]
+    _cell_gaps, gaps = _stack_gaps(provider, cells, pictured)
+    out: dict = {}
+    for profile, _d, section_layer in pictured:
+        out.setdefault(profile.id, [profile, [], gaps.get(profile.id)])[1].append(section_layer)
+    return {pid: tuple(v) for pid, v in out.items()}
+
+
 def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_create, retry,
                    topo_of, gaps: dict) -> dict:
     """One section picture per profile of the ``chosen`` models (shown ones), all of them in
     it as the section stacks them; with ``interpretation``, the profile's interpretation
     painted over them; ``gaps[profile id]`` back from the plane. By profile id."""
-    from ..core.view3d import curtain_gap
     wanted: dict = {}
     for profile, _d, section_layer in chosen:
         if _shown(section_layer):
@@ -1052,7 +1098,6 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
         pid = layer.customProperty(_PROFILE)
         if pid not in wanted or existing.get(pid) is not layer:
             _drop_picture(project, layer)           # also one saved per model, before 0.14
-    folder = cloud_folder(store)
     out = {}
     for pid, (profile, layers) in wanted.items():
         layer = existing.get(pid)
@@ -1062,19 +1107,18 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
         if layer is not None:
             _follow_name(layer, profile.name)
         topo = topo_of(pid)
-        layers = _section_order(provider, pid, layers)
         failed = False
         try:
-            interp = _interpretation(provider, pid) if interpretation else None
-            gap = gaps.get(pid) or curtain_gap(profile.chainage.length)
-            path = folder / f"{pid}-{_picture_signature(layers, profile, topo, interp, gap)}.json"
+            layers, interp, gap, path = picture_plan(store, provider, profile, layers, topo,
+                                                     interpretation, gaps.get(pid))
             if layer is not None and layer.isValid() and _picture_file(layer) == path \
                     and path.exists():
                 out[pid] = layer
                 continue
             # the same signature always gives the same files: ones already there are reused
             painted = (path.exists() and path.with_suffix(".glb").exists()) or \
-                _busy(_write_picture, path, store, project, profile, layers, topo, interp, gap)
+                _busy(_write_picture, path, store.crs_authid, project.transformContext(),
+                      profile, layers, topo, interp, gap)
         except Exception as exc:
             _log(f"3D view: the section picture of '{profile.name}' could not be drawn: {exc}")
             painted, failed = False, True
@@ -1105,16 +1149,74 @@ def forget_shown(project: QgsProject) -> None:
     project.setProperty(_NEEDS, None)
 
 
-def _contour_features(layer, profile, dataset, section_layer, topo) -> list[QgsFeature]:
+def contour_signature(profile, dataset, section_layer, topo) -> tuple:
+    """What a model's 3D contour lines depend on."""
+    style = section_layer.style
+    return (_cloud_signature(section_layer, profile, topo), style.contour_step,
+            tuple(style.contour_major), tuple(style.contour_minor), profile.name, dataset.name)
+
+
+def contours_path(store, dataset_id: str, signature: tuple) -> Path:
+    """Where a model's 3D contour lines are kept: ``<dataset id>-<hash>.contours.npz``."""
+    digest = hashlib.sha1(repr(signature).encode("utf-8", "replace")).hexdigest()[:10]
+    return cloud_folder(store) / f"{dataset_id}-{digest}.contours.npz"
+
+
+def _contour_rows(path: Path, profile, dataset, section_layer, topo) -> list:
+    """(level, xyz) of the model's 3D contour lines, kept at ``path`` so a project opened
+    again is not re-gridded."""
     from ..core.gridding import contour_levels
     from ..core.view3d import field_contours
-    from ..section.display_render import CONTOUR_DARKER
+    rows = _load_contours(path)
+    if rows is not None:
+        return rows
     style = section_layer.style
     grid, scale = _field(section_layer, topo)
     levels = [v for v, _major in contour_levels(scale, style.contour_step,
                                                 style.contour_major, style.contour_minor)]
+    rows = [(float(level), np.asarray(xyz, dtype=float))
+            for level, xyz in field_contours(grid, profile.chainage, scale, levels)]
+    _save_contours(path, rows, dataset.id)
+    return rows
+
+
+def _load_contours(path: Path) -> list | None:
+    try:
+        with np.load(path, allow_pickle=False) as data:
+            levels, ends, xyz = data["levels"], data["ends"], data["xyz"]
+    except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile):
+        return None
+    starts = np.concatenate([[0], ends[:-1]]).astype(int)
+    return [(float(v), xyz[a:b]) for v, a, b in zip(levels, starts, ends.astype(int))]
+
+
+def _save_contours(path: Path, rows: list, dataset_id: str) -> None:
+    """Keep ``rows`` at ``path`` and drop the dataset's older contour files (never raises)."""
+    levels = np.array([v for v, _xyz in rows], dtype=float)
+    ends = np.cumsum([len(xyz) for _v, xyz in rows]).astype(np.int64)
+    xyz = np.concatenate([xyz for _v, xyz in rows]) if rows else np.zeros((0, 3))
+    from ..core.read_cache import _temporary
+    tmp = _temporary(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "wb") as f:
+            np.savez(f, levels=levels, ends=ends, xyz=xyz)
+        os.replace(tmp, path)
+        for old in path.parent.glob(f"{dataset_id}-*.contours.npz"):
+            if old != path:
+                old.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _contour_features(layer, store, profile, dataset, section_layer, topo,
+                      signature) -> list[QgsFeature]:
+    from ..core.colors import ColorScale
+    from ..section.display_render import CONTOUR_DARKER
+    scale = section_layer.style.scale or ColorScale.auto(section_layer.mesh.values)
     out = []
-    for level, xyz in field_contours(grid, profile.chainage, scale, levels):
+    path = contours_path(store, dataset.id, signature)
+    for level, xyz in _contour_rows(path, profile, dataset, section_layer, topo):
         r, g, b = (int(c) for c in scale.rgba([level])[0][:3])
         f = QgsFeature(layer.fields())
         f.setGeometry(QgsGeometry(QgsLineString(xyz[:, 0].tolist(), xyz[:, 1].tolist(),
@@ -1135,13 +1237,12 @@ def _sync_contours(store, project, chosen, may_create, topo_of):
     built = _fresh(layer)
     for profile, d, section_layer in chosen:
         style, topo = section_layer.style, topo_of(profile.id)
-        signature = (_cloud_signature(section_layer, profile, topo), style.contour_step,
-                     tuple(style.contour_major), tuple(style.contour_minor),
-                     profile.name, d.name)
+        signature = contour_signature(profile, d, section_layer, topo)
         if d.id in built and built[d.id][0] == signature:
             continue
         try:
-            features = _contour_features(layer, profile, d, section_layer, topo)
+            features = _contour_features(layer, store, profile, d, section_layer, topo,
+                                         signature)
         except Exception as exc:
             _log(f"3D view: contours of '{d.name or d.id}' could not be shown: {exc}")
             _drop(layer, built, d.id)
@@ -1689,6 +1790,11 @@ def sync(store, provider, project: QgsProject, create: bool = False,
     project was opened; it is removed when nothing needs it any more. Ids that no longer
     exist are ignored; a model that cannot be read is left out (and logged). Without
     ``boreholes`` (only a section style changed) the borehole layer is left as it is."""
+    with store.reading():                       # one open store for all its questions
+        return _sync(store, provider, project, create, boreholes)
+
+
+def _sync(store, provider, project: QgsProject, create: bool, boreholes: bool) -> dict:
     choice = read_choice(project)
     gathered = _gather(store, provider, choice)
     _settle_groups(project)

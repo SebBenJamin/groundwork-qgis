@@ -1,0 +1,16 @@
+~V
+VERS. 2.0 :
+WRAP. NO :
+~W
+STRT.M 0.0 :
+STOP.M 0.2 :
+STEP.M 0.1 :
+NULL. -999.25 :
+WELL. :
+~C
+DEPT.M :
+GAMMA.CPS :
+~A
+0.0 10
+0.1 11
+0.2 12

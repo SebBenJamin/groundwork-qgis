@@ -55,3 +55,17 @@ def test_value_at_on_a_log_scale_skips_non_positive_neighbours():
     c = _curve([1.0, 2.0, 3.0], [10.0, 0.0, 30.0])
     assert value_at(c, 1.5) == pytest.approx(5.0)
     assert value_at(c, 1.5, log=True) is None and value_at(c, 3.0, log=True) == 30.0
+
+
+def test_nice_range_rounds_the_scale_ends_outward():
+    """Scale ends the eye can read: 1-2-5 steps on a linear track (about ten per span),
+    whole decades on a log track; the data always fits inside."""
+    from groundwork_geophysics.core.borehole_curves import nice_range
+    assert nice_range(0.0175, 10.964, False) == (0.0, 12.0)
+    assert nice_range(2.8, 68.8, False) == (0.0, 70.0)
+    assert nice_range(10.0, 140.0, False) == (0.0, 140.0)
+    assert nice_range(-3.2, 4.1, False) == (-4.0, 5.0)
+    assert nice_range(0.0175, 10.964, True) == (0.01, 100.0)
+    assert nice_range(5.0, 500.0, True) == (1.0, 1000.0)
+    assert nice_range(10.0, 100.0, True) == (10.0, 100.0)
+    assert nice_range(5.0, 5.0, False) == (5.0, 5.0)              # flat: left as it is

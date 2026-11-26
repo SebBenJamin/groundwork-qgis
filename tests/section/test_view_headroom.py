@@ -96,7 +96,7 @@ def test_zoom_full_includes_borehole_bottoms_and_tie_columns(qgis_app, store_wit
     items = ContextItems(points=[bh])
     dock.provider.context_source = lambda profile: items
     real_ties = dock.provider.ties
-    dock.provider.ties = lambda pid: [Tie(10.0, "p3", "P3", 5.0, 0.0, [col])]
+    dock.provider.ties = lambda pid, defer=None: [Tie(10.0, "p3", "P3", 5.0, 0.0, [col])]
     try:
         s0, s1, z0, z1 = data_extent(dock)
     finally:
@@ -105,7 +105,7 @@ def test_zoom_full_includes_borehole_bottoms_and_tie_columns(qgis_app, store_wit
     # surface at s = 25 is 101 m, the log 150 m long: bottom at -49; the tie column -80
     assert z0 == pytest.approx(-80.0)
     assert (s0, s1, z1) == pytest.approx(plain[:2] + (plain[3],))
-    dock.provider.ties = lambda pid: []
+    dock.provider.ties = lambda pid, defer=None: []
     try:
         assert data_extent(dock)[2] == pytest.approx(-49.0)
     finally:

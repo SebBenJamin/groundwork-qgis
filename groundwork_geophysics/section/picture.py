@@ -63,10 +63,11 @@ def joint_extent(layers, topo, pieces=()) -> tuple[float, float, float, float]:
             float(min(b[2] for b in boxes)), float(max(b[3] for b in boxes)))
 
 
-def section_pictures(layers, topo, interpretation=None) -> list[Picture]:
+def section_pictures(layers, topo, interpretation=None, base=None) -> list[Picture]:
     """``layers`` (one section layer with a mesh, or a profile's several, bottom first) as
     the panel draws them, in pieces; ``interpretation`` (pieces, features, symbols as in the
-    section's snapshot) is painted over them, names included."""
+    section's snapshot) is painted over them, names included; on the colour ``base`` (a
+    QColor; None: the panel's, read here, so only on the main thread)."""
     from .display_render import LABEL_MM, build_drawing
     layers = list(layers) if isinstance(layers, (list, tuple)) else [layers]
     drawings = [build_drawing(layer, topo) for layer in layers]
@@ -78,7 +79,8 @@ def section_pictures(layers, topo, interpretation=None) -> list[Picture]:
     for a, b in zip(cuts[:-1], cuts[1:]):
         painted = _paint(drawings, interpretation if pieces else None, a, b, z0, z1, ppm,
                          label_px / LABEL_MM)
-        out.append(Picture(_flatten(painted), _alpha(painted), float(a), float(b), z0, z1))
+        out.append(Picture(_flatten(painted, base), _alpha(painted), float(a), float(b),
+                           z0, z1))
     return out
 
 
@@ -88,11 +90,16 @@ def _alpha(image: QImage) -> np.ndarray:
     return rows[:, :image.width() * 4].reshape(image.height(), image.width(), 4)[..., 3].copy()
 
 
-def _flatten(image: QImage) -> QImage:
-    """``image`` on the colour the section panel is drawn on, without transparency."""
+def panel_colour():
+    """The colour the section panel is drawn on (main thread)."""
     from qgis.PyQt.QtGui import QGuiApplication, QPalette
+    return QGuiApplication.palette().color(QPalette.ColorRole.Base)
+
+
+def _flatten(image: QImage, base=None) -> QImage:
+    """``image`` on ``base`` (the panel's colour when None), without transparency."""
     out = QImage(image.size(), QImage.Format.Format_RGB888)
-    out.fill(QGuiApplication.palette().color(QPalette.ColorRole.Base))
+    out.fill(base if base is not None else panel_colour())
     painter = QPainter(out)
     try:
         painter.drawImage(0, 0, image)

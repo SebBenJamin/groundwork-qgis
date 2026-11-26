@@ -86,7 +86,8 @@ class CurveStyleDialog(QDialog):
         super().__init__(parent)
         self.project, self.on_saved = project, on_saved
         self.setWindowTitle("Curve style")
-        self.styles = curve_styles(project)
+        from .context_dialog import read_settings
+        self.styles = curve_styles(project, read_settings(project))
         content = QWidget()
         rows_layout = QVBoxLayout(content)
         self.rows = {}

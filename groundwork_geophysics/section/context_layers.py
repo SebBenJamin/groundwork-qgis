@@ -6,13 +6,17 @@ layer, or a renamed field, logs one warning (once per gatherer and problem) and 
 is skipped. Layers are never modified; no spatial index is created on user data."""
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                        QgsExpression, QgsFeature, QgsFeatureRequest, QgsGeometry, QgsMapLayer,
-                       QgsMessageLog, QgsProject, QgsRectangle, QgsVariantUtils)
+                       QgsMessageLog, QgsProject, QgsRectangle, QgsTask, QgsVariantUtils)
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QTimer
 
@@ -85,6 +89,93 @@ def _value(value) -> float:
 REMOTE_PROVIDERS = ("WFS", "OAPIF", "arcgisfeatureserver")
 
 
+def is_remote(layer) -> bool:
+    """A layer served over the web (its features are fetched, often slowly)."""
+    return layer.providerType() in REMOTE_PROVIDERS
+
+
+@dataclass
+class BandJob:
+    """What fetching one strip needs, prepared on the main thread: a thread-safe feature
+    source, never the layer itself."""
+    source: object                  # QgsVectorLayerFeatureSource
+    rect: object                    # QgsRectangle in the layer's CRS
+    fields: object                  # QgsFields
+    attributes: list
+    transform: object | None        # QgsCoordinateTransform to the store CRS, or None
+    renderer: object | None         # a clone of a styled renderer, else None
+    context: object | None          # QgsRenderContext for it
+    label_field: str
+    layer_name: str
+    title: str
+    strip: int
+    xy: np.ndarray
+
+
+def run_band(job: BandJob) -> list[BandSegment]:
+    """The strip's units along the profile (any thread)."""
+    from qgis.core import QgsFeatureRequest, QgsGeometry
+    request = QgsFeatureRequest().setFilterRect(job.rect)
+    request.setSubsetOfAttributes(job.attributes, job.fields)
+    polygons, labels, colours = [], [], {}
+    if job.renderer is not None:
+        job.renderer.startRender(job.context, job.fields)
+    try:
+        for feature in job.source.getFeatures(request):
+            geom = QgsGeometry(feature.geometry())
+            if geom.isNull():
+                continue
+            if job.transform is not None:
+                geom.transform(job.transform)
+            label = (_text(feature[job.label_field]) if job.label_field else "") \
+                or job.layer_name
+            if job.renderer is not None and label not in colours:   # first feature decides
+                job.context.expressionContext().setFeature(feature)
+                symbols = job.renderer.symbolsForFeature(feature, job.context)
+                if symbols:
+                    c = symbols[0].color()
+                    colours[label] = (c.red(), c.green(), c.blue())
+            for poly in (geom.asMultiPolygon() if geom.isMultipart() else [geom.asPolygon()]):
+                rings = [np.array([[q.x(), q.y()] for q in ring]) for ring in poly
+                         if len(ring) >= 3]
+                if rings:
+                    polygons.append((rings[0], rings[1:]))
+                    labels.append(label)
+    finally:
+        if job.renderer is not None:
+            job.renderer.stopRender(job.context)
+    if not polygons:
+        return []
+    segments = polygon_intervals(job.xy, polygons, labels)
+    for seg in segments:
+        seg.rgb = colours.get(seg.label) or label_colour(seg.label)
+        seg.strip, seg.title = job.strip, job.title
+    return segments
+
+
+def _load_strip(path: Path) -> list[BandSegment] | None:
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        return [BandSegment(float(a), float(b), str(label),
+                            None if rgb is None else tuple(int(c) for c in rgb), int(strip),
+                            str(title)) for a, b, label, rgb, strip, title in rows]
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _save_strip(path: Path, segments: list[BandSegment]) -> None:
+    rows = [[s.s0, s.s1, s.label, None if s.rgb is None else list(s.rgb), s.strip, s.title]
+            for s in segments]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        from ..core.read_cache import _temporary
+        tmp = _temporary(path)
+        tmp.write_text(json.dumps(rows), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+
+
 def _id_text(value) -> str:
     """A borehole id as text: stripped, and a whole number without ".0" (7, 7.0 and " 7 "
     are the same borehole; Excel imports often store ids as Real)."""
@@ -123,8 +214,18 @@ class _Skip(Exception):
 
 class ContextGatherer:
     def __init__(self, project, crs_authid: str, on_change: Callable[[], None],
-                 exclude: Callable[[], set[str]] = lambda: set()):
+                 exclude: Callable[[], set[str]] = lambda: set(),
+                 cache_dir: Path | None = None):
+        """``cache_dir``: where strips from web layers are remembered (None: never)."""
         self._project = project
+        self._cache_dir = None if cache_dir is None else Path(cache_dir)
+        #: fetch a strip from a web layer that is not remembered yet in a QGIS task (the
+        #: section is drawn without it meanwhile) instead of waiting for it
+        self.background = False
+        self._fetching: dict[Path, object] = {}         # cache file -> its running task
+        self._fetched_strips: dict[Path, list] = {}     # also when it could not be written
+        self._failed_strips: set[Path] = set()          # until Refresh Web Layers
+        self._closed = False
         self._exclude = exclude
         self._crs_authid = crs_authid
         self._on_change = on_change
@@ -172,7 +273,7 @@ class ContextGatherer:
                 s, xy, box, settings.buffer)) or []
         from .borehole_style import curve_styles
         items.borehole_views = borehole_views(settings)
-        items.curve_styles = curve_styles(self._project)
+        items.curve_styles = curve_styles(self._project, settings)
         for index, b in enumerate(settings.boreholes):
             items.points += self._try(b.layer_id, "borehole layer", lambda: self._boreholes(
                 b, xy, box, settings.buffer, dem_layer, index, settings.dem_tolerance)) or []
@@ -208,7 +309,14 @@ class ContextGatherer:
         return out
 
     def close(self) -> None:
+        self._closed = True
         self._timer.stop()
+        for task in list(self._fetching.values()):
+            try:
+                task.cancel()
+            except RuntimeError:
+                pass
+        self._fetching.clear()
         self._unwatch()
         try:
             self._project.layersRemoved.disconnect(self._removed)
@@ -534,45 +642,140 @@ class ContextGatherer:
         """Units along the profile. Colours come from the band layer's own style, so the band
         matches the map; a single-symbol style says nothing about units, so each label then
         gets its own colour. Only features near the profile are read (never the whole
-        layer: a WFS would download it all)."""
-        from qgis.core import QgsExpressionContextUtils, QgsRenderContext
+        layer: a WFS would download it all). A strip from a web layer is remembered in the
+        cache folder, and fetched in the background when ``background`` is set."""
         layer = self._vector(setting.layer_id, "polygon", (setting.label_field,))
+        if self._cache_dir is None or not is_remote(layer):
+            return run_band(self._band_job(layer, setting, xy, box, strip))
+        path = self._strip_file(layer, setting, xy, box, strip)
+        kept = self._fetched_strips.get(path)
+        if kept is None:
+            kept = _load_strip(path)
+        if kept is not None:
+            return kept
+        if path in self._failed_strips:
+            return []                           # asked again with Refresh Web Layers
+        job = self._band_job(layer, setting, xy, box, strip)
+        if self.background:
+            self._fetch_later(path, job)
+            return []
+        segments = run_band(job)
+        self._fetched_strips[path] = segments
+        _save_strip(path, segments)
+        return segments
+
+    def _band_job(self, layer, setting, xy, box, strip: int) -> BandJob:
+        from qgis.core import (QgsExpressionContextUtils, QgsRenderContext,
+                               QgsVectorLayerFeatureSource)
         renderer = layer.renderer()
         styled = renderer is not None and renderer.type() != "singleSymbol"
-        ctx = QgsRenderContext()
-        fields = [setting.label_field] if setting.label_field else []
+        attributes = [setting.label_field] if setting.label_field else []
+        context = None
         if styled:
-            ctx.expressionContext().appendScopes(
+            context = QgsRenderContext()
+            context.expressionContext().appendScopes(
                 QgsExpressionContextUtils.globalProjectLayerScopes(layer))
             renderer = renderer.clone()
-            renderer.startRender(ctx, layer.fields())
-            fields += sorted(renderer.usedAttributes(ctx))
-        polygons, labels, colours = [], [], {}
+            renderer.startRender(context, layer.fields())
+            attributes += sorted(renderer.usedAttributes(context))
+            renderer.stopRender(context)
+        ct = self._to_store(layer)
+        rect = box if ct is None else ct.transformBoundingBox(
+            box, Qgis.TransformDirection.Reverse)
+        return BandJob(QgsVectorLayerFeatureSource(layer), rect, layer.fields(),
+                       [a for a in attributes if a], ct, renderer if styled else None, context,
+                       setting.label_field, layer.name(), setting.title or layer.name(),
+                       strip, np.asarray(xy, dtype=float))
+
+    def _strip_file(self, layer, setting, xy, box, strip: int) -> Path:
+        renderer = layer.renderer()
+        key = (layer.source(), layer.subsetString(), setting.label_field, setting.title,
+               renderer.dump() if renderer is not None else "", strip, self._crs_authid,
+               np.asarray(xy, dtype=float).tobytes().hex(), box.toString(6))
+        digest = hashlib.sha1(repr(key).encode("utf-8", "replace")).hexdigest()[:12]
+        return self._cache_dir / f"strip-{digest}.json"
+
+    def _fetch_later(self, path: Path, job: BandJob) -> None:
+        """Fetch the strip in a QGIS task; when done it is remembered and the section
+        redrawn."""
+        from qgis.core import QgsApplication
+        if path in self._fetching:
+            return
+        task = _StripTask(job)
+        task.taskCompleted.connect(lambda: self._fetched(path, task))
+        task.taskTerminated.connect(lambda: self._fetch_failed(path, task))
+        self._fetching[path] = task
+        QgsApplication.taskManager().addTask(task)
+
+    def _fetched(self, path: Path, task) -> None:
+        if self._closed or path in self._fetched_strips:
+            self._fetching.pop(path, None)
+            return
+        self._fetching.pop(path, None)
+        self._fetched_strips[path] = task.segments
+        _save_strip(path, task.segments)
+        self._kick()
+
+    def _fetch_failed(self, path: Path, task) -> None:
+        self._fetching.pop(path, None)
+        if self._closed:
+            return
+        self._failed_strips.add(path)           # a dead service is not asked on every change
+        if task.error is not None:
+            self._warn(str(path), f"strip layer '{task.job.layer_name}' could not be "
+                                  f"fetched: {task.error}")
+
+    def uses_web_layers(self) -> bool:
+        """Whether a shown strip comes from a web layer."""
+        for b in read_settings(self._project).shown_bands():
+            layer = self._project.mapLayer(b.layer_id)
+            if layer is not None and layer.isValid() and is_remote(layer):
+                return True
+        return False
+
+    def finish_fetches(self) -> bool:
+        """Wait for the strip fetches still running and keep what they got (a plate must
+        not go out without its strip); whether there were any."""
+        running = list(self._fetching.items())
+        for path, task in running:
+            task.waitForFinished(120000)
+            if task.status() == QgsTask.TaskStatus.Complete:
+                self._fetched_strips[path] = task.segments
+                _save_strip(path, task.segments)
+            else:
+                self._failed_strips.add(path)
+            self._fetching.pop(path, None)
+        return bool(running)
+
+    def refresh_web_layers(self) -> None:
+        """Forget the remembered strips from web layers and fetch them again."""
+        self._fetched_strips.clear()
+        self._failed_strips.clear()
+        if self._cache_dir is not None:
+            for old in self._cache_dir.glob("strip-*.json"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+        self._kick()
+
+
+class _StripTask(QgsTask):
+    """Fetches one strip from a web layer off the main thread."""
+
+    def __init__(self, job: BandJob):
+        super().__init__(f"Fetching {job.layer_name}", QgsTask.Flag.CanCancel)
+        self.job = job
+        self.segments: list[BandSegment] = []
+        self.error: Exception | None = None
+
+    def run(self) -> bool:
         try:
-            for feature, geom in self._features(layer, box, tuple(fields)):
-                label = (_text(feature[setting.label_field]) if setting.label_field else "") or layer.name()
-                if styled and label not in colours:     # first feature of a label decides
-                    ctx.expressionContext().setFeature(feature)
-                    symbols = renderer.symbolsForFeature(feature, ctx)
-                    if symbols:
-                        c = symbols[0].color()
-                        colours[label] = (c.red(), c.green(), c.blue())
-                for poly in (geom.asMultiPolygon() if geom.isMultipart() else [geom.asPolygon()]):
-                    rings = [np.array([[p.x(), p.y()] for p in ring]) for ring in poly
-                             if len(ring) >= 3]
-                    if rings:
-                        polygons.append((rings[0], rings[1:]))
-                        labels.append(label)
-        finally:
-            if styled:
-                renderer.stopRender(ctx)
-        if not polygons:
-            return []
-        segments = polygon_intervals(xy, polygons, labels)
-        for seg in segments:
-            seg.rgb = colours.get(seg.label) or label_colour(seg.label)
-            seg.strip, seg.title = strip, setting.title or layer.name()
-        return segments
+            self.segments = run_band(self.job)
+        except Exception as exc:                        # reported on the main thread
+            self.error = exc
+            return False
+        return not self.isCanceled()
 
 
 def borehole_views(settings) -> dict:

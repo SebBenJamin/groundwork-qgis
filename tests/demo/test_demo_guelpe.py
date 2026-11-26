@@ -4,6 +4,7 @@ import sys
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -181,30 +182,6 @@ def test_build_adds_transect3_misfit(tmp_path, qgis_app):
     assert layer.mesh.readings.rms_percent() == pytest.approx(info["rms_percent"], rel=1e-6)
 
 
-def test_synthetic_curves_are_labelled_and_deterministic(tmp_path):
-    """The demo's log curves are made up (the real cores have none): the table name, its
-    description, its field names and units all say so, and two builds are identical."""
-    from osgeo import ogr
-
-    import make_synthetic_curves
-    a, b = tmp_path / "a.gpkg", tmp_path / "b.gpkg"
-    logs = {"RK1": [(0.0, 0.5, "topsoil"), (0.5, 2.0, "sand")], "RK2": [(0.0, 1.0, "clay")]}
-    make_synthetic_curves.write(a, logs)
-    make_synthetic_curves.write(b, logs)
-    with ogr.ExceptionMgr():
-        ds = ogr.Open(str(a))
-        layer = ds.GetLayerByName(make_synthetic_curves.LAYER)
-        assert "NOT_MEASURED" in make_synthetic_curves.LAYER
-        assert "synthetic" in (layer.GetMetadataItem("DESCRIPTION") or "").lower()
-        names = [layer.GetLayerDefn().GetFieldDefn(i).GetName()
-                 for i in range(layer.GetLayerDefn().GetFieldCount())]
-        assert names == ["core_id", "depth", "gamma_synthetic", "cond_synthetic"]
-        rows = [(f["core_id"], f["depth"], f["gamma_synthetic"]) for f in layer]
-    assert {r[0] for r in rows} == {"RK1", "RK2"}
-    assert max(r[1] for r in rows if r[0] == "RK1") == pytest.approx(2.0)
-    assert a.read_bytes() == b.read_bytes()
-
-
 def test_demo_context_settings_two_borehole_entries():
     import build_demo_guelpe
 
@@ -215,14 +192,16 @@ def test_demo_context_settings_two_borehole_entries():
     cores, state = s.boreholes
     assert (cores.layer_id, cores.log_layer_id) == ("c", "l")
     [table] = cores.curve_tables
-    assert table.layer_id == "k" and [(c.field, c.unit) for c in table.curves] == [
-        ("gamma_synthetic", "API (synthetic)"), ("cond_synthetic", "mS/m (synthetic)")]
+    # the cores' measured lab values (no made-up curves): carbon and grain size by depth
+    assert (table.layer_id, table.id_field, table.depth_field) == ("k", "core_id", "depth")
+    assert [(c.field, c.unit) for c in table.curves] == [
+        ("toc", "%"), ("tic", "%"), ("sand", "%"), ("silt", "%"), ("clay", "%")]
     assert cores.section_curves == []                     # curves on the section: user's choice
     assert (state.layer_id, state.id_field, state.total_depth_field) == (
         "b", "Bohrungsname", "Teufe_in_m")
     assert [(b.layer_id, b.label_field, b.title) for b in s.bands] == [
         ("e", "n", "GÜK 300"), ("g", "u", "GK 25")]
-    assert s.point_layers == [] and curve_key("k", "gamma_synthetic") == "k:gamma_synthetic"
+    assert s.point_layers == [] and curve_key("k", "toc") == "k:toc"
 
 
 def test_demo_build_styles_the_core_logs(qgis_app):
@@ -273,3 +252,29 @@ def test_demo_build_adds_one_plate_and_no_field_notes(tmp_path, qgis_app):
     assert QgsExpressionContextUtils.projectScope(prj).variable("wb_project") == "Gülpe demo"
     assert st.field_notes() == []                        # no invented field observations
     prj.clear()
+
+
+def test_demo_draws_organic_carbon_on_a_log_scale():
+    """TOC spans about 0.02 to 11 %: on a linear track most samples would hug the left edge."""
+    import build_demo_guelpe
+    styles = build_demo_guelpe.demo_curve_styles("k")
+    assert styles["k:toc"].log
+    assert set(styles) == {f"k:{n}" for n in build_demo_guelpe.LAB_CURVES}
+    assert len({s.colour for s in styles.values()}) == len(styles)     # each its own colour
+    # grain sizes filled from the left, like the share of the sample they are
+    assert all(styles[f"k:{n}"].fill == "left" for n in ("sand", "silt", "clay"))
+    assert all(not s.log for k, s in styles.items() if k != "k:toc")
+
+
+def test_every_transects_stations_follow_the_dgm():
+    """The electrode heights (the authors' DGPS) agree with the DGM1 under each electrode:
+    a transect placed back to front (T4 as published) would not."""
+    from osgeo import gdal
+    demo = REPO / "demo_guelpe"
+    ds = gdal.Open(str(demo / "context/dgm1.tif"))
+    gt, a = ds.GetGeoTransform(), ds.GetRasterBand(1).ReadAsArray().astype(float)
+    for t in (1, 2, 3, 4):
+        d = np.loadtxt(demo / f"data/stations/T{t}_electrodes.csv", delimiter=",", skiprows=1)
+        cols = ((d[:, 1] - gt[0]) / gt[1]).astype(int)
+        rows = ((d[:, 2] - gt[3]) / gt[5]).astype(int)
+        assert np.std(d[:, 3] - a[rows, cols]) < 0.15, f"Transect {t}"

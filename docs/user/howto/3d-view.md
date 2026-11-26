@@ -175,6 +175,9 @@ an extent).
   only marks the 3D layers as out of date; they catch up when a 3D view opens or on **OK**.
   Deleting a model or profile takes it out at once. For **Qgis2threejs** or a print layout's 3D
   map, which don't count as open 3D views, press **OK** in **Show in 3D…** first.
+- **In the background.** Models not read yet, and point clouds and contour lines not made
+  yet, are done in QGIS tasks ("Reading models", "Preparing 3D", with progress and a cancel
+  button in the status bar) before the layers are filled; QGIS stays usable meanwhile.
 - **Files.** Point clouds and section pictures (3D Tiles: a `.json` and a `.glb` per profile)
   are written to a folder next to the Groundwork file, named after it with `_3d` (for
   `site_groundwork.gpkg`: `site_groundwork_3d`). The plugin only deletes files it wrote there.
