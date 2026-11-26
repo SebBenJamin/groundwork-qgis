@@ -56,7 +56,8 @@ def test_outside_corridor_masks_far_pixels():
 def test_the_velocity_function_is_the_median_of_the_sheets_columns():
     import vaud_data
     o = vaud_data.OPTIONS
-    assert (o["zero"], o["datum"], o["replacement_velocity"]) == ("datum_ground", 500.0, 4000.0)
+    assert (o["zero"], o["datum"]) == ("datum", 500.0) and "replacement_velocity" not in o
+    assert vaud_data.REPLACEMENT_VELOCITY == 4000.0      # on the sheet, not applied
     assert o["velocity_kind"] == "average" and "velocity" not in o
     times = [t for t, _v in o["velocity_table"]]
     speeds = [v for _t, v in o["velocity_table"]]

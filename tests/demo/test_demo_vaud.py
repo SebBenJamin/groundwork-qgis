@@ -61,13 +61,14 @@ def test_vaud_sections_use_the_datum_and_velocities_of_the_sheet(opened):
         o = d.reader_options
         assert (o["position"], o["xy_field"], o["crs"]) == ("map", "source", "EPSG:2056")
         assert o["domain"] == "time" and "velocity" not in o
-        assert (o["zero"], o["datum"], o["replacement_velocity"]) == ("datum_ground", 500.0, 4000.0)
+        assert (o["zero"], o["datum"]) == ("datum", 500.0) and "replacement_velocity" not in o
         assert o["velocity_kind"] == "average"
         times = [t for t, _v in o["velocity_table"]]
         assert len(times) > 2 and all(b > a for a, b in zip(times, times[1:]))
         [layer] = prov.layers(p.id)
         assert layer.error is None
-        assert 470.0 < layer.traces.bounds()[3] < 530.0    # time zero near the 500 m datum
+        assert layer.traces.z_top.min() == pytest.approx(500.0, abs=0.01)   # at the datum
+        assert layer.traces.z_top.max() == pytest.approx(500.0, abs=0.01)
         assert layer.style.clip_percent == pytest.approx(98.0)
         assert layer.style.gain is None or not layer.style.gain.active()   # already balanced
         assert layer.style.scale is None or layer.style.scale.cmap == "gray"

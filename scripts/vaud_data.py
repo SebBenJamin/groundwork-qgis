@@ -28,7 +28,9 @@ STACK_SUFFIX = "_stk-p.sgy"
 #: fuzzy and its printer draws 0 like 8: digits marked "?" were chosen by plausibility (the
 #: average velocity grows with time, neighbouring columns are close).
 DATUM = 500.0                   # m, "DP 500 M"
-REPLACEMENT_VELOCITY = 4000.0   # m/s, "VITESSE D'HOMOGENEITE"
+#: m/s, "VITESSE D'HOMOGENEITE": not applied; processing used it to bring the data to the datum,
+#: and the sheet's times and velocities already count from there
+REPLACEMENT_VELOCITY = 4000.0
 #: rows: two-way time ms, then PM 221-285, PM 180, PM 129, PM 66, PM 1 (m/s)
 SHEET_AVERAGE_VELOCITIES = (
     (200, 3500, 3599, 3199, 3199, 3199),    # 3500? (or 3508)
@@ -53,11 +55,11 @@ SHEET_AVERAGE_VELOCITIES = (
 )
 #: one function for the whole line: at each time the median of the five columns
 VELOCITY_TABLE = [[row[0] / 1000.0, float(np.median(row[1:]))] for row in SHEET_AVERAGE_VELOCITIES]
-#: how both files are read: positions in the source fields, time, corrected to the ground from
-#: the sheet's datum with its replacement velocity, depths from the sheet's average velocities.
+#: how both files are read: positions in the source fields, time, time zero at the sheet's
+#: datum, depths below it from the sheet's average velocities.
 #: VD-P760068 has no sheet in its zip; it is from the same 1976 survey and uses the same values.
 OPTIONS = {"position": "map", "xy_field": "source", "crs": CRS, "domain": "time",
-           "zero": "datum_ground", "datum": DATUM, "replacement_velocity": REPLACEMENT_VELOCITY,
+           "zero": "datum", "datum": DATUM,
            "velocity_table": VELOCITY_TABLE, "velocity_kind": "average"}
 CORRIDOR = 500.0        # m each side of the lines: the DEM the demo carries
 PIXEL = 10.0            # m, the demo's DEM
