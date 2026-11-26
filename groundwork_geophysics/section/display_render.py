@@ -26,7 +26,7 @@ from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 from ..core.gridding import (FADE_ALPHA, contour_levels, contour_lines, coverage_alpha,
                              default_threshold, fade_band, grid_model, grid_shape,
                              next_to_empty, soft_coverage_alpha)
-from ..core.trace_section import _sample, display_values, reduce_image
+from ..core.trace_section import _sample, display_values, muted_mask, reduce_image
 
 CONTOUR_PEN_MM = 0.25
 CONTOUR_MINOR_PEN_MM = 0.13          # typed minor levels: thinner, no label
@@ -217,6 +217,9 @@ class _TraceEntry:
     #: the values shown, sampled as ``color_limits`` samples them (the limits come from it)
     sample: np.ndarray
     grids: list                      # [(values (h, w) float32, row 0 at zmax, extent)]
+    #: the muted samples of the file's own array (bool, placed order); None until a picture
+    #: that leaves them out was made from the samples
+    mute: np.ndarray | None = None
     limits: dict = dc_field(default_factory=dict)      # clip percent -> (lo, hi)
     look: tuple | None = None        # the colours ``levels`` were made with
     levels: list = dc_field(default_factory=list)
@@ -269,12 +272,14 @@ def shown_values(layer):
 
 def _level_path(layer) -> Path | None:
     """``<dataset id>.<key hash>.levels.npz`` in the layer's cache folder, keyed by the read,
-    the placement and the gain; None when the layer has no folder."""
+    the placement, the gain and whether the muted zones are painted; None when the layer has
+    no folder."""
     if layer.level_cache is None:
         return None
     folder, read = layer.level_cache
     gain = json.dumps(layer.style.gain.to_dict(), sort_keys=True)
-    digest = _digest(read, _placement(layer.traces), gain, LEVEL_CAP, LEVEL_FORMAT)
+    digest = _digest(read, _placement(layer.traces), gain, LEVEL_CAP, LEVEL_FORMAT,
+                     ("show_muted", layer.style.gain.show_muted))
     return Path(folder) / f"{layer.dataset.id}.{digest}.levels.npz"
 
 
@@ -317,16 +322,26 @@ def _save_levels(path: Path, dataset_id: str, grids: list, sample: np.ndarray) -
             pass
 
 
-def _make_grids(placed, values) -> list:
+def _make_grids(placed, values, mute=None) -> list:
     """The finest picture (at most ``LEVEL_CAP`` each way) and those at half and a quarter of
-    its size, each reduced from the samples (so each keeps the strongest)."""
-    finest = reduce_image(placed, LEVEL_CAP, LEVEL_CAP, amplitudes=values)
+    its size, each reduced from the samples (so each keeps the strongest), the ``mute``d
+    samples left out."""
+    finest = reduce_image(placed, LEVEL_CAP, LEVEL_CAP, amplitudes=values, mute=mute)
     h, w = finest[0].shape
     out = [finest]
     for f in (2, 4):
         out.append(reduce_image(placed, max(1, -(-w // f)), max(1, -(-h // f)),
-                                amplitudes=values))
+                                amplitudes=values, mute=mute))
     return out
+
+
+def _kept_mute(key: tuple):
+    """The mute of an entry kept for the same dataset and samples (another gain), or None."""
+    with _lock:
+        for k, entry in _traces.items():
+            if k[:2] == key[:2] and entry.mute is not None:
+                return entry.mute
+    return None
 
 
 def _entry(layer) -> _TraceEntry:
@@ -346,10 +361,16 @@ def _entry(layer) -> _TraceEntry:
     else:
         started = time.perf_counter()
         section = layer.traces.section
-        values = display_values(section, layer.style.gain)
-        grids = _make_grids(layer.traces, values)
+        gain = layer.style.gain
+        kept_mute = _kept_mute(key)
+        mute = None
+        if not gain.show_muted:                 # from the file's own samples, before any gain
+            mute = kept_mute if kept_mute is not None else muted_mask(section.amplitudes)
+        values = display_values(section, gain)
+        grids = _make_grids(layer.traces, values, mute)
         sample = np.array(_sample(values))
-        entry = _TraceEntry(None if values is section.amplitudes else values, sample, grids)
+        entry = _TraceEntry(None if values is section.amplitudes else values, sample, grids,
+                            mute if mute is not None else kept_mute)
         if path is not None and time.perf_counter() - started > LEVEL_CACHE_MIN_SECONDS:
             _save_levels(path, layer.dataset.id, grids, sample)
     with _lock:

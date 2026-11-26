@@ -26,7 +26,8 @@ def look_of(dataset_id: str, style) -> ModelLook:
                      style.shown, list(style.contour_major), list(style.contour_minor),
                      None if style.interpolation.is_linear else style.interpolation.to_dict(),
                      style.clip_percent,
-                     style.gain.to_dict() if style.gain.active() else None)
+                     style.gain.to_dict() if style.gain.active() or style.gain.show_muted
+                     else None)
 
 
 def styled(style, look: ModelLook):

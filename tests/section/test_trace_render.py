@@ -266,9 +266,71 @@ def test_the_drawing_uses_the_clipped_limits(qgis_app, make_trace_layer):
     typed = replace(layer, style=replace(layer.style, clip_percent=None))
     wide = _pixels(build_drawing(typed, None).levels[0][0])
     assert (clipped != wide).any()
-    # with typed limits nearly everything is mid grey
-    grey = (wide >> 8) & 0xFF
+    # with typed limits nearly everything is mid grey (the first sample of trace 1 is an
+    # exact zero at the top, a muted sample: transparent)
+    grey = ((wide >> 8) & 0xFF)[(wide >> 24) == 255]
     assert grey.min() > 110 and grey.max() < 145
+
+
+# -- muted zones ---------------------------------------------------------------------------
+def _muted_top(make_trace_layer, **style):
+    """Traces of 1 and -1 whose first 20 samples (20 m below the datum of 500 m) are zero."""
+    a = np.where(np.arange(50)[None, :] % 2 == 0, 1.0, -1.0) * np.ones((11, 1))
+    a[:, :20] = 0.0
+    return make_trace_layer(a.astype(np.float32), **style)
+
+
+def test_a_muted_top_is_left_transparent(qgis_app, make_trace_layer):
+    px = _paint([_muted_top(make_trace_layer)])
+    # z 500 .. 481 m is y 14 .. 41 (100 px for 70 m): red shows through; below it the picture
+    assert (px[16:40, 50:150] == RED).all()
+    assert (px[45:80, 50:150] != RED).all()
+
+
+def test_show_muted_paints_the_muted_top(qgis_app, make_trace_layer):
+    layer = _muted_top(make_trace_layer, gain=DisplayGain(show_muted=True))
+    px = _paint([layer])
+    assert (px[16:80, 50:150] != RED).all()
+    assert display_render._trace_entry(layer).shown is None       # no gained copy for it
+
+
+def test_the_mute_is_a_bool_mask_kept_once_per_layer(qgis_app, make_trace_layer, monkeypatch):
+    from groundwork_geophysics.core import trace_section
+    calls = {"n": 0}
+    real = trace_section.muted_mask
+
+    def counted(a):
+        calls["n"] += 1
+        return real(a)
+    monkeypatch.setattr(display_render, "muted_mask", counted)
+    layer = _muted_top(make_trace_layer)
+    build_drawing(layer, None)
+    entry = display_render._trace_entry(layer)
+    assert entry.mute.dtype == bool and entry.mute.shape == (11, 50)
+    for gain in (DisplayGain(agc_window=0.01), DisplayGain(time_power=2.0)):
+        build_drawing(replace(layer, style=replace(layer.style, gain=gain)), None)
+    assert calls["n"] == 1
+
+
+def test_the_limits_do_not_follow_the_mute(qgis_app, make_trace_layer):
+    layer = _muted_top(make_trace_layer, clip_percent=50.0)
+    shown = replace(layer, style=replace(layer.style, gain=DisplayGain(show_muted=True)))
+    build_drawing(layer, None)
+    hidden = display_render.shown_values(layer)
+    build_drawing(shown, None)
+    assert hidden is not None
+    assert np.array_equal(hidden, display_render.shown_values(shown))
+    assert trace_limits(layer, layer.style, values=hidden) == color_limits(layer.traces.section, 50.0)
+
+
+def test_show_muted_writes_a_new_level_file(qgis_app, cached_layer, tmp_path):
+    build_drawing(cached_layer, None)
+    (old,) = _level_files(tmp_path)
+    shown = replace(cached_layer, style=replace(cached_layer.style,
+                                                gain=DisplayGain(show_muted=True)))
+    build_drawing(shown, None)
+    (new,) = _level_files(tmp_path)
+    assert new != old
 
 
 # -- the levels on disk --------------------------------------------------------------------

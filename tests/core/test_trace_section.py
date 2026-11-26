@@ -3,8 +3,8 @@ import numpy as np
 import pytest
 
 from groundwork_geophysics.core.trace_section import (
-    DisplayGain, TraceSection, Velocity, agc, color_limits, display_values, place, reduce_image,
-    sample_depths)
+    DisplayGain, TraceSection, Velocity, agc, color_limits, depth_at, display_values, ground_time,
+    muted_mask, place, reduce_image, sample_depths)
 
 
 def _section(a, **kw):
@@ -189,8 +189,9 @@ def test_reduce_puts_a_velocity_function_on_an_even_depth_grid():
     assert img.shape == (6, 1) and list(img[:, 0]) == [1.0, 2.0, 3.0, 3.0, 4.0, 4.0]
 
 
-def _reference_image(p, w, h):
-    """Cell by cell: the strongest of the trace and sample centres in it, else the nearest."""
+def _reference_image(p, w, h, mute=None):
+    """Cell by cell: the strongest of the trace and sample centres in it, else the nearest;
+    samples ``mute`` marks are left out (NaN when nothing else is in the cell)."""
     sec, (s0, s1, z0, z1) = p.section, reduce_image(p, w, h)[1]
     xe = np.r_[sec.x[0] - 0.5 * (sec.x[1] - sec.x[0]), 0.5 * (sec.x[1:] + sec.x[:-1]),
                sec.x[-1] + 0.5 * (sec.x[-1] - sec.x[-2])]
@@ -214,6 +215,8 @@ def _reference_image(p, w, h):
                     k = int(np.searchsorted(de, d, "right") - 1)
                     ks = [k] if 0 <= k < sec.n_samples else []
                 for k in ks:
+                    if mute is not None and mute[i, k]:
+                        continue
                     v = float(sec.amplitudes[i, k])
                     if np.isnan(best) or abs(v) > abs(best):
                         best = v
@@ -221,14 +224,76 @@ def _reference_image(p, w, h):
     return img
 
 
+@pytest.mark.parametrize("muted", [False, True])
 @pytest.mark.parametrize("z_top", [20.0, "varying"])
 @pytest.mark.parametrize("w, h", [(5, 4), (40, 30)])
-def test_reduce_matches_the_rule_cell_by_cell(z_top, w, h):
-    a = np.random.default_rng(1).standard_normal((13, 11)).astype(np.float32)
+def test_reduce_matches_the_rule_cell_by_cell(z_top, w, h, muted):
+    rng = np.random.default_rng(1)
+    a = rng.standard_normal((13, 11)).astype(np.float32)
+    mute = rng.random(a.shape) < 0.4 if muted else None
+    if muted:
+        mute[2] = True                                   # one trace muted all through
     z = 20.0 + 3.0 * np.arange(13) % 7 if z_top == "varying" else z_top
     p = place(_section(a), z, V(2000.0))
-    img, _ = reduce_image(p, w, h)
-    assert np.allclose(img, _reference_image(p, *img.shape[::-1]), equal_nan=True)
+    img, _ = reduce_image(p, w, h, mute=mute)
+    assert np.allclose(img, _reference_image(p, *img.shape[::-1], mute=mute), equal_nan=True)
+    if muted:
+        assert not np.allclose(img, reduce_image(p, w, h)[0], equal_nan=True)   # it matters
+
+
+def test_ground_time_and_depth_at():
+    assert list(ground_time(700.0, np.array([700.0, 600.0, 720.0]), 2000.0)) == \
+        pytest.approx([0.0, 0.1, -0.02])
+    s = _section(np.zeros((1, 3)), first=0.0, step=1.0)
+    assert list(depth_at(s, V(2000.0), np.array([0.5, 3.0]))) == [500.0, 3000.0]
+
+
+def test_depth_at_one_velocity_holds_above_time_zero_too():
+    s = _section(np.zeros((1, 3)), first=0.1, step=0.1)
+    assert depth_at(s, V(3000.0), np.array([-0.02, 0.0, 0.5])) == pytest.approx([-30.0, 0.0, 750.0])
+
+
+def test_depth_at_follows_a_velocity_function_and_its_end_slopes():
+    s = _section(np.zeros((1, 4)), first=0.0, step=1.0)             # t = 0..3 s
+    v = V(table=((0.0, 2000.0), (2.0, 4000.0)), kind="interval")     # depths 0, 1000, 2000, 4000
+    assert depth_at(s, v, np.array([1.5, 2.5, 4.0, -1.0])) == pytest.approx(
+        [1500.0, 3000.0, 6000.0, -1000.0])
+    one = _section(np.zeros((1, 1)), first=1.0, step=0.5)
+    assert depth_at(one, v, np.array([1.0, 2.0])) == pytest.approx([1000.0, 2000.0])
+
+
+def test_depth_at_refuses_a_depth_section():
+    with pytest.raises(ValueError):
+        depth_at(_section(np.zeros((1, 3)), domain="depth", step=1.0), None, np.array([0.0]))
+
+
+def test_muted_mask_marks_edges_not_the_inside():
+    a = np.array([[0, 0, 5, 0, 7, 0], [0, 0, 0, 0, 0, 0], [1, 0, 0, 2, 3, 4]], np.float32)
+    m = muted_mask(a)
+    assert m.tolist() == [[True, True, False, False, False, True], [True] * 6, [False] * 6]
+    assert m.dtype == bool and muted_mask(a.astype(np.int16)).tolist() == m.tolist()
+
+
+def test_reduce_leaves_fully_muted_cells_empty():
+    a = np.zeros((4, 8), np.float32); a[:, 4:] = 1.0
+    p = place(_section(a), 0.0, V(2000.0))
+    img, _ = reduce_image(p, mute=muted_mask(a))
+    assert np.isnan(img[:4]).all() and np.isfinite(img[4:]).all()
+
+
+def test_a_cell_with_muted_and_live_samples_keeps_the_live_one():
+    a = np.zeros((2, 8), np.float32); a[:, 3:] = 0.5; a[:, 7] = -0.25
+    p = place(_section(a), 0.0, V(2000.0))
+    img, _ = reduce_image(p, max_width=1, max_height=2, mute=muted_mask(a))
+    assert img[:, 0].tolist() == [0.5, 0.5]              # the top row: three muted, one live
+
+
+def test_show_muted_round_trips_and_needs_no_gained_copy():
+    g = DisplayGain(show_muted=True)
+    assert not g.active() and DisplayGain.from_dict(g.to_dict()) == g
+    assert DisplayGain.from_dict({"agc_window": 0.2}).show_muted is False
+    s = _section(np.ones((2, 5)))
+    assert display_values(s, g) is s.amplitudes
 
 
 def test_with_x_and_place_share_the_samples():            # Review Focus 5

@@ -218,6 +218,40 @@ def test_the_amplitude_options_round_trip(qgis_app, trace_layer):
     assert again.style().gain == s.gain
 
 
+def test_paint_muted_zones_is_a_tick_of_its_own(qgis_app, trace_layer, store_with_model):
+    from qgis.PyQt.QtWidgets import QCheckBox
+
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    tick = dlg.findChild(QCheckBox, "show_muted_check")
+    assert tick is dlg.show_muted_check and tick.text() == "Paint muted zones"
+    assert tick.toolTip() == ("Samples that are zero at the top or bottom of a trace are left "
+                              "transparent unless this is ticked.")
+    assert not tick.isChecked() and dlg.style().gain == DisplayGain()
+    # last of the options, just before the note
+    form = dlg.amplitudes_group.layout()
+    widgets = [form.itemAt(i).widget() for i in range(form.count())]
+    assert widgets.index(tick) == widgets.index(dlg.amplitudes_note) - 1
+    tick.setChecked(True)
+    s = dlg.style()
+    assert s.gain == DisplayGain(show_muted=True) and not s.gain.active()
+    again = DisplayDialog(None, replace(trace_layer, style=s))
+    assert again.show_muted_check.isChecked() and again.style().gain == s.gain
+    _prov, model = _layer(store_with_model)
+    assert DisplayDialog(None, model).show_muted_check is None
+
+
+def test_paint_muted_zones_keeps_the_limits(qgis_app, trace_layer, monkeypatch):
+    from groundwork_geophysics.section import scale_dialog
+    dlg = scale_dialog.DisplayDialog(None, trace_layer)
+    before = (dlg.min_spin.value(), dlg.max_spin.value())
+    calls = []
+    monkeypatch.setattr(scale_dialog, "display_values", lambda *a: calls.append(a))
+    dlg.show_muted_check.setChecked(True)
+    assert (dlg.min_spin.value(), dlg.max_spin.value()) == before and calls == []
+
+
 def test_a_depth_section_speaks_of_depth(qgis_app, make_trace_layer):
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, make_trace_layer(domain="depth"))

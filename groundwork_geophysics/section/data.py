@@ -33,7 +33,8 @@ from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..core.trace_section import (NO_VELOCITY, DisplayGain, PlacedTraces, TraceSection,
-                                  Velocity, color_limits, display_values, place)
+                                  Velocity, color_limits, depth_at, display_values,
+                                  ground_time, place)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -43,15 +44,21 @@ from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local
 #: reader_options keys applied by the provider, not passed to the reader as such: the
 #: placement, and how a trace section is hung (velocity, the height of time zero)
 WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement", "velocity", "velocity_table",
-                  "velocity_kind", "zero", "datum")
+                  "velocity_kind", "zero", "datum", "replacement_velocity")
 #: those only used to hang a trace section once read: not in the read key, so trying another
 #: velocity or time zero never reads the file again
-HANG_KEYS = ("velocity", "velocity_table", "velocity_kind", "zero", "datum")
+HANG_KEYS = ("velocity", "velocity_table", "velocity_kind", "zero", "datum",
+             "replacement_velocity")
 #: z kind of a placed trace section in ``SectionDataProvider._placed`` (never a model's)
 TRACES = "traces"
 #: a time section without a velocity, and one hung from a datum without a height
 NO_VELOCITY_TEXT = NO_VELOCITY + " Set it in Dataset Info."
 NO_DATUM_TEXT = "The height of time zero is missing. Set it in Dataset Info."
+#: a section corrected to the ground (``zero`` "datum_ground") without a usable replacement
+#: velocity, and one on a profile without real heights
+NO_REPLACEMENT_TEXT = ("The replacement velocity must be greater than 0 m/s. "
+                       "Set it in Dataset Info.")
+NO_GROUND_TEXT = "This section is corrected to the ground, and the profile has no heights yet."
 
 
 def read_options(reader_options: dict) -> dict:
@@ -505,6 +512,14 @@ class _Built:
         """True when a dataset failed in a way that may pass (see ``_Failed``)."""
         return self.placed is not None and any(
             isinstance(v, _Failed) and v.transient for v in self.placed.values())
+
+
+def _number_or_nan(v) -> float:
+    """``v`` as a float; NaN when it is missing or not a number."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def _transient(exc: BaseException) -> bool:
@@ -1294,22 +1309,30 @@ class SectionDataProvider:
                      style: LayerStyle) -> SectionLayer:
         """``d``'s trace section (in chainage) hung in the profile: time zero (or depth zero)
         at the stored datum (``zero`` "datum"), else on the profile's surface at each trace
-        (0 on an unknown profile), with sample depths from the stored velocity."""
+        (0 on an unknown profile), with sample depths from the stored velocity.
+
+        ``zero`` "datum_ground": the section was moved to the datum with a replacement
+        velocity; each trace is hung so that its ground time (``ground_time``) lies on the
+        profile's surface at the trace. A profile without real heights (no surface, or a
+        local one, as ``is_local`` reads it) has no ground to correct to."""
         options = d.reader_options or {}
+        zero = options.get("zero")
+        velocity = Velocity.from_options(options)
         try:
-            if options.get("zero") == "datum":
-                try:
-                    z_top = float(options.get("datum"))
-                except (TypeError, ValueError):
-                    z_top = float("nan")
-                if not np.isfinite(z_top):
+            if zero in ("datum", "datum_ground"):
+                datum = _number_or_nan(options.get("datum"))
+                if not np.isfinite(datum):
                     raise _Plain(NO_DATUM_TEXT)
+                z_top = datum
             elif surface is None:
                 z_top = 0.0
             else:
                 z_top = np.interp(section.x, *surface.line)
             try:
-                placed = place(section, z_top, Velocity.from_options(options))
+                if zero == "datum_ground":
+                    z_top = self._ground_top(section, surface, datum, velocity,
+                                             options.get("replacement_velocity"))
+                placed = place(section, z_top, velocity)
             except ValueError as exc:
                 if str(exc) == NO_VELOCITY:
                     raise _Plain(NO_VELOCITY_TEXT) from None
@@ -1319,6 +1342,23 @@ class SectionDataProvider:
         except Exception as exc:                # never raise from layers()
             return SectionLayer(d, None, style, self._error_text(d, exc))
         return SectionLayer(d, None, style, None, placed, level_cache=self._level_cache(d))
+
+    @staticmethod
+    def _ground_top(section: TraceSection, surface: Surface | None, datum: float,
+                    velocity: Velocity, replacement) -> np.ndarray:
+        """Time zero of each trace of a section corrected to the ground: the ground at the
+        trace (the surface sampled as a "ground" section samples it) plus the depth that the
+        trace's ground time reaches with ``velocity``."""
+        if surface is None or surface.local:
+            raise _Plain(NO_GROUND_TEXT)
+        replacement = _number_or_nan(replacement)
+        if not (np.isfinite(replacement) and replacement > 0):
+            raise _Plain(NO_REPLACEMENT_TEXT)
+        if section.domain != "time":
+            raise _Plain("A depth section cannot be corrected to the ground. Hang it at a "
+                         "fixed height or on the ground.")
+        ground = np.interp(section.x, *surface.line)
+        return ground + depth_at(section, velocity, ground_time(datum, ground, replacement))
 
     def _level_cache(self, d: Dataset) -> tuple | None:
         """(folder, read key text) for ``d``'s picture levels: beside the remembered reads,

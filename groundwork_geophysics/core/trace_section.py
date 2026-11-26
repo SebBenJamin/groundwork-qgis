@@ -230,6 +230,38 @@ def sample_depths(section: TraceSection, velocity: Velocity | None) -> np.ndarra
     return depths
 
 
+def ground_time(datum: float, ground: np.ndarray, replacement_velocity: float) -> np.ndarray:
+    """Two-way time (s) from the datum down to the ground at each trace with the replacement
+    velocity (m/s): ``2 * (datum - ground) / replacement_velocity``, negative where the ground
+    lies above the datum."""
+    ground = np.asarray(ground, dtype=np.float64)
+    return 2.0 * (float(datum) - ground) / float(replacement_velocity)
+
+
+def depth_at(section: TraceSection, velocity: Velocity | None, times: np.ndarray) -> np.ndarray:
+    """Depth below time zero (m) at ``times`` (s), as ``sample_depths`` gives it for the
+    samples: interpolated between them, and beyond the first and last sample continued in a
+    straight line with the slope at that end. With one velocity that is ``v * t / 2`` for any
+    time. ValueError for a depth section (it has no times) and as ``sample_depths``."""
+    if section.domain != "time":
+        raise ValueError("A depth section has no times to give depths for.")
+    times = np.asarray(times, dtype=np.float64)
+    depths = sample_depths(section, velocity)
+    if not velocity.table:
+        return velocity.value * times / 2.0
+    axis = section.sample_axis()
+    if axis.size == 1:                       # one sample: the slope from the function itself
+        ends = sample_depths(replace(section, amplitudes=np.zeros((1, 2), np.float32),
+                                     x=np.zeros(1), numbers=None), velocity)
+        lo_slope = hi_slope = (ends[1] - ends[0]) / section.step
+    else:
+        lo_slope = (depths[1] - depths[0]) / (axis[1] - axis[0])
+        hi_slope = (depths[-1] - depths[-2]) / (axis[-1] - axis[-2])
+    out = np.interp(times, axis, depths)
+    out = np.where(times < axis[0], depths[0] + (times - axis[0]) * lo_slope, out)
+    return np.where(times > axis[-1], depths[-1] + (times - axis[-1]) * hi_slope, out)
+
+
 @dataclass(eq=False)
 class PlacedTraces:
     """A section hung in the profile: ``section.x`` is the chainage (increasing), ``z_top`` the
@@ -344,15 +376,23 @@ class DisplayGain:
     time_power: float | None = None   # multiply by t**p (depth**p for a depth section)
     balance_traces: bool = False      # divide each trace by its own RMS
     reverse_polarity: bool = False
+    #: paint the muted zones (``muted_mask``) too; by default they are left transparent
+    show_muted: bool = False
 
     def active(self) -> bool:
+        """True when the values shown differ from the file's (a gained copy is needed);
+        ``show_muted`` only decides which samples are painted, so it does not count."""
         return bool((self.agc_window is not None and self.agc_window > 0)
                     or (self.time_power is not None and self.time_power != 0)
                     or self.balance_traces or self.reverse_polarity)
 
     def to_dict(self) -> dict:
-        return {"agc_window": self.agc_window, "time_power": self.time_power,
-                "balance_traces": self.balance_traces, "reverse_polarity": self.reverse_polarity}
+        """The options as plain data; ``show_muted`` only when it is set (as stored before)."""
+        out = {"agc_window": self.agc_window, "time_power": self.time_power,
+               "balance_traces": self.balance_traces, "reverse_polarity": self.reverse_polarity}
+        if self.show_muted:
+            out["show_muted"] = True
+        return out
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "DisplayGain":
@@ -367,7 +407,23 @@ class DisplayGain:
                 return None
 
         return cls(number("agc_window"), number("time_power"), bool(d.get("balance_traces", False)),
-                   bool(d.get("reverse_polarity", False)))
+                   bool(d.get("reverse_polarity", False)), bool(d.get("show_muted", False)))
+
+
+def muted_mask(amplitudes: np.ndarray) -> np.ndarray:
+    """True (bool, the shape of ``amplitudes``) for the muted samples: the run of exact zeros
+    at the start of each trace, the run at its end, and the whole of a trace that is all zero.
+    Zeros between the first and last other sample are data and stay False."""
+    a = np.asarray(amplitudes)
+    n = a.shape[1]
+    out = np.empty(a.shape, bool)
+    k = np.arange(n)
+    for r0, r1 in _row_blocks(a.shape[0], n):
+        live = a[r0:r1] != 0                    # NaN counts as live: it is not a zero
+        first = np.where(live.any(axis=1), live.argmax(axis=1), n)
+        last = n - 1 - live[:, ::-1].argmax(axis=1)
+        out[r0:r1] = (k[None, :] < first[:, None]) | (k[None, :] > last[:, None])
+    return out
 
 
 def display_values(section: TraceSection, gain: DisplayGain) -> np.ndarray:
@@ -409,7 +465,7 @@ def color_limits(values, percent: float) -> tuple[float, float]:
 
 
 def reduce_image(placed: PlacedTraces, max_width: int = 4096, max_height: int = 4096,
-                 amplitudes: np.ndarray | None = None
+                 amplitudes: np.ndarray | None = None, mute: np.ndarray | None = None
                  ) -> tuple[np.ndarray, tuple[float, float, float, float]]:
     """The section as a picture on a regular s/z grid: ``(values, (smin, smax, zmin, zmax))``,
     ``values`` (h, w) float32 with row 0 at ``zmax`` and NaN where no trace reaches.
@@ -423,11 +479,18 @@ def reduce_image(placed: PlacedTraces, max_width: int = 4096, max_height: int = 
     shift and cells below or above a trace are NaN.
 
     ``amplitudes`` (default the section's own) are the values to draw, such as a gained copy
-    from ``display_values(placed.section, ...)``; they must be in the placed trace order."""
+    from ``display_values(placed.section, ...)``; they must be in the placed trace order.
+    ``mute`` (bool, same shape and order, such as ``muted_mask`` of the placed samples) leaves
+    out the samples it marks: a cell all of whose samples are muted stays NaN, any other cell
+    keeps the strongest of its samples that are not."""
     sec = placed.section
     a = sec.amplitudes if amplitudes is None else np.asarray(amplitudes)
     if a.shape != sec.amplitudes.shape:
         raise ValueError(f"{a.shape} values for a section of {sec.amplitudes.shape} samples.")
+    if mute is not None:
+        mute = np.asarray(mute, bool)
+        if mute.shape != a.shape:
+            raise ValueError(f"A mute of {mute.shape} for a section of {a.shape} samples.")
     s_edges = _edges(sec.x)
     d_edges = _edges(placed.depths)
     zt = placed.z_top
@@ -452,7 +515,8 @@ def reduce_image(placed: PlacedTraces, max_width: int = 4096, max_height: int = 
     if (zt == zt[0]).all() and w * sec.n_samples <= 32 * _BLOCK:
         # one top for all traces: every trace maps samples to rows alike, so the columns can be
         # reduced first (same result, far less work)
-        a = _columns(a, src, col_start, count)
+        a = _columns(a, src, col_start, count, mute)
+        mute = None                                 # the columns hold NaN where muted
         zt = np.full(w, zt[0])
         src, col_start, count = np.arange(w), np.arange(w), np.ones(w, np.int64)
 
@@ -465,15 +529,16 @@ def reduce_image(placed: PlacedTraces, max_width: int = 4096, max_height: int = 
         while j1 < w and col_start[j1] + count[j1] - col_start[j0] <= budget:
             j1 += 1
         lo, hi = col_start[j0], col_start[j1 - 1] + count[j1 - 1]
-        rows = _trace_rows(a, src[lo:hi], zt, placed.depths, d_edges, zc, zmax, dz)
+        rows = _trace_rows(a, src[lo:hi], zt, placed.depths, d_edges, zc, zmax, dz, mute)
         image[:, j0:j1] = _strongest(rows, col_start[j0:j1] - lo, axis=0).T
         j0 = j1
     return image, (s0, s1, zmin, zmax)
 
 
-def _columns(a, src, col_start, count) -> np.ndarray:
+def _columns(a, src, col_start, count, mute=None) -> np.ndarray:
     """(w, n_samples) float32: per column the strongest of its source traces, sample by
-    sample, worked through in blocks of whole columns."""
+    sample (muted samples left out, NaN where all are), worked through in blocks of whole
+    columns."""
     w, ns = col_start.size, a.shape[1]
     out = np.empty((w, ns), np.float32)
     budget = max(1, _BLOCK // ns)
@@ -484,6 +549,8 @@ def _columns(a, src, col_start, count) -> np.ndarray:
             j1 += 1
         lo, hi = col_start[j0], col_start[j1 - 1] + count[j1 - 1]
         vals = a[src[lo:hi]].astype(np.float32)
+        if mute is not None:
+            vals[mute[src[lo:hi]]] = np.nan
         out[j0:j1] = vals if hi - lo == j1 - j0 else _strongest(vals, col_start[j0:j1] - lo, axis=0)
         j0 = j1
     return out
@@ -498,12 +565,14 @@ def _cells(span: float, widths: np.ndarray, cap: int) -> int:
     return int(min(max(1, cap), max(1, math.ceil(span / widths.min() - 1e-6))))
 
 
-def _trace_rows(a, traces, zt, depths, d_edges, zc, zmax, dz) -> np.ndarray:
+def _trace_rows(a, traces, zt, depths, d_edges, zc, zmax, dz, mute=None) -> np.ndarray:
     """(len(traces), h) float32: each trace on the image rows (strongest sample per row, else
-    the nearest sample, NaN above and below the trace)."""
+    the nearest sample, NaN above and below the trace and where the samples are muted)."""
     h = zc.size
     tz = zt[traces]
     vals = a[traces].astype(np.float32)
+    if mute is not None:
+        vals[mute[traces]] = np.nan
     d = tz[:, None] - zc[None, :]                      # depth of each row centre below the top
     k = np.searchsorted(d_edges, d, side="right") - 1
     k = np.where(d == d_edges[-1], depths.size - 1, k)

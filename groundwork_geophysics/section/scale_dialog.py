@@ -322,7 +322,7 @@ class DisplayDialog(ColorScaleDialog):
 
         boxes = [display, contours, self.coverage_group]
         #: a trace layer's own controls (None for a model)
-        self.amplitudes_group = self.clip_check = self.clip_spin = None
+        self.amplitudes_group = self.clip_check = self.clip_spin = self.show_muted_check = None
         self._traces = getattr(layer, "traces", None)
         if self._traces is not None:
             self._layer = layer
@@ -363,6 +363,8 @@ class DisplayDialog(ColorScaleDialog):
     def _build_traces(self, style) -> QGroupBox:
         """The clip under the colour ramp and the "Amplitudes" group (display options: the
         samples are never changed). Returns the group."""
+        from dataclasses import replace
+
         from qgis.gui import QgsDoubleSpinBox
 
         from .display_render import shown_values
@@ -373,7 +375,7 @@ class DisplayDialog(ColorScaleDialog):
         self._limits = (self._scale.vmin, self._scale.vmax)
         # values shown per gain, sampled for the limits: the drawing's when it has them
         kept = shown_values(self._layer)
-        self._shown_by_gain = {} if kept is None else {style.gain: kept}
+        self._shown_by_gain = {} if kept is None else {replace(style.gain, show_muted=False): kept}
         self.log_check.setVisible(False)            # amplitudes: linear, clipped
         self.auto_button.setVisible(False)
 
@@ -447,6 +449,12 @@ class DisplayDialog(ColorScaleDialog):
         form.addRow("Power", self.time_power_spin)
         form.addRow(self.balance_check)
         form.addRow(self.polarity_check)
+        self.show_muted_check = QCheckBox("Paint muted zones")
+        self.show_muted_check.setObjectName("show_muted_check")
+        self.show_muted_check.setToolTip("Samples that are zero at the top or bottom of a trace "
+                                         "are left transparent unless this is ticked.")
+        self.show_muted_check.setChecked(gain.show_muted)
+        form.addRow(self.show_muted_check)
         self.amplitudes_note = QLabel("These change the picture only. The readout shows the "
                                       "file's amplitudes.")
         self.amplitudes_note.setObjectName("amplitudes_note")
@@ -479,7 +487,8 @@ class DisplayDialog(ColorScaleDialog):
             time_power=self.time_power_spin.value() if self.time_power_check.isChecked()
             else None,
             balance_traces=self.balance_check.isChecked(),
-            reverse_polarity=self.polarity_check.isChecked() and self.polarity_check.isEnabled())
+            reverse_polarity=self.polarity_check.isChecked() and self.polarity_check.isEnabled(),
+            show_muted=self.show_muted_check.isChecked())
 
     def _sync_gain_widgets(self) -> None:
         self.agc_spin.setEnabled(self.agc_check.isChecked())
@@ -488,10 +497,13 @@ class DisplayDialog(ColorScaleDialog):
     def _shown(self, gain):
         """The values shown with ``gain`` for the limits: the file's own without an option,
         else a sample of a gained copy (the drawing's when it has one; made here otherwise,
-        and only the sample kept)."""
+        and only the sample kept). Painting the muted zones or not changes no value."""
+        from dataclasses import replace
+
         from ..core.trace_section import _sample
         if not gain.active():
             return self._traces.section.amplitudes
+        gain = replace(gain, show_muted=False)
         hit = self._shown_by_gain.get(gain)
         if hit is None:
             hit = np.array(_sample(display_values(self._traces.section, gain)))

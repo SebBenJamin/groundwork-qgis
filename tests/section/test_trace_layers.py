@@ -39,14 +39,15 @@ def make(tmp_path):
     """``make(options, heights=True) -> (provider, store, profile id)``: a profile 100 m long
     (stations at 0, 50 and 100 m, heights 500, 505, 510 when ``heights``, else a bare line)
     holding the test section with ``options`` (spacing 10 m and velocity 2000 m/s unless
-    given)."""
+    given). ``heights`` may also be the three station heights."""
     def factory(options, heights=True, amplitudes=AMPLITUDES):
         folder = tmp_path / f"store{len(list(tmp_path.iterdir()))}"
         folder.mkdir()
         store = ProjectStore.create(folder / "p.gpkg", "EPSG:25832")
         if heights:
+            z = (500.0, 505.0, 510.0) if heights is True else heights
             p, s = profile_from_stations("P1", "EPSG:25832",
-                                         np.array([[0, 0, 500], [50, 0, 505], [100, 0, 510.0]]))
+                                         np.array([[0, 0, z[0]], [50, 0, z[1]], [100, 0, z[2]]]))
             store.save_profile(p)
             store.save_station_set(s)
             set_id = s.id
@@ -270,10 +271,75 @@ def test_a_new_trace_spacing_reads_the_file_again(make, file_reads):
     assert file_reads["n"] == 2
 
 
+FALLING = (700.0, 650.0, 600.0)          # station heights at 0, 50 and 100 m
+
+
+def _on_ground(replacement_velocity, **options):
+    return {"zero": "datum_ground", "datum": 700.0, "velocity": 2000.0,
+            "replacement_velocity": replacement_velocity, **options}
+
+
+def test_corrected_with_the_same_velocity_the_section_stays_at_the_datum(make):
+    provider, _store, pid = make(_on_ground(2000.0), heights=FALLING)
+    (layer,) = provider.layers(pid)
+    assert layer.error is None
+    assert np.allclose(layer.traces.z_top, 700.0, atol=1e-9)
+
+
+def test_corrected_to_the_ground_the_ground_time_lies_on_the_ground(make):
+    from groundwork_geophysics.core.trace_section import Velocity, depth_at, ground_time
+    provider, _store, pid = make(_on_ground(4000.0), heights=FALLING)
+    (layer,) = provider.layers(pid)
+    assert layer.error is None
+    placed = layer.traces
+    ground = np.interp(placed.section.x, *provider.topography(pid))
+    assert ground[0] == pytest.approx(700.0) and ground[-1] == pytest.approx(600.0)
+    t = ground_time(700.0, ground, 4000.0)
+    below = depth_at(placed.section, Velocity(2000.0), t)
+    assert np.abs(placed.z_top - below - ground).max() < 0.01
+    assert placed.z_top[-1] == pytest.approx(650.0)         # 100 m of 4000 m/s is 50 m of 2000
+
+
+@pytest.mark.parametrize("rv", [None, 0.0, -100.0, "x"])
+def test_corrected_without_a_replacement_velocity_says_so(make, rv):
+    provider, _store, pid = make(_on_ground(rv), heights=FALLING)
+    (layer,) = provider.layers(pid)
+    assert layer.traces is None
+    assert "The replacement velocity must be greater than 0 m/s. Set it in Dataset Info." in layer.error
+
+
+def test_corrected_on_a_profile_without_heights_says_so(make):
+    provider, _store, pid = make(_on_ground(2000.0), heights=False)
+    (layer,) = provider.layers(pid)
+    assert layer.traces is None
+    assert "This section is corrected to the ground, and the profile has no heights yet." in layer.error
+
+
+def test_corrected_without_a_datum_says_so(make):
+    provider, _store, pid = make(_on_ground(2000.0, datum=None), heights=FALLING)
+    assert "height of time zero" in provider.layers(pid)[0].error
+
+
+def test_a_depth_section_is_not_corrected_to_the_ground(make):
+    provider, _store, pid = make(_on_ground(2000.0, velocity=None, domain="depth", sample_step=2.0),
+                                 heights=FALLING)
+    assert "cannot be corrected to the ground" in provider.layers(pid)[0].error
+
+
+def test_a_new_replacement_velocity_does_not_read_the_file_again(make, file_reads):
+    provider, store, pid = make(_on_ground(2000.0), heights=FALLING)
+    before = provider.layers(pid)[0].traces
+    assert file_reads["n"] == 1
+    _change(provider, store, pid, replacement_velocity=4000.0)
+    after = provider.layers(pid)[0].traces
+    assert after.z_top[-1] == pytest.approx(650.0) and before.z_top[-1] == pytest.approx(700.0)
+    assert file_reads["n"] == 1 and after.section.amplitudes is before.section.amplitudes
+
+
 def test_provider_keys_are_not_passed_to_the_reader():
     options = read_options({"position": "spacing", "spacing": 1.0, "velocity": 2000.0,
                             "velocity_table": [[0, 1500]], "velocity_kind": "average",
-                            "zero": "datum", "datum": 3.0})
+                            "zero": "datum", "datum": 3.0, "replacement_velocity": 3000.0})
     assert options == {"position": "spacing", "spacing": 1.0}
 
 

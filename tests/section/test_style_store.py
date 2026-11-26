@@ -159,6 +159,26 @@ def test_a_style_saved_before_the_clip_loads_with_98():
     assert style.clip_percent == 98.0 and not style.gain.active()
 
 
+def test_painting_the_muted_zones_survives_the_round_trip():
+    import json
+
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import look_of, styles_from_json, styles_to_json
+    painted = LayerStyle(gain=DisplayGain(show_muted=True))
+    assert look_of("s1", painted).gain == {"agc_window": None, "time_power": None,
+                                           "balance_traces": False, "reverse_polarity": False,
+                                           "show_muted": True}
+    back = styles_from_json(styles_to_json({"s1": painted, "s2": LayerStyle()}))
+    assert back["s1"].gain.show_muted and not back["s2"].gain.show_muted
+    # a style stored before the option: muted zones are not painted
+    old = json.dumps([{"dataset_id": "s1", "visible": True, "opacity": 1.0, "mode": "cells",
+                       "gain": {"agc_window": 0.2, "time_power": None, "balance_traces": False,
+                                "reverse_polarity": False}}])
+    (style,) = styles_from_json(old).values()
+    assert style.gain == DisplayGain(agc_window=0.2) and not style.gain.show_muted
+
+
 def test_a_frame_look_carries_the_clip_and_the_gain():
     from groundwork_geophysics.core.trace_section import DisplayGain
     from groundwork_geophysics.section.data import LayerStyle
