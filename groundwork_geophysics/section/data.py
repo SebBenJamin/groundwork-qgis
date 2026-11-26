@@ -33,7 +33,7 @@ from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
 from ..core.trace_section import (NO_VELOCITY, DisplayGain, PlacedTraces, TraceSection,
-                                  Velocity, color_limits, place)
+                                  Velocity, color_limits, display_values, place)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -208,6 +208,9 @@ class SectionLayer:
     error: str | None
     #: a trace section hung in the profile (then ``mesh`` is None)
     traces: PlacedTraces | None = None
+    #: where a trace section's picture levels may be remembered: (folder, read key text);
+    #: None: not on disk (``display_render``)
+    level_cache: tuple | None = None
 
 
 def layer_bounds(layer: SectionLayer) -> tuple[float, float, float, float] | None:
@@ -222,12 +225,19 @@ def layer_bounds(layer: SectionLayer) -> tuple[float, float, float, float] | Non
     return None
 
 
-def trace_limits(layer_or_placed, style: LayerStyle) -> tuple[float, float]:
-    """Colour limits of a trace layer (or a ``PlacedTraces``): the section's values clipped at
-    the style's percentile (98 when the user typed the limits)."""
-    placed = getattr(layer_or_placed, "traces", layer_or_placed)
+def trace_limits(layer_or_placed, style: LayerStyle, values=None) -> tuple[float, float]:
+    """Colour limits of a trace layer (or a ``PlacedTraces``) as it is drawn: the typed limits
+    of ``style.scale`` when ``clip_percent`` is None, else the values shown clipped at that
+    percentile. The values shown are ``values`` when given (the drawing's gained copy, or a
+    sample of it), else ``display_values(section, style.gain)``: the file's own numbers
+    without a display option, a gained copy with one."""
+    if style.clip_percent is None and style.scale is not None:
+        return float(style.scale.vmin), float(style.scale.vmax)
+    if values is None:
+        placed = getattr(layer_or_placed, "traces", layer_or_placed)
+        values = display_values(placed.section, style.gain)
     percent = style.clip_percent if style.clip_percent is not None else 98.0
-    return color_limits(placed.section, percent)
+    return color_limits(values, percent)
 
 
 def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
@@ -1306,7 +1316,18 @@ class SectionDataProvider:
                 style.scale = _trace_scale(placed, style)
         except Exception as exc:                # never raise from layers()
             return SectionLayer(d, None, style, self._error_text(d, exc))
-        return SectionLayer(d, None, style, None, placed)
+        return SectionLayer(d, None, style, None, placed, level_cache=self._level_cache(d))
+
+    def _level_cache(self, d: Dataset) -> tuple | None:
+        """(folder, read key text) for ``d``'s picture levels: beside the remembered reads,
+        keyed by the read held in memory; None without one."""
+        hit = self._cache.get(d.id)
+        if hit is None:
+            return None
+        try:
+            return cache_folder(self.store), repr(hit[0])
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     def _error_text(self, d: Dataset, exc: BaseException) -> str:
         """The plain message a layer shows for what reading, placing or hanging raised."""

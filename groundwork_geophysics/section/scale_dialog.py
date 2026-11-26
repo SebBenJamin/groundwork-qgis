@@ -9,6 +9,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QLineEdit, QPushButton, QRadioButton, QVBoxLayout)
 
 from ..core.colors import ColorScale
+from ..core.trace_section import display_values
 
 LIMIT = 1e12            # spin box range for linear scales
 MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then it scrolls)
@@ -90,6 +91,7 @@ class ColorScaleDialog(QDialog):
         self.message.hide()
 
         form = QFormLayout()
+        self._scale_form = form
         form.addRow("Colour ramp", self.ramp_button)
         form.addRow("Minimum", self.min_spin)
         form.addRow("Maximum", self.max_spin)
@@ -195,9 +197,11 @@ class DisplayDialog(ColorScaleDialog):
         from .data import DISPLAY_MODES, READINGS_MODES, layer_name
         from .readout import unit_label
         mesh = layer.mesh
+        traces = getattr(layer, "traces", None)
+        # a trace section's unit is the file's (usually none), not the dataset's default
+        unit = traces.section.unit if traces is not None else layer.dataset.unit
         super().__init__(layer.style.scale, None if mesh is None else mesh.values,
-                         unit_label(layer.dataset.unit), f"Display: {layer_name(layer.dataset)}",
-                         parent)
+                         unit_label(unit), f"Display: {layer_name(layer.dataset)}", parent)
         self._style = layer.style
         style = layer.style
         coverage = None if mesh is None else getattr(mesh, "coverage", None)
@@ -316,14 +320,24 @@ class DisplayDialog(ColorScaleDialog):
             self.coverage_group.setEnabled(False)
             self.coverage_group.setToolTip("This model file has no coverage or sensitivity")
 
-        # the scale and the three groups scroll, the buttons stay: at most MAX_HEIGHT tall
+        boxes = [display, contours, self.coverage_group]
+        #: a trace layer's own controls (None for a model)
+        self.amplitudes_group = self.clip_check = self.clip_spin = None
+        self._traces = getattr(layer, "traces", None)
+        if self._traces is not None:
+            self._layer = layer
+            boxes.append(self._build_traces(style))
+            for box in (display, contours, self.coverage_group):
+                box.setVisible(False)           # cells, contours, coverage: models only
+
+        # the scale and the groups scroll, the buttons stay: at most MAX_HEIGHT tall
         from qgis.PyQt.QtWidgets import QFrame, QScrollArea, QWidget
         layout = self.layout()
         self._page = QWidget()
         column = QVBoxLayout(self._page)
         column.setContentsMargins(0, 0, 0, 0)
         column.addLayout(layout.takeAt(0).layout())
-        for box in (display, contours, self.coverage_group):
+        for box in boxes:
             column.addWidget(box)
         column.addStretch(1)
         self._scroll = QScrollArea()
@@ -344,6 +358,213 @@ class DisplayDialog(ColorScaleDialog):
         scroll.setMinimumWidth(max(self._page.sizeHint().width() + bar, MIN_WIDTH))
         scroll.setMinimumHeight(min(self._page.sizeHint().height(), MAX_HEIGHT - self._rest))
         self.adjustSize()
+
+    # -- reflection sections ---------------------------------------------------------------
+    def _build_traces(self, style) -> QGroupBox:
+        """The clip under the colour ramp and the "Amplitudes" group (display options: the
+        samples are never changed). Returns the group."""
+        from qgis.gui import QgsDoubleSpinBox
+
+        from .display_render import shown_values
+        section = self._traces.section
+        depth = section.domain == "depth"
+        self._syncing = False
+        self._signed = section.signed()
+        self._limits = (self._scale.vmin, self._scale.vmax)
+        # values shown per gain, sampled for the limits: the drawing's when it has them
+        kept = shown_values(self._layer)
+        self._shown_by_gain = {} if kept is None else {style.gain: kept}
+        self.log_check.setVisible(False)            # amplitudes: linear, clipped
+        self.auto_button.setVisible(False)
+
+        self.clip_check = QCheckBox("Clip at")
+        self.clip_check.setObjectName("clip_check")
+        self.clip_check.setToolTip("The limits follow the amplitudes shown: this percentile "
+                                   "of their absolute values. Typing a limit turns it off.")
+        self.clip_spin = QgsDoubleSpinBox()
+        self.clip_spin.setObjectName("clip_spin")
+        self.clip_spin.setRange(0.1, 100.0)
+        self.clip_spin.setDecimals(1)
+        self.clip_spin.setSingleStep(0.5)
+        self.clip_spin.setSuffix(" %")
+        self.clip_spin.setClearValue(98.0)
+        self.clip_spin.setKeyboardTracking(False)
+        self.clip_spin.setValue(98.0 if style.clip_percent is None else style.clip_percent)
+        self.clip_check.setChecked(style.clip_percent is not None)
+        self._scale_form.insertRow(1, self.clip_check, self.clip_spin)
+
+        group = QGroupBox("Amplitudes")
+        group.setObjectName("amplitudes_group")
+        form = QFormLayout(group)
+        gain = style.gain
+        unit = "m" if depth else "ms"
+        self.agc_check = QCheckBox("Balance along the trace (AGC)")
+        self.agc_check.setToolTip("Each sample divided by the strength of the samples around "
+                                  "it, so weak and strong parts of a trace look alike")
+        self.agc_spin = QgsDoubleSpinBox()
+        self.agc_spin.setObjectName("agc_spin")
+        if depth:
+            span = max(section.step, (section.n_samples - 1) * section.step)
+            self.agc_spin.setDecimals(1)
+            self.agc_spin.setRange(0.1, 1e5)
+            default = round(span / 10, 1)
+        else:
+            self.agc_spin.setDecimals(0)
+            self.agc_spin.setRange(1.0, 1e5)
+            default = 200.0
+        self.agc_spin.setSuffix(f" {unit}")
+        self.agc_spin.setClearValue(default)
+        on = gain.agc_window is not None and gain.agc_window > 0
+        self.agc_spin.setValue((gain.agc_window if depth else gain.agc_window * 1000.0)
+                               if on else default)
+        self.agc_check.setChecked(on)
+        self.time_power_check = QCheckBox("Gain with depth" if depth else "Gain with time")
+        self.time_power_check.setToolTip(
+            f"Each sample multiplied by its {'depth' if depth else 'time'} to this power: the "
+            "deep part, weakened on its way, shows")
+        self.time_power_spin = QgsDoubleSpinBox()
+        self.time_power_spin.setObjectName("time_power_spin")
+        self.time_power_spin.setRange(0.1, 5.0)
+        self.time_power_spin.setDecimals(1)
+        self.time_power_spin.setSingleStep(0.5)
+        self.time_power_spin.setClearValue(2.0)
+        powered = gain.time_power is not None and gain.time_power != 0
+        self.time_power_spin.setValue(gain.time_power if powered else 2.0)
+        self.time_power_check.setChecked(powered)
+        self.balance_check = QCheckBox("Balance traces against each other")
+        self.balance_check.setToolTip("Each trace divided by its own strength (RMS)")
+        self.balance_check.setChecked(gain.balance_traces)
+        self.polarity_check = QCheckBox("Swap polarity")
+        self.polarity_check.setChecked(gain.reverse_polarity)
+        if not self._signed:
+            self.polarity_check.setEnabled(False)
+            self.polarity_check.setToolTip("The data are never negative")
+        else:
+            self.polarity_check.setToolTip("Positive and negative amplitudes swap colours")
+        form.addRow(self.agc_check)
+        form.addRow("Window", self.agc_spin)
+        form.addRow(self.time_power_check)
+        form.addRow("Power", self.time_power_spin)
+        form.addRow(self.balance_check)
+        form.addRow(self.polarity_check)
+        self.amplitudes_note = QLabel("These change the picture only. The readout shows the "
+                                      "file's amplitudes.")
+        self.amplitudes_note.setObjectName("amplitudes_note")
+        self.amplitudes_note.setWordWrap(True)
+        form.addRow(self.amplitudes_note)
+        self.amplitudes_group = group
+
+        self.agc_check.toggled.connect(self._gain_changed)
+        self.time_power_check.toggled.connect(self._gain_changed)
+        for w in (self.balance_check, self.polarity_check):
+            w.toggled.connect(self._gain_changed)
+        for spin in (self.agc_spin, self.time_power_spin):
+            spin.valueChanged.connect(self._gain_changed)
+        self.clip_check.toggled.connect(self._clip_changed)
+        self.clip_spin.valueChanged.connect(self._clip_percent_changed)
+        self.min_spin.valueChanged.connect(lambda v: self._limit_typed(v, True))
+        self.max_spin.valueChanged.connect(lambda v: self._limit_typed(v, False))
+        self._sync_gain_widgets()
+        if self.clip_check.isChecked():
+            self._recompute()
+        return group
+
+    def gain(self):
+        """The display options as chosen (a ``DisplayGain``)."""
+        from ..core.trace_section import DisplayGain
+        depth = self._traces.section.domain == "depth"
+        window = self.agc_spin.value() if depth else self.agc_spin.value() / 1000.0
+        return DisplayGain(
+            agc_window=window if self.agc_check.isChecked() else None,
+            time_power=self.time_power_spin.value() if self.time_power_check.isChecked()
+            else None,
+            balance_traces=self.balance_check.isChecked(),
+            reverse_polarity=self.polarity_check.isChecked() and self.polarity_check.isEnabled())
+
+    def _sync_gain_widgets(self) -> None:
+        self.agc_spin.setEnabled(self.agc_check.isChecked())
+        self.time_power_spin.setEnabled(self.time_power_check.isChecked())
+
+    def _shown(self, gain):
+        """The values shown with ``gain`` for the limits: the file's own without an option,
+        else a sample of a gained copy (the drawing's when it has one; made here otherwise,
+        and only the sample kept)."""
+        from ..core.trace_section import _sample
+        if not gain.active():
+            return self._traces.section.amplitudes
+        hit = self._shown_by_gain.get(gain)
+        if hit is None:
+            hit = np.array(_sample(display_values(self._traces.section, gain)))
+            self._shown_by_gain[gain] = hit
+        return hit
+
+    def _gain_changed(self, *_args) -> None:
+        self._sync_gain_widgets()
+        if self.clip_check.isChecked():
+            self._recompute()
+
+    def _clip_changed(self, on: bool) -> None:
+        if on and not self._syncing:
+            self._recompute()
+
+    def _clip_percent_changed(self, *_args) -> None:
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            self.clip_check.setChecked(True)
+        finally:
+            self._syncing = False
+        self._recompute()
+
+    def _recompute(self) -> None:
+        """The limits of the clip on the values shown (``data.trace_limits``)."""
+        from dataclasses import replace
+
+        from .data import trace_limits
+        gain = self.gain()
+        style = replace(self._style, gain=gain, clip_percent=self.clip_spin.value())
+        lo, hi = trace_limits(self._traces, style, values=self._shown(gain))
+        self._signed = lo < 0
+        self._set_limits(lo, hi)
+
+    def _set_limits(self, lo: float, hi: float) -> None:
+        import math
+        c = max(abs(lo), abs(hi))
+        decimals = 3 if not c > 0 else min(12, max(3, 2 - math.floor(math.log10(c))))
+        self._limits = (lo, hi)
+        self._syncing = True
+        try:
+            for spin, v in ((self.min_spin, lo), (self.max_spin, hi)):
+                spin.setDecimals(decimals)
+                spin.setValue(v)
+        finally:
+            self._syncing = False
+
+    def _limit_typed(self, value: float, is_min: bool) -> None:
+        """A typed limit: the clip is off; on signed data the other limit mirrors it."""
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            self.clip_check.setChecked(False)
+            if self._signed:
+                c = abs(value)
+                self.min_spin.setValue(-c)
+                self.max_spin.setValue(c)
+        finally:
+            self._syncing = False
+        self._limits = (self.min_spin.value(), self.max_spin.value())
+
+    def _trace_style(self):
+        from dataclasses import replace
+        clip = self.clip_spin.value() if self.clip_check.isChecked() else None
+        scale = self.scale()
+        if clip is not None:                        # the exact limits, not the rounded spins
+            lo, hi = self._limits
+            if hi > lo:
+                scale = replace(scale, vmin=float(lo), vmax=float(hi))
+        return replace(self._style, scale=scale, clip_percent=clip, gain=self.gain())
 
     # -- interpolation of the smooth field -------------------------------------------------
     def _build_interpolation(self, form, interp) -> None:
@@ -573,6 +794,8 @@ class DisplayDialog(ColorScaleDialog):
         from dataclasses import replace
 
         from ..core.numbers import parse_levels
+        if self._traces is not None:
+            return self._trace_style()
         major = parse_levels(self.major_edit.text())
         minor = parse_levels(self.minor_edit.text())
         if major or minor:

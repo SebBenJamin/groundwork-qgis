@@ -1,6 +1,7 @@
 """The section styles of the models (colour scale, display mode, contours, interpolation,
-coverage fade, opacity, shown or not), kept in the QGIS project so they survive saving and
-reopening, and copied from one model to every model of the same method."""
+coverage fade, opacity, shown or not; for reflection sections the clip and the display
+options), kept in the QGIS project so they survive saving and reopening, and copied from
+one model to every model of the same method."""
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from dataclasses import asdict, replace
 from ..core.colors import ColorScale
 from ..core.interpolators import Interpolation
 from ..core.plates import ModelLook, model_look_from_dict
+from ..core.trace_section import DisplayGain
 from ..ids import LEGACY_ID
 
 SCOPE = LEGACY_ID
@@ -22,7 +24,9 @@ def look_of(dataset_id: str, style) -> ModelLook:
                      style.mode, style.contour_step, style.grid_cell,
                      style.fade_coverage, style.coverage_threshold, style.fade_mode,
                      style.shown, list(style.contour_major), list(style.contour_minor),
-                     None if style.interpolation.is_linear else style.interpolation.to_dict())
+                     None if style.interpolation.is_linear else style.interpolation.to_dict(),
+                     style.clip_percent,
+                     style.gain.to_dict() if style.gain.active() else None)
 
 
 def styled(style, look: ModelLook):
@@ -41,7 +45,8 @@ def styled(style, look: ModelLook):
                    interpolation=Interpolation.from_dict(look.interpolation),
                    fade_coverage=look.fade_coverage,
                    coverage_threshold=look.coverage_threshold, fade_mode=look.fade_mode,
-                   shown=look.shown if look.shown is not None else style.shown)
+                   shown=look.shown if look.shown is not None else style.shown,
+                   clip_percent=look.clip_percent, gain=DisplayGain.from_dict(look.gain))
 
 
 def styles_to_json(styles: dict) -> str:

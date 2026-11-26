@@ -21,7 +21,7 @@ REMOVE_TEXT = "Remove from profile…"
 #: style fields the Display dialog edits
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
                   "grid_cell", "interpolation", "fade_coverage", "coverage_threshold",
-                  "fade_mode", "shown")
+                  "fade_mode", "shown", "clip_percent", "gain")
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
 INFO_TEXT = "Dataset info…"
@@ -29,14 +29,36 @@ APPLY_ALL_TEXT = "Apply Style to All Sections"
 APPLY_ALL_TIP = ("Give every other {what} of the project this model's colours, display "
                  "and contours (shown or hidden stays as it is)")
 APPLY_ALL_OFF_TIP = "There is no other {what} in the project to apply this style to"
+APPLY_ALL_TRACES_TIP = ("Give every other {what} of the project this section's colours, clip "
+                        "and amplitude display (shown or hidden stays as it is)")
+SCALE_TIP = "Colour scale and display (cells, smooth, contours, coverage)"
+SCALE_TRACES_TIP = "Colour scale, clip and amplitude display"
 
 
 def _scale_text(layer: SectionLayer) -> str:
     scale = layer.style.scale
     if scale is None:
         return "Scale…"
+    lo, hi = scale.vmin, scale.vmax
+    if layer.traces is not None and layer.style.clip_percent is not None:
+        lo, hi = _clipped(layer, lo, hi)
     log = " log" if scale.log else ""
-    return f"{format_value(scale.vmin)}–{format_value(scale.vmax)}{log}"
+    return f"{format_value(lo)}–{format_value(hi)}{log}"
+
+
+def _clipped(layer: SectionLayer, lo: float, hi: float) -> tuple[float, float]:
+    """A trace layer's clipped limits as drawn (a style applied from another section keeps that
+    section's numbers in its scale): from the drawing's values, or the file's own without a
+    display option; the scale's while a gained picture is not made yet."""
+    from .data import trace_limits
+    from .display_render import shown_values
+    values = shown_values(layer)
+    if values is None and layer.style.gain.active():
+        return lo, hi
+    try:
+        return trace_limits(layer, layer.style, values=values)
+    except ValueError:
+        return lo, hi
 
 
 def _exec_once(menu: QMenu, pos) -> None:
@@ -88,7 +110,7 @@ class _LayerRow(QWidget):
         self.scale_button = QToolButton()
         self.scale_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.scale_button.setIconSize(QSize(40, 10))
-        self.scale_button.setToolTip("Colour scale and display (cells, smooth, contours, coverage)")
+        self.scale_button.setToolTip(SCALE_TIP if layer.traces is None else SCALE_TRACES_TIP)
         self.scale_button.clicked.connect(lambda: owner.edit_scale(self.dataset_id))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(
@@ -274,7 +296,8 @@ class LayerList(QWidget):
         what = type_label(layer.dataset.kind) if layer is not None else "model"
         action = menu.addAction(APPLY_ALL_TEXT)
         action.setEnabled(bool(targets))
-        action.setToolTip((APPLY_ALL_TIP if targets else APPLY_ALL_OFF_TIP).format(what=what))
+        tip = APPLY_ALL_TIP if layer is None or layer.traces is None else APPLY_ALL_TRACES_TIP
+        action.setToolTip((tip if targets else APPLY_ALL_OFF_TIP).format(what=what))
         menu.setToolTipsVisible(True)
         action.triggered.connect(lambda: self.apply_all_requested.emit(dataset_id))
 

@@ -130,3 +130,62 @@ def test_the_layer_menu_offers_it_only_with_models_to_apply_to(qgis_app, store_w
     assert not action().isEnabled()
     _three_lines(st, p, src)
     assert action().isEnabled()
+
+
+# -- reflection sections -------------------------------------------------------------------
+def test_the_clip_and_the_gain_survive_the_round_trip():
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import styles_from_json, styles_to_json
+
+    gain = DisplayGain(agc_window=0.2, time_power=2.0, balance_traces=True, reverse_polarity=True)
+    style = LayerStyle(scale=ColorScale("gray", -3.0, 3.0, False), clip_percent=90.0, gain=gain)
+    typed = replace(style, clip_percent=None, gain=DisplayGain())
+    back = styles_from_json(styles_to_json({"s1": style, "s2": typed}))
+    assert back["s1"].clip_percent == 90.0 and back["s1"].gain == gain
+    assert back["s1"] == style
+    assert back["s2"].clip_percent is None and not back["s2"].gain.active()
+
+
+def test_a_style_saved_before_the_clip_loads_with_98():
+    import json
+
+    from groundwork_geophysics.section.style_store import styles_from_json
+    old = json.dumps([{"dataset_id": "s1", "visible": True, "opacity": 1.0,
+                       "scale": {"cmap": "gray", "vmin": -1.0, "vmax": 1.0, "log": False},
+                       "mode": "cells"}])
+    (style,) = styles_from_json(old).values()
+    assert style.clip_percent == 98.0 and not style.gain.active()
+
+
+def test_a_frame_look_carries_the_clip_and_the_gain():
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import look_of, styled
+
+    style = LayerStyle(clip_percent=None, gain=DisplayGain(agc_window=0.1))
+    look = look_of("s1", style)
+    assert look.clip_percent is None and look.gain == {"agc_window": 0.1, "time_power": None,
+                                                       "balance_traces": False,
+                                                       "reverse_polarity": False}
+    assert styled(LayerStyle(), look).gain == style.gain
+    assert styled(LayerStyle(), look).clip_percent is None
+
+
+def test_a_sections_style_goes_to_the_other_sections_only(tmp_path):
+    from groundwork_geophysics.core.model import Dataset, profile_from_polyline
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import applied, same_method
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    for name, kind in (("A", "refl_section"), ("B", "refl_section"), ("C", "ert_model")):
+        p = profile_from_polyline(name, "EPSG:25832", np.array([[0.0, 0.0], [100.0, 0.0]]))
+        st.save_profile(p)
+        st.save_dataset(Dataset(f"d{name}", p.id, "", kind, "x.sgy", 0.0, "", "segy", {}, {}))
+    assert [d.id for d in same_method(st, "dA")] == ["dB"]
+    source = LayerStyle(clip_percent=80.0, gain=DisplayGain(agc_window=0.1))
+    got = applied(source, LayerStyle(visible=False))
+    assert got.clip_percent == 80.0 and got.gain == source.gain and not got.visible

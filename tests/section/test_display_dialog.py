@@ -2,6 +2,7 @@
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
 
 def _layer(store_with_model, coverage=None):
@@ -130,3 +131,161 @@ def test_the_dialog_fits_a_laptop_screen_with_kriging(qgis_app, store_with_model
         assert dlg.fit_button.isVisibleTo(dlg)              # reachable: the groups scroll
     finally:
         dlg.close()
+
+
+# -- reflection sections ---------------------------------------------------------------------
+def test_a_trace_layer_shows_only_what_applies(qgis_app, trace_layer):
+    from qgis.PyQt.QtWidgets import QGroupBox
+
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    for name in ("display_group", "contours_group", "coverage_group"):
+        assert not dlg.findChild(QGroupBox, name).isVisibleTo(dlg), name
+    for widget in (dlg.mode_combo, dlg.method_combo, dlg.cell_spin, dlg.fade_check,
+                   dlg.log_check, dlg.auto_button):
+        assert not widget.isVisibleTo(dlg)
+    assert dlg.amplitudes_group.isVisibleTo(dlg) and dlg.ramp_button.isVisibleTo(dlg)
+    assert dlg.clip_check.isChecked() and dlg.clip_spin.value() == 98.0
+    assert (dlg.clip_spin.minimum(), dlg.clip_spin.maximum(), dlg.clip_spin.decimals()) == (
+        0.1, 100.0, 1)
+    assert dlg.clip_spin.suffix() == " %"
+    assert dlg.max_spin.suffix() == ""          # the file's unit (none), not Ω·m
+
+
+def test_a_model_has_no_amplitudes_group(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model)
+    dlg = DisplayDialog(None, layer)
+    assert dlg.amplitudes_group is None and dlg.clip_check is None
+    from qgis.PyQt.QtWidgets import QGroupBox
+    assert dlg.findChild(QGroupBox, "contours_group").isVisibleTo(dlg)
+
+
+def test_the_clip_percent_sets_the_limits(qgis_app, trace_layer):
+    from groundwork_geophysics.core.trace_section import color_limits
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    dlg.clip_spin.setValue(90.0)
+    lo, hi = color_limits(trace_layer.traces.section, 90.0)
+    assert (dlg.min_spin.value(), dlg.max_spin.value()) == (round(lo, 3), round(hi, 3))
+    s = dlg.style()
+    assert s.clip_percent == 90.0
+    assert (s.scale.vmin, s.scale.vmax) == pytest.approx((lo, hi), abs=1e-3)
+
+
+def test_a_typed_limit_is_mirrored_and_ends_the_clip(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    dlg.max_spin.setValue(5.0)
+    s = dlg.style()
+    assert (s.scale.vmin, s.scale.vmax) == (-5.0, 5.0) and s.clip_percent is None
+    assert not dlg.clip_check.isChecked()
+    dlg.min_spin.setValue(-2.0)
+    assert dlg.max_spin.value() == 2.0
+    dlg.clip_check.setChecked(True)                     # clipping again gives the clip's limits
+    assert dlg.style().clip_percent == 98.0 and dlg.max_spin.value() != 2.0
+
+
+def test_positive_data_keep_their_zero(qgis_app, make_trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    layer = make_trace_layer(np.abs(np.sin(np.arange(550, dtype=np.float32))).reshape(11, 50))
+    dlg = DisplayDialog(None, layer)
+    assert dlg.min_spin.value() == 0.0
+    dlg.max_spin.setValue(0.5)
+    assert dlg.min_spin.value() == 0.0 and dlg.style().clip_percent is None
+    assert not dlg.polarity_check.isEnabled()
+    assert dlg.polarity_check.toolTip() == "The data are never negative"
+
+
+def test_the_amplitude_options_round_trip(qgis_app, trace_layer):
+    from groundwork_geophysics.core.trace_section import DisplayGain, color_limits, display_values
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    assert not dlg.agc_spin.isEnabled() and dlg.agc_spin.value() == 200.0
+    assert dlg.agc_spin.suffix() == " ms" and dlg.time_power_check.text() == "Gain with time"
+    assert dlg.time_power_spin.value() == 2.0
+    dlg.agc_check.setChecked(True)
+    dlg.agc_spin.setValue(10.0)
+    dlg.balance_check.setChecked(True)
+    dlg.polarity_check.setChecked(True)
+    s = dlg.style()
+    assert s.gain == DisplayGain(agc_window=0.01, balance_traces=True, reverse_polarity=True)
+    # the limits follow what is shown
+    lo, hi = color_limits(display_values(trace_layer.traces.section, s.gain), 98.0)
+    assert (s.scale.vmin, s.scale.vmax) == pytest.approx((lo, hi), abs=1e-3)
+    again = DisplayDialog(None, replace(trace_layer, style=s))
+    assert again.agc_check.isChecked() and again.agc_spin.value() == 10.0
+    assert again.style().gain == s.gain
+
+
+def test_a_depth_section_speaks_of_depth(qgis_app, make_trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, make_trace_layer(domain="depth"))
+    assert dlg.agc_spin.suffix() == " m" and dlg.agc_spin.value() == pytest.approx(4.9)
+    assert dlg.time_power_check.text() == "Gain with depth"
+    dlg.agc_check.setChecked(True)
+    assert dlg.style().gain.agc_window == pytest.approx(4.9)
+
+
+def test_the_note_says_the_readout_keeps_the_file(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    assert dlg.amplitudes_note.text() == ("These change the picture only. The readout shows the "
+                                          "file's amplitudes.")
+
+
+def test_the_dialog_reuses_the_drawings_copy(qgis_app, trace_layer, monkeypatch):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section import display_render, scale_dialog
+    from groundwork_geophysics.section.display_render import build_drawing
+    gained = replace(trace_layer, style=replace(trace_layer.style,
+                                                gain=DisplayGain(balance_traces=True)))
+    display_render.clear_cache()
+    build_drawing(gained, None)
+    calls = []
+    monkeypatch.setattr(scale_dialog, "display_values", lambda *a: calls.append(a))
+    dlg = scale_dialog.DisplayDialog(None, gained)
+    dlg.clip_spin.setValue(80.0)
+    assert calls == []
+    display_render.clear_cache()
+
+
+def test_a_trace_dialog_fits_a_laptop_screen(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    dlg.show()
+    qgis_app.processEvents()
+    try:
+        assert dlg.height() <= 580
+        assert dlg.amplitudes_note.isVisibleTo(dlg)
+    finally:
+        dlg.close()
+
+
+def test_the_row_menu_of_a_trace_layer(qgis_app, make_trace_layer):
+    from groundwork_geophysics.section.layer_list import (APPLY_ALL_TEXT, DISPLAY_TEXT,
+                                                          INFO_TEXT, MISFIT_TEXT, REMOVE_TEXT,
+                                                          LayerList)
+    layer = make_trace_layer()
+    ll = LayerList()
+    try:
+        ll.set_layers(None, [layer])
+        texts = [a.text() for a in ll.row_menu(layer.dataset.id).actions() if a.text()]
+        assert texts == [DISPLAY_TEXT, INFO_TEXT, APPLY_ALL_TEXT, REMOVE_TEXT]
+        assert MISFIT_TEXT not in texts
+        assert "amplitude" in ll._rows[layer.dataset.id].scale_button.toolTip().lower()
+    finally:
+        ll.deleteLater()
+
+
+def test_a_trace_row_shows_the_limits_as_drawn(qgis_app, make_trace_layer):
+    # a style applied from another section brings that section's numbers in its scale
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.trace_section import color_limits
+    from groundwork_geophysics.section.layer_list import _scale_text
+    from groundwork_geophysics.section.readout import format_value
+    layer = make_trace_layer(scale=ColorScale("gray", -500.0, 500.0, False))
+    lo, hi = color_limits(layer.traces.section, 98.0)
+    assert _scale_text(layer) == f"{format_value(lo)}–{format_value(hi)}"
+    typed = replace(layer, style=replace(layer.style, clip_percent=None))
+    assert _scale_text(typed) == f"{format_value(-500.0)}–{format_value(500.0)}"

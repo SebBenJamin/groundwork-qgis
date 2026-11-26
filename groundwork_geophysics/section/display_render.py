@@ -1,5 +1,6 @@
 """Per-layer drawables of the section for the display modes: cells, a smooth colour field,
-contour lines with labels, and the coverage fade.
+contour lines with labels, and the coverage fade; for a reflection section, its picture at
+three sizes.
 
 ``build_drawing`` runs in the profile generator (worker thread) and touches plain data and
 value-type Qt classes only (QColor, QPainterPath, QImage). The smooth field and contours are
@@ -7,10 +8,16 @@ cached, so redraws while panning or zooming reuse them. Readouts never use these
 the mesh (``identify_layers``)."""
 from __future__ import annotations
 
+import hashlib
+import json
+import math
+import os
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
+from pathlib import Path
 
 import numpy as np
 from qgis.PyQt.QtCore import QPointF, QRectF
@@ -19,6 +26,7 @@ from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 from ..core.gridding import (FADE_ALPHA, contour_levels, contour_lines, coverage_alpha,
                              default_threshold, fade_band, grid_model, grid_shape,
                              next_to_empty, soft_coverage_alpha)
+from ..core.trace_section import _sample, display_values, reduce_image
 
 CONTOUR_PEN_MM = 0.25
 CONTOUR_MINOR_PEN_MM = 0.13          # typed minor levels: thinner, no label
@@ -28,6 +36,15 @@ MARKER_MM = 1.2                 # reading markers (Points mode)
 _CACHE_SIZE = 8
 _cache: OrderedDict = OrderedDict()
 _lock = threading.Lock()
+#: a reflection section's finest picture: at most this many pixels each way
+LEVEL_CAP = 4096
+#: the picture levels are kept on disk only when making them took longer than this
+LEVEL_CACHE_MIN_SECONDS = 0.2
+#: changes when what a level file holds changes
+LEVEL_FORMAT = 1
+_RAMP_STEPS = 1024               # colours of a section's ramp table (one more: no value)
+_TRACE_CACHE_SIZE = 4
+_traces: OrderedDict = OrderedDict()
 
 
 @dataclass
@@ -38,6 +55,15 @@ class LayerDrawing:
     clip: QPainterPath | None = None                # below the topography, in s/z
     contours: list = dc_field(default_factory=list)    # [(QColor, QPainterPath, [lines], text)]
     markers: list = dc_field(default_factory=list)     # [(QColor, (k, 2) s/z points)]
+    #: a trace section: [(QImage, QRectF in s/z)] finest first, then half and quarter size
+    levels: list = dc_field(default_factory=list)
+
+
+def clear_cache() -> None:
+    """Forget every kept field, contour set and section picture (in memory; not on disk)."""
+    with _lock:
+        _cache.clear()
+        _traces.clear()
 
 
 def _fade(layer):
@@ -180,13 +206,256 @@ def _as_cells(layer):
     return replace(layer, style=replace(layer.style, mode="cells"))
 
 
+# -- reflection sections ---------------------------------------------------------------------
+@dataclass(eq=False)
+class _TraceEntry:
+    """One trace layer's kept picture: the value grids of its levels (before colouring) and the
+    last colouring of them."""
+    #: the gained copy the grids were made from; None: the file's own array (no display
+    #: option), or grids read back from disk
+    shown: np.ndarray | None
+    #: the values shown, sampled as ``color_limits`` samples them (the limits come from it)
+    sample: np.ndarray
+    grids: list                      # [(values (h, w) float32, row 0 at zmax, extent)]
+    limits: dict = dc_field(default_factory=dict)      # clip percent -> (lo, hi)
+    look: tuple | None = None        # the colours ``levels`` were made with
+    levels: list = dc_field(default_factory=list)
+
+
+def _array_key(a: np.ndarray) -> tuple:
+    """Which samples ``a`` holds: its buffer and layout (a view of the same samples, such as
+    a snapshot's copy of the layer, gives the same key)."""
+    return (a.__array_interface__["data"][0], a.shape, a.strides, a.dtype.str)
+
+
+def _digest(*parts) -> str:
+    h = hashlib.sha1()
+    for part in parts:
+        h.update(part if isinstance(part, bytes) else repr(part).encode("utf-8", "replace"))
+    return h.hexdigest()[:16]
+
+
+def _placement(placed) -> str:
+    return _digest(placed.section.x.tobytes(), np.asarray(placed.z_top, float).tobytes(),
+                   np.asarray(placed.depths, float).tobytes())
+
+
+def _values_key(layer) -> tuple:
+    read = None if layer.level_cache is None else layer.level_cache[1]
+    return (layer.dataset.id, _array_key(layer.traces.section.amplitudes), read,
+            layer.style.gain)
+
+
+def _trace_key(layer) -> tuple:
+    return _values_key(layer) + (_placement(layer.traces),)
+
+
+def _trace_entry(layer) -> _TraceEntry | None:
+    with _lock:
+        return _traces.get(_trace_key(layer))
+
+
+def shown_values(layer):
+    """The values a trace layer's drawing shows, sampled for its colour limits
+    (``trace_limits`` takes them as ``values``), when a drawing with the layer's gain is
+    kept; else None."""
+    key = _values_key(layer)
+    with _lock:
+        for k, entry in _traces.items():
+            if k[:4] == key:
+                return entry.sample
+    return None
+
+
+def _level_path(layer) -> Path | None:
+    """``<dataset id>.<key hash>.levels.npz`` in the layer's cache folder, keyed by the read,
+    the placement and the gain; None when the layer has no folder."""
+    if layer.level_cache is None:
+        return None
+    folder, read = layer.level_cache
+    gain = json.dumps(layer.style.gain.to_dict(), sort_keys=True)
+    digest = _digest(read, _placement(layer.traces), gain, LEVEL_CAP, LEVEL_FORMAT)
+    return Path(folder) / f"{layer.dataset.id}.{digest}.levels.npz"
+
+
+def _load_levels(path: Path | None):
+    """(grids, sample) kept at ``path``, or None (missing, unreadable or not a level file)."""
+    if path is None or not path.is_file():
+        return None
+    try:
+        with np.load(path, allow_pickle=False) as f:
+            extents = np.asarray(f["extents"], float).reshape(-1, 4)
+            grids = [(np.asarray(f[f"v{i}"], np.float32), tuple(float(v) for v in extents[i]))
+                     for i in range(len(extents))]
+            sample = np.asarray(f["sample"])
+    except Exception:                           # noqa: BLE001 - any bad file is no file
+        return None
+    if not grids or any(g.ndim != 2 or 0 in g.shape for g, _e in grids):
+        return None
+    return grids, sample
+
+
+def _save_levels(path: Path, dataset_id: str, grids: list, sample: np.ndarray) -> None:
+    """Write the grids (whole or not at all) and delete the dataset's older level files; a
+    folder that cannot be written is ignored."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.part")
+    arrays = {f"v{i}": g for i, (g, _e) in enumerate(grids)}
+    arrays["extents"] = np.array([e for _g, e in grids], float)
+    arrays["sample"] = sample
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "wb") as f:
+            np.savez(f, **arrays)
+        os.replace(tmp, path)
+        for old in path.parent.glob(f"{dataset_id}.*.levels.npz"):
+            if old != path:
+                old.unlink(missing_ok=True)
+    except (OSError, ValueError):
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _make_grids(placed, values) -> list:
+    """The finest picture (at most ``LEVEL_CAP`` each way) and those at half and a quarter of
+    its size, each reduced from the samples (so each keeps the strongest)."""
+    finest = reduce_image(placed, LEVEL_CAP, LEVEL_CAP, amplitudes=values)
+    h, w = finest[0].shape
+    out = [finest]
+    for f in (2, 4):
+        out.append(reduce_image(placed, max(1, -(-w // f)), max(1, -(-h // f)),
+                                amplitudes=values))
+    return out
+
+
+def _entry(layer) -> _TraceEntry:
+    """The layer's kept entry: from memory, else from its level file, else made (and kept on
+    disk when that took long). One entry per dataset and samples: a new gain or placement
+    replaces the old one, and its gained copy with it."""
+    key = _trace_key(layer)
+    with _lock:
+        hit = _traces.get(key)
+        if hit is not None:
+            _traces.move_to_end(key)
+            return hit
+    path = _level_path(layer)
+    kept = _load_levels(path)
+    if kept is not None:
+        entry = _TraceEntry(None, kept[1], kept[0])
+    else:
+        started = time.perf_counter()
+        section = layer.traces.section
+        values = display_values(section, layer.style.gain)
+        grids = _make_grids(layer.traces, values)
+        sample = np.array(_sample(values))
+        entry = _TraceEntry(None if values is section.amplitudes else values, sample, grids)
+        if path is not None and time.perf_counter() - started > LEVEL_CACHE_MIN_SECONDS:
+            _save_levels(path, layer.dataset.id, grids, sample)
+    with _lock:
+        for k in [k for k in _traces if k[:2] == key[:2] and k != key]:
+            del _traces[k]
+        _traces[key] = entry
+        while len(_traces) > _TRACE_CACHE_SIZE:
+            _traces.popitem(last=False)
+    return entry
+
+
+def _premultiplied(rgba: np.ndarray) -> np.ndarray:
+    """(n, 4) uint8 RGBA as ARGB32 premultiplied words."""
+    c = rgba.astype(np.uint32)
+    a = c[:, 3]
+    rgb = (c[:, :3] * a[:, None] + 127) // 255
+    return (a << 24) | (rgb[:, 0] << 16) | (rgb[:, 1] << 8) | rgb[:, 2]
+
+
+def _coloured(grid: np.ndarray, extent, scale):
+    """(QImage, QRectF) of ``grid`` (row 0 at zmax) over ``extent``, or None when the image
+    cannot be made. The image's row 0 is the lowest z (under the section's world transform it
+    lands at the bottom), NaN transparent; the image holds its own pixels."""
+    h, w = grid.shape
+    image = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    if image.isNull():
+        return None
+    ptr = image.bits()
+    ptr.setsize(image.sizeInBytes())
+    out = np.frombuffer(ptr, np.uint32).reshape(h, image.bytesPerLine() // 4)[:, :w]
+    lo, hi = float(scale.vmin), float(scale.vmax)
+    table = None
+    if not scale.log:
+        n = _RAMP_STEPS
+        table = np.zeros(n + 1, np.uint32)          # the last entry: no value, transparent
+        table[:n] = _premultiplied(scale.rgba(np.linspace(lo, hi, n)))
+        k = (n - 1) / (hi - lo)
+    upright = grid[::-1]
+    step = max(1, (1 << 20) // max(1, w))
+    for r0 in range(0, h, step):
+        rows = upright[r0:r0 + step]
+        if table is None:
+            words = _premultiplied(scale.rgba(rows)).reshape(rows.shape)
+        else:
+            with np.errstate(invalid="ignore"):
+                t = np.clip(np.rint((rows - lo) * k), 0, _RAMP_STEPS - 1)
+            words = table[np.where(np.isfinite(rows), t, _RAMP_STEPS).astype(np.intp)]
+        out[r0:r0 + step] = words
+    s0, s1, z0, z1 = extent
+    return image, QRectF(s0, z0, s1 - s0, z1 - z0)
+
+
+def _trace_levels(layer) -> list:
+    """The trace layer's picture levels in its colours, clipped as its style says."""
+    from .data import trace_limits
+    st = layer.style
+    entry = _entry(layer)
+    if st.clip_percent is None:
+        lo, hi = trace_limits(layer, st)
+    else:
+        lo, hi = entry.limits.get(st.clip_percent) or trace_limits(layer, st,
+                                                                   values=entry.sample)
+        entry.limits[st.clip_percent] = (lo, hi)
+    sc = st.scale
+    look = (sc.cmap, lo, hi, sc.log, sc.ramp, sc.lut)
+    if entry.look == look:
+        return entry.levels
+    scale = replace(sc, vmin=lo, vmax=hi) if hi > lo and (not sc.log or lo > 0) else sc
+    levels = [c for c in (_coloured(g, e, scale) for g, e in entry.grids) if c is not None]
+    entry.look, entry.levels = look, levels
+    return levels
+
+
+def level_for(levels: list, transform) -> int:
+    """Index of the level to draw through ``transform`` (s/z to device pixels): the coarsest
+    whose pixels are no larger than one device pixel, else the finest; worked out along s and
+    along z, the finer of the two."""
+    sx = math.hypot(transform.m11(), transform.m12())
+    sz = math.hypot(transform.m21(), transform.m22())
+
+    def coarsest(scale, size):
+        for i in range(len(levels) - 1, -1, -1):
+            if size(*levels[i]) * scale <= 1.0 + 1e-9:
+                return i
+        return 0
+    along_s = coarsest(sx, lambda img, rect: rect.width() / max(1, img.width()))
+    along_z = coarsest(sz, lambda img, rect: rect.height() / max(1, img.height()))
+    return min(along_s, along_z)
+
+
 def build_drawing(layer, topo) -> LayerDrawing:
-    """What to draw for one visible layer with a mesh and a colour scale."""
+    """What to draw for one visible layer with a mesh (or a trace section) and a colour
+    scale."""
     from .data import cell_path_groups
     from .profile_source import _path_from_elements
     st = layer.style
     drawing = LayerDrawing(float(st.opacity))
-    if layer.mesh is None:                      # a trace section: no cells, no field
+    if layer.mesh is None:
+        # a trace section: its picture levels; nothing above the ground is cut off (a datum
+        # can lie above it, and the muted top of the section belongs to the data)
+        if layer.traces is not None and st.scale is not None:
+            try:
+                drawing.levels = _trace_levels(layer)
+            except (ValueError, MemoryError) as exc:
+                from .profile_source import _log_failure
+                _log_failure(f"picture of {layer.dataset.id}", exc)
         return drawing
     threshold = _fade(layer)
     pv = getattr(layer.mesh, "point_values", None)

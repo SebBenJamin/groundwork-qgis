@@ -202,6 +202,14 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                     pen.setCosmetic(True)
                     painter.setPen(pen)
                 painter.drawPath(path)
+            if drawing.levels:                      # a trace section: the level that fits
+                from .display_render import level_for
+                image, rect = drawing.levels[level_for(drawing.levels,
+                                                       painter.combinedTransform())]
+                painter.save()
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                painter.drawImage(rect, image)
+                painter.restore()
             if drawing.field is not None:
                 image, rect = drawing.field
                 painter.save()
