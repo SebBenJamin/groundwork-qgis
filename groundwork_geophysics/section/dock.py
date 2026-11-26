@@ -15,7 +15,7 @@ from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsLineStri
                        QgsProfilePoint, QgsProject, QgsSettings)
 from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import QEvent, QLineF, QRectF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QKeySequence, QPen, QShortcut
 from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsEllipseItem,
                                  QGraphicsLineItem,
@@ -206,6 +206,7 @@ class SectionDock(QDockWidget):
         self.cursor_marker.setZValue(1001)
         self.cursor_marker.hide()
         self.canvas.scene().addItem(self.cursor_marker)
+        self._pin_scene_rect()
 
         self.layer_list = LayerList()
         self.layer_list.apply_all_requested.connect(self.apply_style_to_all)
@@ -754,7 +755,9 @@ class SectionDock(QDockWidget):
             return False                        # being taken apart (plugin reload): ignore
         etype = event.type()
         if obj is self.canvas.viewport():
-            if etype == QEvent.Type.Leave:
+            if etype == QEvent.Type.Resize:
+                self._pin_scene_rect(event.size())
+            elif etype == QEvent.Type.Leave:
                 self.cursor_left.emit()
             elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
                 self.fit.user_navigated()       # the user navigates: keep their view
@@ -777,6 +780,17 @@ class SectionDock(QDockWidget):
             elif etype == QEvent.Type.Resize and self._profile is not None:
                 self.fit.schedule_refit()
         return super().eventFilter(obj, event)
+
+    def _pin_scene_rect(self, size=None) -> None:
+        """Keep the view's scene rect at the viewport, so the view never scrolls and viewport
+        pixels (mouse positions) stay scene pixels (overlay items, canvasPointToPlotPoint).
+        Unpinned, the scene grows to every item, also hidden ones and those reaching outside
+        the plot, and the view scrolls by a few pixels or more: drawing lands beside the
+        cursor. Items outside are clipped."""
+        size = self.canvas.viewport().size() if size is None else size
+        self.canvas.setSceneRect(QRectF(0.0, 0.0, size.width(), size.height()))
+        self.canvas.horizontalScrollBar().setValue(0)
+        self.canvas.verticalScrollBar().setValue(0)
 
     def details_at(self, pos) -> list[str]:
         """Borehole and interpretation details under canvas position ``pos``."""
