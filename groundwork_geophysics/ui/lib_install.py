@@ -37,8 +37,7 @@ class InstallTask(QgsTask):
             self.ok, self.message = libs.install(self.name)
         except Exception as exc:                # noqa: BLE001 - said to the user, never raised
             self.ok = False
-            self.message = (f"Installing {self.name} failed: {exc}\n\nYou can install it by "
-                            f"hand with:\n{libs.manual_command(self.name)}")
+            self.message = libs.failure_message(self.name, str(exc))
         return True
 
     def finished(self, result: bool) -> None:

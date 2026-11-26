@@ -24,6 +24,11 @@ from pathlib import Path
 # --no-deps: segyio needs NumPy, and QGIS's own NumPy must not get a second copy beside it
 PIP_ARGS = ["install", "--target", "{dir}", "--only-binary=:all:", "--no-deps", "--upgrade", "{name}"]
 
+#: where a library's files can be downloaded by hand, for a computer without internet
+FILES_URL = "https://pypi.org/project/{name}/#files"
+#: stands for the downloaded file's path in ``offline_command``
+DOWNLOADED = "<path to the downloaded file>"
+
 #: seconds pip may take before the install counts as failed
 PIP_TIMEOUT = 300
 
@@ -105,9 +110,29 @@ def _run(args: list, timeout: float | None = None) -> tuple:
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
+def _command(args: list) -> str:
+    return " ".join(f'"{a}"' if " " in a else a for a in [_python(), "-m", "pip", *args])
+
+
 def manual_command(name: str) -> str:
     """The command line that installs the library by hand, shown when installing fails."""
-    return " ".join(f'"{a}"' if " " in a else a for a in [_python(), "-m", "pip", *_pip_args(name)])
+    return _command(_pip_args(name))
+
+
+def offline_command(name: str) -> str:
+    """The command line that installs the library from a file downloaded on another computer
+    (``DOWNLOADED`` stands for its path), shown when installing fails."""
+    return _command([*_pip_args(name)[:-1], DOWNLOADED])
+
+
+def failure_message(name: str, output: str) -> str:
+    """What the user reads when installing failed: pip's ``output``, then how to install by
+    hand with internet and without it."""
+    return (f"Installing {name} failed:\n{output.strip()}\n\n"
+            f"With internet, you can also install it by hand with:\n{manual_command(name)}\n\n"
+            f"Without internet: download the {name} file for your system from "
+            f"{FILES_URL.format(name=name)} on another computer, then run:\n"
+            f"{offline_command(name)}\n\nThen restart QGIS.")
 
 
 def install(name: str, run=None) -> tuple:
@@ -121,8 +146,7 @@ def install(name: str, run=None) -> tuple:
         return False, f"Could not create {folder}: {exc}"
     code, output = run(_pip_args(name))
     if code != 0:
-        return False, (f"Installing {name} failed:\n{output.strip()}\n\n"
-                       f"You can install it by hand with:\n{manual_command(name)}")
+        return False, failure_message(name, output)
     ensure_on_path()
     importlib.invalidate_caches()
     found = version(name)

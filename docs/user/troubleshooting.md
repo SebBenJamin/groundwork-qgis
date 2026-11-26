@@ -28,9 +28,13 @@ What to do when something doesn't look right.
 
 Groundwork reads SEG-Y with segyio, a small free library that QGIS does not include. In
 **Add Data…**, choose the SEG-Y file and press **Install segyio**: it is installed into a
-Groundwork folder in your QGIS profile, and nothing else is changed. Without internet, the
-message after a failed install shows the command to run by hand; see
-[segyio](howto/reflection-sections.md#segyio). Everything else in Groundwork works without it.
+Groundwork folder in your QGIS profile, and nothing else is changed. When the install fails,
+the message shows two commands to run by hand. With internet, run the first. Without
+internet: download the segyio file for your system from
+<https://pypi.org/project/segyio/#files> on another computer, then run the second, with the
+path of the downloaded file in place of `<path to the downloaded file>`. Then restart QGIS.
+See [segyio](howto/reflection-sections.md#segyio). Everything else in Groundwork works
+without it.
 
 ### The section sits at the wrong depth
 

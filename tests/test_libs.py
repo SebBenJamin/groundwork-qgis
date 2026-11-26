@@ -33,6 +33,28 @@ def test_install_failure_gives_the_manual_command(tmp_path, monkeypatch):
     assert not ok and "no network" in message and libs.manual_command("segyio") in message
 
 
+def test_install_failure_also_says_how_to_install_without_internet(tmp_path, monkeypatch):
+    monkeypatch.setattr(libs, "_profile_dir", lambda: tmp_path)
+    ok, message = libs.install("segyio", run=lambda args: (1, "no network"))
+    assert not ok
+    assert message == (
+        "Installing segyio failed:\nno network\n\n"
+        f"With internet, you can also install it by hand with:\n{libs.manual_command('segyio')}"
+        "\n\nWithout internet: download the segyio file for your system from "
+        "https://pypi.org/project/segyio/#files on another computer, then run:\n"
+        f"{libs.offline_command('segyio')}\n\nThen restart QGIS.")
+
+
+def test_the_offline_command_installs_from_the_downloaded_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(libs, "_profile_dir", lambda: tmp_path)
+    command = libs.offline_command("segyio")
+    assert "--target" in command and "--no-deps" in command
+    assert command.endswith('"<path to the downloaded file>"')
+    assert not command.endswith("segyio")
+    online = libs.manual_command("segyio")
+    assert command == online[:-len("segyio")] + '"<path to the downloaded file>"'
+
+
 def test_missing_library_is_a_value_error_naming_it():
     exc = libs.MissingLibrary("segyio")
     assert isinstance(exc, ValueError) and exc.name == "segyio" and "segyio" in str(exc)

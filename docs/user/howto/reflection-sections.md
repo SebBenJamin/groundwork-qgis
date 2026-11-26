@@ -205,10 +205,11 @@ builds differ per system and Python version.
 - It is downloaded with pip (about 0.4 MB) into a folder of its own in your QGIS profile,
   `python/groundwork_libs/py312` (the folder name follows QGIS's Python version), used only by
   Groundwork. The file is read right after.
-- When the install fails, for example without internet, the message shows the command to run
-  by hand. On a computer without internet, download segyio's file for your system and Python
-  version from PyPI on another computer, and run that command with the path of the downloaded
-  file in place of `segyio`. Restart QGIS afterwards.
+- When the install fails, the message shows pip's own output and two ways to install by hand.
+  With internet, run the first command it shows. Without internet: download the segyio file
+  for your system from <https://pypi.org/project/segyio/#files> on another computer, then run
+  the second command, with the path of the downloaded file in place of
+  `<path to the downloaded file>`. Then restart QGIS.
 - **Groundwork → About Groundwork…** shows the segyio version in use, or that it is not
   installed.
 - Everything else in Groundwork works without segyio. A project with sections, opened where
