@@ -43,7 +43,7 @@ ZOOM = (3900.0, 6900.0, 650.0, 1.0)
 #: the reflector drawn as a line: a strong, nearly flat positive reflector at about this
 #: height (read off the section's mean trace), picked on its strongest amplitude within
 #: HORIZON_WINDOW of that height from HORIZON_START to HORIZON_END, a point every HORIZON_STEP
-HORIZON_START = (4000.0, -400.0)
+HORIZON_START = (4000.0, -416.0)
 HORIZON_END = 6800.0
 HORIZON_STEP = 200.0
 HORIZON_WINDOW = 14.0       # m up and down (about one and a half samples near 0.5 s)

@@ -185,10 +185,9 @@ details.
 - Seismic reflection: lines VD-P760057 and VD-P760068 from "2D and 3D reflection seismic in
   Switzerland", https://opendata.swiss/en/dataset/2d-und-3d-reflexionsseismik-in-der-schweiz.
   Source: Federal Office of Topography swisstopo; free use with the source named. The stacks
-  are unchanged and renamed. The datum of 500 m, the replacement velocity of 4000 m/s and the
-  average velocities come from the original section sheet of VD-P760057 shipped by swisstopo;
-  the demo applies them to VD-P760068 as an assumption, and uses one velocity function for
-  the whole line.
+  are unchanged and renamed. The datum of 500 m and the average velocities come from the
+  original section sheet of VD-P760057 shipped by swisstopo; the demo applies them to
+  VD-P760068 as an assumption, and uses one velocity function for the whole line.
 - Terrain: swissALTI3D (resampled to 10 m and cut to 500 m each side of the lines). Source:
   Federal Office of Topography swisstopo.
 
