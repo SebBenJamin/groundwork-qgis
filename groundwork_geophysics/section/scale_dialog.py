@@ -15,6 +15,7 @@ LIMIT = 1e12            # spin box range for linear scales
 MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then it scrolls)
 MIN_WIDTH = 420         # its groups never squeezed below this
 LOG_MIN = 0.001         # smallest minimum on a log scale (= the spin boxes' 3 decimals)
+AGC_MAX_MS = 200        # the AGC window starts at a quarter of the record, at most this
 
 
 def ramp_icon(scale, width: int = 64, height: int = 14) -> QIcon:
@@ -408,15 +409,15 @@ class DisplayDialog(ColorScaleDialog):
                                   "it, so weak and strong parts of a trace look alike")
         self.agc_spin = QgsDoubleSpinBox()
         self.agc_spin.setObjectName("agc_spin")
+        span = max(section.step, (section.n_samples - 1) * section.step)
         if depth:
-            span = max(section.step, (section.n_samples - 1) * section.step)
             self.agc_spin.setDecimals(1)
             self.agc_spin.setRange(0.1, 1e5)
             default = round(span / 10, 1)
-        else:
+        else:                                       # a quarter of the record, at most 200 ms
             self.agc_spin.setDecimals(0)
             self.agc_spin.setRange(1.0, 1e5)
-            default = 200.0
+            default = float(max(1, min(AGC_MAX_MS, round(span * 1000.0 / 4))))
         self.agc_spin.setSuffix(f" {unit}")
         self.agc_spin.setClearValue(default)
         on = gain.agc_window is not None and gain.agc_window > 0
@@ -496,6 +497,11 @@ class DisplayDialog(ColorScaleDialog):
     def _sync_gain_widgets(self) -> None:
         self.agc_spin.setEnabled(self.agc_check.isChecked())
         self.time_power_spin.setEnabled(self.time_power_check.isChecked())
+        shown = " (as shown)" if self.gain().active() else ""     # not the file's numbers
+        for spin, text in ((self.min_spin, "Minimum"), (self.max_spin, "Maximum")):
+            label = self._scale_form.labelForField(spin)
+            if label is not None:
+                label.setText(text + shown)
 
     def _shown(self, gain):
         """The values shown with ``gain`` for the limits: the file's own without an option,
@@ -547,6 +553,8 @@ class DisplayDialog(ColorScaleDialog):
         import math
         c = max(abs(lo), abs(hi))
         decimals = 3 if not c > 0 else min(12, max(3, 2 - math.floor(math.log10(c))))
+        if c >= 100:                                # large amplitudes: whole numbers
+            decimals = 0
         self._limits = (lo, hi)
         self._syncing = True
         try:

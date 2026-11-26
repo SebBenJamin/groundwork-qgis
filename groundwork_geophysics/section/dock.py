@@ -28,7 +28,7 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphi
 from ..core.layout import KIND_TEXT, kind_text
 from ..core.numbers import fmt_trim
 from ..ids import LEGACY_ID
-from .data import identify_layers, layer_name
+from .data import identify_layers
 from .dock_context import context_lines
 from .layer_list import LayerList
 from .profile_source import SOURCE_ID
@@ -696,8 +696,8 @@ class SectionDock(QDockWidget):
     def _sync_layers(self) -> None:
         layers = self._current_layers()
         self.layer_list.set_layers(self.provider, layers)
-        self._show_errors([f"{layer_name(la.dataset)}: {la.error}"
-                           for la in layers if la.error is not None])
+        from .layer_list import error_line
+        self._show_errors([error_line(la) for la in layers if la.error is not None])
 
     def info_text(self) -> str:
         return self.info.text()

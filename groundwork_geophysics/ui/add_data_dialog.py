@@ -354,6 +354,9 @@ class AddDataDialog(QDialog):
         self.electrode_label = _label("electrode_label")
         self.warning_label = _label("warning_label")
         self.warning_label.setStyleSheet(WARNING_STYLE)
+        #: what a SEG-Y section still needs ("Enter the velocity in m/s."), as a warning
+        self.missing_label = _label("missing_label")
+        self.missing_label.setStyleSheet(WARNING_STYLE)
         self._build_coarse()
         QVBoxLayout(preview).addWidget(self.preview_table)
         # the verdict stays in view above the buttons; only the groups and the table scroll
@@ -361,8 +364,8 @@ class AddDataDialog(QDialog):
         self.status_block.setObjectName("status_block")
         status = QVBoxLayout(self.status_block)
         status.setContentsMargins(0, 0, 0, 0)
-        for w in (self.coarse_note, self.coarse_row, self.summary_row, self.fit_label,
-                  self.electrode_label, self.warning_label):
+        for w in (self.coarse_note, self.coarse_row, self.summary_row, self.missing_label,
+                  self.fit_label, self.electrode_label, self.warning_label):
             status.addWidget(w)
 
         self.files_box = FilesBox()
@@ -696,8 +699,8 @@ class AddDataDialog(QDialog):
             self._update()
         finally:
             self._busy = False
-            for label in (self.summary_label, self.fit_label, self.electrode_label,
-                          self.warning_label):
+            for label in (self.summary_label, self.missing_label, self.fit_label,
+                          self.electrode_label, self.warning_label):
                 label.setVisible(bool(label.text()))
             self._fit_width()
 
@@ -711,8 +714,8 @@ class AddDataDialog(QDialog):
         self._set_addable(True)
         self._form.setRowVisible(self.response_row, self._reader() in RESPONSE_READERS)
         self._form.setRowVisible(self.z_combo, not table and not segy_file)
-        for label in (self.summary_label, self.fit_label, self.electrode_label,
-                      self.warning_label):
+        for label in (self.summary_label, self.missing_label, self.fit_label,
+                      self.electrode_label, self.warning_label):
             label.clear()
         self.summary_label.setStyleSheet("")
         self.fit_label.setStyleSheet("")
@@ -739,8 +742,11 @@ class AddDataDialog(QDialog):
         if not self._path():
             self.summary_label.setText("Choose a data file.")
             return
+        if problems and segy_file:                  # what to enter, said as a warning
+            self.missing_label.setText(" ".join(problems))
+            return
         if problems:
-            self.summary_label.setText((" " if segy_file else "; ").join(problems))
+            self.summary_label.setText("; ".join(problems))
             return
         if self._on_map():                          # read onto the line, once there is one
             try:
@@ -765,8 +771,7 @@ class AddDataDialog(QDialog):
                                             SAMPLE_ROWS if table and self._more else 0,
                                             self._reader_options()))
         if result.traces is not None and self.segy_box.hang_problems():
-            self.summary_label.setText(self.summary_label.text() + "\n" +
-                                       " ".join(self.segy_box.hang_problems()))
+            self.missing_label.setText(" ".join(self.segy_box.hang_problems()))
         if several:                                 # the summary is the first file's
             self.summary_label.setText(f"{Path(self._path()).name}: "
                                        f"{self.summary_label.text()}")
@@ -856,6 +861,7 @@ class AddDataDialog(QDialog):
         on_map = self._on_map()
         self.placement.set_guessed_spacing(None)
         warnings = [UNSTACKED] if result.provenance.get("unstacked") else []
+        warnings += self.segy_box.warnings()        # an unusual velocity: not a block
         if self.segy_box.position_warning():
             warnings.append(self.segy_box.position_warning())
         outside = self._outside_crs() if on_map else ""

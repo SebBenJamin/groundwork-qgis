@@ -78,12 +78,15 @@ def cell_text(attr: str, value) -> str:
     return str(int(value)) if attr == "scale" else fmt_trim(value, 3)
 
 
-def look_summary(look: FrameLook, names: dict) -> str:
+def look_summary(look: FrameLook, names: dict, traces=frozenset()) -> str:
+    """The frame's look in a line; a reflection section (its id in ``traces``) is named as
+    its layer row names it ("clip 98 % · AGC"), not by a model's display mode."""
     shown = [m for m in look.models if m.visible]
     parts = []
     for m in shown:
         extra = f", {round(m.opacity * 100)} %" if m.opacity < 1.0 else ""
-        parts.append(f"{names.get(m.dataset_id, 'missing model')} ({m.mode}{extra})")
+        mode = _trace_look(m) if m.dataset_id in traces else m.mode
+        parts.append(f"{names.get(m.dataset_id, 'missing model')} ({mode}{extra})")
     parts = parts or ["no models"]
     flags = [name for name, on in (("boreholes", look.boreholes), ("notes", look.field_notes),
                                    ("context", look.context)) if on]
@@ -91,6 +94,17 @@ def look_summary(look: FrameLook, names: dict) -> str:
     if flags:
         parts.append(", ".join(flags))
     return " · ".join(parts)
+
+
+def _trace_look(m) -> str:
+    from types import SimpleNamespace
+
+    from ..core.trace_section import DisplayGain
+    from ..section.layer_list import trace_look_text
+    scale = m.scale if isinstance(m.scale, dict) else {}
+    limits = SimpleNamespace(vmin=scale["vmin"], vmax=scale["vmax"]) \
+        if all(isinstance(scale.get(k), (int, float)) for k in ("vmin", "vmax")) else None
+    return trace_look_text(m.clip_percent, DisplayGain.from_dict(m.gain), limits)
 
 
 class PlateDetailsDialog(QDialog):
@@ -265,6 +279,12 @@ class PlatesDialog(QDialog):
                 names[d.id] = d.name
         return names
 
+    def _trace_ids(self) -> set:
+        """The reflection sections among the datasets (named by their clip, not a mode)."""
+        from ..core.dataset_types import is_trace_kind
+        return {d.id for p in self._profiles() for d in self.store.datasets(p.id)
+                if is_trace_kind(d.kind)}
+
     def _save(self) -> None:
         write_plates(self.project, self.plates)
 
@@ -310,7 +330,7 @@ class PlatesDialog(QDialog):
             if plate is None:
                 return
             profiles = self._profiles()
-            names = self._dataset_names()
+            names, traces = self._dataset_names(), self._trace_ids()
             for r, f in enumerate(plate.frames):
                 self.frames.insertRow(r)
                 combo = QComboBox()
@@ -322,7 +342,7 @@ class PlatesDialog(QDialog):
                 combo.currentIndexChanged.connect(
                     lambda _i, c=combo, frame=f: self._profile_changed(frame, c.currentData()))
                 self.frames.setCellWidget(r, 0, combo)
-                look = QTableWidgetItem(look_summary(f.look, names))
+                look = QTableWidgetItem(look_summary(f.look, names, traces))
                 look.setFlags(look.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.frames.setItem(r, 1, look)
                 for c, attr in ((2, "s_from"), (3, "s_to"), (4, "scale"), (5, "ve")):

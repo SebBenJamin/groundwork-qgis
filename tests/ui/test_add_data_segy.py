@@ -89,7 +89,7 @@ def test_a_spacing_file_on_a_new_line_is_a_reflection_section(
     assert dlg.segy_box.isVisible() and not dlg.z_combo.isVisible()
     assert not dlg.columns_group.isVisible() and not dlg.table_options.isVisible()
     assert dlg.method_combo.currentData() == "refl"
-    assert "Enter the trace spacing in metres." in dlg.summary_label.text()
+    assert "Enter the trace spacing in metres." in dlg.missing_label.text()
     _type(dlg.segy_box.spacing_edit, "2")
     _type(dlg.segy_box.velocity_edit, "1500")
     dlg.segy_box.set_zero("ground")
@@ -159,10 +159,14 @@ def test_the_summary_line(qgis_app, make_dialog, project_store, selected_line, t
     dlg.segy_box.set_zero("ground")
     text = (f"{fmt_count(3)} traces × {fmt_count(4)} samples · 2 ms · 0 – 0.008 s")
     assert text == "3 traces × 4 samples · 2 ms · 0 – 0.008 s"
-    # what is still missing to hang it follows on a second line
-    assert dlg.summary_label.text() == text + "\nEnter the velocity in m/s."
+    # what is still missing to hang it follows below, in the warning style
+    from groundwork_geophysics.ui.fit_line import WARNING_STYLE
+    assert dlg.summary_label.text() == text
+    assert dlg.missing_label.text() == "Enter the velocity in m/s."
+    assert dlg.missing_label.styleSheet() == WARNING_STYLE and dlg.missing_label.isVisible()
     _type(dlg.segy_box.velocity_edit, "1500")
     assert dlg.summary_label.text() == text + " · to 6 m depth"
+    assert dlg.missing_label.text() == "" and not dlg.missing_label.isVisible()
     dlg.segy_box.set_domain("depth")
     assert dlg.summary_label.text() == "3 traces × 4 samples · 2 m · 0 – 8 m"
 
@@ -202,6 +206,19 @@ def test_a_ground_zero_on_a_new_profile_without_heights_is_warned_about(
     assert dlg.placement.source() == "line"
     assert NO_HEIGHTS[zero] in dlg.warning_label.text()
     assert dlg.add_button.isEnabled()                       # a warning, not a block
+
+
+def test_an_unusual_velocity_is_warned_about_in_add_data(qgis_app, make_dialog, project_store,
+                                                        selected_line, tmp_path):
+    path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    _type(dlg.segy_box.spacing_edit, "2")
+    _type(dlg.segy_box.velocity_edit, "150")
+    dlg.segy_box.set_zero("ground")
+    assert "unusual for seismic data. Check the unit (m/s)." in dlg.warning_label.text()
+    assert dlg.add_button.isEnabled()
 
 
 def test_a_fixed_height_is_not_warned_about(qgis_app, make_dialog, project_store,
@@ -333,7 +350,7 @@ def test_after_the_install_the_file_is_read(qgis_app, make_dialog, project_store
     assert dlg.install_button.text() == "Installing…" and not dlg.install_button.isEnabled()
     _wait(qgis_app, lambda: dlg.install_button.isHidden())
     assert seen == ["segyio"] and dlg.segy_box.isVisible()
-    assert "Enter the trace spacing in metres." in dlg.summary_label.text()
+    assert "Enter the trace spacing in metres." in dlg.missing_label.text()
 
 
 def test_closing_the_dialog_while_installing_is_safe(qgis_app, make_dialog, project_store,
@@ -409,7 +426,7 @@ def test_time_zero_starts_at_a_fixed_height_to_be_typed(qgis_app, make_dialog, p
     assert box.zero() == "datum" and box.datum_edit.text() == ""
     _type(box.spacing_edit, "2")
     _type(box.velocity_edit, "1500")
-    assert "Enter the height of time zero." in dlg.summary_label.text()
+    assert "Enter the height of time zero." in dlg.missing_label.text()
     assert "Enter the height of time zero." in box.problems()
 
 

@@ -32,7 +32,8 @@ SECTION_TITLE = "Section"
 #: the reader options edited here: how the samples are read (a change reads the file again)
 #: and how the section is hung (``section.data.HANG_KEYS``; never read again)
 READ_KEYS = ("domain", "sample_step")
-MOVE_TEXT = "The section will move. Drawings on this profile stay at their heights. Change it?"
+MOVE_TEXT = ("The section will move. Drawings on this profile stay at their heights and may no "
+             "longer sit on their reflectors. Apply the change?")
 TEXT_TIP = "The 40 lines of text at the start of the file"
 NO_TEXT_TIP = "The text header of {name} cannot be shown: {why}"
 
@@ -204,15 +205,29 @@ class DatasetInfoDialog(QDialog):
         from .segy_box import TextHeaderDialog
         dialog = getattr(self, "text_dialog", None)
         if dialog is None:
-            self.text_dialog = dialog = TextHeaderDialog(self._text, self)
+            name = os.path.basename(self._path() or "")
+            self.text_dialog = dialog = TextHeaderDialog(self._text, self, name)
         dialog.show()
         dialog.raise_()
 
+    def _apply_move(self) -> bool:
+        """Ask before the section moves under drawings: Apply or Cancel (the default)."""
+        box = QMessageBox(QMessageBox.Icon.Question, self.windowTitle(), MOVE_TEXT,
+                          QMessageBox.StandardButton.NoButton, self)
+        apply = box.addButton("Apply", QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(cancel)
+        box.setEscapeButton(cancel)
+        box.exec()
+        return box.clickedButton() is apply
+
     def _check(self) -> None:
-        """OK waits for what the section cannot be hung without (said below the rows)."""
+        """OK waits for what the section cannot be hung without (said below the rows); an
+        unusual velocity is said there too, without stopping OK."""
         problems = self.segy_box.problems() if self.segy_box is not None else []
-        self.problems.setText(" ".join(problems))
-        self.problems.setVisible(bool(problems))
+        warnings = self.segy_box.warnings() if self.segy_box is not None else []
+        self.problems.setText(" ".join(problems + warnings))
+        self.problems.setVisible(bool(problems or warnings))
         self.ok_button.setEnabled(not problems)
         self.ok_button.setToolTip(" ".join(problems))
 
@@ -249,13 +264,8 @@ class DatasetInfoDialog(QDialog):
             from dataclasses import replace
             options = self.new_options()
             moves = _hanging(options) != _hanging(self.dataset.reader_options)
-            if moves and self._drawings_here():
-                answer = QMessageBox.question(
-                    self, "Dataset Info", MOVE_TEXT,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No)
-                if answer != QMessageBox.StandardButton.Yes:
-                    return                      # nothing saved; the dialog stays open
+            if moves and self._drawings_here() and not self._apply_move():
+                return                          # nothing saved; the dialog stays open
             if moves:
                 d = replace(d, reader_options=options)
                 self.moved = True

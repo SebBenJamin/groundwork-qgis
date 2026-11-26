@@ -20,6 +20,8 @@ MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip),
 REMOVE_TEXT = "Remove from profile…"
 #: first entry of a layer whose reader needs a library that is not installed
 INSTALL_TEXT = "Install {name}…"
+INSTALL_HINT = "Right-click the layer and choose " + INSTALL_TEXT
+NEEDS_LIBRARY_TIP = "Install {name} first"
 #: style fields the Display dialog edits
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
                   "grid_cell", "interpolation", "fade_coverage", "coverage_threshold",
@@ -41,10 +43,42 @@ def _scale_text(layer: SectionLayer) -> str:
     scale = layer.style.scale
     if scale is None:
         return "Scale…"
-    if layer.traces is not None and layer.style.clip_percent is not None:
-        return clip_text(layer.style.clip_percent)
+    if layer.traces is not None:
+        return trace_look_text(layer.style.clip_percent, layer.style.gain, scale)
     log = " log" if scale.log else ""
     return f"{format_value(scale.vmin)}–{format_value(scale.vmax)}{log}"
+
+
+def gain_word(gain) -> str:
+    """"AGC" when AGC is on, "gain" for gain with time or trace balance, else "" (a swapped
+    polarity is not a gain)."""
+    if gain is None:
+        return ""
+    if gain.agc_window is not None and gain.agc_window > 0:
+        return "AGC"
+    if (gain.time_power is not None and gain.time_power != 0) or gain.balance_traces:
+        return "gain"
+    return ""
+
+
+def trace_look_text(clip_percent, gain, scale=None) -> str:
+    """A trace section's look in a few words: "clip 98 %", "clip 98 % · AGC", or the typed
+    limits ("-500–500 · gain")."""
+    if clip_percent is not None or scale is None:
+        text = clip_text(98.0 if clip_percent is None else clip_percent)
+    else:
+        text = f"{format_value(scale.vmin)}–{format_value(scale.vmax)}"
+    word = gain_word(gain)
+    return f"{text} · {word}" if word else text
+
+
+def error_line(layer: SectionLayer) -> str:
+    """The panel's error line of a layer: its name and error, and for a missing library how
+    to install it."""
+    text = f"{layer_name(layer.dataset)}: {layer.error}"
+    if layer.missing_library:
+        text += " " + INSTALL_HINT.format(name=layer.missing_library)
+    return text
 
 
 def clip_text(percent: float) -> str:
@@ -278,7 +312,12 @@ class LayerList(QWidget):
             action.setEnabled(self._install_task is None)
             action.triggered.connect(lambda: self.install_library(name))
             menu.addSeparator()
-        menu.addAction(DISPLAY_TEXT).triggered.connect(lambda: self.edit_scale(dataset_id))
+        display = menu.addAction(DISPLAY_TEXT)
+        display.triggered.connect(lambda: self.edit_scale(dataset_id))
+        if name:                                    # nothing read: nothing to display yet
+            display.setEnabled(False)
+            display.setToolTip(NEEDS_LIBRARY_TIP.format(name=name))
+            menu.setToolTipsVisible(True)
         readings = None if layer is None or layer.mesh is None else layer.mesh.readings
         if readings is not None and readings.has_calculated:
             menu.addAction(MISFIT_TEXT).triggered.connect(
@@ -297,9 +336,11 @@ class LayerList(QWidget):
         layer = self._layers.get(dataset_id)
         what = type_label(layer.dataset.kind) if layer is not None else "model"
         action = menu.addAction(APPLY_ALL_TEXT)
-        action.setEnabled(bool(targets))
+        missing = None if layer is None else layer.missing_library
+        action.setEnabled(bool(targets) and not missing)
         tip = APPLY_ALL_TIP if layer is None or layer.traces is None else APPLY_ALL_TRACES_TIP
-        action.setToolTip((tip if targets else APPLY_ALL_OFF_TIP).format(what=what))
+        action.setToolTip(NEEDS_LIBRARY_TIP.format(name=missing) if missing else
+                          (tip if targets else APPLY_ALL_OFF_TIP).format(what=what))
         menu.setToolTipsVisible(True)
         action.triggered.connect(lambda: self.apply_all_requested.emit(dataset_id))
 

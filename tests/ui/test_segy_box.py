@@ -254,3 +254,45 @@ def test_the_text_header_opens_read_only(box):
                                      .QPlainTextEdit)
     assert view.isReadOnly() and view.toPlainText().startswith("C 1 CLIENT")
     box.text_dialog.close()
+
+
+def test_the_text_header_sits_in_the_first_row_and_names_the_file(box, tmp_path):
+    box.set_info(info(), str(tmp_path / "line7.sgy"))
+    samples_row = box._rows["samples"][1]
+    assert samples_row.isAncestorOf(box.text_button)
+    box.text_button.click()
+    assert box.text_dialog.windowTitle() == "Text Header – line7.sgy"
+    box.text_dialog.close()
+
+
+UNUSUAL = ("A velocity below 300 m/s or above 8000 m/s is unusual for seismic data. Check the "
+           "unit (m/s).")
+
+
+@pytest.mark.parametrize("text, warned", [("1500", False), ("250", True), ("9000", True),
+                                          ("", False)])
+def test_an_unusual_single_velocity_is_warned_about(box, text, warned):
+    box.set_info(info())
+    box.velocity_edit.setText(text)
+    assert (UNUSUAL in box.warnings()) is warned
+    assert UNUSUAL not in box.problems()
+
+
+def test_the_velocity_function_is_checked_for_plausibility(box):
+    box.set_info(info(n_samples=2001, step=0.002))                # a 4 s record
+    box.by_function.setChecked(True)
+    box.paste_rows("0\t1800\n1000\t9500")
+    assert box.warnings() == [UNUSUAL, "The velocity function ends at 1000 ms; the record is "
+                              "4000 ms long. Below it the last velocity is used."]
+    box.velocity_table.setRowCount(0)
+    box.paste_rows("0\t1800\n2500\t3000")
+    assert box.warnings() == []
+
+
+def test_the_height_label_names_time_or_depth_zero(box):
+    box.set_info(info())
+    box.set_zero("datum")
+    label = box._rows["datum"][0]
+    assert label.text() == "Height of time zero (m)"
+    box.set_domain("depth")
+    assert label.text() == "Height of depth zero (m)"

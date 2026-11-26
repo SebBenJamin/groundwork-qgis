@@ -41,7 +41,7 @@ without it.
 | What you see | Usual cause | Fix |
 |---|---|---|
 | Reflectors too shallow or too deep against boreholes | The velocity does not fit. One velocity for a deep section is increasingly wrong with depth | Type the velocity, or a velocity function, from the processing report in [Dataset info](howto/dataset-info.md) |
-| The whole section too high or too low | Time zero is at the wrong height | **Time zero is** and **Height** in Dataset info: the datum from the processing report. With velocities from the processing sheet, choose **At a fixed height**, not **corrected to the ground** |
+| The whole section too high or too low | Time zero is at the wrong height | **Time zero is** and **Height of time zero** in Dataset info: the datum from the processing report. With velocities from the processing sheet, choose **At a fixed height**, not **corrected to the ground** |
 | The depths are far off, by a factor | The sample step is wrong (files in depth, radar exported as SEG-Y) | Correct **Sample step** in Dataset info |
 | "Enter the velocity in m/s." | A time section has no velocity, and Groundwork assumes none | Type it in Add Data or Dataset info |
 

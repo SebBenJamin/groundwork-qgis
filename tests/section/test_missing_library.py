@@ -106,6 +106,26 @@ def test_the_row_of_a_section_without_segyio_offers_the_install(world, no_segyio
     assert _texts(menu)[0] == INSTALL
 
 
+def test_the_panel_error_line_says_how_to_install(world, no_segyio):
+    from groundwork_geophysics.section.layer_list import error_line
+    provider, _ll, pid = world
+    assert error_line(_layer(provider, pid, "s1")) == (
+        "Line 1: Reading SEG-Y needs the free library segyio, which is not installed. "
+        "Right-click the layer and choose Install segyio…")
+    gone = _layer(provider, pid, "m1")
+    assert error_line(gone) == f"Gone: {gone.error}"
+
+
+def test_display_and_apply_all_are_off_without_the_library(world, no_segyio):
+    provider, ll, pid = world
+    ll.set_layers(provider, provider.layers(pid))
+    actions = {a.text(): a for a in ll.row_menu("s1").actions() if a.text()}
+    assert not actions["Display…"].isEnabled()
+    assert not actions["Apply Style to All Sections"].isEnabled()
+    assert actions["Dataset info…"].isEnabled()
+    assert {a.text(): a for a in ll.row_menu("m1").actions()}["Display…"].isEnabled()
+
+
 def test_a_layer_with_another_error_has_no_install_entry(world, no_segyio):
     provider, ll, pid = world
     gone = _layer(provider, pid, "m1")

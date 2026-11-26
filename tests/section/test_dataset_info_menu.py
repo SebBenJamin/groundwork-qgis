@@ -100,21 +100,27 @@ def test_moving_a_section_under_drawings_asks_first(qgis_app, tmp_path, monkeypa
     st, p, provider = _trace_store(tmp_path)
     _draw_line(st, p.id)
     asked = []
+    press = {"text": None}
 
-    def answer(parent, title, text, buttons, default):
-        asked.append((text, default))
-        return QMessageBox.StandardButton.No
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(answer))
+    def exec_(box):
+        buttons = {b.text(): b for b in box.buttons()}
+        asked.append((box.windowTitle(), box.text(), sorted(buttons),
+                      box.defaultButton().text()))
+        if press["text"]:
+            buttons[press["text"]].click()
+        return 0
+    monkeypatch.setattr(QMessageBox, "exec", exec_)
     dlg = DatasetInfoDialog(st, "s1", provider=provider)
     dlg.segy_box.velocity_edit.setText("1600")
     dlg.accept()
-    assert asked == [(MOVE_TEXT, QMessageBox.StandardButton.No)]
+    assert asked == [(dlg.windowTitle(), MOVE_TEXT, ["Apply", "Cancel"], "Cancel")]
     assert MOVE_TEXT == ("The section will move. Drawings on this profile stay at their "
-                         "heights. Change it?")
-    assert st.datasets(p.id)[0].reader_options["velocity"] == 1500.0     # No: unchanged
-    asked.clear()
-    monkeypatch.setattr(QMessageBox, "question",
-                        staticmethod(lambda *a: QMessageBox.StandardButton.Yes))
+                         "heights and may no longer sit on their reflectors. Apply the change?")
+    assert st.datasets(p.id)[0].reader_options["velocity"] == 1500.0     # Cancel: unchanged
+    press["text"] = "Cancel"
+    dlg.accept()
+    assert st.datasets(p.id)[0].reader_options["velocity"] == 1500.0
+    press["text"] = "Apply"
     dlg.accept()
     assert st.datasets(p.id)[0].reader_options["velocity"] == 1600.0
 
@@ -146,6 +152,28 @@ def test_without_the_file_the_stored_values_are_shown_and_edited(qgis_app, tmp_p
     dlg.segy_box.velocity_edit.setText("1700")
     dlg.accept()
     assert st.datasets(p.id)[0].reader_options["velocity"] == 1700.0
+
+
+def test_the_text_header_window_names_the_file(qgis_app, tmp_path):
+    import pytest
+    pytest.importorskip("segyio")
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _trace_store(tmp_path)
+    dlg = DatasetInfoDialog(st, "s1", provider=provider)
+    dlg.text_button.click()
+    assert dlg.text_dialog.windowTitle() == "Text Header – line.sgy"
+    dlg.text_dialog.close()
+
+
+def test_an_unusual_velocity_is_warned_about_but_allowed(qgis_app, tmp_path):
+    import pytest
+    pytest.importorskip("segyio")
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _trace_store(tmp_path)
+    dlg = DatasetInfoDialog(st, "s1", provider=provider)
+    dlg.segy_box.velocity_edit.setText("150000")
+    dlg.segy_box.velocity_edit.editingFinished.emit()
+    assert "unusual for seismic data" in dlg.problems.text() and dlg.ok_button.isEnabled()
 
 
 def test_the_text_header_button_says_why_it_is_off(qgis_app, tmp_path):

@@ -62,6 +62,13 @@ VELOCITIES_UP = "The velocities must be greater than 0."
 NO_TABLE = "Choose the coordinate file with the trace positions."
 NO_COLUMNS = "Choose the trace number, easting and northing columns."
 FEW_LISTED = "Fewer than two of the file's trace numbers are in the coordinate file."
+# warnings, not blocks
+UNUSUAL_VELOCITY = ("A velocity below 300 m/s or above 8000 m/s is unusual for seismic data. "
+                    "Check the unit (m/s).")
+SHORT_FUNCTION = ("The velocity function ends at {t} ms; the record is {T} ms long. Below it "
+                  "the last velocity is used.")
+PLAUSIBLE = (300.0, 8000.0)                     # m/s
+TEXT_TITLE = "Text Header"
 #: column names guessed for a coordinate file (whole name, case ignored)
 GUESS = {"number": r"cdp|trace|tr|shot|sp|fldr|nr|no|num|number|station|ffid|cmp",
          "easting": r"x|east|easting|e|rechts|rechtswert|lon|longitude|cdp_?x",
@@ -132,9 +139,9 @@ def guess_column(names: list[str], role: str, taken=()) -> int | None:
 class TextHeaderDialog(QDialog):
     """The file's 40 text-header lines, read-only, in a monospace font."""
 
-    def __init__(self, text: str, parent=None):
+    def __init__(self, text: str, parent=None, name: str = ""):
         super().__init__(parent)
-        self.setWindowTitle("Text Header")
+        self.setWindowTitle(f"{TEXT_TITLE} – {name}" if name else TEXT_TITLE)
         view = QPlainTextEdit(text)
         view.setReadOnly(True)
         view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -297,14 +304,17 @@ class SegyBox(QGroupBox):
                                  QLabel("Easting"), self.easting_combo, QLabel("Northing"),
                                  self.northing_combo)
         self._position_row = _row(self.by_positions, self.by_spacing, self.by_table)
-        rows = (("samples", "Samples are", _row(self.time_radio, self.depth_radio)),
+        # the text header stays in reach while velocity and height are typed from it
+        samples_row = _row(self.time_radio, self.depth_radio)
+        samples_row.layout().addWidget(self.text_button)
+        rows = (("samples", "Samples are", samples_row),
                 ("step", "Sample step (ms)", _row(self.step_edit)),
                 ("step_note", "", self.step_note),
                 ("velocity", "Velocity (m/s)", self._velocity_row),
                 ("function", "", self._function_row),
                 ("kind", "Velocities are", self._kind_row),
                 ("zero", "Time zero is", _row(self.zero_combo)),
-                ("datum", "Height (m)", self._datum_row),
+                ("datum", "Height of time zero (m)", self._datum_row),
                 ("replacement", "Replacement velocity (m/s)", self._replacement_row),
                 ("position", "Traces are placed by", self._position_row),
                 ("position_note", "", self.position_note),
@@ -314,8 +324,7 @@ class SegyBox(QGroupBox):
                 ("columns", "", self._columns_row),
                 ("table_note", "", self.table_note),
                 ("crs", "CRS", self.crs_widget),
-                ("spacing", "Trace spacing (m)", _row(self.spacing_edit)),
-                ("text", "", _row(self.text_button)))
+                ("spacing", "Trace spacing (m)", _row(self.spacing_edit)))
         grid = QGridLayout(self)
         grid.setColumnStretch(1, 1)
         self._rows: dict[str, tuple[QLabel, QWidget]] = {}
@@ -324,12 +333,12 @@ class SegyBox(QGroupBox):
             grid.addWidget(label, r, 0)
             grid.addWidget(widget, r, 1)
             self._rows[name] = (label, widget)
-        chain = (self.time_radio, self.depth_radio, self.step_edit, self.by_one,
+        chain = (self.time_radio, self.depth_radio, self.text_button, self.step_edit, self.by_one,
                  self.by_function, self.velocity_edit, self.velocity_table, self.add_row_button,
                  self.remove_row_button, self.kind_combo, self.zero_combo, self.datum_edit,
                  self.replacement_edit, self.by_positions, self.by_spacing, self.by_table,
                  self.field_combo, self.table_file, self.number_combo, self.easting_combo,
-                 self.northing_combo, self.crs_widget, self.spacing_edit, self.text_button)
+                 self.northing_combo, self.crs_widget, self.spacing_edit)
         for first, second in zip(chain, chain[1:]):      # in the order the rows are shown
             QWidget.setTabOrder(first, second)
         self.step_label = self._rows["step"][0]
@@ -640,6 +649,26 @@ class SegyBox(QGroupBox):
             out.append(NO_REPLACEMENT)
         return out
 
+    def warnings(self) -> list[str]:
+        """What looks unusual in the velocity, without stopping the section: a velocity
+        outside 300–8000 m/s (a unit typed wrong), a function that ends in the upper half of
+        the record."""
+        if self.domain() != "time":
+            return []
+        lo, hi = PLAUSIBLE
+        if not self.by_function.isChecked():
+            v = _positive(self.velocity_edit.text())
+            return [UNUSUAL_VELOCITY] if v is not None and not lo <= v <= hi else []
+        rows = [(t, v) for t, v in self._function_rows() if t is not None and v is not None]
+        out = [UNUSUAL_VELOCITY] if any(v > 0 and not lo <= v <= hi for _t, v in rows) else []
+        step = self._step()
+        if rows and self.info is not None and step is not None:
+            end_ms = (self.info.first + (max(1, self.info.n_samples) - 1) * step) * 1000.0
+            last_ms = max(t for t, _v in rows)
+            if last_ms < end_ms / 2:
+                out.append(SHORT_FUNCTION.format(t=f"{last_ms:.0f}", T=f"{end_ms:.0f}"))
+        return out
+
     def _velocity_problems(self) -> list[str]:
         if not self.by_function.isChecked():
             return [] if _positive(self.velocity_edit.text()) is not None else [NO_VELOCITY]
@@ -884,7 +913,7 @@ class SegyBox(QGroupBox):
             "columns": place and position == "table",
             "table_note": place and position == "table",
             "crs": place and position in ("map", "table"),
-            "spacing": place and position == "spacing", "text": place}
+            "spacing": place and position == "spacing"}
         for name, on in shown.items():
             label, widget = self._rows[name]
             label.setVisible(on and bool(label.text()))
@@ -896,7 +925,8 @@ class SegyBox(QGroupBox):
             w.setVisible(place)
         self.step_label.setText("Sample step (m)" if depth else "Sample step (ms)")
         self.zero_label.setText("Depth zero is" if depth else "Time zero is")
-        self._rows["datum"][0].setText("Height (m)")
+        self._rows["datum"][0].setText("Height of depth zero (m)" if depth else
+                                       "Height of time zero (m)")
         self._sync_step_note()
         self.table_note.setText(self._table_note() if shown["table_note"] else "")
         self.table_note.setVisible(bool(self.table_note.text()))
@@ -928,9 +958,11 @@ class SegyBox(QGroupBox):
         """The file's text header in a read-only window (one per box, raised when open)."""
         if self.info is None:
             return
+        name = Path(self.path).name if self.path else ""
         if self.text_dialog is None:
-            self.text_dialog = TextHeaderDialog(self.info.text, self.window())
+            self.text_dialog = TextHeaderDialog(self.info.text, self.window(), name)
         else:
             self.text_dialog.findChild(QPlainTextEdit).setPlainText(self.info.text)
+            self.text_dialog.setWindowTitle(f"{TEXT_TITLE} – {name}" if name else TEXT_TITLE)
         self.text_dialog.show()
         self.text_dialog.raise_()

@@ -201,7 +201,8 @@ def test_the_amplitude_options_round_trip(qgis_app, trace_layer):
     from groundwork_geophysics.core.trace_section import DisplayGain, color_limits, display_values
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, trace_layer)
-    assert not dlg.agc_spin.isEnabled() and dlg.agc_spin.value() == 200.0
+    # a quarter of the 49 ms record (at most 200 ms)
+    assert not dlg.agc_spin.isEnabled() and dlg.agc_spin.value() == 12.0
     assert dlg.agc_spin.suffix() == " ms" and dlg.time_power_check.text() == "Gain with time"
     assert dlg.time_power_spin.value() == 2.0
     dlg.agc_check.setChecked(True)
@@ -216,6 +217,33 @@ def test_the_amplitude_options_round_trip(qgis_app, trace_layer):
     again = DisplayDialog(None, replace(trace_layer, style=s))
     assert again.agc_check.isChecked() and again.agc_spin.value() == 10.0
     assert again.style().gain == s.gain
+
+
+def test_a_long_record_starts_with_a_200_ms_window(qgis_app, make_trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    a = np.sin(np.arange(11 * 2000, dtype=np.float32)).reshape(11, 2000)      # 2 s
+    assert DisplayDialog(None, make_trace_layer(a)).agc_spin.value() == 200.0
+
+
+def test_with_a_gain_the_limits_say_they_are_as_shown(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    form = dlg._scale_form
+    label = {s: form.labelForField(s) for s in (dlg.min_spin, dlg.max_spin)}
+    assert (label[dlg.min_spin].text(), label[dlg.max_spin].text()) == ("Minimum", "Maximum")
+    dlg.time_power_check.setChecked(True)
+    assert (label[dlg.min_spin].text(), label[dlg.max_spin].text()) == (
+        "Minimum (as shown)", "Maximum (as shown)")
+    dlg.time_power_check.setChecked(False)
+    assert label[dlg.min_spin].text() == "Minimum"
+
+
+def test_large_amplitudes_show_no_decimals(qgis_app, make_trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    a = (np.sin(np.arange(550, dtype=np.float32)) * 5000.0).reshape(11, 50)
+    dlg = DisplayDialog(None, make_trace_layer(a))
+    assert dlg.max_spin.decimals() == 0 and dlg.min_spin.decimals() == 0
+    assert DisplayDialog(None, make_trace_layer()).max_spin.decimals() >= 1
 
 
 def test_paint_muted_zones_is_a_tick_of_its_own(qgis_app, trace_layer, store_with_model):
@@ -320,11 +348,21 @@ def test_a_trace_row_shows_its_clip(qgis_app, make_trace_layer):
     from groundwork_geophysics.section.readout import format_value
     layer = make_trace_layer(scale=ColorScale("gray", -500.0, 500.0, False),
                              gain=DisplayGain(agc_window=0.01))
-    assert _scale_text(layer) == "clip 98 %"
+    assert _scale_text(layer) == "clip 98 % · AGC"
     assert clip_text(97.25) == "clip 97.2 %" or clip_text(97.25) == "clip 97.3 %"
     assert clip_text(0.1) == "clip 0.1 %" and clip_text(100.0) == "clip 100 %"
     typed = replace(layer, style=replace(layer.style, clip_percent=None))
-    assert _scale_text(typed) == f"{format_value(-500.0)}–{format_value(500.0)}"
+    assert _scale_text(typed) == f"{format_value(-500.0)}–{format_value(500.0)} · AGC"
+
+
+@pytest.mark.parametrize("gain, text", [
+    ({}, "clip 98 %"), ({"agc_window": 0.2, "time_power": 2.0}, "clip 98 % · AGC"),
+    ({"time_power": 2.0}, "clip 98 % · gain"), ({"balance_traces": True}, "clip 98 % · gain"),
+    ({"reverse_polarity": True}, "clip 98 %")])
+def test_a_trace_row_names_its_gain(qgis_app, make_trace_layer, gain, text):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.layer_list import _scale_text
+    assert _scale_text(make_trace_layer(gain=DisplayGain(**gain))) == text
 
 
 def test_the_first_scale_never_builds_a_gained_copy(make_trace_layer, monkeypatch):
