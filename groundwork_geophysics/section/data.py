@@ -70,21 +70,32 @@ def read_options(reader_options: dict) -> dict:
     return options
 
 
-def is_map_dataset(d: Dataset) -> bool:
-    """True for a dataset positioned by map coordinates (easting, northing): a free-text
-    table with map columns, or a section placed from its headers or a coordinate file."""
-    columns = d.reader_options.get("columns")
+def is_map_options(options: dict) -> bool:
+    """True for reader options that position the data by map coordinates (easting,
+    northing): a free-text table with map columns, or a section placed from its headers or a
+    coordinate file."""
+    columns = options.get("columns")
     if isinstance(columns, dict) and columns.get("position") == "map":
         return True
-    return d.reader_options.get("position") in ("map", "table")
+    return options.get("position") in ("map", "table")
+
+
+def map_crs_of(options: dict) -> str:
+    """The CRS of map-positioned reader options' coordinates ("" = the store's)."""
+    columns = options.get("columns")
+    if isinstance(columns, dict) and columns.get("position") == "map":
+        return str(columns.get("crs") or "")
+    return str(options.get("crs") or "")
+
+
+def is_map_dataset(d: Dataset) -> bool:
+    """True for a dataset positioned by map coordinates (``is_map_options``)."""
+    return is_map_options(d.reader_options)
 
 
 def _map_crs(d: Dataset) -> str:
     """The CRS of a map dataset's coordinates ("" = the store's)."""
-    columns = d.reader_options.get("columns")
-    if isinstance(columns, dict) and columns.get("position") == "map":
-        return str(columns.get("crs") or "")
-    return str(d.reader_options.get("crs") or "")
+    return map_crs_of(d.reader_options)
 
 
 def _past_ends(xy: np.ndarray, line: np.ndarray, tol: float = 1e-6) -> np.ndarray:

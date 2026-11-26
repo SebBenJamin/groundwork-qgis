@@ -13,7 +13,8 @@ import json
 from pathlib import Path
 
 import numpy as np
-from qgis.core import Qgis, QgsProject, QgsSettings
+from qgis.core import Qgis, QgsCoordinateReferenceSystem, QgsProject, QgsSettings
+from qgis.PyQt.QtCore import Qt
 from qgis.gui import QgsDoubleSpinBox
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                  QFormLayout,
@@ -22,22 +23,27 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 
 from .help import add_help_button
 from .add_data_files import READY, FilesBox
-from .. import readers
+from .. import libs, readers
 from ..core.coverage import overhang_message
 from ..core.layout import model_stations
 from ..core.lines import line_from_cloud
 from ..core.model import Dataset
 from ..core.numbers import fmt, fmt_count, fmt_sig, fmt_trim
+from ..core.trace_section import Velocity, depth_at
 from ..section.readout import format_value, unit_label
 from ..core.placement import Placement, fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
 from ..ids import LEGACY_ID
+from ..readers import segy
 from ..readers.errors import plain_error
 from ..core.coarsen import proposed_block
 from ..readers.text_columns import grid_of_file, map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
+from ..section.data import HANG_KEYS
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
+from .lib_install import start_install
+from .segy_box import FIELD_WORDS, SegyBox
 from .fit_line import WARNING_STYLE, fit_line, show_fit
 from ..core.dataset_types import METHODS, READINGS_KINDS, station_words
 from .placement_widget import PlacementWidget
@@ -49,8 +55,8 @@ from .table_widgets import PreviewTable, TableOptionsBox
 CHOOSE_OTHER = "Choose another file, or another format above."
 MISSING_FILE = "Check the path, or choose another file."
 Z_ITEMS = [("Choose…", None)] + list(VERTICAL_KINDS)
-FILE_FILTER = ("Model and data files (*.dat *.txt *.csv *.xyz *.vtk *.data *.ohm);;"
-               "All files (*)")
+FILE_FILTER = ("Model and data files (*.dat *.txt *.csv *.xyz *.vtk *.data *.ohm *.sgy "
+               "*.segy);;All files (*)")
 #: readers whose files hold readings and take a model-response file
 RESPONSE_READERS = ("bert_data",)
 #: response files looked for next to a data file
@@ -58,6 +64,18 @@ RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response"
                   "dcinv.response")
 #: the last text-table settings, offered for the next file with the same columns
 SETTINGS_KEY = f"{LEGACY_ID}/import/last"
+#: the last SEG-Y settings that are not about one file, offered for the next SEG-Y file
+SEGY_SETTINGS_KEY = f"{LEGACY_ID}/import/segy"
+SEGY_REMEMBERED = ("domain", "zero", "datum", "velocity_kind", "position", "crs")
+SEGY = "segy"
+SEGYIO = "segyio"
+SEGYIO_MISSING = ("Reading SEG-Y needs the free library segyio (0.4 MB), which is not "
+                  "installed.")
+INSTALL_TIP = "Download segyio with pip and install it into your QGIS profile"
+NO_SEGYIO_TIP = "Install segyio first"
+VOLUME_TIP = "Groundwork shows 2D sections"
+UNSTACKED = ("This file looks like unstacked records (several traces per CDP or offsets that "
+             "are not zero). Groundwork shows processed sections.")
 COARSE_NOTE = "{n} cells of {dx} × {dz} m: far finer than an inversion resolves."
 COARSE_TEXT = "Read as cells of"
 COARSE_TIP = ("Average the file's points in blocks of this size: faster sections, plates and "
@@ -106,9 +124,33 @@ def guess_response(path) -> str:
     return str(found.pop()) if len(found) == 1 else ""
 
 
-def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0) -> str:
+def describe_traces(section, options: dict | None = None) -> str:
+    """'1970 traces × 1125 samples · 4 ms · 0 – 4.5 s', with a usable velocity in
+    ``options`` ' · to 6750 m depth' (below time zero, at the end of the record)."""
+    n, ns = section.n_traces, section.n_samples
+    end = section.first + ns * section.step
+    if section.domain == "depth":
+        return (f"{fmt_count(n)} traces × {fmt_count(ns)} samples · "
+                f"{fmt_trim(section.step, 3)} m · {fmt_trim(section.first, 2)} – "
+                f"{fmt_trim(end, 2)} m")
+    text = (f"{fmt_count(n)} traces × {fmt_count(ns)} samples · "
+            f"{fmt_trim(section.step * 1000.0, 3)} ms · {fmt_trim(section.first, 3)} – "
+            f"{fmt_trim(end, 3)} s")
+    try:
+        depth = float(depth_at(section, Velocity.from_options(options or {}),
+                               np.array([end]))[0])
+    except ValueError:
+        return text                             # no usable velocity yet: the box says so
+    return text + f" · to {fmt_count(depth)} m depth" if np.isfinite(depth) else text
+
+
+def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0,
+             options: dict | None = None) -> str:
     """One-line summary of a reader result for the preview label, numbers in the QGIS
-    locale; ``sample``: the result holds only the file's first ``sample`` rows."""
+    locale; ``sample``: the result holds only the file's first ``sample`` rows; ``options``:
+    a trace section's velocity for its depth."""
+    if result.traces is not None:
+        return describe_traces(result.traces, options)
     mesh = result.mesh
     r = getattr(mesh, "readings", None)
     if r is not None:
@@ -153,12 +195,17 @@ def _rows_word(n: int) -> str:
     return f"{n} {'row' if n == 1 else 'rows'}"
 
 
-def _remembered() -> dict | None:
+def _remembered(key: str = SETTINGS_KEY) -> dict | None:
     try:
-        last = json.loads(QgsSettings().value(SETTINGS_KEY, "") or "null")
+        last = json.loads(QgsSettings().value(key, "") or "null")
     except (TypeError, ValueError):
         return None
     return last if isinstance(last, dict) else None
+
+
+def _remember_segy(options: dict) -> None:
+    QgsSettings().setValue(SEGY_SETTINGS_KEY, json.dumps(
+        {k: options[k] for k in SEGY_REMEMBERED if k in options}))
 
 
 def _guarded(method):
@@ -210,6 +257,11 @@ class AddDataDialog(QDialog):
         self._file_grids: dict = {}                 # path -> (key, grid) of the coarse check
         self._file_blocks: dict = {}                # path -> proposed block or None
         self.added: list = []                       # (profile, dataset) per file added
+        self._segy_key = self._segy_info = None     # (path, mtime) and what its headers say
+        self._segy_infos: dict = {}                 # path -> (mtime, info or error), several
+        self._segy_remembered = False               # the last SEG-Y settings were offered
+        self._install_task = None
+        self._install_message = ""                  # why installing segyio failed
 
         self.file_edit = QLineEdit()
         self.file_edit.editingFinished.connect(self._file_typed)
@@ -260,6 +312,11 @@ class AddDataDialog(QDialog):
                                          allow_file_coordinates=True)
         self.placement.setObjectName("placement")
         self.placement.set_current_profile(profile_id)
+        self.segy_box = SegyBox()
+        prj_crs = self.project.crs()
+        self.segy_box.set_default_crs(prj_crs if prj_crs.isValid() else
+                                      QgsCoordinateReferenceSystem(store.crs_authid))
+        self.segy_box.hide()
 
         self._preview_group = preview = QGroupBox("Preview")
         preview.setObjectName("preview_group")
@@ -269,6 +326,12 @@ class AddDataDialog(QDialog):
         self.preview_table.verticalHeader().setDefaultSectionSize(
             self.fontMetrics().height() + 6)
         self.summary_label = _label("summary_label")
+        self.summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._install_button = None                 # made when segyio is found missing
+        self.summary_row = QWidget()
+        summary_row = QHBoxLayout(self.summary_row)
+        summary_row.setContentsMargins(0, 0, 0, 0)
+        summary_row.addWidget(self.summary_label, 1)
         self.fit_label = _label("fit_label")
         self.electrode_label = _label("electrode_label")
         self.warning_label = _label("warning_label")
@@ -280,7 +343,7 @@ class AddDataDialog(QDialog):
         self.status_block.setObjectName("status_block")
         status = QVBoxLayout(self.status_block)
         status.setContentsMargins(0, 0, 0, 0)
-        for w in (self.coarse_note, self.coarse_row, self.summary_label, self.fit_label,
+        for w in (self.coarse_note, self.coarse_row, self.summary_row, self.fit_label,
                   self.electrode_label, self.warning_label):
             status.addWidget(w)
 
@@ -291,8 +354,8 @@ class AddDataDialog(QDialog):
         self._page = page = QWidget()
         column = QVBoxLayout(page)
         column.addLayout(form)
-        for w in (self.files_box, self.table_options, self.columns_group, self.placement,
-                  preview):
+        for w in (self.files_box, self.segy_box, self.table_options, self.columns_group,
+                  self.placement, preview):
             column.addWidget(w)
         column.addStretch(1)
         self._scroll = scroll = QScrollArea()
@@ -300,7 +363,8 @@ class AddDataDialog(QDialog):
         scroll.setWidget(page)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Add")
+        self.add_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        self.add_button.setText("Add")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         add_help_button(buttons, "add_data")
@@ -316,6 +380,7 @@ class AddDataDialog(QDialog):
         self.station_set_combo.currentIndexChanged.connect(self._refresh)
         self.table_options.changed.connect(self._refresh)
         self.columns_group.changed.connect(self._refresh)
+        self.segy_box.changed.connect(self._refresh)
         self.placement.changed.connect(self._refresh)
         self.placement.zero_combo.activated.connect(self._zero_activated)
         self._refresh()
@@ -332,7 +397,12 @@ class AddDataDialog(QDialog):
     def _is_table(self) -> bool:
         return self._reader() == readers.FALLBACK
 
+    def _is_segy(self) -> bool:
+        return self._reader() == SEGY
+
     def _on_map(self) -> bool:
+        if self._is_segy():
+            return self.segy_box.position() in ("map", "table")
         return self._is_table() and self.columns_group.columns().position == "map"
 
     def _name(self) -> str:
@@ -340,6 +410,8 @@ class AddDataDialog(QDialog):
 
     def _reader_options(self) -> dict:
         """The reader options as saved (the placement is added on saving)."""
+        if self._is_segy():
+            return self.segy_box.options()
         if self._is_table():
             options = {"table": self.table_options.options().to_dict(),
                        "columns": self.columns_group.columns().to_dict()}
@@ -557,7 +629,9 @@ class AddDataDialog(QDialog):
         the chosen placement. A fixed format's own Z hint presets "Z means" once."""
         path, reader = self._path(), self._reader()
         profile = self._draft()[0] if self._on_map() else None
-        if not self._is_table() and self._z_preset != (path, reader):
+        if self._is_segy():                         # the method is set with the headers
+            pass
+        elif not self._is_table() and self._z_preset != (path, reader):
             self._read_key = None
             self._result = read_for(self.store, profile, path, reader,
                                     {k: v for k, v in self._reader_options().items()
@@ -582,9 +656,11 @@ class AddDataDialog(QDialog):
         return self._result
 
     def _key(self, profile) -> tuple:
+        """What the read depends on; a section's velocity and time zero only hang it."""
         line = None if profile is None else np.asarray(profile.xy, float).tobytes()
-        return (self._path(), self._reader(),
-                json.dumps(self._sample_options(), sort_keys=True), line)
+        options = {k: v for k, v in self._sample_options().items()
+                   if not (self._is_segy() and k in HANG_KEYS)}
+        return (self._path(), self._reader(), json.dumps(options, sort_keys=True), line)
 
     def _draft(self):
         """(profile, station sets, new station set) the placement gives; nothing saved."""
@@ -607,11 +683,15 @@ class AddDataDialog(QDialog):
             self._fit_width()
 
     def _update(self) -> None:
-        table = self._is_table()
+        table, segy_file = self._is_table(), self._is_segy()
         for w in (self.table_options, self.columns_group, self._preview_group):
             w.setVisible(table)
+        self.segy_box.setVisible(False)             # shown once the headers are read
+        if self._install_button is not None:
+            self._install_button.setVisible(False)
+        self._set_addable(True)
         self._form.setRowVisible(self.response_row, self._reader() in RESPONSE_READERS)
-        self._form.setRowVisible(self.z_combo, not table)
+        self._form.setRowVisible(self.z_combo, not table and not segy_file)
         for label in (self.summary_label, self.fit_label, self.electrode_label,
                       self.warning_label):
             label.clear()
@@ -624,6 +704,10 @@ class AddDataDialog(QDialog):
             self.preview_table.show(tab, self.columns_group.roles_for(tab.n_columns),
                                     PREVIEW_ROWS)
             problems = self.columns_group.columns().problems(tab)
+        elif segy_file and self._path():
+            if not self._segy_headers():            # segyio missing, or a 3D volume
+                return
+            problems = self.segy_box.read_problems()  # velocity etc. only hang it
         self._sync_placement(not problems)
         self._sync_coarse(table and bool(self._path()) and not problems)
         several = bool(self._files)
@@ -637,13 +721,14 @@ class AddDataDialog(QDialog):
             self.summary_label.setText("Choose a data file.")
             return
         if problems:
-            self.summary_label.setText("; ".join(problems))
+            self.summary_label.setText((" " if segy_file else "; ").join(problems))
             return
         if self._on_map():                          # read onto the line, once there is one
             try:
                 self._draft()
             except ValueError as exc:
-                self.summary_label.setText(f"The cells are placed by their map coordinates "
+                what = "traces" if segy_file else "cells"
+                self.summary_label.setText(f"The {what} are placed by their map coordinates "
                                            f"once the line is chosen: {exc}")
                 return
         try:
@@ -658,12 +743,127 @@ class AddDataDialog(QDialog):
         z_kind = self.columns_group.columns().vertical_kind if table else \
             self.z_combo.currentData()
         self.summary_label.setText(describe(result, z_kind,
-                                            SAMPLE_ROWS if table and self._more else 0))
+                                            SAMPLE_ROWS if table and self._more else 0,
+                                            self._reader_options()))
+        if result.traces is not None and self.segy_box.hang_problems():
+            self.summary_label.setText(self.summary_label.text() + "\n" +
+                                       " ".join(self.segy_box.hang_problems()))
         if several:                                 # the summary is the first file's
             self.summary_label.setText(f"{Path(self._path()).name}: "
                                        f"{self.summary_label.text()}")
             return
-        self._show_placement(result, z_kind)
+        if result.traces is not None:
+            self._show_trace_placement(result)
+        else:
+            self._show_placement(result, z_kind)
+
+    # -- SEG-Y -------------------------------------------------------------------------------
+    def _set_addable(self, ok: bool, why: str = "") -> None:
+        self.add_button.setEnabled(ok)
+        self.add_button.setToolTip("" if ok else why)
+
+    @property
+    def install_button(self) -> QPushButton:
+        """The Install segyio button beside the summary, made the first time segyio is
+        found missing."""
+        if self._install_button is None:
+            button = self._install_button = QPushButton("Install segyio")
+            button.setObjectName("install_button")
+            button.setToolTip(INSTALL_TIP)
+            button.clicked.connect(self._install)
+            self.summary_row.layout().addWidget(button, 0, Qt.AlignmentFlag.AlignTop)
+        return self._install_button
+
+    def _segy_headers(self) -> bool:
+        """Read the SEG-Y file's headers into the box (once per file and change); False when
+        the file cannot be added as it is: segyio is missing (with the Install button) or it
+        is a 3D volume."""
+        if self._method_for != (self._path(), SEGY):     # proposed once per file
+            self._preset_method({"method": "refl"}, "amplitude")
+            self._method_for = (self._path(), SEGY)
+        if not libs.available(SEGYIO):
+            text = SEGYIO_MISSING
+            if self._install_message:
+                text += "\n\n" + self._install_message
+            self.summary_label.setText(text)
+            button = self.install_button
+            button.setVisible(True)
+            busy = self._install_task is not None
+            button.setEnabled(not busy)
+            button.setText("Installing…" if busy else "Install segyio")
+            self._set_addable(False, NO_SEGYIO_TIP)
+            return False
+        self._install_message = ""
+        path = Path(self._path())
+        key = (str(path), path.stat().st_mtime if path.is_file() else None)
+        if key != self._segy_key:
+            self._segy_key, self._segy_info = None, None
+            info = segy.inspect(path)               # a file segyio cannot read: said so
+            self.segy_box.set_info(info, str(path))
+            if not self._segy_remembered:           # the last file's settings, once
+                self._segy_remembered = True
+                self.segy_box.set_options(_remembered(SEGY_SETTINGS_KEY) or {})
+            self._segy_key, self._segy_info = key, info
+        self.segy_box.setVisible(True)
+        if self._segy_info.volume:
+            self.summary_label.setText(segy.volume_message(path.name, self._segy_info))
+            self._set_addable(False, VOLUME_TIP)
+            return False
+        return True
+
+    def _segy_line(self) -> None:
+        """The line through the section's trace positions (headers or coordinate file), in
+        the store's CRS, for the placement's "file" source."""
+        o = self.segy_box.options()
+        where = {k: o.get(k) for k in ("position", "xy_field", "positions_file",
+                                       "positions_table", "positions_columns", "crs")}
+        key = (SEGY, self._path(), json.dumps(where, sort_keys=True))
+        if key != self._line_key:
+            self._line, self._line_error = None, ""
+            try:
+                xy = segy.map_positions(self._path(), o)
+                self._line = line_from_cloud(xy_to_store(xy, o.get("crs", ""),
+                                                         self.store.crs_authid, self.project))
+            except ValueError as exc:
+                self._line_error = str(exc)
+            self._line_key = key
+            self.placement.set_file_line(*(self._line or (None, 0)))
+
+    def _show_trace_placement(self, result) -> None:
+        """Warnings for a trace section: unstacked records, positions off an existing
+        profile's line (as for map tables)."""
+        on_map = self._on_map()
+        self.placement.set_guessed_spacing(None)
+        warnings = [UNSTACKED] if result.provenance.get("unstacked") else []
+        if on_map and self._line_error:
+            warnings.append(self._line_error)
+        try:
+            self.placement.placement()
+            self._draft()
+        except ValueError as exc:
+            self.fit_label.setText(str(exc))
+            self._set_warnings(warnings)
+            return
+        if on_map and self.placement.source() != "file":
+            warnings += self._map_fit(result.provenance, "traces")
+        self._set_warnings(warnings)
+
+    def _install(self) -> None:
+        """Install segyio on the user's click, in a QGIS task; the dialog stays usable."""
+        if self._install_task is not None:
+            return
+        self._install_message = ""
+        self.install_button.setEnabled(False)
+        self.install_button.setText("Installing…")
+        self._install_task = start_install(SEGYIO)
+        self._install_task.done.connect(self._installed)
+
+    @_guarded
+    def _installed(self, ok: bool, message: str) -> None:
+        self._install_task = None
+        self._install_message = "" if ok else message
+        self._segy_key = None                       # read the headers now
+        self._refresh()
 
     # -- several files -----------------------------------------------------------------------
     def _check_files(self, columns_ok: bool) -> None:
@@ -679,6 +879,11 @@ class AddDataDialog(QDialog):
     def _file_problem(self, path: str, target, names, columns_ok: bool) -> str:
         if not Path(path).is_file():
             return "File not found"
+        if self._is_segy():
+            problem = self._segy_file_problem(path, columns_ok)
+            if problem:
+                return problem
+            return "" if target is not None else "Choose a profile"
         if not columns_ok:
             return "Assign the columns first (above)"
         if names is not None and path != self._path():
@@ -690,6 +895,34 @@ class AddDataDialog(QDialog):
                 return "Other columns than the first file"
         if target is None:
             return "Choose a profile"
+        return ""
+
+    def _segy_file_problem(self, path: str, settings_ok: bool) -> str:
+        """Why one of several SEG-Y files cannot be added with the box's settings ("" when it
+        can)."""
+        if not libs.available(SEGYIO):
+            return "Install segyio first (above)"
+        if not settings_ok or self.segy_box.problems():  # velocity too: it blocks Add
+            return "Complete the SEG-Y settings first (above)"
+        mtime = Path(path).stat().st_mtime
+        cached = self._segy_infos.get(path)
+        if cached is None or cached[0] != mtime:
+            try:
+                cached = (mtime, segy.inspect(path))
+            except ValueError as exc:
+                cached = (mtime, str(exc))
+            self._segy_infos[path] = cached
+        info = cached[1]
+        if isinstance(info, str):
+            return info
+        if info.volume:
+            return "A 3D volume: Groundwork shows 2D sections"
+        o = self.segy_box.options()
+        if o.get("position") == "map" and o.get("xy_field") not in info.positions:
+            word = FIELD_WORDS.get(o.get("xy_field"), "chosen")
+            return f"The file has no positions in the {word} fields that change"
+        if o.get("position") == "table" and path != self._path():
+            return "A coordinate file is for one file: add this file on its own"
         return ""
 
     def _cells_offer(self, path: str) -> str:
@@ -717,6 +950,12 @@ class AddDataDialog(QDialog):
                 f"{fmt_trim(block[1] * grid.dz, size_decimals(grid.dz))} m")
 
     def _file_placement(self, path: str, target) -> Placement:
+        if target == FilesBox.NEW and self._is_segy():    # through the trace positions
+            o = self.segy_box.options()
+            line, _bends = line_from_cloud(xy_to_store(segy.map_positions(path, o),
+                                                       o.get("crs", ""),
+                                                       self.store.crs_authid, self.project))
+            return Placement(line_xy=line)
         if target == FilesBox.NEW:                  # a line through the file's coordinates
             cols = self.columns_group.columns()
             xy = map_points(path, self.table_options.options().to_dict(), cols.to_dict())
@@ -797,6 +1036,8 @@ class AddDataDialog(QDialog):
             QgsSettings().setValue(SETTINGS_KEY, json.dumps(
                 {"names": self._table.names, "table": self.table_options.options().to_dict(),
                  "columns": self.columns_group.columns().to_dict()}))
+        elif self._is_segy():
+            _remember_segy(self._reader_options())
         super().accept()
 
     def _fit_width(self) -> None:
@@ -845,6 +1086,9 @@ class AddDataDialog(QDialog):
     def _file_line(self) -> None:
         """Hand the line through the file's map positions (in the store's CRS) to the
         placement; remembered per file, layout and coordinate columns."""
+        if self._is_segy():
+            self._segy_line()
+            return
         cols = self.columns_group.columns()
         key = (self._path(), self.table_options.options(), cols.easting, cols.northing,
                cols.crs)
@@ -917,17 +1161,17 @@ class AddDataDialog(QDialog):
         one picked in "Station set" (None: the profile's first)."""
         return new_set.id if new_set is not None else self.station_set_combo.currentData()
 
-    def _map_fit(self, provenance: dict) -> list[str]:
+    def _map_fit(self, provenance: dict, what: str = "cells") -> list[str]:
         offset = float(provenance.get("max_offset") or 0.0)
         beyond = int(provenance.get("n_beyond") or 0)
-        text = f"Cells up to {fmt(offset, 1)} m from the line"
+        text = f"{what.capitalize()} up to {fmt(offset, 1)} m from the line"
         if beyond:
             text += f"; {beyond} {'position lies' if beyond == 1 else 'positions lie'} " \
                     "beyond its ends"
         self.fit_label.setText(text)
         out = []
         if offset > OFF_LINE:
-            out.append(f"Some cells lie up to {fmt(offset, 1)} m from the profile line: is "
+            out.append(f"Some {what} lie up to {fmt(offset, 1)} m from the profile line: is "
                        "this the right profile?")
         if beyond:
             out.append(f"{beyond} of the file's positions lie beyond the ends of the line.")
@@ -1046,6 +1290,8 @@ class AddDataDialog(QDialog):
             QgsSettings().setValue(SETTINGS_KEY, json.dumps(
                 {"names": self._table.names, "table": self.table_options.options().to_dict(),
                  "columns": self.columns_group.columns().to_dict()}))
+        elif self._is_segy():
+            _remember_segy(self._reader_options())
         super().accept()
 
     def _whole_file_line(self) -> None:
@@ -1061,6 +1307,16 @@ class AddDataDialog(QDialog):
         saying what is missing otherwise."""
         if not self._path():
             raise ValueError("Choose a data file")
+        if self._is_segy():
+            if not libs.available(SEGYIO):
+                raise ValueError(SEGYIO_MISSING)
+            if self._segy_info is None:             # the headers say what is wrong
+                raise ValueError(self.summary_label.text() or SEGYIO_MISSING)
+            if self._segy_info.volume:
+                raise ValueError(segy.volume_message(Path(self._path()).name, self._segy_info))
+            problems = self.segy_box.problems()
+            if problems:
+                raise ValueError(" ".join(problems))
         if self._is_table():
             problems = self.columns_group.columns().problems(self._preview())
             if problems:
@@ -1079,6 +1335,12 @@ class AddDataDialog(QDialog):
             bar.pushMessage(self.windowTitle(), message, Qgis.MessageLevel.Warning, 15)
 
     def done(self, result: int) -> None:
+        if self._install_task is not None:          # it finishes without the dialog
+            try:
+                self._install_task.done.disconnect(self._installed)
+            except (TypeError, RuntimeError):
+                pass
+            self._install_task = None
         self.placement.cancel_pick()
         self.placement.clear_overlay()
         super().done(result)

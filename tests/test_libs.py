@@ -40,3 +40,18 @@ def test_missing_library_is_a_value_error_naming_it():
 
 def test_available_is_false_for_a_name_nobody_has():
     assert libs.available("no_such_library_xyz") is False
+
+
+def test_a_pip_that_hangs_is_stopped_and_counts_as_failed(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(libs, "_profile_dir", lambda: tmp_path)
+    seen = {}
+
+    def hanging(*args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout"))
+    monkeypatch.setattr(subprocess, "run", hanging)
+    ok, message = libs.install("segyio")
+    assert seen["timeout"] == 300 and not ok
+    assert "did not finish within 300 seconds" in message
+    assert libs.manual_command("segyio") in message

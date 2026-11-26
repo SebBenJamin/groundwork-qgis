@@ -171,11 +171,57 @@ def _scan(segyio, f, path: Path, endian: str) -> tuple[SegyInfo, _Headers]:
 
 def inspect(path) -> SegyInfo:
     """What the file's headers say (no samples are read)."""
+    return _headers(path)[0]
+
+
+def _headers(path) -> tuple[SegyInfo, _Headers]:
     path = Path(path)
     segyio = _segyio()
     f, endian = _open(segyio, path)
     with f:
-        return _scan(segyio, f, path, endian)[0]
+        return _scan(segyio, f, path, endian)
+
+
+def _numbers(info: SegyInfo, heads: _Headers) -> np.ndarray:
+    """The number of each trace: the CDP field when it holds one number per trace, else 1..n."""
+    return heads.cdp.copy() if info.numbers_from_cdp else np.arange(1, info.n_traces + 1)
+
+
+def volume_message(name: str, info: SegyInfo) -> str:
+    """What is said about a 3D volume, which Groundwork does not show."""
+    return (f"{name}: this is a 3D volume ({info.n_inlines} inlines × {info.n_crosslines} "
+            "crosslines). Groundwork shows 2D sections.")
+
+
+def trace_numbers(path) -> np.ndarray:
+    """The number of each trace as a coordinate file lists it (headers only)."""
+    return _numbers(*_headers(path))
+
+
+def map_positions(path, options: dict) -> np.ndarray:
+    """Easting and northing (n, 2) of each trace as a read with ``options`` places them:
+    ``position`` "map" (the ``xy_field`` header pair, repeated fixes spread out) or "table"
+    (the coordinate file). Headers only, no samples; ValueError as the reader says it."""
+    path = Path(path)
+    info, heads = _headers(path)
+    position = options.get("position")
+    if position == "map":
+        xy_field = options.get("xy_field")
+        if xy_field not in heads.coords:
+            raise ValueError(f"{path.name}: the file has no positions in the "
+                             f"{_FIELD_NAMES.get(xy_field, str(xy_field))} fields that change "
+                             "along the line.")
+        return spread_fixes(heads.coords[xy_field])
+    if position == "table":
+        given = options.get("positions_file")
+        if not given:
+            raise ValueError(f"{path.name}: choose the coordinate file with the trace positions")
+        table_path = Path(given)
+        if not table_path.is_absolute():
+            table_path = path.parent / table_path
+        return table_positions(table_path, options.get("positions_table") or {},
+                               options.get("positions_columns") or {}, _numbers(info, heads))
+    raise ValueError(f"{path.name}: the traces are not placed by map positions")
 
 
 def spread_fixes(xy) -> np.ndarray:
@@ -296,8 +342,7 @@ class SegyReader(Reader):
         with f:
             info, heads = _scan(segyio, f, path, endian)
             if info.volume:
-                raise ValueError(f"{name}: this is a 3D volume ({info.n_inlines} inlines × "
-                                 f"{info.n_crosslines} crosslines). Groundwork shows 2D sections.")
+                raise ValueError(volume_message(name, info))
             if position == "map":
                 xy_field = options.get("xy_field")
                 if xy_field not in POSITION_FIELDS:
@@ -324,7 +369,7 @@ class SegyReader(Reader):
         # the delay is in milliseconds; for a depth section its number is read as metres
         first = info.first if domain == "time" else info.first * 1000.0
         n = info.n_traces
-        numbers = heads.cdp.copy() if info.numbers_from_cdp else np.arange(1, n + 1)
+        numbers = _numbers(info, heads)
 
         provenance = {"reader": self.name, "source_name": name, "n_traces": n,
                       "n_samples": info.n_samples, "step": info.step, "first": info.first,

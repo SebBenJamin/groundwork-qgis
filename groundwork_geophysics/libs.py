@@ -24,6 +24,9 @@ from pathlib import Path
 # --no-deps: segyio needs NumPy, and QGIS's own NumPy must not get a second copy beside it
 PIP_ARGS = ["install", "--target", "{dir}", "--only-binary=:all:", "--no-deps", "--upgrade", "{name}"]
 
+#: seconds pip may take before the install counts as failed
+PIP_TIMEOUT = 300
+
 # what each library is for, in the text the user sees when it is missing
 _PURPOSE = {"segyio": "Reading SEG-Y"}
 
@@ -86,12 +89,17 @@ def _pip_args(name: str) -> list:
     return [a.format(dir=libs_dir(), name=name) for a in PIP_ARGS]
 
 
-def _run(args: list) -> tuple:
-    """Run `python -m pip <args>`; returns (exit code, pip's output)."""
+def _run(args: list, timeout: float | None = None) -> tuple:
+    """Run `python -m pip <args>`; returns (exit code, pip's output). A pip that has not
+    finished after ``timeout`` seconds (default ``PIP_TIMEOUT``) is stopped and counts as
+    failed."""
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0  # no console window popping up
+    timeout = PIP_TIMEOUT if timeout is None else timeout
     try:
         done = subprocess.run([_python(), "-m", "pip", *args], capture_output=True, text=True,
-                              creationflags=flags)
+                              creationflags=flags, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 1, f"pip did not finish within {round(timeout)} seconds."
     except OSError as exc:
         return 1, str(exc)
     return done.returncode, (done.stdout or "") + (done.stderr or "")

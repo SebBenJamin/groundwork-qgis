@@ -17,13 +17,13 @@ from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsP
                        QgsVectorLayer, QgsVectorLayerSimpleLabeling)
 
 from .. import readers
-from ..core.dataset_types import READINGS_KINDS, model_kind
+from ..core.dataset_types import READINGS_KINDS, TRACE_KINDS, is_trace_kind, model_kind
 from ..core.model import (Dataset, Profile, StationSet, attach_positions, file_fingerprint,
                           profile_from_polyline, profile_from_positions)
 from ..core.placement import Placement
 from ..ids import LEGACY_ID, LEGACY_NAME, NAME
 from ..readers.base import Z_CHOICES
-from ..section.data import read_options, xy_to_distance_on
+from ..section.data import is_map_options, map_crs_of, read_options, xy_to_distance_on
 from ..store.gpkg_store import ProjectStore
 
 SCOPE = LEGACY_ID
@@ -420,8 +420,9 @@ def model_source_path(store: ProjectStore, path: Path) -> str:
 
 
 def _on_map(options: dict) -> bool:
-    columns = options.get("columns")
-    return isinstance(columns, dict) and columns.get("position") == "map"
+    """Placed by map coordinates: a table's map columns, a section's header positions or
+    coordinate file."""
+    return is_map_options(options)
 
 
 def read_for(store: ProjectStore, profile: Profile | None, path: Path, reader: str,
@@ -433,8 +434,8 @@ def read_for(store: ProjectStore, profile: Profile | None, path: Path, reader: s
     if max_rows is not None:
         opts["max_rows"] = max_rows
     if _on_map(options):
-        opts["xy_to_distance"] = xy_to_distance_on(
-            profile, str(options["columns"].get("crs") or ""), store.crs_authid)
+        opts["xy_to_distance"] = xy_to_distance_on(profile, map_crs_of(options),
+                                                   store.crs_authid)
     return readers.read(Path(path), reader=reader or None, **opts)
 
 
@@ -474,12 +475,15 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     read_kind = result.provenance.get("kind")
     if read_kind not in READINGS_KINDS and kind:
         read_kind = kind
+    if result.traces is not None and not is_trace_kind(read_kind or ""):
+        read_kind = TRACE_KINDS[0]              # a trace section is never a cell model
+    data = result.traces if result.traces is not None else result.mesh
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
                       read_kind or "ert_model",
                       model_source_path(store, path),
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
                       dict(result.provenance), name=name or path.stem,
-                      quantity=result.mesh.quantity, unit=result.mesh.unit)
+                      quantity=data.quantity, unit=data.unit)
     if profile is None and station_set is None:
         store.save_dataset(dataset)
     else:
