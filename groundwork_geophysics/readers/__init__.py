@@ -55,12 +55,13 @@ def _register_builtins() -> None:
     from .r2_err import R2ErrReader
     from .r2_res import R2ResReader
     from .refrapy_xzv import RefrapyXzvReader
+    from .segy import SegyReader
     from .text_columns import TextColumnsReader
     from .vtk_legacy import VtkLegacyReader
     from .zondres import ZondResReader
     # most specific first
-    for cls in (RefrapyXzvReader, BertDataReader, R2ErrReader, R2ResReader, VtkLegacyReader,
-                ZondResReader):
+    for cls in (SegyReader, RefrapyXzvReader, BertDataReader, R2ErrReader, R2ResReader,
+                VtkLegacyReader, ZondResReader):
         register(cls())
     register(TextColumnsReader())          # never detected; chosen by the user, so last
 
