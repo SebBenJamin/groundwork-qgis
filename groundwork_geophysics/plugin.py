@@ -658,7 +658,7 @@ class WorkbenchPlugin:
         profiles stay as they are. True when it did, False when something of it was shown
         already, None when it has nothing to show."""
         choice = view3d_layers.read_choice(project)
-        models = {d.id for d in self.store.datasets(profile_id) if d.kind.endswith("_model")}
+        models = {d.id for d in self.store.datasets(profile_id) if view3d_layers.in_3d(d.kind)}
         if profile_id in choice.boreholes or models & choice.models:
             return False
         boreholes = {profile_id} & view3d_layers.profiles_with_boreholes_of(

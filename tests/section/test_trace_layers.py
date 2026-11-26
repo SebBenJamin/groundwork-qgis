@@ -485,3 +485,15 @@ def test_drawing_on_a_profile_with_only_a_section(qgis_app, make, make_dock):
     snap = dock.provider.snapshot(pid)
     assert [p.id for p in snap.interpretation] == [piece.id]
     QgsProject.instance().removeAllMapLayers()
+
+
+@pytest.mark.parametrize("table, said", [
+    ([[0.0, 1800.0], [0.0, 2400.0]], "The times of the velocity function must increase."),
+    ([[0.0, 3000.0], [0.04, 500.0]],
+     "The velocity function gives depths that do not increase with time."),
+    ([[0.0, 1800.0], [0.04, -5.0]], "The velocity must be greater than 0 m/s.")])
+def test_a_bad_stored_velocity_function_says_where_to_set_it(make, table, said):
+    provider, _store, pid = make({"velocity": None, "velocity_table": table,
+                                  "velocity_kind": "average"})
+    (layer,) = provider.layers(pid)
+    assert layer.error.endswith(f"{said} Set it in Dataset Info.")

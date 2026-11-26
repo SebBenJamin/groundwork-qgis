@@ -18,13 +18,21 @@ def _links(version: str) -> str:
     return "<br>".join(f'<a href="{url}">{text}</a>' for text, url in rows)
 
 
+def _library(name: str) -> str:
+    """An optional library's line: "segyio 1.9.15", or "segyio: not installed"."""
+    from .. import libs
+    if not libs.available(name):
+        return f"{name}: not installed"
+    return f"{name} {libs.version(name)}".strip()
+
+
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"About {NAME}")
         version = plugin_version()
         title = QLabel(f"<h2>{NAME}</h2><p>{SUBTITLE[:1].upper() + SUBTITLE[1:]}.</p>")
-        info = QLabel(f"Version {version}<br>QGIS {Qgis.version()}")
+        info = QLabel(f"Version {version}<br>QGIS {Qgis.version()}<br>{_library('segyio')}")
         info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         links = QLabel(_links(version))
         links.setOpenExternalLinks(True)

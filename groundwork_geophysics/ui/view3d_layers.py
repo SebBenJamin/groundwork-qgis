@@ -33,6 +33,7 @@ from qgis.core import (Qgis, QgsFeature, QgsFillSymbol, QgsGeometry,
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
+from ..core.dataset_types import is_trace_kind
 from ..ids import LEGACY_ID
 from .project_actions import SCOPE, plugin_group, station_radius
 from .qgis_objects import as_kind, handed_over
@@ -124,6 +125,24 @@ class Choice:
     def look_of(self, dataset_id: str) -> str:
         """The dataset's representation, one of ``REPRESENTATIONS``."""
         return self.looks.get(dataset_id, REPRESENTATIONS[0])
+
+    def look_for(self, dataset) -> str:
+        """``dataset``'s representation: a reflection section only stands in its profile's
+        section picture, whatever look is stored for it."""
+        if is_trace_kind(dataset.kind):
+            return "picture"
+        return self.look_of(dataset.id)
+
+
+def representations(dataset) -> tuple:
+    """The representations ``dataset`` can stand as in 3D: a reflection section has no cells
+    to show or grid, only its section picture."""
+    return ("picture",) if is_trace_kind(dataset.kind) else REPRESENTATIONS
+
+
+def in_3d(kind: str) -> bool:
+    """True for the kinds the 3D view can show: models and reflection sections."""
+    return kind.endswith("_model") or is_trace_kind(kind)
 
 
 def _size(value) -> float | None:
@@ -515,7 +534,7 @@ def _chosen_models(store, choice: Choice) -> list[tuple]:
     out = []
     for profile in store.profiles():
         for d in store.datasets(profile.id):
-            if d.id in choice.models and d.kind.endswith("_model"):
+            if d.id in choice.models and in_3d(d.kind):
                 out.append((profile, d))
     return out
 
@@ -552,7 +571,14 @@ def _gather(store, provider, choice: Choice) -> list[tuple]:
 
 
 def _shown(section_layer) -> bool:
+    """A model with cells to show (as cells, a point cloud, contour lines or a picture)."""
     return section_layer is not None and section_layer.mesh is not None
+
+
+def _pictured(section_layer) -> bool:
+    """A layer a section picture can paint: a model with cells or a reflection section."""
+    return section_layer is not None and (section_layer.mesh is not None
+                                          or section_layer.traces is not None)
 
 
 def _as_cells(section_layer) -> bool:
@@ -652,6 +678,24 @@ def _cloud_signature(section_layer, profile, topo) -> str:
     h.update(repr((None if sc is None else (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp, sc.lut),
                    style.grid_cell, style.fade_coverage, style.coverage_threshold,
                    style.fade_mode, CLOUD_SPACING, style.interpolation.key())).encode())
+    return h.hexdigest()[:10]
+
+
+def _trace_signature(section_layer, profile, topo) -> str:
+    """``_cloud_signature`` of a reflection section: the read (its file and read options,
+    else its samples), how it hangs, its colours and display options."""
+    from ..section.display_render import _placement
+    placed, style = section_layer.traces, section_layer.style
+    sc = style.scale
+    h = hashlib.sha1()
+    read = None if section_layer.level_cache is None else section_layer.level_cache[1]
+    h.update(read.encode() if read else
+             np.ascontiguousarray(placed.section.amplitudes).tobytes())
+    h.update(_placement(placed).encode())
+    for a in (profile.xy, *(() if topo is None else topo)):
+        h.update(np.ascontiguousarray(a, dtype=float).tobytes())
+    h.update(repr((None if sc is None else (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp, sc.lut),
+                   style.clip_percent, style.gain)).encode())
     return h.hexdigest()[:10]
 
 
@@ -893,7 +937,8 @@ def _picture_signature(layers, profile, topo, interpretation=None, gap: float = 
     h = hashlib.sha1()
     for section_layer in layers:
         style = section_layer.style
-        h.update(_cloud_signature(section_layer, profile, topo).encode())
+        h.update((_cloud_signature(section_layer, profile, topo) if section_layer.mesh is not None
+                  else _trace_signature(section_layer, profile, topo)).encode())
         h.update(repr((section_layer.dataset.id, style.mode, style.contour_step,
                        tuple(style.contour_major), tuple(style.contour_minor),
                        style.opacity)).encode())
@@ -1073,10 +1118,10 @@ def picture_plan(store, provider, profile, layers, topo, interpretation: bool, g
 
 def pictured_by_profile(provider, gathered, choice) -> dict:
     """profile id -> (profile, its shown models to picture, its picture's gap)."""
-    look = {d.id: choice.look_of(d.id) for _p, d, _la in gathered}
+    look = {d.id: choice.look_for(d) for _p, d, _la in gathered}
     cells = [(p, d, la) for p, d, la in gathered
              if look[d.id] == "section" and _shown(la) and _as_cells(la)]
-    pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture" and _shown(la)]
+    pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture" and _pictured(la)]
     _cell_gaps, gaps = _stack_gaps(provider, cells, pictured)
     out: dict = {}
     for profile, _d, section_layer in pictured:
@@ -1091,7 +1136,7 @@ def _sync_pictures(store, provider, project, chosen, interpretation: bool, may_c
     painted over them; ``gaps[profile id]`` back from the plane. By profile id."""
     wanted: dict = {}
     for profile, _d, section_layer in chosen:
-        if _shown(section_layer):
+        if _pictured(section_layer):
             wanted.setdefault(profile.id, (profile, []))[1].append(section_layer)
     existing = pictures_3d(project)
     for layer in _picture_layers(project):
@@ -1695,12 +1740,14 @@ def shown_box(store, provider, project: QgsProject) -> tuple | None:
     shows in 3D: the ticked models under their profile lines (in any look) and the borehole
     columns; ``None`` when nothing is shown. From the models themselves, as a section
     picture's own extent is in the earth frame and a fresh point cloud has no heights yet."""
+    from ..section.data import layer_bounds
     xs, ys, zs = [], [], []
     for profile, _d, section_layer in _gather(store, provider, read_choice(project)):
-        if not _shown(section_layer):
+        bounds = layer_bounds(section_layer) if _pictured(section_layer) else None
+        if bounds is None:
             continue
         try:
-            s0, s1, z0, z1 = section_layer.mesh.bounds()
+            s0, s1, z0, z1 = bounds
             line = profile.chainage
             bends = line.xy
             along = line.project(bends)[0]
@@ -1733,11 +1780,12 @@ def prune(store, project: QgsProject) -> None:
     chosen = _chosen_models(store, choice)
     profiles = {p.id for p in store.profiles()}
     models = {d.id for _p, d in chosen}
-    pictured = {p.id for p, d in chosen if choice.look_of(d.id) == "picture"}
+    pictured = {p.id for p, d in chosen if choice.look_for(d) == "picture"}
+    as_picture = {d.id for _p, d in chosen if choice.look_for(d) == "picture"}
     columns = set(choice.boreholes) & profiles
     ticked = {p.id for p, _d in chosen} | columns
     for dataset_id, layer in clouds_3d(project).items():
-        if dataset_id not in models or choice.look_of(dataset_id) == "picture":
+        if dataset_id not in models or dataset_id in as_picture:
             _drop_cloud(project, layer)
     for layer in _picture_layers(project):
         if layer.customProperty(_PROFILE) not in pictured:
@@ -1823,7 +1871,7 @@ def _sync(store, provider, project: QgsProject, create: bool, boreholes: bool) -
         return topos[profile_id]
 
     out = {}
-    look = {d.id: choice.look_of(d.id) for _p, d, _la in gathered}
+    look = {d.id: choice.look_for(d) for _p, d, _la in gathered}
     cells = [(p, d, la) for p, d, la in gathered
              if look[d.id] == "section" and (not _shown(la) or _as_cells(la))]
     smooth = [(p, d, la) for p, d, la in gathered if _shown(la) and (
@@ -1832,7 +1880,7 @@ def _sync(store, provider, project: QgsProject, create: bool, boreholes: bool) -
              if _shown(la) and look[d.id] != "picture" and la.style.mode in _LINES]
     pictured = [(p, d, la) for p, d, la in gathered if look[d.id] == "picture"]
     cell_gaps, picture_gaps = _stack_gaps(provider, [c for c in cells if _shown(c[2])],
-                                          [c for c in pictured if _shown(c[2])])
+                                          [c for c in pictured if _pictured(c[2])])
     models = _sync_models(store, project, cells, may_create("models") if cells else create,
                           cell_gaps)
     if models is not None:

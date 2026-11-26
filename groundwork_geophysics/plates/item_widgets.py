@@ -19,6 +19,9 @@ class ColourBarWidget(QgsLayoutItemBaseWidget):
         self.item = item
         self.ticks = QLineEdit(item.ticks)
         self.ticks.setToolTip('"auto", "step:25" or "list:1,10,100"')
+        if item.amplitude:                      # an amplitude key names its two ends only
+            self.ticks.setEnabled(False)
+            self.ticks.setToolTip("An amplitude key has no numbers: its ends are named")
         self.title = QLineEdit(item.title)
         self.unit = QLineEdit(item.unit)
         self.ramp = QgsColorRampLegendNodeWidget(self)

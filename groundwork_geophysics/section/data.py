@@ -32,9 +32,9 @@ from ..core.placement import DistanceMap, FitReport
 from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
-from ..core.trace_section import (NO_VELOCITY, DisplayGain, PlacedTraces, TraceSection,
-                                  Velocity, color_limits, depth_at, display_values,
-                                  ground_time, place)
+from ..core.trace_section import (NO_VELOCITY, TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain,
+                                  PlacedTraces, TraceSection, Velocity, color_limits, depth_at,
+                                  display_values, ground_time, place)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -1350,6 +1350,8 @@ class SectionDataProvider:
             except ValueError as exc:
                 if str(exc) == NO_VELOCITY:
                     raise _Plain(NO_VELOCITY_TEXT) from None
+                if str(exc) in (TIMES_DO_NOT_INCREASE, TURNS_BACK):
+                    raise _Plain(f"{exc} Set it in Dataset Info.") from None
                 raise
             if style.scale is None:
                 style.scale = _trace_scale(placed, style)

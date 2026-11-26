@@ -129,17 +129,19 @@ class ColourBarItem(QgsLayoutItem):
         self.title = ""
         self.unit = ""
         self.settings = default_settings()
+        #: a reflection section's amplitude key: the ramp with its ends named ("−" and "+",
+        #: or "0" and "+"), no numbers (the shown amplitudes depend on the display gain)
+        self.amplitude = False
 
     def type(self):
         return COLOUR_BAR_TYPE
 
     def displayName(self):
-        return self.id() or "Colour bar"
+        return self.id() or ("Amplitude key" if self.amplitude else "Colour bar")
 
     # -- data ------------------------------------------------------------------------------
-    def colour_scale(self):
-        """The frame's colour scale for the model (the frame's own, else the model's)."""
-        from ..core.colors import ColorScale
+    def model_look(self):
+        """The frame's ``ModelLook`` of the bar's model, None when the plate has none."""
         from .sources import read_plates
         project = self.layout().project() if self.layout() else None
         model = None
@@ -148,6 +150,43 @@ class ColourBarItem(QgsLayoutItem):
                 if frame.frame_id == self.frame_id:
                     model = next((m for m in frame.look.models
                                   if m.dataset_id == self.dataset_id), None)
+        return model
+
+    def gain(self):
+        """The display options the frame shows the section with (the frame's own, else the
+        section panel's)."""
+        from ..core.trace_section import DisplayGain
+        model = self.model_look()
+        if model is not None:
+            return DisplayGain.from_dict(model.gain)
+        provider = self.provider()
+        style = provider.style(self.dataset_id) if provider is not None else None
+        return getattr(style, "gain", None) or DisplayGain()
+
+    def end_labels(self) -> tuple[str, str]:
+        """An amplitude key's ends: "−" and "+" for signed data, "0" and "+" for data that
+        are never negative."""
+        scale = self.colour_scale()
+        return ("−", "+") if scale is None or scale.vmin < 0 else ("0", "+")
+
+    def reversed_ramp(self) -> bool:
+        """True when the frame swaps the polarity: the ramp runs from "+" to "−"."""
+        return self.amplitude and self.gain().reverse_polarity
+
+    def shown_title(self) -> str:
+        """The title as drawn; an amplitude key says when a display gain changes the
+        amplitudes shown (the polarity and the muted zones do not count)."""
+        title = " ".join(x for x in (self.title, f"({self.unit})" if self.unit else "") if x)
+        if self.amplitude and title:
+            from dataclasses import replace
+            if replace(self.gain(), reverse_polarity=False).active():
+                title += " (display gain)"
+        return title
+
+    def colour_scale(self):
+        """The frame's colour scale for the model (the frame's own, else the model's)."""
+        from ..core.colors import ColorScale
+        model = self.model_look()
         if model is not None and model.scale:
             try:
                 return ColorScale(**model.scale)
@@ -167,7 +206,7 @@ class ColourBarItem(QgsLayoutItem):
         fmt = self.settings.textFormat()
         scale = self.colour_scale()
         line_h = QgsTextRenderer.textHeight(rc, fmt, ["0"])
-        title = " ".join(x for x in (self.title, f"({self.unit})" if self.unit else "") if x)
+        title = self.shown_title()
         top = 0.0
         if title:
             QgsTextRenderer.drawText(QPointF(0, line_h), 0, Qgis.TextHorizontalAlignment.Left,
@@ -191,6 +230,8 @@ class ColourBarItem(QgsLayoutItem):
             vals = 10 ** (np.log10(lo) + t * (np.log10(hi) - np.log10(lo)))
         else:
             vals = lo + t * (hi - lo)
+        if self.reversed_ramp():                # the section paints -a: "+" gets lo's colour
+            vals = vals[::-1]
         colours = scale.rgba(vals)
 
         def pos(frac):              # 0 = minimum, 1 = maximum -> along the bar
@@ -212,8 +253,12 @@ class ColourBarItem(QgsLayoutItem):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(QColor(0, 0, 0), max(1.0, 0.15 * px)))
         painter.drawRect(bar)
-        values = colour_bar_ticks(lo, hi, scale.log, self.ticks)
-        for v, label in zip(values, tick_labels(values, self.settings)):
+        if self.amplitude:                      # the two ends, named
+            values, labels = [lo, hi], list(self.end_labels())
+        else:
+            values = colour_bar_ticks(lo, hi, scale.log, self.ticks)
+            labels = tick_labels(values, self.settings)
+        for v, label in zip(values, labels):
             if scale.log and lo > 0 and v > 0:
                 frac = (math.log10(v) - math.log10(lo)) / (math.log10(hi) - math.log10(lo))
             else:
@@ -233,6 +278,8 @@ class ColourBarItem(QgsLayoutItem):
     def writePropertiesToElement(self, element, document, context):
         for key in ("frame_id", "dataset_id", "ticks", "title", "unit"):
             element.setAttribute(f"wb_{key}", getattr(self, key))
+        if self.amplitude:                      # bars of models stay as they were written
+            element.setAttribute("wb_amplitude", "1")
         node = document.createElement("wbColourBarSettings")
         self.settings.writeXml(document, node, context)
         element.appendChild(node)
@@ -241,6 +288,7 @@ class ColourBarItem(QgsLayoutItem):
     def readPropertiesFromElement(self, element, document, context):
         for key in ("frame_id", "dataset_id", "ticks", "title", "unit"):
             setattr(self, key, element.attribute(f"wb_{key}", getattr(self, key)))
+        self.amplitude = element.attribute("wb_amplitude", "") == "1"
         node = element.firstChildElement("wbColourBarSettings")
         if not node.isNull():
             self.settings.readXml(node, context)

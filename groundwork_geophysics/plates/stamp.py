@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.dataset_info import dataset_info
-from ..core.dataset_types import method_label, method_of, station_words
+from ..core.dataset_types import is_trace_kind, method_label, method_of, station_words
 
 #: the logo picture's source: @wb_logo made absolute (relative to the project folder), or ''
 #: when it is unset or the file is missing, so the cell stays empty instead of a broken image
@@ -82,7 +82,8 @@ def stamp_texts(plate, profile_names: list[str], datasets: list, fits: list[tupl
     plate order; ``datasets``: the visible models of all frames; ``fits``: (scale, VE) per
     frame with an existing profile. Method and survey details come from the models when the
     plate shows any (a misfit or measured data beside its model is not another survey)."""
-    surveys = [d for d in datasets if d.kind.endswith("_model")] or datasets
+    surveys = [d for d in datasets
+               if d.kind.endswith("_model") or is_trace_kind(d.kind)] or datasets
     return {"profile": ", ".join(_distinct(profile_names)),
             "method": ", ".join(_distinct(_method(d) for d in surveys)),
             "survey": _survey(surveys, fits, crs_authid, crs_description),

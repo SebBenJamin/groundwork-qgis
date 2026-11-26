@@ -293,12 +293,15 @@ class LayerList(QWidget):
         action.triggered.connect(lambda: self.apply_all_requested.emit(dataset_id))
 
     def edit_info(self, dataset_id: str) -> None:
-        """Dataset info…: method, array, spacing, inversion, reference (for provenance)."""
+        """Dataset info…: method, array, spacing, inversion, reference (for provenance); a
+        reflection section's vertical settings (the section is drawn again when they move it)."""
         from ..ui.dataset_info_dialog import DatasetInfoDialog
         if self.provider is None:
             return
-        dlg = DatasetInfoDialog(self.provider.store, dataset_id, self)
+        dlg = DatasetInfoDialog(self.provider.store, dataset_id, self, provider=self.provider)
         dlg.exec()
+        if dlg.moved:
+            self.provider.notify_changed()
         dlg.deleteLater()
 
     def remove_dataset(self, dataset_id: str) -> bool:

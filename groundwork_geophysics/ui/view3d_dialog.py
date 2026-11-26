@@ -15,7 +15,8 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
 
 from ..core.dataset_types import type_label
 from .help import add_help_button
-from .view3d_layers import Choice, auto_borehole_width, auto_station_size
+from .view3d_layers import (Choice, auto_borehole_width, auto_station_size, in_3d,
+                            representations)
 
 TITLE = "Show in 3D"
 INTRO = ("Tick what to show in the 3D view and choose how each model stands there: models "
@@ -104,11 +105,12 @@ class View3dDialog(QDialog):
                          | Qt.ItemFlag.ItemIsAutoTristate)
             self.tree.addTopLevelItem(top)
             for d in store.datasets(profile.id):
-                if d.kind.endswith("_model"):
+                if in_3d(d.kind):
                     item = self._child(top, d.name or d.id, "model", d.id,
                                        d.id in choice.models)
                     item.setToolTip(0, f"{d.name or d.id}\n{type_label(d.kind)}")
-                    self._looks[d.id] = self._look_combo(item, choice.look_of(d.id))
+                    self._looks[d.id] = self._look_combo(item, choice.look_for(d),
+                                                         representations(d))
                     self._look_items[d.id] = item
             # a section without boreholes has no entry for them (a greyed one would leave the
             # profile's own tick half-set for good)
@@ -222,11 +224,14 @@ class View3dDialog(QDialog):
         item.setCheckState(0, Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
         return item
 
-    def _look_combo(self, item, look: str) -> QComboBox:
+    def _look_combo(self, item, look: str, offered=None) -> QComboBox:
+        """The Show As combo with the ``offered`` representations (all by default; a
+        reflection section has only its section picture)."""
         combo = QComboBox()
-        for i, (value, text, tip) in enumerate(LOOK_ITEMS):
-            combo.addItem(text, value)
-            combo.setItemData(i, tip, Qt.ItemDataRole.ToolTipRole)
+        for value, text, tip in LOOK_ITEMS:
+            if offered is None or value in offered:
+                combo.addItem(text, value)
+                combo.setItemData(combo.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
         combo.setCurrentIndex(max(0, combo.findData(look)))
         self.tree.setItemWidget(item, 1, combo)
         return combo

@@ -41,3 +41,54 @@ def test_the_plate_line_says_the_cells_were_averaged():
     d = _dataset(provenance={**AVERAGED, "rms_percent": 8.0})
     assert provenance_line("T3", d) == "T3 · ERT model · averaged to 1 × 0.5 m cells · RMS 8.0 %"
     assert "averaged" not in provenance_line("T3", _dataset(provenance={"rms_percent": 8.0}))
+
+
+# -- reflection sections ----------------------------------------------------------------------
+def _section(options=None, provenance=None):
+    prov = {"n_traces": 1970, "n_samples": 1125, "step": 0.004, **(provenance or {})}
+    return Dataset("s1", "p1", "", "refl_section", "/x/line.sgy", 0.0, "", "segy",
+                   dict(options or {}), prov)
+
+
+def test_depth_text_of_a_time_section_names_its_velocity():
+    from groundwork_geophysics.core.dataset_info import depth_text
+    assert depth_text(_section({"velocity": 1500.0})) == "depth from v = 1500 m/s"
+    function = {"velocity_table": [[0.0, 1800.0], [1.0, 3400.0]], "velocity_kind": "average"}
+    assert depth_text(_section(function)) == \
+        "depth from a velocity function (1800–3400 m/s)"
+
+
+def test_depth_text_of_a_depth_section_and_of_other_kinds():
+    from groundwork_geophysics.core.dataset_info import depth_text
+    assert depth_text(_section({"domain": "depth", "sample_step": 1.0})) == "depth section"
+    assert depth_text(_dataset()) == ""
+    assert depth_text(_section({})) == ""             # no velocity known: nothing invented
+
+
+def test_depth_text_says_the_section_is_corrected_to_the_ground():
+    from groundwork_geophysics.core.dataset_info import depth_text
+    d = _section({"velocity": 3000.0, "zero": "datum_ground", "datum": 500.0,
+                  "replacement_velocity": 3200.0})
+    assert depth_text(d) == "depth from v = 3000 m/s, corrected to the ground with 3200 m/s"
+
+
+def test_traces_text_counts_traces_and_samples():
+    from groundwork_geophysics.core.dataset_info import traces_text
+    from groundwork_geophysics.core.numbers import fmt_count
+    assert traces_text(_section()) == f"{fmt_count(1970)} traces × {fmt_count(1125)} samples, 4 ms"
+    assert traces_text(_section({"sample_step": 0.002})) == \
+        f"{fmt_count(1970)} traces × {fmt_count(1125)} samples, 2 ms"
+    from groundwork_geophysics.core.numbers import fmt_trim
+    assert traces_text(_section({"domain": "depth", "sample_step": 0.5})).endswith(
+        f"samples, {fmt_trim(0.5, 3)} m")
+    assert traces_text(_dataset()) == ""
+
+
+def test_the_plate_line_of_a_section_carries_its_depth():
+    d = _section({"velocity": 1500.0})
+    assert provenance_line("T1", d) == "T1 · Seismic reflection · section · depth from v = 1500 m/s"
+    d = _section({"domain": "depth", "sample_step": 1.0})
+    assert provenance_line("T1", d) == "T1 · Seismic reflection · section · depth section"
+    d = with_info(_section({"velocity": 1500.0}), {"software": "ProMAX"})
+    assert provenance_line("T1", d) == \
+        "T1 · Seismic reflection · section: ProMAX · depth from v = 1500 m/s"

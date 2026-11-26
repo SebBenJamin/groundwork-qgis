@@ -64,3 +64,19 @@ def test_help_and_about_keep_their_menu_place_on_macos(qgis_app, fake_iface):
             assert action.menuRole() == QAction.MenuRole.NoRole, action.text()
     finally:
         plug.unload()
+
+
+def test_about_names_the_segyio_version_or_says_it_is_missing(qgis_app, monkeypatch):
+    from qgis.PyQt.QtWidgets import QLabel
+
+    from groundwork_geophysics import libs
+    from groundwork_geophysics.ui.about_dialog import AboutDialog
+    monkeypatch.setattr(libs, "available", lambda name: True)
+    monkeypatch.setattr(libs, "version", lambda name: "1.9.15")
+    dlg = AboutDialog()
+    assert "segyio 1.9.15" in " ".join(label.text() for label in dlg.findChildren(QLabel))
+    dlg.deleteLater()
+    monkeypatch.setattr(libs, "available", lambda name: False)
+    dlg = AboutDialog()
+    assert "segyio: not installed" in " ".join(lb.text() for lb in dlg.findChildren(QLabel))
+    dlg.deleteLater()

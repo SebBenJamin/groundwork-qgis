@@ -55,6 +55,7 @@ BAR_COLUMN = 0.18       # landscape: colour-bar column, share of the area width
 BAR_ROW = 0.12          # portrait: colour-bar row, share of a frame slot's height
 BAR_MAX_MM = 20.0       # a new vertical colour bar's width (the bar is 30 % of it) ...
 BAR_MAX_LEN_MM = 80.0   # ... and its greatest length (horizontal bars: their width)
+KEY_LEN_MM = 35.0       # a reflection section's amplitude key: its length
 TOP_PAD = 0.02          # share of the depth range added above the data (labels: label_room_mm)
 DETAILS = (("project", "Project"), ("client", "Client"), ("job", "Job no."),
            ("date", "Date"), ("author", "Drawn"), ("checked", "Checked"),
@@ -801,6 +802,7 @@ def _free_id(layout, n: int, k: int) -> str:
 def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool) -> None:
     """One colour bar per shown model, found by (frame, model), never by position: a tuned
     bar stays with its model when frames or models are removed or reordered."""
+    from ..core.dataset_types import is_trace_kind
     from ..section.readout import unit_label
     portrait = slot["bars"] and slot["bars"][0][2] > slot["bars"][0][3]
     mine = {i.dataset_id: i for i in layout.items()
@@ -808,16 +810,21 @@ def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool
     for k, d in enumerate(models, start=1):
         bar = mine.get(d.id)
         fresh = bar is None
+        amplitude = is_trace_kind(d.kind)       # a section: its amplitude key
         if fresh:
             bar = ColourBarItem(layout)
             bar.setId(_free_id(layout, n, k))
             bar.settings.setOrientation(Qt.Orientation.Horizontal if portrait
                                         else Qt.Orientation.Vertical)
-            bar.title = quantity_label(d.quantity)
-            bar.unit = unit_label(d.unit)
+            bar.title = "Amplitude" if amplitude else quantity_label(d.quantity)
+            bar.unit = "" if amplitude else unit_label(d.unit)
             layout.addLayoutItem(bar)
+        bar.amplitude = amplitude
         if fresh or relayout:
-            _place(bar, *slot["bars"][k - 1])
+            x, y, w, h = slot["bars"][k - 1]
+            if amplitude:                       # a short key, not a scale to read off
+                w, h = (min(w, KEY_LEN_MM), h) if portrait else (w, min(h, KEY_LEN_MM))
+            _place(bar, x, y, w, h)
         bar.frame_id, bar.dataset_id = frame.frame_id, d.id
         bar.refresh()
 
