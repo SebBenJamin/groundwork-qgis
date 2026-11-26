@@ -76,7 +76,14 @@ NO_SEGYIO_TIP = "Install segyio first"
 VOLUME_TIP = "Groundwork shows 2D sections"
 UNSTACKED = ("This file looks like unstacked records (several traces per CDP or offsets that "
              "are not zero). Groundwork shows processed sections.")
-COARSE_NOTE = "{n} cells of {dx} × {dz} m: far finer than an inversion resolves."
+#: a section hung from the ground (by zero choice) on a profile without heights
+NO_HEIGHTS = {
+    "ground": ("This profile has no heights yet. Choose an elevation model in Context Layers, "
+               "or the section hangs flat."),
+    "datum_ground": ("This profile has no heights yet. Choose an elevation model in Context "
+                     "Layers first: a section corrected to the ground needs them."),
+}
+COARSE_NOTE ="{n} cells of {dx} × {dz} m: far finer than an inversion resolves."
 COARSE_TEXT = "Read as cells of"
 COARSE_TIP = ("Average the file's points in blocks of this size: faster sections, plates and "
               "3D. The file itself is not changed; untick to keep every point.")
@@ -839,7 +846,7 @@ class AddDataDialog(QDialog):
         if on_map and self._line_error:
             warnings.append(self._line_error)
         try:
-            self.placement.placement()
+            placement = self.placement.placement()
             self._draft()
         except ValueError as exc:
             self.fit_label.setText(str(exc))
@@ -847,7 +854,24 @@ class AddDataDialog(QDialog):
             return
         if on_map and self.placement.source() != "file":
             warnings += self._map_fit(result.provenance, "traces")
+        zero = self.segy_box.zero()
+        if zero in NO_HEIGHTS and not self._has_heights(placement.profile_id):
+            warnings.append(NO_HEIGHTS[zero])
         self._set_warnings(warnings)
+
+    def _has_heights(self, profile_id: str | None) -> bool:
+        """Whether the profile the placement gives will have heights to hang a section from:
+        an existing profile as the section reads it; a new one (no stations) only from the
+        elevation model chosen in Context Layers."""
+        if profile_id is not None and self.provider is not None:
+            return not self.provider.is_local(profile_id)
+        from ..section.topography import station_line
+        if profile_id is not None and \
+                station_line(self.store.station_sets(profile_id)) is not None:
+            return True
+        from .context_dialog import read_settings
+        dem = read_settings(self.project).dem_layer_id
+        return bool(dem) and self.project.mapLayer(dem) is not None
 
     def _install(self) -> None:
         """Install segyio on the user's click, in a QGIS task; the dialog stays usable."""

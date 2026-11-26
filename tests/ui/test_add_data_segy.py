@@ -175,6 +175,94 @@ def test_an_unstacked_file_is_warned_about(qgis_app, make_dialog, project_store,
     assert dlg.add_button.isEnabled()
 
 
+NO_HEIGHTS = {
+    "ground": ("This profile has no heights yet. Choose an elevation model in Context Layers, "
+               "or the section hangs flat."),
+    "datum_ground": ("This profile has no heights yet. Choose an elevation model in Context "
+                     "Layers first: a section corrected to the ground needs them."),
+}
+
+
+@pytest.mark.parametrize("zero", ["ground", "datum_ground"])
+def test_a_ground_zero_on_a_new_profile_without_heights_is_warned_about(
+        qgis_app, make_dialog, project_store, selected_line, tmp_path, zero):
+    path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    _type(dlg.segy_box.spacing_edit, "2")
+    _type(dlg.segy_box.velocity_edit, "1500")
+    dlg.segy_box.set_zero(zero)
+    _type(dlg.segy_box.datum_edit, "100")
+    _type(dlg.segy_box.replacement_edit, "1800")
+    assert dlg.placement.source() == "line"
+    assert NO_HEIGHTS[zero] in dlg.warning_label.text()
+    assert dlg.add_button.isEnabled()                       # a warning, not a block
+
+
+def test_a_fixed_height_is_not_warned_about(qgis_app, make_dialog, project_store,
+                                            selected_line, tmp_path):
+    path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    _type(dlg.segy_box.spacing_edit, "2")
+    _type(dlg.segy_box.velocity_edit, "1500")
+    dlg.segy_box.set_zero("datum")
+    _type(dlg.segy_box.datum_edit, "100")
+    assert "no heights" not in dlg.warning_label.text()
+
+
+def test_a_new_profile_with_an_elevation_model_is_not_warned_about(
+        qgis_app, make_dialog, project_store, selected_line, tmp_path):
+    from qgis.core import QgsRasterLayer
+
+    from groundwork_geophysics.core.context_settings import ContextSettings
+    from groundwork_geophysics.ui.context_dialog import write_settings
+    from osgeo import gdal
+    gdal.UseExceptions()
+    tif = str(tmp_path / "dem.tif")
+    ds = gdal.GetDriverByName("GTiff").Create(tif, 4, 4, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((900, 100, 0, 2100, 0, -100))
+    ds.GetRasterBand(1).Fill(50.0)
+    ds = None
+    st, prj = project_store
+    dem = QgsRasterLayer(tif, "dem")
+    prj.addMapLayer(dem)
+    write_settings(prj, ContextSettings(dem_layer_id=dem.id()))
+    path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    _type(dlg.segy_box.spacing_edit, "2")
+    _type(dlg.segy_box.velocity_edit, "1500")
+    assert dlg.segy_box.zero() == "ground"
+    assert "no heights" not in dlg.warning_label.text()
+
+
+@pytest.mark.parametrize("heights", [True, False])
+def test_an_existing_profile_is_warned_about_only_without_station_heights(
+        qgis_app, make_dialog, project_store, tmp_path, heights):
+    from groundwork_geophysics.core.model import attach_station_set, profile_from_polyline
+    from groundwork_geophysics.section.data import SectionDataProvider
+    st, prj = project_store
+    p = profile_from_polyline("L1", st.crs_authid, np.array([[0.0, 0.0], [100.0, 0.0]]))
+    st.save_profile(p)
+    if heights:
+        st.save_station_set(attach_station_set(p, "S", "refl", np.column_stack(
+            [np.arange(6) * 20.0, np.zeros(6), np.full(6, 100.0)])))
+    path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
+    dlg = make_dialog(st, p.id, project=prj, provider=SectionDataProvider(st))
+    dlg.set_file(path)
+    _type(dlg.segy_box.spacing_edit, "2")
+    _type(dlg.segy_box.velocity_edit, "1500")
+    for zero in ("ground", "datum_ground"):
+        dlg.segy_box.set_zero(zero)
+        _type(dlg.segy_box.datum_edit, "120")
+        _type(dlg.segy_box.replacement_edit, "1800")
+        assert dlg.placement.source() == "existing"
+        assert (NO_HEIGHTS[zero] in dlg.warning_label.text()) is not heights
+
+
 def test_a_3d_volume_cannot_be_added(qgis_app, make_dialog, project_store, tmp_path):
     path = write_segy(tmp_path / "cube.sgy", _amplitudes(4), dt_us=2000,
                       inline=[1, 1, 2, 2], crossline=[1, 2, 1, 2])
