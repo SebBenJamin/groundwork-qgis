@@ -7,17 +7,23 @@ from pathlib import Path
 import numpy as np
 
 from ..core.section_mesh import SectionMesh
+from ..core.trace_section import TraceSection
 
 Z_KINDS = ("elevation", "depth", "local", "unknown")
 
 
 @dataclass
 class ReaderResult:
-    mesh: SectionMesh
+    """What a reader gives: a cell model (``mesh``) or a trace section (``traces``), never
+    both and never neither."""
+    mesh: SectionMesh | None
     z_kind: str                      # "elevation" | "depth" | "local" | "unknown"
     provenance: dict = field(default_factory=dict)
+    traces: TraceSection | None = None
 
     def __post_init__(self):
+        if (self.mesh is None) == (self.traces is None):
+            raise ValueError("A read result holds either a cell model or a trace section.")
         if self.z_kind not in Z_KINDS:
             raise ValueError(f"z_kind must be one of {Z_KINDS}, got {self.z_kind!r}")
 

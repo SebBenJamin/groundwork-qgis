@@ -514,7 +514,7 @@ class ReadJob:
 
 
 #: changes when what a remembered read holds changes
-CACHE_FORMAT = 1
+CACHE_FORMAT = 2
 
 
 def _cache_version() -> str:
