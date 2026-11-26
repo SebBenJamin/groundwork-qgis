@@ -25,12 +25,14 @@ class Job3D:
     section_layer: object           # its mesh (never changed in place) and a copy of its style
     topo: object
     #: a picture's: its layers (copies, in the section's order), interpretation (symbols
-    #: cloned), gap, the panel's colour and a copy of the project's transform context
+    #: cloned), gap, the panel's colour, a copy of the project's transform context and the
+    #: transform to the tiles' CRS (made on the main thread, see ``ecef_transform``)
     layers: list = None
     interpretation: object = None
     gap: float = 0.0
     base: object = None
     transform_context: object = None
+    to_ecef: object = None
 
 
 def pending_3d(store, provider, project) -> list[Job3D]:
@@ -73,6 +75,8 @@ def _pending_pictures(store, provider, project, choice, topos: dict) -> list[Job
     from ..section.data import SectionLayer
     from ..section.picture import panel_colour
     jobs = []
+    context = project.transformContext()
+    to_ecef = v3.ecef_transform(store.crs_authid, context)
     gathered = v3._gather(store, provider, choice)
     for pid, (profile, layers, gap) in v3.pictured_by_profile(provider, gathered,
                                                               choice).items():
@@ -92,8 +96,7 @@ def _pending_pictures(store, provider, project, choice, topos: dict) -> list[Job
                   for la in layers]
         mine = replace(profile, xy=profile.xy.copy(), metadata=dict(profile.metadata))
         jobs.append(Job3D("picture", path, profile.name, store.crs_authid, mine, None, None,
-                          topo, copies, interp, gap, panel_colour(),
-                          project.transformContext()))
+                          topo, copies, interp, gap, panel_colour(), context, to_ecef))
     return jobs
 
 
@@ -103,7 +106,8 @@ def run_job3d(job: Job3D) -> None:
         v3._write_cloud(job.path, job.crs_authid, job.profile, job.section_layer, job.topo)
     elif job.kind == "picture":
         v3._write_picture(job.path, job.crs_authid, job.transform_context, job.profile,
-                          job.layers, job.topo, job.interpretation, job.gap, job.base)
+                          job.layers, job.topo, job.interpretation, job.gap, job.base,
+                          job.to_ecef)
     else:
         v3._contour_rows(job.path, job.profile, job.dataset, job.section_layer, job.topo)
 

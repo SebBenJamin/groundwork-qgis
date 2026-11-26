@@ -144,3 +144,52 @@ def test_the_plugin_paints_section_pictures_off_the_main_thread(qgis_app, fake_i
     finally:
         plugin.unload()
         project.clear()
+
+
+_FRESH_SESSION = """
+import os, sys, threading
+from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem,
+                       QgsCoordinateTransform, QgsCoordinateTransformContext, QgsVector3D)
+app = QgsApplication([], False)
+app.initQgis()
+from groundwork_geophysics.ui.view3d_layers import ecef_transform
+context = QgsCoordinateTransformContext()
+to_ecef = ecef_transform("EPSG:26916", context)        # as pending_3d does, main thread
+out = []
+def job():                                              # as _write_picture does in the task
+    mine = QgsCoordinateTransform(to_ecef)
+    out.append(mine.transform(QgsVector3D(703866.5, 3399220.7, 5.0)))
+worker = threading.Thread(target=job)
+worker.start()
+worker.join()
+# what broke the session: the main thread asks for the same transform, then for another
+ecef_transform("EPSG:26916", context).transform(QgsVector3D(703866.5, 3399220.7, 5.0))
+back = QgsCoordinateTransform(QgsCoordinateReferenceSystem("EPSG:4978"),
+                              QgsCoordinateReferenceSystem("EPSG:26916"), context)
+xy = back.transform(out[0])
+print("RESULT", back.isValid(), round(out[0].x()), round(xy.x()), round(xy.y()))
+sys.stdout.flush()
+os._exit(0)
+"""
+
+
+def test_painting_in_a_task_leaves_the_3d_views_transforms_valid():
+    """A QGIS session whose first transform to EPSG:4978 was made in a thread that has ended
+    gets invalid ones on the main thread afterwards, and the 3D view places no picture. The
+    job is therefore handed a transform made on the main thread. Needs a session of its own:
+    the order of the session's first transforms is what matters."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    repo = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+        [str(repo)] + [p for p in [os.environ.get("PYTHONPATH")] if p]))
+    done = subprocess.run([sys.executable, "-c", _FRESH_SESSION], env=env, cwd=repo,
+                          capture_output=True, text=True, timeout=120)
+    result = [line for line in done.stdout.splitlines() if line.startswith("RESULT")]
+    assert result, done.stderr[-2000:]
+    valid, ecef_x, x, y = result[0].split()[1:]
+    assert valid == "True"
+    assert abs(int(ecef_x) - 490651) <= 2               # earth-centred, not left as it was
+    assert abs(int(x) - 703866) <= 8 and abs(int(y) - 3399221) <= 8   # and back (datum shift)

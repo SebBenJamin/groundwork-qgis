@@ -913,14 +913,26 @@ def _png(image) -> bytes:
     return bytes(data)
 
 
+def ecef_transform(crs_authid: str, transform_context):
+    """The transform from the store's CRS to the earth-centred one of 3D tiles (EPSG:4978).
+    Made on the main thread only: when the first transform of a QGIS session that involves
+    EPSG:4978 is made in another thread, the main thread gets invalid ones from then on
+    (QGIS 4.2), and the 3D view can no longer place any tiles."""
+    from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform
+    return QgsCoordinateTransform(QgsCoordinateReferenceSystem(crs_authid),
+                                  QgsCoordinateReferenceSystem("EPSG:4978"),
+                                  transform_context)
+
+
 def _write_picture(path: Path, crs_authid: str, transform_context, profile, layers, topo,
-                   interpretation=None, gap: float | None = None, base=None) -> bool:
+                   interpretation=None, gap: float | None = None, base=None,
+                   to_ecef=None) -> bool:
     """The profile's section picture of ``layers`` (bottom first; with ``interpretation``
     over them) as a tileset at ``path`` (and its glTF beside it), each face ``gap`` back from
     the plane, on the colour ``base``; False when nothing is painted. Runs in any thread when
-    given copies (a "Preparing 3D" task paints the pictures)."""
-    from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,
-                           QgsVector3D)
+    given copies and ``to_ecef`` (``ecef_transform``, made on the main thread): a
+    "Preparing 3D" task paints the pictures."""
+    from qgis.core import QgsCoordinateTransform, QgsVector3D
 
     from ..core.tiles3d import enu_axes, glb, tileset
     from ..core.view3d import bend_chainages, curtain_gap, left_normals, picture_strip
@@ -944,9 +956,10 @@ def _write_picture(path: Path, crs_authid: str, transform_context, profile, laye
     side = left_normals(profile.chainage, sz[:, 0]) * gap
     first = np.concatenate([np.r_[np.ones(r[3]), -np.ones(r[3])] for r in raw])
     xy = xy + side * first[:, None]
-    to_ecef = QgsCoordinateTransform(QgsCoordinateReferenceSystem(crs_authid),
-                                     QgsCoordinateReferenceSystem("EPSG:4978"),
-                                     transform_context)
+    if to_ecef is None:
+        to_ecef = ecef_transform(crs_authid, transform_context)
+    else:
+        to_ecef = QgsCoordinateTransform(to_ecef)       # this thread's own copy
     ecef = np.array([[q.x(), q.y(), q.z()] for q in
                      (to_ecef.transform(QgsVector3D(float(x), float(y), float(z)))
                       for (x, y), z in zip(xy, sz[:, 1]))])
