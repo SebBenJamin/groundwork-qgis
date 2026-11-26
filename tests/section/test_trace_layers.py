@@ -225,6 +225,51 @@ def test_velocity_change_moves_the_picture_without_a_new_dataset(make):
     assert layer_bounds(provider.layers(pid)[0])[2] == pytest.approx(500.0 - 98.0)
 
 
+@pytest.fixture
+def file_reads(monkeypatch):
+    """How often a file is read by its reader (not from memory or the remembered read)."""
+    from groundwork_geophysics import readers
+    count = {"n": 0}
+    real = readers.read
+
+    def counted(*args, **kwargs):
+        count["n"] += 1
+        return real(*args, **kwargs)
+    monkeypatch.setattr(readers, "read", counted)
+    return count
+
+
+def _change(provider, store, pid, **options):
+    d = store.datasets(pid)[0]
+    store.save_dataset(replace(d, reader_options={**d.reader_options, **options}))
+    provider.notify_changed()
+
+
+@pytest.mark.parametrize("change, zmin", [({"velocity": 4000.0}, 500.0 - 98.0),
+                                          ({"zero": "datum", "datum": 300.0}, 300.0 - 49.0)])
+def test_hanging_a_section_again_does_not_read_the_file(make, file_reads, change, zmin):
+    provider, store, pid = make({"zero": "ground"} if "datum" in change
+                                else {"zero": "datum", "datum": 500.0})
+    before = provider.layers(pid)[0].traces.section.amplitudes
+    assert file_reads["n"] == 1
+    _change(provider, store, pid, **change)
+    layer = provider.layers(pid)[0]
+    assert layer_bounds(layer)[2] == pytest.approx(zmin)
+    assert file_reads["n"] == 1 and layer.traces.section.amplitudes is before
+    # a new provider (the project opened again) takes the remembered read from disk
+    fresh = SectionDataProvider(store)
+    assert layer_bounds(fresh.layers(pid)[0])[2] == pytest.approx(zmin)
+    assert file_reads["n"] == 1
+
+
+def test_a_new_trace_spacing_reads_the_file_again(make, file_reads):
+    provider, store, pid = make({"zero": "datum", "datum": 500.0})
+    provider.layers(pid)
+    _change(provider, store, pid, spacing=5.0)
+    assert layer_bounds(provider.layers(pid)[0])[1] == pytest.approx(50.0)
+    assert file_reads["n"] == 2
+
+
 def test_provider_keys_are_not_passed_to_the_reader():
     options = read_options({"position": "spacing", "spacing": 1.0, "velocity": 2000.0,
                             "velocity_table": [[0, 1500]], "velocity_kind": "average",

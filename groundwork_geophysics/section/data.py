@@ -44,6 +44,9 @@ from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local
 #: placement, and how a trace section is hung (velocity, the height of time zero)
 WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement", "velocity", "velocity_table",
                   "velocity_kind", "zero", "datum")
+#: those only used to hang a trace section once read: not in the read key, so trying another
+#: velocity or time zero never reads the file again
+HANG_KEYS = ("velocity", "velocity_table", "velocity_kind", "zero", "datum")
 #: z kind of a placed trace section in ``SectionDataProvider._placed`` (never a model's)
 TRACES = "traces"
 #: a time section without a velocity, and one hung from a datum without a height
@@ -1148,7 +1151,8 @@ class SectionDataProvider:
         line = (np.asarray(profile.xy, float).tobytes(), self.store.crs_authid) if on_map \
             else None
         st = os.stat(path)
-        key = (d.id, st.st_mtime, json.dumps(d.reader_options, sort_keys=True),
+        read_part = {k: v for k, v in d.reader_options.items() if k not in HANG_KEYS}
+        key = (d.id, st.st_mtime, json.dumps(read_part, sort_keys=True),
                path, d.reader, _companion_mtime(path, d.reader_options), line, st.st_size,
                _cache_version())
         options = read_options(d.reader_options)
