@@ -1,7 +1,8 @@
 """The section styles of the models (colour scale, display mode, contours, interpolation,
 coverage fade, opacity, shown or not; for reflection sections the clip and the display
-options), kept in the QGIS project so they survive saving and reopening, and copied from
-one model to every model of the same method."""
+options) and the drawing order of each profile's layers, kept in the QGIS project so they
+survive saving and reopening; a style copied from one model to every model of the same
+method."""
 from __future__ import annotations
 
 import json
@@ -15,6 +16,8 @@ from ..ids import LEGACY_ID
 
 SCOPE = LEGACY_ID
 STYLES_KEY = "section_styles"
+#: profile id -> its dataset ids in drawing order, bottom first (JSON object)
+ORDER_KEY = "section_layer_order"
 
 
 def look_of(dataset_id: str, style) -> ModelLook:
@@ -78,6 +81,38 @@ def save_styles(project, styles: dict) -> None:
 
 def load_styles(project) -> dict:
     return styles_from_json(project.readEntry(SCOPE, STYLES_KEY, "")[0])
+
+
+def layer_orders_to_json(orders: dict) -> str:
+    """profile id -> dataset ids in drawing order, bottom first (profiles without one left
+    out)."""
+    return json.dumps({k: list(v) for k, v in sorted(orders.items()) if v})
+
+
+def layer_orders_from_json(text: str) -> dict:
+    """profile id -> dataset ids, bottom first; anything unusable is left out (never
+    raises). An older project has no entry: no order, layers drawn as they were added."""
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: list(v) for k, v in data.items()
+            if isinstance(k, str) and isinstance(v, list) and v
+            and all(isinstance(i, str) for i in v)}
+
+
+def save_layer_orders(project, orders: dict) -> None:
+    """Write the layer orders into ``project`` beside the styles (marks it changed only when
+    they changed)."""
+    text = layer_orders_to_json(orders)
+    if project.readEntry(SCOPE, ORDER_KEY, "{}")[0] != text:
+        project.writeEntry(SCOPE, ORDER_KEY, text)
+
+
+def load_layer_orders(project) -> dict:
+    return layer_orders_from_json(project.readEntry(SCOPE, ORDER_KEY, "")[0])
 
 
 def same_method(store, dataset_id: str) -> list:

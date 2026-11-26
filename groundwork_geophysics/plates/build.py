@@ -595,6 +595,14 @@ def _concrete_scales(frame, snap) -> None:
             m.scale = asdict(la.style.scale)
 
 
+def frame_models(store, profile_id: str, look, snap) -> list:
+    """The datasets a frame shows (one colour bar each), in the section's drawing order
+    (bottom first, as ``snap``, the frame's snapshot, has them)."""
+    have = {d.id: d for d in store.datasets(profile_id)}
+    wanted = {m.dataset_id for m in look.models if m.visible and m.dataset_id in have}
+    return [have[la.dataset.id] for la in snap.layers if la.dataset.id in wanted]
+
+
 def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     register_items()
     detach_frame_items(project)                     # before their sources are replaced
@@ -630,9 +638,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
             _concrete_scales(f, snap)
             snaps[f.frame_id] = snap
             extents[f.frame_id] = snapshot_extent(snap, profile.chainage.length)
-            have = {d.id: d for d in store.datasets(f.profile_id)}
-            models = [have[m.dataset_id] for m in f.look.models
-                      if m.visible and m.dataset_id in have]
+            models = frame_models(store, f.profile_id, f.look, snap)
         shown.append(models)
     write_plates(project, plates + [plate])
 

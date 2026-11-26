@@ -687,9 +687,13 @@ def run_job(job: ReadJob) -> readers.ReaderResult:
 class SectionDataProvider:
     """Assembles the section layers of each profile from a ``ProjectStore``."""
 
-    def __init__(self, store: ProjectStore, styles: dict | None = None):
-        """``styles``: dataset id -> ``LayerStyle`` kept from before (the project's)."""
+    def __init__(self, store: ProjectStore, styles: dict | None = None,
+                 orders: dict | None = None):
+        """``styles``: dataset id -> ``LayerStyle`` kept from before (the project's);
+        ``orders``: profile id -> its dataset ids in drawing order, bottom first (the
+        project's; see ``ordered``)."""
         self.store = store
+        self._orders: dict[str, list[str]] = {k: list(v) for k, v in (orders or {}).items()}
         self.on_change: list[Callable[[], None]] = []
         #: called after the user changed a style (to keep the styles in the project)
         self.on_style: list[Callable[[], None]] = []
@@ -815,11 +819,41 @@ class SectionDataProvider:
         for callback in list(self.on_style):
             callback()
 
+    # -- the drawing order of a profile's layers ----------------------------------------------
+    def layer_orders(self) -> dict[str, list[str]]:
+        """profile id -> dataset ids in the drawing order the user set, bottom first (a
+        copy)."""
+        return {k: list(v) for k, v in self._orders.items()}
+
+    def set_layer_order(self, profile_id: str, dataset_ids: list[str]) -> None:
+        """Draw ``profile_id``'s layers in this order (bottom first), wherever they are
+        drawn; kept like a style. The ties are dropped: their strip shows the top model."""
+        self._orders[profile_id] = list(dataset_ids)
+        self.notify_redraw(ties=True)
+        self._told_style()
+
+    def ordered(self, profile_id: str, datasets: list[Dataset]) -> list[Dataset]:
+        """``datasets`` in the profile's drawing order, bottom first: those in the stored
+        order as it says (ids no longer in the profile ignored), then the others on top in
+        the order they were added."""
+        order = self._orders.get(profile_id)
+        if not order:
+            return list(datasets)
+        by_id = {d.id: d for d in datasets}
+        listed = [by_id[i] for i in dict.fromkeys(order) if i in by_id]
+        seen = {d.id for d in listed}
+        return listed + [d for d in datasets if d.id not in seen]
+
     def remove_dataset(self, dataset_id: str) -> None:
         """Delete ``dataset_id`` from the store (the model file stays), forget its style
         and cached read, and tell the listeners."""
         self.store.delete_dataset(dataset_id)
-        if self._styles.pop(dataset_id, None) is not None:
+        dropped = self._styles.pop(dataset_id, None) is not None
+        for ids in self._orders.values():
+            if dataset_id in ids:
+                ids.remove(dataset_id)
+                dropped = True
+        if dropped:
             self._told_style()
         self._cache.pop(dataset_id, None)
         self._guesses.pop(dataset_id, None)
@@ -1424,11 +1458,13 @@ class SectionDataProvider:
     def _assemble(self, profile_id: str):
         """(layers, station sets, surface): every dataset placed in chainage first, then the
         surface worked out from the placed meshes, then depth and local models hung from it.
-        The placement and the surface are the profile's cached ones (``_build``)."""
+        The placement and the surface are the profile's cached ones (``_build``); the layers
+        come in the user's drawing order (``ordered``), which never changes the surface."""
         built = self._build(profile_id)
         placed = self._placed_of(built)
         surface = self._surface_of(built)
-        layers = [self._layer(d, placed[d.id], surface) for d in built.datasets]
+        layers = [self._layer(d, placed[d.id], surface)
+                  for d in self.ordered(profile_id, built.datasets)]
         return layers, built.sets, surface
 
     def layers(self, profile_id: str) -> list[SectionLayer]:

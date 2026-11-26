@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
-from qgis.PyQt.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QMessageBox,
-                                 QScrollArea, QSizePolicy, QSlider, QSplitter, QToolButton,
-                                 QVBoxLayout, QWidget)
+from qgis.PyQt.QtCore import QByteArray, QEvent, QMimeData, QPoint, QSize, Qt, pyqtSignal
+from qgis.PyQt.QtGui import QDrag, QPalette
+from qgis.PyQt.QtWidgets import (QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu,
+                                 QMessageBox, QScrollArea, QSizePolicy, QSlider, QSplitter,
+                                 QToolButton, QVBoxLayout, QWidget)
 
 from ..core.dataset_types import type_label
 from .data import SectionLayer, layer_name
@@ -35,6 +36,16 @@ APPLY_ALL_TIP = ("Give every other {what} of the project this model's colours, d
 APPLY_ALL_OFF_TIP = "There is no other {what} in the project to apply this style to"
 APPLY_ALL_TRACES_TIP = ("Give every other {what} of the project this section's colours, clip "
                         "and amplitude display (shown or hidden stays as it is)")
+#: the drawing order: the top row is drawn on top (as in the QGIS layer tree)
+MOVE_TOP_TEXT = "Move to Top"
+MOVE_UP_TEXT = "Move Up"
+MOVE_DOWN_TEXT = "Move Down"
+MOVE_BOTTOM_TEXT = "Move to Bottom"
+ON_TOP_TIP = "This layer is already drawn on top"
+AT_BOTTOM_TIP = "This layer is already drawn at the bottom"
+HANDLE_TIP = "Drag to change the drawing order (the top row is drawn on top)"
+#: what a dragged row carries: its dataset id
+ROW_MIME = "application/x-groundwork-section-layer"
 SCALE_TIP = "Colour scale and display (cells, smooth, contours, coverage)"
 SCALE_TRACES_TIP = "Colour scale, clip and amplitude display"
 
@@ -119,11 +130,44 @@ class _ElidedCheck(QCheckBox):
         super().resizeEvent(event)
 
 
+class _DragHandle(QLabel):
+    """The grip at the start of a row: dragging it moves the row (and the layer's drawing
+    order)."""
+
+    def __init__(self, row: "_LayerRow"):
+        super().__init__("≡")
+        self._row = row
+        self._press = None
+        self.setToolTip(HANDLE_TIP)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedWidth(self.fontMetrics().horizontalAdvance("≡") + 4)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._press is None or not event.buttons() & Qt.MouseButton.LeftButton:
+            return
+        if (event.position().toPoint() - self._press).manhattanLength() \
+                < QApplication.startDragDistance():
+            return
+        self._press = None
+        self._row.start_drag()
+
+    def mouseReleaseEvent(self, event):
+        self._press = None
+        super().mouseReleaseEvent(event)
+
+
 class _LayerRow(QWidget):
     def __init__(self, layer: SectionLayer, owner: "LayerList"):
         super().__init__()
         self.dataset_id = layer.dataset.id
         self._owner = owner
+        self.handle = _DragHandle(self)
         self.check = _ElidedCheck(layer_name(layer.dataset))
         self.check.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.check.setMinimumWidth(MIN_NAME_WIDTH)
@@ -146,6 +190,7 @@ class _LayerRow(QWidget):
             child.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         row = QHBoxLayout(self)
         row.setContentsMargins(2, 1, 2, 1)
+        row.addWidget(self.handle)
         row.addWidget(self.check, 1)
         row.addWidget(self.opacity)
         row.addWidget(self.scale_button)
@@ -169,6 +214,17 @@ class _LayerRow(QWidget):
         tip = f"{layer_name(d)} (version {d.version})\n{type_label(d.kind)}\n{d.source_path}"
         self.check.setToolTip(tip if ok else f"{tip}\n\n{layer.error}")
         self.check.setStyleSheet("" if ok else "color: #c00000;")
+
+    def start_drag(self) -> None:
+        """Drag this row (the list's drop moves it; a picture of the row follows the
+        mouse)."""
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(ROW_MIME, QByteArray(self.dataset_id.encode("utf-8")))
+        drag.setMimeData(mime)
+        drag.setPixmap(self.grab())
+        drag.setHotSpot(QPoint(self.handle.width() // 2, self.height() // 2))
+        drag.exec(Qt.DropAction.MoveAction)
 
     def _opacity_changed(self, *_):
         if self.opacity.isSliderDown():          # apply once on release, not per pixel
@@ -200,6 +256,18 @@ class LayerList(QWidget):
         self._box_layout.setContentsMargins(0, 0, 0, 0)
         self._box_layout.setSpacing(0)
         self._box_layout.addStretch(1)
+        self._box.setAcceptDrops(True)
+        self._box.installEventFilter(self)
+        # where a dragged row will land: a line in the selection colour
+        self._drop_line = QFrame(self._box)
+        self._drop_line.setFrameShape(QFrame.Shape.HLine)
+        self._drop_line.setFrameShadow(QFrame.Shadow.Plain)
+        self._drop_line.setLineWidth(2)
+        palette = self._drop_line.palette()
+        palette.setColor(QPalette.ColorRole.WindowText,
+                         palette.color(QPalette.ColorRole.Highlight))
+        self._drop_line.setPalette(palette)
+        self._drop_line.hide()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -235,6 +303,8 @@ class LayerList(QWidget):
         else:
             for dataset_id, row in self._rows.items():
                 row.update_from(self._layers[dataset_id])
+        for row in self._rows.values():          # one layer: there is no order to change
+            row.handle.setVisible(len(self._rows) > 1)
         self._empty.setVisible(not ids)
         self._fit_width()
 
@@ -276,6 +346,66 @@ class LayerList(QWidget):
 
     def clear(self) -> None:
         self.set_layers(self.provider, [])
+
+    # -- drawing order -----------------------------------------------------------------------
+    def move_layer(self, dataset_id: str, where: str) -> None:
+        """Move a row "top", "up", "down" or "bottom" (the top row is drawn on top)."""
+        ids = list(self._rows)
+        if dataset_id not in ids:
+            return
+        i = ids.index(dataset_id)
+        target = {"top": 0, "up": i - 1, "down": i + 1, "bottom": len(ids) - 1}[where]
+        self.move_to_row(dataset_id, min(max(target, 0), len(ids) - 1))
+
+    def move_to_row(self, dataset_id: str, row: int) -> None:
+        """Put ``dataset_id``'s row at ``row`` (0 = the top) and draw the layers in the new
+        order; the order is kept with the profile."""
+        ids = list(self._rows)
+        if dataset_id not in ids or self.provider is None:
+            return
+        ids.remove(dataset_id)
+        ids.insert(min(max(row, 0), len(ids)), dataset_id)
+        if ids == list(self._rows):
+            return
+        bottom_first = ids[::-1]
+        layers = [self._layers[i] for i in bottom_first]
+        self.provider.set_layer_order(layers[0].dataset.profile_id, bottom_first)
+        self.set_layers(self.provider, layers)
+
+    def _drop_slot(self, y: float) -> int:
+        """The row a drop at ``y`` (in the box) lands on: before the first row whose middle
+        lies below it."""
+        rows = list(self._rows.values())
+        return sum(1 for r in rows if r.geometry().center().y() < y)
+
+    def _show_drop_line(self, slot: int) -> None:
+        rows = list(self._rows.values())
+        if not rows:
+            return
+        y = rows[slot].geometry().top() if slot < len(rows) else rows[-1].geometry().bottom()
+        self._drop_line.setGeometry(0, max(0, y - 1), self._box.width(), 3)
+        self._drop_line.raise_()
+        self._drop_line.show()
+
+    def eventFilter(self, obj, event):
+        if obj is self._box:
+            kind = event.type()
+            if kind in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
+                if not event.mimeData().hasFormat(ROW_MIME):
+                    return False
+                y = event.position().y()
+                if kind == QEvent.Type.Drop:
+                    self._drop_line.hide()
+                    dataset_id = bytes(event.mimeData().data(ROW_MIME)).decode("utf-8")
+                    event.acceptProposedAction()
+                    self.move_to_row(dataset_id, self._drop_slot(y))
+                else:
+                    self._show_drop_line(self._drop_slot(y))
+                    event.acceptProposedAction()
+                return True
+            if kind == QEvent.Type.DragLeave:
+                self._drop_line.hide()
+        return super().eventFilter(obj, event)
 
     # -- style changes ---------------------------------------------------------------------
     def _update_style(self, dataset_id: str, **changes) -> None:
@@ -324,10 +454,30 @@ class LayerList(QWidget):
                 lambda: self.show_misfit(dataset_id))
         menu.addAction(INFO_TEXT).triggered.connect(lambda: self.edit_info(dataset_id))
         menu.addSeparator()
+        if len(self._rows) > 1:                     # one layer: there is no order to change
+            self._add_moves(menu, dataset_id)
+            menu.addSeparator()
         self._add_apply_all(menu, dataset_id)
         menu.addSeparator()
         menu.addAction(REMOVE_TEXT).triggered.connect(lambda: self.remove_dataset(dataset_id))
         return menu
+
+    def _add_moves(self, menu: QMenu, dataset_id: str) -> None:
+        """Move to Top, Move Up, Move Down, Move to Bottom (disabled where they do
+        nothing, the tooltip says why)."""
+        ids = list(self._rows)
+        i = ids.index(dataset_id) if dataset_id in ids else -1
+        on_top, at_bottom = i <= 0, i < 0 or i == len(ids) - 1
+        for text, where, off, tip in ((MOVE_TOP_TEXT, "top", on_top, ON_TOP_TIP),
+                                      (MOVE_UP_TEXT, "up", on_top, ON_TOP_TIP),
+                                      (MOVE_DOWN_TEXT, "down", at_bottom, AT_BOTTOM_TIP),
+                                      (MOVE_BOTTOM_TEXT, "bottom", at_bottom, AT_BOTTOM_TIP)):
+            action = menu.addAction(text)
+            action.setEnabled(not off)
+            if off:
+                action.setToolTip(tip)
+            action.triggered.connect(lambda _=False, w=where: self.move_layer(dataset_id, w))
+        menu.setToolTipsVisible(True)
 
     def _add_apply_all(self, menu: QMenu, dataset_id: str) -> None:
         from ..core.dataset_types import type_label
