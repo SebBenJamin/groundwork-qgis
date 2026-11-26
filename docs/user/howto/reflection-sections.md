@@ -28,10 +28,12 @@ headers and shows the **SEG-Y Section** part; **Method** proposes **Seismic refl
 
 1. Check ① and ②: a time section needs a velocity. The field is empty unless the file's text
    header states one; Groundwork never assumes a velocity.
-2. Under ③ say where time zero lies. For a processed land line this is usually **At a fixed
-   height**: the datum from the processing report.
+2. Under ③ say where time zero lies. The first time, it is **At a fixed height** with the
+   height empty: type the datum from the processing report, the usual case for a processed
+   land line.
 3. Under ④ choose how the traces are placed. Files with positions in their headers propose
-   them.
+   them. Some files keep distances along the line in their coordinate fields instead of map
+   coordinates: the dialog then proposes **Trace spacing** and says so.
 4. Under ⑤ choose the profile, or **The file's own coordinates** for a new one along the
    traces. Read ⑥, then press **Add**.
 
@@ -64,9 +66,10 @@ shows processed sections. A 3D volume is named as such and not added.
 
 Groundwork draws the section in depth. A time section is turned into depth with **one
 velocity** for the whole section, or with **one velocity function**: a short table of two-way
-time against velocity (typed, or pasted with Ctrl+V), with **Velocities are** average
-(stacking velocities are average velocities) or interval. The same velocity is used along the
-whole line.
+time against velocity (typed, or pasted with Ctrl+V). **Velocities are** says how the table
+is read: **Average**, **Interval** or **RMS (stacking)**. Stacking velocities are RMS
+velocities: choose **RMS (stacking)** for them. Choose **Average** only when the sheet says
+average, as the demo's sheet does ("V. MOY."). The same velocity is used along the whole line.
 
 What this means for accuracy:
 
@@ -74,8 +77,8 @@ What this means for accuracy:
 - The error grows with depth. A velocity 10 % too low puts every reflector 10 % too shallow:
   5 m at 50 m depth, 300 m at 3 km.
 - A plate always states the velocity used, in the line under the section, for example
-  *depth from v = 2500 m/s* or *depth from a velocity function (3199–5387 m/s)*. A reader of
-  the plate can judge the depth from it.
+  *depth from v = 2500 m/s below the ground* or *depth from a velocity function (3199–5387
+  m/s, average) below 500 m*. A reader of the plate can judge the depth from it.
 
 You can change the velocity, the sample step and where time zero lies later in
 [Dataset info](dataset-info.md). The picture moves; nothing is read again. Drawings are stored
@@ -100,7 +103,7 @@ need it, because the sheet's velocities already count from the datum.
   profile's ground line. For radar, and for shallow lines processed without datum
   corrections.
 - **At a fixed height**: the file's times, and your velocities, count from a datum plane.
-  Time zero lies at the **Height** you type, in metres above sea level. This is the usual
+  Time zero lies at the **Height of time zero** you type, in metres above sea level. This is the usual
   case when you take the datum and the velocities from a processing sheet, as in the Vaud
   demo, and for marine lines.
 - **At a fixed height, corrected to the ground**: the file's times count from a datum plane,
@@ -164,7 +167,8 @@ Right-click the section in the panel's **Layers** list → **Display…**.
 | ④ | Paint muted zones | Samples that are exactly zero at the top or bottom of a trace are left transparent unless this is ticked, so they do not cover what lies behind. |
 
 These options change the picture only. The data stay as they are, and the readout under the
-mouse shows the file's amplitude with the trace number, the time and the depth.
+mouse shows the file's amplitude with the trace number, the time and the depth below time
+zero (*102.4 m below time zero*; *below depth zero* for a depth section).
 
 - **Apply Style to All Sections** in the same menu gives the other reflection sections the
   same look.
@@ -180,7 +184,8 @@ name; the drawings become QGIS layers on the map and in 3D, as for any other sec
 
 *Data: Federal Office of Topography swisstopo.*
 
-Zoom in to pick: the panel shows the samples as they are. Drawings are stored at their heights.
+Zoom in to pick: close up, the panel draws the picture smoothly, blending between neighbouring
+samples; the readout gives each sample's own amplitude. Drawings are stored at their heights.
 If you change the velocity later, the picture moves and the drawings do not (see
 [Depth needs a velocity](#depth-needs-a-velocity)).
 

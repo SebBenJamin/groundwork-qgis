@@ -147,13 +147,14 @@ def test_readout_line(make, qgis_app):
     text = format_readout(20.0, 490.0, hits=provider.identify(pid, 20.0, 490.0))
     assert "trace 3" in text and "10.0 ms" in text and "10.0 m" in text
     assert "Line 1: " in text
+    assert text.endswith(" · trace 3 · 10.0 ms · 10.0 m below time zero")
 
 
 def test_readout_of_a_depth_section_has_no_time(qgis_app):
     hit = {"name": "D", "value": 1.5, "unit": "", "trace": {"number": 7, "time": None,
                                                             "depth": 12.25}}
     text = format_readout(1.0, hits=[hit])
-    assert text.endswith("D: 1.5 · trace 7 · 12.3 m")
+    assert text.endswith("D: 1.5 · trace 7 · 12.3 m below depth zero")
     assert "ms" not in text
 
 

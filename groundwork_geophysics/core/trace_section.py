@@ -22,6 +22,8 @@ _BLOCK = 1 << 20
 NO_VELOCITY = "The velocity must be greater than 0 m/s."
 TURNS_BACK = "The velocity function gives depths that do not increase with time."
 TIMES_DO_NOT_INCREASE = "The times of the velocity function must increase."
+#: how the rows of a velocity function are read (an unknown kind reads as "average")
+KINDS = ("average", "interval", "rms")
 
 
 def _sample(a) -> np.ndarray:
@@ -154,10 +156,11 @@ class TraceSection:
 @dataclass(frozen=True)
 class Velocity:
     """One velocity in m/s (``value``), or a velocity function: rows of (two-way time s,
-    velocity m/s) with increasing times, read as average or interval velocities."""
+    velocity m/s) with increasing times, read as average, interval or RMS velocities (stacking
+    velocities are close to RMS ones)."""
     value: float | None = None
     table: tuple = ()
-    kind: str = "average"             # "average" | "interval"; only read with ``table``
+    kind: str = "average"             # one of ``KINDS``; only read with ``table``
 
     @classmethod
     def from_options(cls, options: dict) -> "Velocity":
@@ -174,7 +177,7 @@ class Velocity:
         except (TypeError, ValueError):
             table = ()
         kind = options.get("velocity_kind") or "average"
-        return cls(value, table, kind if kind in ("average", "interval") else "average")
+        return cls(value, table, kind if kind in KINDS else "average")
 
     def text(self) -> str:
         if self.table:
@@ -201,8 +204,11 @@ def sample_depths(section: TraceSection, velocity: Velocity | None) -> np.ndarra
     velocity: ``v * t / 2``. With an average velocity function: ``v(t) * t / 2``, ``v`` linear
     between rows and constant outside. With an interval velocity function each row's velocity
     holds from its time to the next row's (the first row's also above it, the last row's below
-    it) and depth is the running sum. ValueError without a usable velocity, for a table whose
-    times do not increase, and for an average function whose depths do not increase."""
+    it) and depth is the running sum. RMS velocities are turned into interval velocities by
+    Dix's formula (the first row's velocity down to its time, the last interval's below the
+    last row) and summed the same way. ValueError without a usable velocity, for a table whose
+    times do not increase, for an average function whose depths do not increase, and for RMS
+    velocities that give no real interval velocity."""
     axis = section.sample_axis()
     if section.domain == "depth":
         return axis
@@ -224,6 +230,23 @@ def sample_depths(section: TraceSection, velocity: Velocity | None) -> np.ndarra
         at_rows[1:] = at_rows[0] + np.cumsum(np.diff(tt) * vv[:-1] / 2.0)
         j = np.clip(np.searchsorted(tt, axis, side="right") - 1, 0, tt.size - 1)
         return at_rows[j] + (axis - tt[j]) * vv[j] / 2.0
+    if velocity.kind == "rms":
+        # Dix: the interval velocity between two rows; the first row's velocity from time
+        # zero to its time (and above it), the last interval's below the last row
+        radicand = np.diff(vv * vv * tt) / np.diff(tt)
+        bad = np.flatnonzero(~(radicand > 0))
+        if bad.size:
+            i = int(bad[0])
+            raise ValueError(f"The RMS velocities give no real interval velocity between "
+                             f"{tt[i] * 1000:.0f} ms and {tt[i + 1] * 1000:.0f} ms.")
+        between = np.sqrt(radicand)                 # from row i down to row i + 1
+        below = np.append(between, between[-1] if between.size else vv[0])
+        at_rows = np.empty(tt.size)
+        at_rows[0] = tt[0] * vv[0] / 2.0
+        at_rows[1:] = at_rows[0] + np.cumsum(np.diff(tt) * between / 2.0)
+        j = np.clip(np.searchsorted(tt, axis, side="right") - 1, 0, tt.size - 1)
+        out = at_rows[j] + (axis - tt[j]) * below[j] / 2.0
+        return np.where(axis < tt[0], axis * vv[0] / 2.0, out)
     depths = np.interp(axis, tt, vv) * axis / 2.0
     if (np.diff(depths) <= 0).any():
         raise ValueError(TURNS_BACK)

@@ -44,6 +44,34 @@ def test_interval_velocity_function():
     assert list(sample_depths(s, v)) == pytest.approx([0.0, 1000.0, 2000.0, 4000.0])
 
 
+def test_a_constant_rms_function_is_the_one_velocity():
+    s = _section(np.zeros((1, 5)), first=0.0, step=0.5)             # t = 0..2 s
+    rms = V(table=((0.5, 2500.0), (1.0, 2500.0), (2.0, 2500.0)), kind="rms")
+    assert list(sample_depths(s, rms)) == pytest.approx(list(sample_depths(s, V(2500.0))))
+
+
+def test_rms_velocities_become_interval_velocities_by_dix():
+    # interval 2 is sqrt((10e6 * 2 - 2000**2 * 1) / 1) = 4000 m/s
+    s = _section(np.zeros((1, 4)), first=0.0, step=1.0)             # t = 0..3 s
+    rms = V(table=((1.0, 2000.0), (2.0, 10e6 ** 0.5)), kind="rms")
+    assert list(sample_depths(s, rms)) == pytest.approx([0.0, 1000.0, 3000.0, 5000.0])
+    assert depth_at(s, rms, np.array([0.5, 1.5])) == pytest.approx([500.0, 2000.0])
+
+
+def test_rms_velocities_without_a_real_interval_velocity_are_refused():
+    s = _section(np.zeros((1, 3)), first=0.0, step=1.0)
+    with pytest.raises(ValueError, match="^The RMS velocities give no real interval velocity "
+                                         "between 1000 ms and 2000 ms.$"):
+        sample_depths(s, V(table=((1.0, 3000.0), (2.0, 2000.0)), kind="rms"))
+
+
+def test_rms_is_kept_and_an_unknown_kind_reads_as_average():
+    assert Velocity.from_options({"velocity_table": [[0, 1800], [2, 3400]],
+                                  "velocity_kind": "rms"}).kind == "rms"
+    assert Velocity.from_options({"velocity_table": [[0, 1800], [2, 3400]],
+                                  "velocity_kind": "stacking"}).kind == "average"
+
+
 def test_a_function_whose_depths_turn_back_is_refused():
     s = _section(np.zeros((1, 3)), first=1.0, step=1.0)
     with pytest.raises(ValueError, match="do not increase"):

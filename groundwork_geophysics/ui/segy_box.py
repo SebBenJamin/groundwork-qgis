@@ -35,7 +35,7 @@ WGS84 = "EPSG:4326"
 FIELD_WORDS = {"cdp": "CDP", "source": "Source", "group": "Group (receiver)"}
 ZERO_ITEMS = (("On the ground line", "ground"), ("At a fixed height", "datum"),
               ("At a fixed height, corrected to the ground", "datum_ground"))
-KIND_ITEMS = (("Average", "average"), ("Interval", "interval"))
+KIND_ITEMS = (("Average", "average"), ("Interval", "interval"), ("RMS (stacking)", "rms"))
 NO_POSITIONS_TIP = "The file has no positions that change along the line"
 LINE_METRES = ("The positions in this file look like distances along the line, not map "
                "coordinates.")
@@ -234,7 +234,8 @@ class SegyBox(QGroupBox):
         for text, value in KIND_ITEMS:
             self.kind_combo.addItem(text, value)
         self.kind_combo.setToolTip("Average: from time zero down to each time. Interval: "
-                                   "from each row's time down to the next row's.")
+                                   "from each row's time down to the next row's. RMS: "
+                                   "stacking velocities, turned into interval velocities.")
         self.kind_combo.currentIndexChanged.connect(lambda *_a: self._edited())
         self.zero_combo = QComboBox()
         self.zero_combo.setObjectName("segy_zero_combo")

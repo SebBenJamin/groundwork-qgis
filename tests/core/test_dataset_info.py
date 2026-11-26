@@ -1,3 +1,5 @@
+import pytest
+
 from groundwork_geophysics.core.dataset_info import (INFO_FIELDS, dataset_info, provenance_line,
                                                     with_info)
 from groundwork_geophysics.core.model import Dataset
@@ -52,10 +54,22 @@ def _section(options=None, provenance=None):
 
 def test_depth_text_of_a_time_section_names_its_velocity():
     from groundwork_geophysics.core.dataset_info import depth_text
-    assert depth_text(_section({"velocity": 1500.0})) == "depth from v = 1500 m/s"
-    function = {"velocity_table": [[0.0, 1800.0], [1.0, 3400.0]], "velocity_kind": "average"}
+    assert depth_text(_section({"velocity": 1500.0})) == "depth from v = 1500 m/s below the ground"
+    function = {"velocity_table": [[0.0, 1800.0], [1.0, 3400.0]], "velocity_kind": "average",
+                "zero": "ground"}
     assert depth_text(_section(function)) == \
-        "depth from a velocity function (1800–3400 m/s)"
+        "depth from a velocity function (1800–3400 m/s, average) below the ground"
+
+
+@pytest.mark.parametrize("kind, word", [("average", "average"), ("interval", "interval"),
+                                        ("rms", "RMS"), ("unknown", "average")])
+def test_depth_text_names_the_kind_of_velocities_and_the_datum(kind, word):
+    from groundwork_geophysics.core.dataset_info import depth_text
+    d = _section({"velocity_table": [[0.0, 3199.0], [1.0, 5387.0]], "velocity_kind": kind,
+                  "zero": "datum", "datum": 500.0})
+    assert depth_text(d) == f"depth from a velocity function (3199–5387 m/s, {word}) below 500 m"
+    d = _section({"velocity": 1500.0, "zero": "datum", "datum": 372.5})
+    assert depth_text(d) == "depth from v = 1500 m/s below 372.5 m"
 
 
 def test_depth_text_of_a_depth_section_and_of_other_kinds():
@@ -69,7 +83,8 @@ def test_depth_text_says_the_section_is_corrected_to_the_ground():
     from groundwork_geophysics.core.dataset_info import depth_text
     d = _section({"velocity": 3000.0, "zero": "datum_ground", "datum": 500.0,
                   "replacement_velocity": 3200.0})
-    assert depth_text(d) == "depth from v = 3000 m/s, corrected to the ground with 3200 m/s"
+    assert depth_text(d) == \
+        "depth from v = 3000 m/s below 500 m, corrected to the ground with 3200 m/s"
 
 
 def test_traces_text_counts_traces_and_samples():
@@ -85,10 +100,11 @@ def test_traces_text_counts_traces_and_samples():
 
 
 def test_the_plate_line_of_a_section_carries_its_depth():
-    d = _section({"velocity": 1500.0})
-    assert provenance_line("T1", d) == "T1 · Seismic reflection · section · depth from v = 1500 m/s"
+    d = _section({"velocity": 1500.0, "zero": "datum", "datum": 500.0})
+    assert provenance_line("T1", d) == \
+        "T1 · Seismic reflection · section · depth from v = 1500 m/s below 500 m"
     d = _section({"domain": "depth", "sample_step": 1.0})
     assert provenance_line("T1", d) == "T1 · Seismic reflection · section · depth section"
     d = with_info(_section({"velocity": 1500.0}), {"software": "ProMAX"})
     assert provenance_line("T1", d) == \
-        "T1 · Seismic reflection · section: ProMAX · depth from v = 1500 m/s"
+        "T1 · Seismic reflection · section: ProMAX · depth from v = 1500 m/s below the ground"

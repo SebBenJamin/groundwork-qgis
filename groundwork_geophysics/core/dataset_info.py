@@ -3,11 +3,14 @@ in ``Dataset.provenance["info"]`` next to what the readers detected, and the one
 provenance a plate prints. Only what is known is printed; nothing is invented."""
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 from .dataset_types import TYPES, is_trace_kind, type_label
 
 INFO_FIELDS = ("method", "array", "spacing", "date", "software", "reference", "note")
+#: how a velocity function's rows are read, as the provenance names it
+KIND_WORDS = {"average": "average", "interval": "interval", "rms": "RMS"}
 
 
 def dataset_info(d) -> dict[str, str]:
@@ -57,10 +60,10 @@ def _speed(v: float) -> str:
 
 
 def depth_text(d) -> str:
-    """How a reflection section's depths come about: "depth from v = 1500 m/s", "depth from
-    a velocity function (1800–3400 m/s)" (with ", corrected to the ground with 3200 m/s"
-    for a section corrected to the ground), "depth section"; "" for other kinds and for a
-    time section without a velocity."""
+    """How a reflection section's depths come about and from where: "depth from v = 1500 m/s
+    below the ground", "depth from a velocity function (1800–3400 m/s, RMS) below 500 m"
+    (with ", corrected to the ground with 3200 m/s" for a section corrected to the ground),
+    "depth section"; "" for other kinds and for a time section without a velocity."""
     if not is_trace_kind(d.kind):
         return ""
     options = d.reader_options or {}
@@ -70,9 +73,18 @@ def depth_text(d) -> str:
     velocity = Velocity.from_options(options)
     if velocity.value is None and not velocity.table:
         return ""
-    text = f"depth from {velocity.text()}"
+    said = velocity.text()
+    if velocity.table:                          # which velocities: "(1800–3400 m/s, RMS)"
+        said = f"{said[:-1]}, {KIND_WORDS.get(velocity.kind, velocity.kind)})"
+    text = f"depth from {said}"
+    zero, datum = options.get("zero") or "ground", options.get("datum")
+    if zero == "ground":
+        text += " below the ground"
+    elif isinstance(datum, (int, float)) and not isinstance(datum, bool) and \
+            math.isfinite(datum):
+        text += f" below {_speed(datum)} m"
     rv = options.get("replacement_velocity")
-    if options.get("zero") == "datum_ground" and isinstance(rv, (int, float)) and rv > 0:
+    if zero == "datum_ground" and isinstance(rv, (int, float)) and rv > 0:
         text += f", corrected to the ground with {_speed(rv)} m/s"
     return text
 

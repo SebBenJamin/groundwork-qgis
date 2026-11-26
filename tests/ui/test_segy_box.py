@@ -69,7 +69,18 @@ def test_options_round_trip(box):
     assert box.options() == o
 
 
-LINE_METRES = "The positions in this file look like distances along the line, not map coordinates."
+def test_velocities_can_be_average_interval_or_rms(box):
+    combo = box.kind_combo
+    assert [combo.itemText(i) for i in range(combo.count())] == \
+        ["Average", "Interval", "RMS (stacking)"]
+    box.set_info(info())
+    o = {"domain": "time", "velocity_table": [[0.1, 1800.0], [0.5, 2400.0]],
+         "velocity_kind": "rms", "zero": "ground", "position": "spacing", "spacing": 2.0}
+    box.set_options(o)
+    assert box.options() == o
+
+
+LINE_METRES ="The positions in this file look like distances along the line, not map coordinates."
 CARFAX = {"source": ((4.0, 0.0), (560.0, 0.0))}
 
 
