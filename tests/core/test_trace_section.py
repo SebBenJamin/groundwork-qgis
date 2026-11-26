@@ -3,8 +3,9 @@ import numpy as np
 import pytest
 
 from groundwork_geophysics.core.trace_section import (
-    DisplayGain, TraceSection, Velocity, agc, color_limits, depth_at, display_values, ground_time,
-    muted_mask, place, reduce_image, sample_depths)
+    DisplayGain, TraceSection, Velocity, agc, color_limits, depth_at, dielectric_from_velocity,
+    display_values, first_arrival, ground_time, muted_mask, place, reduce_image, sample_depths,
+    velocity_from_dielectric)
 
 
 def _section(a, **kw):
@@ -406,3 +407,93 @@ def test_gain_with_time_never_lifts_a_dead_trace():
     a[1] = 1e-6 * a[0]
     g = display_values(_section(a, step=0.01), DisplayGain(time_power=2.0))
     assert np.abs(g[1]).max() <= 1e-5 * np.abs(g[0]).max()
+
+
+def test_dielectric_and_velocity_convert_both_ways():
+    assert velocity_from_dielectric(9.0) == pytest.approx(0.299792458e9 / 3)
+    assert dielectric_from_velocity(1.0e8) == pytest.approx(8.98755, rel=1e-4)
+    for bad in (0.5, float("nan")):
+        with pytest.raises(ValueError, match="dielectric"):
+            velocity_from_dielectric(bad)
+    for bad in (0.0, 4.0e8):
+        with pytest.raises(ValueError, match="speed of light"):
+            dielectric_from_velocity(bad)
+
+
+def test_time_zero_puts_that_sample_on_the_ground():
+    s = _section(np.zeros((2, 10)), first=0.0, step=1e-9)          # 10 samples of 1 ns
+    p = place(s, 100.0, V(1.0e8), time_zero=3e-9)
+    assert p.depths[3] == pytest.approx(0.0) and p.depths[5] == pytest.approx(0.10)
+    assert list(p.live_from) == [3, 3]
+    h = p.hit(0.0, 100.0 - 0.10)
+    assert h["sample"] == 5 and h["time"] == pytest.approx(5e-9) and h["depth"] == pytest.approx(0.10)
+
+
+def test_time_zero_beyond_the_record_and_on_a_depth_section_are_refused():
+    s = _section(np.zeros((2, 10)), step=1e-9)
+    with pytest.raises(ValueError, match="beyond the end"):
+        place(s, 0.0, V(1e8), time_zero=1e-6)
+    d = _section(np.zeros((2, 10)), step=1.0, domain="depth")
+    with pytest.raises(ValueError):
+        place(d, 0.0, None, time_zero=1.0)
+
+
+def test_time_zero_keeps_a_given_live_from_where_it_is_later_and_shifts_depth_at():
+    s = _section(np.zeros((3, 10)), step=1e-9)
+    p = place(s, 0.0, V(1.0e8), np.array([1, 5, 3]), time_zero=3e-9)
+    assert list(p.live_from) == [3, 5, 3]
+    assert p.bounds()[3] == 0.0                       # the top is the ground (time zero)
+    assert depth_at(s, V(1.0e8), np.array([5e-9]), time_zero=3e-9)[0] == pytest.approx(0.10)
+    assert sample_depths(s, V(1.0e8), 3e-9)[0] == pytest.approx(-0.15)
+    assert place(s, 0.0, V(1.0e8), time_zero=0.0).live_from is None
+
+
+def test_first_arrival_finds_the_direct_wave():
+    a = np.zeros((50, 200), np.float32)
+    a[:, 40:44] = [300, -500, 400, -100]
+    a += np.random.default_rng(0).normal(0, 1, a.shape).astype(np.float32)
+    s = _section(a, step=1e-9)
+    assert first_arrival(s) == pytest.approx(40e-9, abs=2e-9)
+    assert first_arrival(_section(np.zeros((3, 10)), first=0.002)) == 0.002   # nothing qualifies
+
+
+def test_dewow_removes_a_slow_drift_and_keeps_a_wavelet():
+    t = np.arange(400)
+    drift = 50 * np.exp(-t / 150.0)
+    wave = np.zeros(400)
+    wave[200:204] = [5, -9, 6, -2]
+    s = _section(np.tile(drift + wave, (3, 1)), step=1e-9)
+    d = display_values(s, DisplayGain(dewow_window=20e-9))
+    assert abs(d[0, 100]) < 2.0 and abs(d[0, 201]) > 5.0 and d.dtype == np.float32
+    assert s.amplitudes[0, 100] == pytest.approx(drift[100])           # the data are untouched
+
+
+def test_background_removal_takes_out_what_every_trace_shares():
+    a = np.zeros((40, 50), np.float32)
+    a[:, 10] = 7.0
+    a[20, 30] = 4.0                                    # a band and one reflector
+    d = display_values(_section(a), DisplayGain(background="all"))
+    assert abs(d[5, 10]) < 0.2 and d[20, 30] > 3.5
+    w = display_values(_section(a), DisplayGain(background="window", background_traces=11))
+    assert abs(w[5, 10]) < 0.2 and w[20, 30] > 3.0
+
+
+def test_background_window_matches_a_plain_moving_mean_across_blocks(monkeypatch):
+    import groundwork_geophysics.core.trace_section as ts
+    monkeypatch.setattr(ts, "_BLOCK", 7 * 5)           # blocks of 5 traces, fewer than the window
+    a = np.random.default_rng(1).normal(0, 1, (23, 7)).astype(np.float32)
+    a[4, 2] = np.nan
+    got = display_values(_section(a), DisplayGain(background="window", background_traces=10))
+    want = np.empty_like(a, dtype=np.float64)
+    for i in range(23):                               # 10 is read as 11: five traces each side
+        want[i] = a[i] - np.nanmean(a[max(0, i - 5):i + 6].astype(np.float64), axis=0)
+    assert np.isnan(got[4, 2]) and np.allclose(got[~np.isnan(a)], want[~np.isnan(a)], atol=1e-5)
+
+
+def test_filters_survive_the_dict_round_trip_and_old_dicts_load():
+    g = DisplayGain(dewow_window=20e-9, background="window", background_traces=11)
+    assert DisplayGain.from_dict(g.to_dict()) == g and g.active()
+    assert DisplayGain.from_dict({"agc_window": 0.2}).background == ""
+    assert DisplayGain(background="all").active() and DisplayGain(dewow_window=1e-8).active()
+    assert DisplayGain().to_dict() == DisplayGain.from_dict({}).to_dict()
+    assert "background" not in DisplayGain(agc_window=0.2).to_dict()      # stored as before

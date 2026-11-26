@@ -24,6 +24,15 @@ TURNS_BACK = "The velocity function gives depths that do not increase with time.
 TIMES_DO_NOT_INCREASE = "The times of the velocity function must increase."
 #: how the rows of a velocity function are read (an unknown kind reads as "average")
 KINDS = ("average", "interval", "rms")
+#: the speed of light in m/ns: radar velocities are often given in m/ns (code works in m/s)
+C_M_PER_NS = 0.299792458
+_C = C_M_PER_NS * 1e9                 # m/s
+BAD_DIELECTRIC = "The dielectric constant must be 1 or greater."
+BAD_RADAR_VELOCITY = ("The velocity must be greater than 0 and not above the speed of light "
+                      "(0.2998 m/ns).")
+BEYOND_RECORD = "Time zero lies beyond the end of the record."
+#: how the background is removed: "" off, "all" the mean trace of the line, "window" a moving mean
+BACKGROUNDS = ("", "all", "window")
 
 
 def _sample(a) -> np.ndarray:
@@ -197,8 +206,46 @@ def _usable(v) -> bool:
     return v is not None and math.isfinite(v) and v > 0
 
 
-def sample_depths(section: TraceSection, velocity: Velocity | None) -> np.ndarray:
+def velocity_from_dielectric(eps: float) -> float:
+    """Radar velocity (m/s) in a material of relative dielectric constant ``eps``:
+    ``c / sqrt(eps)``. ValueError for ``eps`` below 1 or not a number."""
+    eps = float(eps)
+    if not (math.isfinite(eps) and eps >= 1.0):
+        raise ValueError(BAD_DIELECTRIC)
+    return _C / math.sqrt(eps)
+
+
+def dielectric_from_velocity(v: float) -> float:
+    """Relative dielectric constant for a radar velocity ``v`` (m/s): ``(c / v) ** 2``.
+    ValueError for ``v`` not above 0 or above the speed of light."""
+    v = float(v)
+    if not (math.isfinite(v) and 0.0 < v <= _C):
+        raise ValueError(BAD_RADAR_VELOCITY)
+    return (_C / v) ** 2
+
+
+def _time_zero(section: TraceSection, time_zero) -> float:
+    """``time_zero`` as a float, checked: 0 for a depth section, not after the last sample."""
+    tz = float(time_zero)
+    if not math.isfinite(tz):
+        raise ValueError("Time zero must be a number.")
+    if section.domain == "depth":
+        if tz != 0.0:
+            raise ValueError("A depth section has no time zero.")
+        return 0.0
+    if tz > section.first + (section.n_samples - 1) * section.step + 1e-6 * section.step:
+        raise ValueError(BEYOND_RECORD)
+    return tz
+
+
+def sample_depths(section: TraceSection, velocity: Velocity | None,
+                  time_zero: float = 0.0) -> np.ndarray:
     """Depth below time zero / depth zero of each sample, m.
+
+    ``time_zero`` (s, a time section only) is the time that lies on the top (the ground for a
+    radargram): every depth is that of ``t - time_zero``, so samples before it get negative
+    depths (they lie above the top). ValueError for a non-zero ``time_zero`` on a depth
+    section and for one after the last sample.
 
     A depth section: ``first + k * step`` (``velocity`` is ignored). A time section with one
     velocity: ``v * t / 2``. With an average velocity function: ``v(t) * t / 2``, ``v`` linear
@@ -209,9 +256,16 @@ def sample_depths(section: TraceSection, velocity: Velocity | None) -> np.ndarra
     last row) and summed the same way. ValueError without a usable velocity, for a table whose
     times do not increase, for an average function whose depths do not increase, and for RMS
     velocities that give no real interval velocity."""
+    tz = _time_zero(section, time_zero)
     axis = section.sample_axis()
     if section.domain == "depth":
         return axis
+    return _time_depths(axis - tz, velocity)
+
+
+def _time_depths(axis: np.ndarray, velocity: Velocity | None) -> np.ndarray:
+    """Depths (m) of the two-way times ``axis`` (s, increasing) as ``sample_depths`` gives
+    them."""
     if velocity is None:
         raise ValueError(NO_VELOCITY)
     if not velocity.table:
@@ -261,21 +315,24 @@ def ground_time(datum: float, ground: np.ndarray, replacement_velocity: float) -
     return 2.0 * (float(datum) - ground) / float(replacement_velocity)
 
 
-def depth_at(section: TraceSection, velocity: Velocity | None, times: np.ndarray) -> np.ndarray:
-    """Depth below time zero (m) at ``times`` (s), as ``sample_depths`` gives it for the
-    samples: interpolated between them, and beyond the first and last sample continued in a
-    straight line with the slope at that end. With one velocity that is ``v * t / 2`` for any
-    time. ValueError for a depth section (it has no times) and as ``sample_depths``."""
+def depth_at(section: TraceSection, velocity: Velocity | None, times: np.ndarray,
+             time_zero: float = 0.0) -> np.ndarray:
+    """Depth below time zero (m) at ``times`` (s, as the file counts them), as
+    ``sample_depths`` gives it for the samples (with the same ``time_zero``): interpolated
+    between them, and beyond the first and last sample continued in a straight line with the
+    slope at that end. With one velocity that is ``v * (t - time_zero) / 2`` for any time.
+    ValueError for a depth section (it has no times) and as ``sample_depths``."""
     if section.domain != "time":
         raise ValueError("A depth section has no times to give depths for.")
-    times = np.asarray(times, dtype=np.float64)
-    depths = sample_depths(section, velocity)
+    depths = sample_depths(section, velocity, time_zero)
+    tz = float(time_zero)
+    times = np.asarray(times, dtype=np.float64) - tz
     if not velocity.table:
         return velocity.value * times / 2.0
-    axis = section.sample_axis()
+    axis = section.sample_axis() - tz
     if axis.size == 1:                       # one sample: the slope from the function itself
         ends = sample_depths(replace(section, amplitudes=np.zeros((1, 2), np.float32),
-                                     x=np.zeros(1), numbers=None), velocity)
+                                     x=np.zeros(1), numbers=None), velocity, tz)
         lo_slope = hi_slope = (ends[1] - ends[0]) / section.step
     else:
         lo_slope = (depths[1] - depths[0]) / (axis[1] - axis[0])
@@ -289,9 +346,10 @@ def depth_at(section: TraceSection, velocity: Velocity | None, times: np.ndarray
 class PlacedTraces:
     """A section hung in the profile: ``section.x`` is the chainage (increasing), ``z_top`` the
     elevation of time zero / depth zero of each trace, ``depths`` the depth of each sample
-    below it (m, increasing). ``live_from``, when set, is per trace the first sample that
-    belongs to the earth (one corrected to the ground: the samples above the ground line are
-    not drawn; see ``muted_mask``)."""
+    below it (m, increasing; negative for samples before a time zero, which lie above the
+    top). ``live_from``, when set, is per trace the first sample that belongs to the earth
+    (one corrected to the ground, or the samples before a time zero: those above the ground
+    line are not drawn; see ``muted_mask``)."""
     section: TraceSection
     z_top: np.ndarray
     depths: np.ndarray
@@ -299,7 +357,8 @@ class PlacedTraces:
 
     def bounds(self) -> tuple[float, float, float, float]:
         """``(smin, smax, zmin, zmax)``: first to last trace, top of the highest trace to the
-        last sample of the lowest."""
+        last sample of the lowest (samples above the top, before a time zero, are not
+        counted)."""
         x = self.section.x
         return (float(x[0]), float(x[-1]), float(self.z_top.min() - self.depths[-1]),
                 float(self.z_top.max()))
@@ -326,13 +385,18 @@ class PlacedTraces:
 
 
 def place(section: TraceSection, z_top, velocity: Velocity | None,
-          live_from: np.ndarray | None = None) -> PlacedTraces:
+          live_from: np.ndarray | None = None, *, time_zero: float = 0.0) -> PlacedTraces:
     """Hang ``section`` from ``z_top`` (one elevation or one per trace), with sample depths
     from ``velocity``. Traces whose ``x`` does not increase are put in order (stable sort); a
     section that runs backwards is a reversed view, any other order a copy in the file's type.
     In order already, the sample array is shared. ``live_from`` (one sample index per trace,
-    or None) follows the traces' order."""
-    depths = sample_depths(section, velocity)
+    or None) follows the traces' order.
+
+    ``time_zero`` (s, a time section only) puts the sample at that time on ``z_top`` (see
+    ``sample_depths``) and mutes the samples before it: ``live_from`` becomes, for every
+    trace, the larger of the given index and the first sample at or after time zero (still
+    None when none is given and no sample lies before time zero)."""
+    depths = sample_depths(section, velocity, time_zero)
     n = section.n_traces
     zt = np.asarray(z_top, dtype=np.float64)
     zt = np.full(n, float(zt)) if zt.ndim == 0 else zt.reshape(-1)
@@ -344,6 +408,13 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
         live_from = np.asarray(live_from, dtype=np.int64).reshape(-1)
         if live_from.size != n:
             raise ValueError(f"{n} traces but {live_from.size} first samples.")
+    if section.domain == "time":
+        # a sample exactly at time zero is earth (a hair of tolerance for rounding)
+        zero = min(section.n_samples,
+                   max(0, math.ceil((float(time_zero) - section.first) / section.step - 1e-6)))
+        if zero > 0:
+            live_from = (np.full(n, zero, np.int64) if live_from is None
+                         else np.maximum(live_from, zero))
     step = np.diff(section.x)
     if (step < 0).any():
         order = slice(None, None, -1) if (step < 0).all() else np.argsort(section.x, kind="stable")
@@ -354,6 +425,30 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
         live_from = None if live_from is None else live_from[order]
     return PlacedTraces(section, np.ascontiguousarray(zt), depths,
                         None if live_from is None else np.ascontiguousarray(live_from))
+
+
+def first_arrival(section: TraceSection, sample_limit: int = 2000) -> float:
+    """An estimate of time zero (s; m for a depth section) from the mean trace of at most
+    ``sample_limit`` traces taken with a regular stride: the first sample where the absolute
+    mean trace, after removing its median, exceeds 5 % of its maximum; ``section.first`` when
+    no sample does."""
+    a = section.amplitudes[::max(1, math.ceil(section.n_traces / max(1, int(sample_limit))))]
+    ns = a.shape[1]
+    total, count = np.zeros(ns), np.zeros(ns)
+    for r0, r1 in _row_blocks(a.shape[0], ns):
+        b = a[r0:r1].astype(np.float64)
+        ok = np.isfinite(b)
+        total += np.where(ok, b, 0.0).sum(axis=0)
+        count += ok.sum(axis=0)
+    ok = count > 0
+    if not ok.any():
+        return section.first
+    mean = np.divide(total, count, out=np.zeros(ns), where=ok)
+    m = np.where(ok, np.abs(mean - np.median(mean[ok])), 0.0)
+    top = float(m.max())
+    if not top > 0:
+        return section.first
+    return float(section.first + int(np.argmax(m > 0.05 * top)) * section.step)
 
 
 #: AGC and trace balance divide by at least this share of the section's RMS: a muted or dead
@@ -412,20 +507,36 @@ class DisplayGain:
     reverse_polarity: bool = False
     #: paint the muted zones (``muted_mask``) too; by default they are left transparent
     show_muted: bool = False
+    #: subtract a running mean along each trace over this window, seconds (metres for a depth
+    #: section); None = off
+    dewow_window: float | None = None
+    #: one of ``BACKGROUNDS``: "" off, "all" subtract the mean trace of the whole line,
+    #: "window" subtract the mean of the ``background_traces`` traces centred on each trace
+    background: str = ""
+    background_traces: int = 0        # odd; an even or smaller number is read as the next odd >= 3
 
     def active(self) -> bool:
         """True when the values shown differ from the file's (a gained copy is needed);
         ``show_muted`` only decides which samples are painted, so it does not count."""
         return bool((self.agc_window is not None and self.agc_window > 0)
                     or (self.time_power is not None and self.time_power != 0)
-                    or self.balance_traces or self.reverse_polarity)
+                    or self.balance_traces or self.reverse_polarity
+                    or (self.dewow_window is not None and self.dewow_window > 0)
+                    or self.background in ("all", "window"))
 
     def to_dict(self) -> dict:
-        """The options as plain data; ``show_muted`` only when it is set (as stored before)."""
+        """The options as plain data; ``show_muted`` and the filters only when they are set
+        (so options without them are stored as before)."""
         out = {"agc_window": self.agc_window, "time_power": self.time_power,
                "balance_traces": self.balance_traces, "reverse_polarity": self.reverse_polarity}
         if self.show_muted:
             out["show_muted"] = True
+        if self.dewow_window is not None:
+            out["dewow_window"] = self.dewow_window
+        if self.background:
+            out["background"] = self.background
+        if self.background_traces:
+            out["background_traces"] = self.background_traces
         return out
 
     @classmethod
@@ -440,8 +551,14 @@ class DisplayGain:
             except (TypeError, ValueError):
                 return None
 
+        try:
+            traces = max(0, int(d.get("background_traces") or 0))
+        except (TypeError, ValueError):
+            traces = 0
+        background = d.get("background") or ""
         return cls(number("agc_window"), number("time_power"), bool(d.get("balance_traces", False)),
-                   bool(d.get("reverse_polarity", False)), bool(d.get("show_muted", False)))
+                   bool(d.get("reverse_polarity", False)), bool(d.get("show_muted", False)),
+                   number("dewow_window"), background if background in BACKGROUNDS else "", traces)
 
 
 def muted_mask(amplitudes: np.ndarray, live_from: np.ndarray | None = None) -> np.ndarray:
@@ -463,12 +580,90 @@ def muted_mask(amplitudes: np.ndarray, live_from: np.ndarray | None = None) -> n
     return out
 
 
+def _odd(n: float) -> int:
+    """The nearest odd whole number to ``n`` (an even one goes up), at least 3."""
+    return max(3, 2 * math.floor((float(n) - 1.0) / 2.0 + 0.5) + 1)
+
+
+def _dewow_into(out: np.ndarray, window: int) -> None:
+    """Subtract from each trace of ``out`` (float32, in place) the mean of the ``window``
+    samples centred on each sample (fewer at the ends of a trace; NaN left out and kept)."""
+    n = out.shape[1]
+    k = np.arange(n)
+    lo = np.clip(k - (window - 1) // 2, 0, n)
+    hi = np.clip(k - (window - 1) // 2 + window, 0, n)
+    for r0, r1 in _row_blocks(out.shape[0], n):
+        a = out[r0:r1].astype(np.float64)
+        ok = np.isfinite(a)
+        s = np.zeros((a.shape[0], n + 1))
+        if ok.all():                                # the usual case: every window is full
+            np.cumsum(a, axis=1, out=s[:, 1:])
+            a -= (s[:, hi] - s[:, lo]) / (hi - lo)
+            out[r0:r1] = a
+            continue
+        np.cumsum(np.where(ok, a, 0.0), axis=1, out=s[:, 1:])
+        cnt = np.zeros((a.shape[0], n + 1))
+        np.cumsum(ok, axis=1, out=cnt[:, 1:])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out[r0:r1] = a - (s[:, hi] - s[:, lo]) / (cnt[:, hi] - cnt[:, lo])
+
+
+def _background_all_into(out: np.ndarray) -> None:
+    """Subtract the mean trace of the whole line (float64, NaN left out) from ``out``."""
+    ns = out.shape[1]
+    total, count = np.zeros(ns), np.zeros(ns)
+    for r0, r1 in _row_blocks(out.shape[0], ns):
+        a = out[r0:r1].astype(np.float64)
+        ok = np.isfinite(a)
+        total += np.where(ok, a, 0.0).sum(axis=0)
+        count += ok.sum(axis=0)
+    mean = np.divide(total, count, out=np.zeros(ns), where=count > 0)
+    for r0, r1 in _row_blocks(out.shape[0], ns):
+        out[r0:r1] = out[r0:r1].astype(np.float64) - mean
+
+
+def _background_window_into(out: np.ndarray, width: int) -> None:
+    """Subtract from each trace of ``out`` the mean of the ``width`` (odd) traces centred on
+    it (fewer at the ends of the line; NaN left out and kept). The blocks of traces are worked
+    through in order; the original values of the last ``width // 2`` traces of a block are
+    kept aside before it is overwritten, as the next block's windows reach back into them."""
+    nt, ns = out.shape
+    h = (width - 1) // 2
+    kept = np.zeros((0, ns))                       # original rows max(0, r0 - h) .. r0
+    for r0, r1 in _row_blocks(nt, ns):
+        lo, hi = r0 - kept.shape[0], min(nt, r1 + h)
+        a = np.concatenate([kept, out[r0:hi].astype(np.float64)])     # rows lo .. hi
+        ok = np.isfinite(a)
+        s = np.zeros((a.shape[0] + 1, ns))
+        i = np.arange(r0, r1)
+        w0, w1 = np.maximum(i - h, 0) - lo, np.minimum(i + h + 1, nt) - lo
+        if ok.all():                                # the usual case: no count needed
+            np.cumsum(a, axis=0, out=s[1:])
+            mean = (s[w1] - s[w0]) / (w1 - w0)[:, None]
+        else:
+            np.cumsum(np.where(ok, a, 0.0), axis=0, out=s[1:])
+            cnt = np.zeros((a.shape[0] + 1, ns))
+            np.cumsum(ok, axis=0, out=cnt[1:])
+            with np.errstate(invalid="ignore", divide="ignore"):
+                mean = (s[w1] - s[w0]) / (cnt[w1] - cnt[w0])
+        del ok, s
+        kept = a[max(0, r1 - h) - lo:r1 - lo].copy()
+        out[r0:r1] = a[r0 - lo:r1 - lo] - mean
+
+
 def display_values(section: TraceSection, gain: DisplayGain) -> np.ndarray:
     """The values to draw: the section's own array when ``gain`` is not active, else one
-    float32 copy with, in this order, time power, AGC, trace balance and polarity applied."""
+    float32 copy with, in this order, dewow, background removal, time power, AGC, trace
+    balance and polarity applied (each worked through in blocks of traces)."""
     if not gain.active():
         return section.amplitudes
     out = section.amplitudes.astype(np.float32)
+    if gain.dewow_window is not None and gain.dewow_window > 0:
+        _dewow_into(out, _odd(gain.dewow_window / section.step))
+    if gain.background == "all":
+        _background_all_into(out)
+    elif gain.background == "window":
+        _background_window_into(out, _odd(gain.background_traces))
     if gain.time_power is not None and gain.time_power != 0:
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             f = np.abs(section.sample_axis()) ** gain.time_power
