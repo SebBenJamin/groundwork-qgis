@@ -51,3 +51,16 @@ def test_outside_corridor_masks_far_pixels():
     line = np.array([[0.0, 50.0], [100.0, 50.0]])
     out = vaud_data.outside_corridor(gt, (10, 10), [line], corridor=20.0)
     assert not out[3:7].any() and out[:2].all() and out[8:].all()
+
+
+def test_the_velocity_function_is_the_median_of_the_sheets_columns():
+    import vaud_data
+    o = vaud_data.OPTIONS
+    assert (o["zero"], o["datum"], o["replacement_velocity"]) == ("datum_ground", 500.0, 4000.0)
+    assert o["velocity_kind"] == "average" and "velocity" not in o
+    times = [t for t, _v in o["velocity_table"]]
+    speeds = [v for _t, v in o["velocity_table"]]
+    assert times == [round(0.2 * k, 1) for k in range(1, 20)]          # 0.2 to 3.8 s
+    assert all(b > a for a, b in zip(speeds, speeds[1:]))              # grows with time
+    for (t, v), row in zip(o["velocity_table"], vaud_data.SHEET_AVERAGE_VELOCITIES):
+        assert row[0] == round(t * 1000) and v == float(np.median(row[1:]))

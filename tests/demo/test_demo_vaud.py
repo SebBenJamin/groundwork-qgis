@@ -54,19 +54,30 @@ def test_vaud_demo_opens_offline(opened):
     assert offline and all(lyr.isValid() for lyr in offline)
 
 
-def test_vaud_sections_hang_at_the_datum_in_time(opened):
+def test_vaud_sections_use_the_datum_and_velocities_of_the_sheet(opened):
     _prj, st, prov = opened
     for p in st.profiles():
         [d] = st.datasets(p.id)
         o = d.reader_options
         assert (o["position"], o["xy_field"], o["crs"]) == ("map", "source", "EPSG:2056")
-        assert (o["domain"], o["velocity"], o["zero"], o["datum"]) == ("time", 3000.0, "datum",
-                                                                      500.0)
+        assert o["domain"] == "time" and "velocity" not in o
+        assert (o["zero"], o["datum"], o["replacement_velocity"]) == ("datum_ground", 500.0, 4000.0)
+        assert o["velocity_kind"] == "average"
+        times = [t for t, _v in o["velocity_table"]]
+        assert len(times) > 2 and all(b > a for a, b in zip(times, times[1:]))
         [layer] = prov.layers(p.id)
-        assert layer.traces.bounds()[3] == pytest.approx(500.0)
+        assert layer.error is None
+        assert 470.0 < layer.traces.bounds()[3] < 530.0    # time zero near the 500 m datum
         assert layer.style.clip_percent == pytest.approx(98.0)
         assert layer.style.gain is None or not layer.style.gain.active()   # already balanced
         assert layer.style.scale is None or layer.style.scale.cmap == "gray"
+
+
+def test_vaud_deepest_sample_lies_near_ten_km(opened):
+    _prj, st, prov = opened
+    [p] = [p for p in st.profiles() if p.name == "VD-P760057"]
+    [layer] = prov.layers(p.id)
+    assert layer.traces.bounds()[2] < 500.0 - 8000.0      # 3.8 s at about 5,300 m/s
 
 
 def test_vaud_ground_line_comes_from_the_dem(opened):
@@ -102,8 +113,10 @@ def test_vaud_attribution_names_sources():
     for needed in ("Source: Federal Office of Topography swisstopo",
                    "2D and 3D reflection seismic in Switzerland",
                    "https://opendata.swiss/en/dataset/2d-und-3d-reflexionsseismik-in-der-schweiz",
-                   "VD-P760057", "VD-P760068", "3000 m/s", "swissALTI3D", "OpenStreetMap"):
+                   "VD-P760057", "VD-P760068", "500 m", "4000 m/s", "original section sheet",
+                   "swissALTI3D", "OpenStreetMap"):
         assert needed in text, needed
+    assert "3000 m/s" not in text
 
 
 def test_vaud_project_has_no_personal_traces():
