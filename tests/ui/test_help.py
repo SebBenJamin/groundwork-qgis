@@ -42,6 +42,13 @@ def test_release_note_for_installed_version_exists():
     assert release_note_url(version) == SITE + f"releases/{version}/"
 
 
+def test_reflection_help_targets():
+    from groundwork_geophysics.ui.help import HELP_PAGES
+    assert HELP_PAGES["add_segy"] == "user/howto/reflection-sections/#add-a-seg-y-section"
+    assert HELP_PAGES["trace_display"] == "user/howto/reflection-sections/#display-options"
+    assert HELP_PAGES["display"] == "user/howto/section-panel/#how-a-model-is-drawn"
+
+
 @pytest.fixture
 def opened(monkeypatch):
     from qgis.PyQt.QtGui import QDesktopServices
@@ -61,6 +68,20 @@ def test_add_help_button_opens_page(qgis_app, opened):
     assert button is not None
     button.click()
     assert opened == [help_url("add_data")]
+
+
+def test_help_button_key_can_follow_the_dialog(qgis_app, opened):
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
+    from groundwork_geophysics.ui.help import add_help_button, help_url
+    box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+    key = {"now": "add_data"}
+    add_help_button(box, lambda: key["now"])
+    button = box.button(QDialogButtonBox.StandardButton.Help)
+    button.click()
+    key["now"] = "add_segy"
+    button.click()
+    assert opened == [help_url("add_data"), help_url("add_segy")]
 
 
 @pytest.mark.parametrize("behaviour", ["false", "raise"])

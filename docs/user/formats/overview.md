@@ -8,9 +8,10 @@ Which methods Groundwork works with, which files it reads, and what it writes.
 |---|---|---|
 | **ERT** (resistivity) | inversion models; measured readings; the misfit of an inversion | resistivity section (Ω·m); readings and misfit as pseudosections |
 | **Seismic refraction** | velocity models, from any program that writes one of the formats below | Vp section (m/s), with its ray coverage if the file has one |
+| **Seismic reflection** | processed sections (stack, migrated or depth section) as SEG-Y | the section in depth, in grey or any colour ramp |
 | any other method | a model or grid as a text table | a section of the value you name, with its unit |
 
-Ground-penetrating radar and processed reflection seismics are planned.
+Ground-penetrating radar in its own formats is planned; radar exported as SEG-Y loads now.
 
 Everything is 2D: one section along one profile line. 3D models and 3D electrode layouts are refused with a message.
 
@@ -26,9 +27,10 @@ Everything is 2D: one section along one profile line. 3D models and 3D electrode
 | [Refrapy velocity model](#refrapy-velocity-model) | `<line>_xzv.txt` | seismic refraction | model, with ray coverage and geophone positions |
 | [pyGIMLi / BERT data](#pygimli-bert-data) | `*.data`, `*.ohm`, `*.dat` | ERT | measured readings; with a response file, the misfit |
 | [R2 / ResIPy misfit](#r2-resipy-misfit) | `f001_err.dat` | ERT | misfit, observed and calculated readings |
+| [SEG-Y](#seg-y) | `*.sgy`, `*.segy` | seismic reflection | processed section, with the trace positions when the file has them |
 | [Any text table](#any-text-table) | `*.csv`, `*.txt`, `*.xyz`, … | any | model, with the columns you assign |
 
-The **Method** row in Add Data is preselected from the file (a velocity file proposes Seismic refraction); measured readings and misfits are always ERT. How the file is placed on its profile line is in [Add data](../howto/add-data.md#where-the-line-runs).
+The **Method** row in Add Data is preselected from the file (a velocity file proposes Seismic refraction, a SEG-Y file Seismic reflection); measured readings and misfits are always ERT. How the file is placed on its profile line is in [Add data](../howto/add-data.md#where-the-line-runs).
 
 ### R2 / ResIPy model
 
@@ -67,6 +69,24 @@ The **Method** row in Add Data is preselected from the file (a velocity file pro
 - R2's error file: a header, then per reading the four electrode numbers, the normalised misfit, observed and calculated apparent resistivity, the weights and a flag.
 - The electrodes are numbers only: put ResIPy's `electrodes.dat` next to the file.
 - When `R2.out` lies next to it, its final RMS must agree with the misfit read.
+
+### SEG-Y
+
+- A processed 2D section: one trace per CDP (or shot) position, in two-way time or in depth.
+  Read with the free library segyio, which Groundwork installs when you ask
+  ([segyio](../howto/reflection-sections.md#segyio)).
+- Byte order and sample format are found by segyio: standard big-endian files and
+  little-endian files both open.
+- Trace positions from the CDP, source or receiver fields of the trace headers (with their
+  scalar and unit), from a coordinate file (trace or CDP number, easting, northing), or from a
+  trace spacing you type.
+- A velocity is taken from the text header only when a line names a sound velocity in m/s;
+  otherwise you type it.
+- Not read: 3D volumes, Seismic Unix `.su` files, navigation files in fixed formats (UKOOA,
+  SPS). Unstacked gathers get a warning.
+
+How a section is added, hung in depth and drawn is in
+[Reflection sections](../howto/reflection-sections.md).
 
 ### Any text table
 

@@ -62,6 +62,7 @@ nav:
       - Add data: user/howto/add-data.md
       - The section panel: user/howto/section-panel.md
       - Seismic refraction: user/howto/seismic-refraction.md
+      - Reflection sections: user/howto/reflection-sections.md
       - Placement on the electrodes: user/howto/placement.md
       - Reference height: user/howto/reference-height.md
       - Boreholes and logs: user/howto/boreholes.md

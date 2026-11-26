@@ -1,6 +1,6 @@
 # Add data
 
-**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models) are recognised; for any other text table you say what the columns are. What each format must contain is in [Methods and formats](../formats/overview.md). A Groundwork project must be open; a profile need not be.
+**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models, SEG-Y) are recognised; for any other text table you say what the columns are. What each format must contain is in [Methods and formats](../formats/overview.md). A Groundwork project must be open; a profile need not be.
 
 ![The Add Data dialog with a text table chosen; its parts are numbered 1 to 5](../../images/howto/add-data.png)
 
@@ -63,6 +63,14 @@ Choose several files in **Browse…** (Ctrl or Shift while clicking). The dialog
 **Add** adds the ready files, each named after its file. When some are not ready, it asks
 first and leaves them out; the message bar says which.
 
+### (d) A seismic reflection section (SEG-Y)
+
+Choose the `.sgy` or `.segy` file. Instead of ① and ②, a **SEG-Y Section** part asks whether
+the samples are time or depth, the velocity that turns time into depth, where time zero lies,
+and how the traces are placed: by the positions in the file, a coordinate file or a trace
+spacing. Reading SEG-Y needs the free library segyio, which the dialog offers to install. See
+[Reflection sections](reflection-sections.md).
+
 ## The parts in detail
 
 ### File Format (text tables only)
@@ -108,7 +116,7 @@ The dialog remembers the last table settings and column roles and offers them ag
 
 Two rows at the top of the dialog belong here:
 
-- **Method**: ERT or Seismic refraction. It is preselected from the file (a velocity file proposes Seismic refraction) and gives the dataset its type, for example *Seismic refraction Vp model*, which the plate's title block, colour bar and layer tooltip show. Stations made by the import are electrodes or geophones. Measured ERT data are always ERT.
+- **Method**: ERT, Seismic refraction or Seismic reflection. It is preselected from the file (a velocity file proposes Seismic refraction, a SEG-Y file Seismic reflection) and gives the dataset its type, for example *Seismic refraction Vp model*, which the plate's title block, colour bar and layer tooltip show. Stations made by the import are electrodes or geophones. Measured ERT data are always ERT.
 - **Station set** appears when the profile has several sets.
 
 The new line and its points are drawn on the map while the dialog is open.

@@ -88,3 +88,21 @@ def test_dialog_help_buttons(env, make, key):
     finally:
         dlg.close()
         dlg.deleteLater()
+
+
+def test_add_data_help_opens_the_reflection_page_for_a_segy_file(env):
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
+    from groundwork_geophysics.ui.help import help_url
+    iface, st, p, prov, prj, opened = env
+    dlg = _add_data(iface, st, p, prov, prj)
+    try:
+        dlg.file_edit.setText("line.sgy")           # a SEG-Y file chosen
+        dlg.format_combo.setCurrentIndex(dlg.format_combo.findData("segy"))
+        (box,) = [b for b in dlg.findChildren(QDialogButtonBox)
+                  if b.button(QDialogButtonBox.StandardButton.Help) is not None]
+        box.button(QDialogButtonBox.StandardButton.Help).click()
+        assert opened == [help_url("add_segy")]
+    finally:
+        dlg.close()
+        dlg.deleteLater()

@@ -22,6 +22,43 @@ What to do when something doesn't look right.
 | The model is shifted along the line | Distance 0 of the file is not the start of the line | Set where distance 0 lies under ③ in **Add Data…**, or add the surveyed positions ([Placement](howto/placement.md)) |
 | The model is drawn in depth with no terrain | The profile has no heights: a local section | See below |
 
+## Reflection sections
+
+### Reading SEG-Y needs the library segyio
+
+Groundwork reads SEG-Y with segyio, a small free library that QGIS does not include. In
+**Add Data…**, choose the SEG-Y file and press **Install segyio**: it is installed into a
+Groundwork folder in your QGIS profile, and nothing else is changed. Without internet, the
+message after a failed install shows the command to run by hand; see
+[segyio](howto/reflection-sections.md#segyio). Everything else in Groundwork works without it.
+
+### The section sits at the wrong depth
+
+| What you see | Usual cause | Fix |
+|---|---|---|
+| Reflectors too shallow or too deep against boreholes | The velocity does not fit. One velocity for a deep section is increasingly wrong with depth | Type the velocity, or a velocity function, from the processing report in [Dataset info](howto/dataset-info.md) |
+| The whole section too high or too low | Time zero is at the wrong height | **Time zero is** and **Height** in Dataset info: the datum from the processing report |
+| The depths are far off, by a factor | The sample step is wrong (files in depth, radar exported as SEG-Y) | Correct **Sample step** in Dataset info |
+| "Enter the velocity in m/s." | A time section has no velocity, and Groundwork assumes none | Type it in Add Data or Dataset info |
+
+Drawings stay at their heights when the section moves; Groundwork asks first.
+
+### The section has a flat top and does not follow the ground
+
+This is how processed land sections are delivered: every trace was moved to a flat datum, and
+the ground shows only as the blank zone above the first data. Choose **At a fixed height,
+corrected to the ground** in Dataset info and type the replacement velocity from the
+processing report; the profile needs heights (stations with heights, or a DEM). The first data
+of a stack still lie some tens of metres below the ground line, because processing muted the
+first arrivals. On a line several kilometres deep, zoom in to see the ground at all
+([A flat top, and where the ground is](howto/reflection-sections.md#a-flat-top-and-where-the-ground-is)).
+
+### Nothing is drawn above the ground
+
+Samples that are exactly zero at the top of a trace (the muted zone) are left transparent, and
+so is everything above the ground line in a section corrected to the ground. To see them, tick
+**Paint muted zones** in the section's **Display…**.
+
 ## Local sections (no heights)
 
 A profile without any heights (no station heights, no DEM, a depth model) is drawn as a local

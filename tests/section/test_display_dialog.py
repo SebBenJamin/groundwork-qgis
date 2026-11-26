@@ -335,3 +335,21 @@ def test_the_first_scale_never_builds_a_gained_copy(make_trace_layer, monkeypatc
     monkeypatch.setattr(data, "display_values", lambda *a: calls.append(a) or real(*a))
     layer = make_trace_layer(gain=DisplayGain(agc_window=0.01))
     assert layer.style.scale.cmap == "gray" and calls == []
+
+
+@pytest.mark.parametrize("kind", ["model", "section"])
+def test_the_help_button_opens_the_page_for_the_layer(qgis_app, store_with_model, trace_layer,
+                                                      monkeypatch, kind):
+    from qgis.PyQt.QtGui import QDesktopServices
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.ui.help import help_url
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl",
+                        staticmethod(lambda url: opened.append(url.toString()) or True))
+    layer = trace_layer if kind == "section" else _layer(store_with_model)[1]
+    dlg = DisplayDialog(None, layer)
+    (box,) = dlg.findChildren(QDialogButtonBox)
+    box.button(QDialogButtonBox.StandardButton.Help).click()
+    assert opened == [help_url("trace_display" if kind == "section" else "display")]

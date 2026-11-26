@@ -18,6 +18,9 @@ HELP_PAGES = {
     "plates": "user/howto/plates/",
     "plate_details": "user/howto/plates/#the-title-block",
     "view3d": "user/howto/3d-view/",
+    "add_segy": "user/howto/reflection-sections/#add-a-seg-y-section",
+    "display": "user/howto/section-panel/#how-a-model-is-drawn",
+    "trace_display": "user/howto/reflection-sections/#display-options",
 }
 
 _METADATA = Path(__file__).resolve().parent.parent / "metadata.txt"
@@ -47,11 +50,13 @@ def open_help(key: str | None = None) -> None:
                                  Qgis.MessageLevel.Warning)
 
 
-def add_help_button(box, key: str) -> None:
-    """Add the standard Help button to the dialog's button box, opening ``key``'s page."""
+def add_help_button(box, key) -> None:
+    """Add the standard Help button to the dialog's button box, opening ``key``'s page;
+    ``key`` may be a function giving the key when clicked (a dialog whose page depends on
+    what it shows)."""
     from qgis.PyQt.QtWidgets import QDialogButtonBox
     box.addButton(QDialogButtonBox.StandardButton.Help)
-    box.helpRequested.connect(lambda: open_help(key))
+    box.helpRequested.connect(lambda: open_help(key() if callable(key) else key))
 
 
 def plugin_version() -> str:

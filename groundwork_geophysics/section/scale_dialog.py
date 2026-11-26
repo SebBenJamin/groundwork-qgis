@@ -329,6 +329,9 @@ class DisplayDialog(ColorScaleDialog):
             boxes.append(self._build_traces(style))
             for box in (display, contours, self.coverage_group):
                 box.setVisible(False)           # cells, contours, coverage: models only
+        from ..ui.help import add_help_button
+        add_help_button(self.findChild(QDialogButtonBox),
+                        "trace_display" if self._traces is not None else "display")
 
         # the scale and the groups scroll, the buttons stay: at most MAX_HEIGHT tall
         from qgis.PyQt.QtWidgets import QFrame, QScrollArea, QWidget

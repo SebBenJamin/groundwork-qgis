@@ -178,3 +178,30 @@ def test_pictures_cover_the_dialog_pages():
         "context-layers-band": "user/howto/context.md",
         "profile-ties": "user/howto/context.md",
     }
+
+
+def test_reflection_pictures_are_shown_with_their_legends():
+    """The pictures of scripts/render_reflection_pictures.py: each is on the reflection page,
+    and the numbered ones are followed by a legend row per marker, and no more."""
+    import render_reflection_pictures as r
+    text = (REPO / "docs" / "user" / "howto" / "reflection-sections.md").read_text(encoding="utf-8")
+    marks = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"
+    for name, parts in (("reflection-add-data.png", r.ADD_DATA_PARTS),
+                        ("reflection-display.png", r.DISPLAY_PARTS),
+                        ("reflection-section.jpg", ()), ("reflection-horizon.jpg", ())):
+        link = f"](../../images/howto/{name})"
+        assert link in text, name
+        assert (REPO / "docs" / "images" / "howto" / name).is_file(), name
+        after = text[text.index(link):].split("\n## ")[0]
+        for mark in marks[:len(parts)]:
+            assert f"\n| {mark} " in after, (name, mark)
+        assert f"\n| {marks[len(parts)]} " not in after, name
+
+
+def test_reflection_pictures_credit_swisstopo():
+    """Each picture that shows the demo's data has the swisstopo credit right after it (its
+    legend table may come between)."""
+    text = (REPO / "docs" / "user" / "howto" / "reflection-sections.md").read_text(encoding="utf-8")
+    for name in ("reflection-section.jpg", "reflection-add-data.png", "reflection-horizon.jpg"):
+        after = text[text.index(f"](../../images/howto/{name})"):].split("\n## ")[0]
+        assert "Data: Federal Office of Topography swisstopo." in after, name

@@ -8,9 +8,9 @@ panel under the map, with your boreholes, geology and crossing lines on them, yo
 interpretation as ordinary QGIS layers, report plates in the QGIS layout, and all of it
 standing in QGIS's 3D view.
 
-Today it works with **resistivity (ERT)** and **seismic refraction** (P-wave velocity
-models). **Ground-penetrating radar (GPR) and seismic reflection sections** are planned next,
-on the same profiles, next to the same context.
+Today it works with **resistivity (ERT)**, **seismic refraction** (P-wave velocity
+models) and processed **seismic reflection sections** from SEG-Y. **Ground-penetrating radar
+(GPR)** is planned next, on the same profiles, next to the same context.
 
 [![Version 0.16.0](https://img.shields.io/badge/version-0.16.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
 [![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
@@ -28,7 +28,7 @@ included as a demo.*
 | | |
 |---|---|
 | 🗺️ **Map and section, linked** | A section panel under the map. Move the mouse over the section and a cursor follows on the map, and the other way round. |
-| 📥 **Your files as they are** | ERT models from R2/ResIPy, ZondRes2D, pyGIMLi/BERT and VTK, plus measured data and misfit; seismic refraction velocity models from Refrapy and pyGIMLi, faded where no ray reached. Any other text table works too: say which column is what, as in QGIS's own text import. Files are read where they lie and never changed. |
+| 📥 **Your files as they are** | ERT models from R2/ResIPy, ZondRes2D, pyGIMLi/BERT and VTK, plus measured data and misfit; seismic refraction velocity models from Refrapy and pyGIMLi, faded where no ray reached; processed seismic reflection sections from SEG-Y, in depth. Any other text table works too: say which column is what, as in QGIS's own text import. Files are read where they lie and never changed. |
 | 📍 **On the real electrodes** | Models are placed on the surveyed electrode positions, even when only some were measured, with a report of how well they fit. Sections in local heights get a reference height. |
 | 🪨 **Context on the section** | Boreholes as lithology columns with log curves, one or more geology (or soil, land use) maps as strips above the ground, a terrain line from a DEM, crossing lines and ties to crossing profiles. All styled through QGIS. |
 | ✏️ **Interpretation as QGIS layers** | Draw lines, polygons and points on the section per profile, with type, name, confidence and note. Undo, frozen versions, 2D and 3D layers, DXF and CSV export. |
@@ -60,6 +60,7 @@ columns. Aerial image: © GDI-Th, dl-de/by-2-0.*
 | Gülpe | Real: ERT, sediment cores and state survey data from Lake Gülpe (Havel, Brandenburg) | `guelpe_project.qgz` |
 | Erfurt | Real: seven ERT lines and 56 cores from Erfurt (Thuringia) | `erfurt_project.qgz` |
 | Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
+| Vaud | Real: two crossing seismic reflection lines (stacks) from swisstopo, canton of Vaud (Switzerland) | `vaud_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
 The background maps and the Gülpe geology maps load from the internet. Opening a demo writes
@@ -77,10 +78,13 @@ Groundwork is built around the profile, not around one method. A profile is a li
 map with its surveyed positions; any data measured along it can be placed on it and shown
 with the same boreholes, geology and interpretation. Planned:
 
-- 📡 **GPR**: radargrams on the profile.
-- 🔊 **Seismic reflection**: processed (zero-offset) seismic sections on the profile.
+- 📡 **GPR**: radargrams on the profile, read from the radar's own files (radar exported as
+  SEG-Y already loads as a reflection section).
 - 🔀 **Several methods on one profile**: ERT, GPR and seismics side by side, interpreted
   together.
+
+Processed seismic reflection sections, planned here before, are now available: see
+[Reflection sections](docs/user/howto/reflection-sections.md).
 
 Ideas and wishes are welcome as [GitHub issues](https://github.com/SebBenJamin/groundwork-qgis/issues).
 
@@ -95,6 +99,7 @@ The same pages, in the repository:
   [Add data](docs/user/howto/add-data.md) ·
   [The section panel](docs/user/howto/section-panel.md) ·
   [Seismic refraction](docs/user/howto/seismic-refraction.md) ·
+  [Reflection sections](docs/user/howto/reflection-sections.md) ·
   [Placement on the electrodes](docs/user/howto/placement.md) ·
   [Reference height](docs/user/howto/reference-height.md) ·
   [Boreholes and logs](docs/user/howto/boreholes.md) ·
@@ -129,7 +134,8 @@ If Groundwork saves you time, you can buy me a coffee:
   `$env:PYTHONNOUSERSITE=1; & "<QGIS folder>\bin\python-qgis.bat" -m pip install --target .testlibs pytest`.
 - **Release zips** (`dist/`): `& "<QGIS folder>\bin\python-qgis.bat" scripts/package.py`.
 - **README pictures** (`docs/images/`): `scripts/render_readme_images.py`, from the Gülpe demo
-  (needs the internet for the live layers).
+  (needs the internet for the live layers). The reflection-section pictures of the how-to:
+  `scripts/render_reflection_pictures.py`, from the Vaud demo (needs segyio in `.testlibs`).
 - **Working copy in QGIS**: `scripts/dev_install.ps1` links `groundwork_geophysics/` into the
   plugin folder of your QGIS 4 default profile.
 - The scripts expect QGIS 4.2.3 in its default install folder (`C:\Program Files\QGIS 4.2.3`).
@@ -174,6 +180,15 @@ details.
   models are re-inverted from these picks with pyGIMLi (as Refrapy's Refrainv runs it),
   not the authors' published models.
 - Terrain: USGS 3D Elevation Program 1 m DEM (cut to the lines), public domain.
+
+**Vaud demo** (`demo_vaud/`)
+- Seismic reflection: lines VD-P760057 and VD-P760068 from "2D and 3D reflection seismic in
+  Switzerland", https://opendata.swiss/en/dataset/2d-und-3d-reflexionsseismik-in-der-schweiz.
+  Source: Federal Office of Topography swisstopo; free use with the source named. The stacks
+  are unchanged and renamed. The velocity of 3000 m/s used for the depth display is an
+  assumption of the demo, not a value from swisstopo.
+- Terrain: swissALTI3D (resampled to 10 m and cut to 500 m each side of the lines). Source:
+  Federal Office of Topography swisstopo.
 
 **Synthetic demo** (`demo/`)
 - Power line and pylons: © OpenStreetMap contributors, ODbL. Everything else (boreholes,
