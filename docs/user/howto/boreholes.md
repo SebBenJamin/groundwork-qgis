@@ -61,6 +61,8 @@ in a borehole entry reads them into a curve table for you:
    layer "LAS curves"), set up as this entry's curve table with every curve ticked and its
    unit. Press **Apply** or **OK**.
 
+![Import LAS: three files, two matched to their boreholes, one still without](../../images/howto/import-las.png)
+
 Depths in feet are converted to metres; null values (e.g. −999.25) are gaps. LAS 1.2 and 2.0
 are read, also wrapped files; LAS 3.0 and logs indexed by time are refused with a message.
 
