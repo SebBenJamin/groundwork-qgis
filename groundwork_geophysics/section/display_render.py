@@ -54,6 +54,7 @@ class LayerDrawing:
     field: tuple | None = None                      # (QImage, QRectF in s/z) smooth field
     clip: QPainterPath | None = None                # below the topography, in s/z
     contours: list = dc_field(default_factory=list)    # [(QColor, QPainterPath, [lines], text)]
+    contour_width: float | None = None              # mm; None: the standard widths
     markers: list = dc_field(default_factory=list)     # [(QColor, (k, 2) s/z points)]
     #: a trace section: [(QImage, QRectF in s/z)] finest first, then half and quarter size
     levels: list = dc_field(default_factory=list)
@@ -87,7 +88,8 @@ def _key(layer, topo, shape):
             None if cov is None else hash(cov.tobytes()), topo_key, shape,
             (sc.cmap, sc.vmin, sc.vmax, sc.log, sc.ramp), st.mode, st.contour_step,
             tuple(st.contour_major), tuple(st.contour_minor),
-            st.fade_coverage, st.coverage_threshold, st.fade_mode, st.interpolation.key())
+            st.fade_coverage, st.coverage_threshold, st.fade_mode, st.interpolation.key(),
+            st.contour_colour)
 
 
 _next_to_empty = next_to_empty            # the section and the 3D view share it
@@ -104,8 +106,23 @@ def _field_image(grid, rgba) -> tuple[QImage, QRectF]:
     return img, QRectF(grid.s[0] - ds / 2, grid.z[0] - dz / 2, nx * ds, nz * dz)
 
 
-def contour_pen_mm(major: bool) -> float:
-    return CONTOUR_PEN_MM if major else CONTOUR_MINOR_PEN_MM
+def contour_pen_mm(major: bool, width: float | None = None) -> float:
+    """A contour line's width in mm: the standard ones, or ``width`` (the user's, for major
+    levels; minor levels keep the standard ratio thinner)."""
+    if width is None:
+        return CONTOUR_PEN_MM if major else CONTOUR_MINOR_PEN_MM
+    return width if major else width * CONTOUR_MINOR_PEN_MM / CONTOUR_PEN_MM
+
+
+def contour_colour(style, scale, level: float) -> QColor:
+    """A contour line's colour: the style's own, else a darker shade of the scale at
+    ``level``. The section, plates, pictures and 3D lines take it from here."""
+    if style.contour_colour:
+        colour = QColor(style.contour_colour)
+        if colour.isValid():
+            return colour
+    r, g, b, _a = (int(c) for c in scale.rgba([level])[0])
+    return QColor(r, g, b).darker(CONTOUR_DARKER)
 
 
 def _contours(grid, scale, st) -> list:
@@ -118,13 +135,12 @@ def _contours(grid, scale, st) -> list:
         if not lines:
             continue
         major = is_major.get(level, True)
-        r, g, b, _a = (int(c) for c in scale.rgba([level])[0])
         path = QPainterPath()
         for line in lines:
             path.moveTo(QPointF(*line[0]))
             for p in line[1:]:
                 path.lineTo(QPointF(*p))
-        out.append((QColor(r, g, b).darker(CONTOUR_DARKER), path, lines,
+        out.append((contour_colour(st, scale, level), path, lines,
                     fmt_trim(level, 3) if major else "", major))
     return out
 
@@ -479,7 +495,7 @@ def build_drawing(layer, topo) -> LayerDrawing:
     from .data import cell_path_groups
     from .profile_source import _path_from_elements
     st = layer.style
-    drawing = LayerDrawing(float(st.opacity))
+    drawing = LayerDrawing(float(st.opacity), contour_width=st.contour_width)
     if layer.mesh is None:
         # a trace section: its picture levels; nothing above the ground is cut off (a datum
         # can lie above it, and the muted top of the section belongs to the data)

@@ -26,7 +26,8 @@ NEEDS_LIBRARY_TIP = "Install {name} first"
 #: style fields the Display dialog edits
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
                   "grid_cell", "interpolation", "fade_coverage", "coverage_threshold",
-                  "fade_mode", "shown", "clip_percent", "gain")
+                  "fade_mode", "shown", "clip_percent", "gain", "contour_colour",
+                  "contour_width")
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
 INFO_TEXT = "Dataset info…"

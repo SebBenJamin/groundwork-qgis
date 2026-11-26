@@ -81,8 +81,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
         super().__init__()
         self.snapshot = snapshot
         self._layers = layers          # [display_render.LayerDrawing] bottom first
-        self._contour_px = 1.0
-        self._minor_px = 1.0
+        self._px_per_mm = 0.0                   # set from the render context when drawn
         self._z = z_range
         self._station_z = station_z    # tick elevations, aligned with snapshot.stations:
         #                                the measured height, else the surface (or mesh top)
@@ -146,10 +145,7 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
             painter.save()
             try:
                 painter.setTransform(wt, True)      # draw in (chainage, elevation) space
-                from .display_render import contour_pen_mm
-                self._contour_px = max(1.0, rc.convertToPainterUnits(contour_pen_mm(True), _MM))
-                # minor levels: thinner, but never a hairline that vanishes on screen
-                self._minor_px = max(0.6, rc.convertToPainterUnits(contour_pen_mm(False), _MM))
+                self._px_per_mm = rc.convertToPainterUnits(1.0, _MM)
                 self._draw_cells(painter)
                 self._draw_beyond_stations(painter)
                 self._draw_topography(painter, rc)
@@ -221,12 +217,19 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 for colour, path, _lines, _text, major in drawing.contours:
-                    pen = QPen(colour, self._contour_px if major else self._minor_px)
+                    pen = QPen(colour, self._contour_pen_px(drawing.contour_width, major))
                     pen.setCosmetic(True)
                     painter.setPen(pen)
                     painter.drawPath(path)
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setOpacity(1.0)
+
+    def _contour_pen_px(self, width_mm: float | None, major: bool) -> float:
+        """A contour pen's width in pixels: the layer's width (or the standard one) in mm;
+        minor levels thinner, but never a hairline that vanishes on screen."""
+        from .display_render import contour_pen_mm
+        px = contour_pen_mm(major, width_mm) * self._px_per_mm
+        return max(1.0, px) if major else max(0.6, px)
 
     def _draw_markers(self, painter, rc, wt):
         """Readings layers in Points mode: a filled dot of MARKER_MM per reading, one path per
@@ -388,10 +391,8 @@ def paint_layers(painter, layers, wt, rc) -> None:
     first): cells, smooth field, contour lines and their labels, in (chainage, elevation)
     space through ``wt``; pen and label sizes from ``rc``. The 3D view's section pictures
     are painted with it."""
-    from .display_render import contour_pen_mm
     results = WorkbenchProfileResults(None, layers, (0.0, 0.0))
-    results._contour_px = max(1.0, rc.convertToPainterUnits(contour_pen_mm(True), _MM))
-    results._minor_px = max(0.6, rc.convertToPainterUnits(contour_pen_mm(False), _MM))
+    results._px_per_mm = rc.convertToPainterUnits(1.0, _MM)
     painter.save()
     try:
         painter.setTransform(wt, True)

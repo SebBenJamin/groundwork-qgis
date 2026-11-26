@@ -16,6 +16,12 @@ MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then i
 MIN_WIDTH = 420         # its groups never squeezed below this
 LOG_MIN = 0.001         # smallest minimum on a log scale (= the spin boxes' 3 decimals)
 AGC_MAX_MS = 200        # the AGC window starts at a quarter of the record, at most this
+#: the contour lines' colour: from the colour scale (as before), or one the user picks
+FROM_SCALE_TEXT = "From the colour scale"
+PICKED_COLOUR_TEXT = "One colour"
+LINE_COLOUR_TIP = "The colour of every contour line of this model"
+LINE_WIDTH_TIP = ("Width of the labelled (major) lines; minor levels are drawn thinner by "
+                  "the same ratio as before")
 
 
 def ramp_icon(scale, width: int = 64, height: int = 14) -> QIcon:
@@ -283,6 +289,7 @@ class DisplayDialog(ColorScaleDialog):
             edit.textChanged.connect(self._levels_typed)
         form.addRow("Major levels", self.major_edit)
         form.addRow("Minor levels", self.minor_edit)
+        self._build_line_look(form, style)
         self._step_tip = self.step_spin.toolTip()
         self._levels_typed()
         self.contours_group = contours
@@ -352,6 +359,50 @@ class DisplayDialog(ColorScaleDialog):
         layout.insertWidget(0, self._scroll, 1)
         self._rest = layout.sizeHint().height() - self._scroll.sizeHint().height()
         self._fit_height()
+
+    def _build_line_look(self, form, style) -> None:
+        """"Line colour" (from the colour scale, or one the user picks) and "Line width (mm)"
+        of the contour lines."""
+        from qgis.gui import QgsColorButton, QgsDoubleSpinBox
+
+        from .display_render import CONTOUR_PEN_MM
+        self.line_colour_combo = QComboBox()
+        self.line_colour_combo.addItem(FROM_SCALE_TEXT)
+        self.line_colour_combo.addItem(PICKED_COLOUR_TEXT)
+        self.line_colour_button = QgsColorButton()
+        self.line_colour_button.setAllowOpacity(False)
+        self.line_colour_button.setColorDialogTitle("Contour line colour")
+        self.line_colour_button.setToolTip(LINE_COLOUR_TIP)
+        picked = getattr(style, "contour_colour", None)
+        if picked:
+            self.line_colour_button.setColor(QColor(picked))
+        self.line_colour_combo.setCurrentIndex(1 if picked else 0)
+        self.line_colour_button.setEnabled(bool(picked))
+        self.line_colour_combo.currentIndexChanged.connect(
+            lambda i: self.line_colour_button.setEnabled(i == 1))
+        row = QHBoxLayout()
+        row.addWidget(self.line_colour_combo, 1)
+        row.addWidget(self.line_colour_button)
+        form.addRow("Line colour", row)
+        self.line_width_spin = QgsDoubleSpinBox()
+        self.line_width_spin.setRange(0.05, 5.0)
+        self.line_width_spin.setDecimals(2)
+        self.line_width_spin.setSingleStep(0.05)
+        self.line_width_spin.setClearValue(CONTOUR_PEN_MM)
+        self.line_width_spin.setToolTip(LINE_WIDTH_TIP)
+        width = getattr(style, "contour_width", None)
+        self.line_width_spin.setValue(CONTOUR_PEN_MM if width is None else width)
+        form.addRow("Line width (mm)", self.line_width_spin)
+
+    def _line_look(self) -> tuple:
+        """(contour colour or None, contour width or None) as the dialog sets them."""
+        from .display_render import CONTOUR_PEN_MM
+        colour = None
+        if self.line_colour_combo.currentIndex() == 1:
+            c = self.line_colour_button.color()
+            colour = c.name() if c.isValid() else None
+        width = round(self.line_width_spin.value(), 2)
+        return colour, None if abs(width - CONTOUR_PEN_MM) < 1e-9 else width
 
     def _fit_height(self) -> None:
         """As tall as the content, at most ``MAX_HEIGHT`` (then the groups scroll)."""
@@ -826,8 +877,9 @@ class DisplayDialog(ColorScaleDialog):
         shown = self.shown_combo.currentData() if self._readings is not None else \
             self._style.shown
         changed = self._readings is not None and shown != self._shown_before
+        colour, width = self._line_look()
         return replace(
-            self._style, shown=shown,
+            self._style, shown=shown, contour_colour=colour, contour_width=width,
             scale=None if changed else self.scale(),      # a new value: automatic scale
             mode=self.mode_combo.currentData(),
             grid_cell=None if self.auto_cell.isChecked() else self.cell_spin.value(),

@@ -941,7 +941,7 @@ def _picture_signature(layers, profile, topo, interpretation=None, gap: float = 
                   else _trace_signature(section_layer, profile, topo)).encode())
         h.update(repr((section_layer.dataset.id, style.mode, style.contour_step,
                        tuple(style.contour_major), tuple(style.contour_minor),
-                       style.opacity)).encode())
+                       style.opacity) + _contour_look(style)).encode())
     h.update(repr((picture.PX_PER_M, picture.MAX_PIXELS, picture.LABEL_SHARE,
                    picture.LENGTH_SHARE, 2, round(gap, 6))).encode())
     h.update(_interp_signature(interpretation).encode())
@@ -1198,7 +1198,16 @@ def contour_signature(profile, dataset, section_layer, topo) -> tuple:
     """What a model's 3D contour lines depend on."""
     style = section_layer.style
     return (_cloud_signature(section_layer, profile, topo), style.contour_step,
-            tuple(style.contour_major), tuple(style.contour_minor), profile.name, dataset.name)
+            tuple(style.contour_major), tuple(style.contour_minor), profile.name, dataset.name
+            ) + _contour_look(style)
+
+
+def _contour_look(style) -> tuple:
+    """A picked contour colour and width (nothing when there is none: older signatures
+    stay the same)."""
+    if style.contour_colour is None and style.contour_width is None:
+        return ()
+    return (style.contour_colour, style.contour_width)
 
 
 def contours_path(store, dataset_id: str, signature: tuple) -> Path:
@@ -1257,17 +1266,16 @@ def _save_contours(path: Path, rows: list, dataset_id: str) -> None:
 def _contour_features(layer, store, profile, dataset, section_layer, topo,
                       signature) -> list[QgsFeature]:
     from ..core.colors import ColorScale
-    from ..section.display_render import CONTOUR_DARKER
+    from ..section.display_render import contour_colour
     scale = section_layer.style.scale or ColorScale.auto(section_layer.mesh.values)
     out = []
     path = contours_path(store, dataset.id, signature)
     for level, xyz in _contour_rows(path, profile, dataset, section_layer, topo):
-        r, g, b = (int(c) for c in scale.rgba([level])[0][:3])
         f = QgsFeature(layer.fields())
         f.setGeometry(QgsGeometry(QgsLineString(xyz[:, 0].tolist(), xyz[:, 1].tolist(),
                                                 xyz[:, 2].tolist())))
         f.setAttributes([profile.id, profile.name, dataset.id, dataset.name or dataset.id,
-                         float(level), QColor(r, g, b).darker(CONTOUR_DARKER).name()])
+                         float(level), contour_colour(section_layer.style, scale, level).name()])
         out.append(f)
     return out
 

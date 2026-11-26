@@ -30,7 +30,7 @@ def look_of(dataset_id: str, style) -> ModelLook:
                      None if style.interpolation.is_linear else style.interpolation.to_dict(),
                      style.clip_percent,
                      style.gain.to_dict() if style.gain.active() or style.gain.show_muted
-                     else None)
+                     else None, style.contour_colour, style.contour_width)
 
 
 def styled(style, look: ModelLook):
@@ -50,7 +50,8 @@ def styled(style, look: ModelLook):
                    fade_coverage=look.fade_coverage,
                    coverage_threshold=look.coverage_threshold, fade_mode=look.fade_mode,
                    shown=look.shown if look.shown is not None else style.shown,
-                   clip_percent=look.clip_percent, gain=DisplayGain.from_dict(look.gain))
+                   clip_percent=look.clip_percent, gain=DisplayGain.from_dict(look.gain),
+                   contour_colour=look.contour_colour, contour_width=look.contour_width)
 
 
 def styles_to_json(styles: dict) -> str:

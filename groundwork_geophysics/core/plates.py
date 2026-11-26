@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import asdict, dataclass, field
 
 #: standard scales, close enough together that a fitted section fills most of its frame
@@ -41,6 +42,10 @@ class ModelLook:
     clip_percent: float | None = 98.0
     #: trace sections: the display options (``DisplayGain.to_dict``); None = none
     gain: dict | None = None
+    #: contour lines: one colour ("#rrggbb"; None = from the colour scale) and the width
+    #: in mm (None = the standard widths)
+    contour_colour: str | None = None
+    contour_width: float | None = None
 
 
 @dataclass
@@ -157,7 +162,19 @@ def _model(d) -> ModelLook | None:
                      _levels(d.get("contour_minor")),
                      d.get("interpolation") if isinstance(d.get("interpolation"), dict)
                      else None,
-                     _clip(d), d.get("gain") if isinstance(d.get("gain"), dict) else None)
+                     _clip(d), d.get("gain") if isinstance(d.get("gain"), dict) else None,
+                     _colour(d.get("contour_colour")), _width(d.get("contour_width")))
+
+
+def _colour(v) -> str | None:
+    """A stored "#rrggbb" colour; anything else: None (the colour scale's)."""
+    return v if isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v) else None
+
+
+def _width(v) -> float | None:
+    """A stored line width in mm (positive); anything else: None (the standard width)."""
+    v = _num(v)
+    return v if v is not None and v > 0 else None
 
 
 def _clip(d: dict) -> float | None:

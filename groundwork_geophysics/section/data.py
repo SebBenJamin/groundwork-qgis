@@ -199,6 +199,12 @@ class LayerStyle:
     #: Major levels are labelled, minor ones drawn thinner without a label
     contour_major: tuple = ()
     contour_minor: tuple = ()
+    #: contour line colour as QGIS names it ("#rrggbb"); None = a darker shade of the colour
+    #: scale at each level
+    contour_colour: str | None = None
+    #: contour line width in mm (minor levels thinner by the usual ratio); None = the
+    #: standard widths
+    contour_width: float | None = None
     #: grid cell of the smooth field in metres; None = automatic
     grid_cell: float | None = None
     #: how the smooth field is gridded (``core.interpolators``); the default is linear
