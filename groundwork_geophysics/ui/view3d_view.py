@@ -1,7 +1,9 @@
-"""Show in 3D… opens a ready 3D map view: when none is open, a new one with the terrain off
-(the curtains hang below the ground surface, an opaque terrain hides them), eye-dome
-lighting on (a point cloud looks flat without it) and the camera on what is shown. A view
-the user already has open is left exactly as it is. Every step may fail on a QGIS that has
+"""Show in 3D… opens a ready 3D map view: when none is open, one the project has saved is
+opened again (the plugin's own first, else the first listed), and only a project without any
+gets a new one with the terrain off (the curtains hang below the ground surface, an opaque
+terrain hides them), eye-dome lighting on (a point cloud looks flat without it) and the
+camera on what is shown. A view the user already has, open or saved, is left exactly as it
+is. Every step may fail on a QGIS that has
 no 3D or a view that is not ready yet: what could be done is done, and the result says how
 far it got, so the message can tell the user what is left to do by hand."""
 from __future__ import annotations
@@ -44,7 +46,7 @@ def open_ready_view(iface, project, box, crs_authid: str) -> str:
     ``READY`` (a new view, set up), ``OPENED`` (a new view, not all of it set up) or ""
     (no view could be opened)."""
     try:
-        if list(iface.mapCanvases3D()):
+        if list(iface.mapCanvases3D()) or _reopen_saved(iface):
             return ALREADY_OPEN
         canvas = iface.createNewMapCanvas3D(VIEW_NAME)
     except Exception as exc:                     # no 3D in this QGIS
@@ -56,6 +58,37 @@ def open_ready_view(iface, project, box, crs_authid: str) -> str:
     if box is not None:
         ready = _aim(canvas, project, box, crs_authid) and ready
     return READY if ready else OPENED
+
+
+#: QGIS's View → 3D Map Views menu; it lists the project's saved views above a separator
+VIEWS_MENU = "m3DMapViewsMenu"
+
+
+def _reopen_saved(iface) -> bool:
+    """Open a 3D map view the project has saved (closed views stay in the project): the
+    plugin's own, else the first listed. True when a 3D view is open afterwards. QGIS has no
+    call for this, so the view's entry in View → 3D Map Views is triggered."""
+    try:
+        from qgis.PyQt.QtWidgets import QMenu
+        menu = iface.mainWindow().findChild(QMenu, VIEWS_MENU)
+        if menu is None:
+            return False
+        menu.aboutToShow.emit()                  # QGIS fills the menu when it is shown
+        saved = []
+        for action in menu.actions():
+            if action.isSeparator():
+                break
+            saved.append(action)
+        else:
+            return False                         # no separator: not the list we know
+        if not saved:
+            return False
+        mine = [a for a in saved if a.text().replace("&", "") == VIEW_NAME]
+        (mine or saved)[0].trigger()
+        return bool(list(iface.mapCanvases3D()))
+    except Exception as exc:                     # no main window, or no 3D in this QGIS
+        _log(f"3D view: a saved 3D map view could not be opened: {exc}")
+        return False
 
 
 def profile_section(canvas, project, profile, crs_authid: str):

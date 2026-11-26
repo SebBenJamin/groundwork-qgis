@@ -97,6 +97,58 @@ def test_an_open_3d_view_is_left_as_it_is(qgis_app):
     assert not canvas.settings.eyeDomeLightingEnabled() and canvas.controller.looks == []
 
 
+class _IfaceWithMenu(_Iface):
+    """An iface whose main window has QGIS's View → 3D Map Views menu, filled when shown
+    with the project's saved views; choosing one opens it."""
+
+    def __init__(self, saved, made=None, separator=True):
+        from qgis.PyQt.QtWidgets import QMainWindow, QMenu
+        super().__init__(made=made)
+        self.window, self.opened = QMainWindow(), []
+        menu = QMenu(self.window)
+        menu.setObjectName("m3DMapViewsMenu")
+
+        def fill():
+            menu.clear()
+            for name in saved:
+                menu.addAction(name).triggered.connect(lambda _=False, n=name: self._open(n))
+            if separator:
+                menu.addSeparator()
+            menu.addAction("New 3D Map View")
+        menu.aboutToShow.connect(fill)
+
+    def _open(self, name):
+        self.opened.append(name)
+        self.views.append(_Canvas())
+
+    def mainWindow(self):
+        return self.window
+
+
+@pytest.mark.parametrize("saved, opened", [(["3D Map 2", "Groundwork 3D"], "Groundwork 3D"),
+                                           (["3D Map 2", "Dam from the north"], "3D Map 2")])
+def test_a_saved_3d_view_is_opened_again_instead_of_a_new_one(qgis_app, saved, opened):
+    """The project keeps closed 3D views: the plugin's own comes back, else the first, as it
+    was left (no new view, no settings or camera changed)."""
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_view import ALREADY_OPEN, open_ready_view
+    iface = _IfaceWithMenu(saved, made=_Canvas())
+    assert open_ready_view(iface, QgsProject.instance(), BOX, "EPSG:25832") == ALREADY_OPEN
+    assert iface.opened == [opened] and iface.names == []
+    assert iface.views[0].controller.looks == []
+
+
+@pytest.mark.parametrize("saved, separator", [([], True), (["New 3D Map View"], False)])
+def test_a_project_without_saved_3d_views_gets_a_new_one(qgis_app, saved, separator):
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.ui.view3d_view import READY, VIEW_NAME, open_ready_view
+    iface = _IfaceWithMenu(saved, made=_Canvas(), separator=separator)
+    assert open_ready_view(iface, QgsProject.instance(), BOX, "EPSG:25832") == READY
+    assert iface.opened == [] and iface.names == [VIEW_NAME]
+
+
 @pytest.mark.parametrize("made", [None, RuntimeError("no 3D")])
 def test_a_view_that_cannot_be_made_gives_nothing(qgis_app, made):
     from qgis.core import QgsProject
