@@ -41,6 +41,9 @@ class RadarInfo:
     positions: dict = field(default_factory=dict)  # as SegyInfo.positions; {} without map fixes
     notes: list = field(default_factory=list)      # plain sentences the user should know
     bits: int = 16                 # bits per stored sample
+    #: the traces' map positions share positions or run back along the line
+    #: (``track.repeats``); False while a reader reads no map positions
+    repeats: bool = False
 
 
 def velocity_from_dielectric(dielectric) -> float | None:
@@ -104,7 +107,8 @@ def provenance_of(reader: str, name: str, info: RadarInfo) -> dict:
             "n_samples": info.n_samples, "step": info.step, "window": info.window,
             "antenna": info.antenna, "frequency_mhz": info.frequency_mhz,
             "trace_step": info.trace_step, "dielectric": info.dielectric,
-            "time_zero_file": info.time_zero, "bits": info.bits, "notes": list(info.notes)}
+            "time_zero_file": info.time_zero, "bits": info.bits, "notes": list(info.notes),
+            "repeats": info.repeats}
 
 
 def partner(path: Path, suffix: str) -> Path | None:

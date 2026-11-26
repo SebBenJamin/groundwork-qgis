@@ -85,6 +85,8 @@ NO_SEGYIO_TIP = "Install segyio first"
 VOLUME_TIP = "Groundwork shows 2D sections"
 UNSTACKED = ("This file looks like unstacked records (several traces per CDP or offsets that "
              "are not zero). Groundwork shows processed sections.")
+REPEATS = ("Many traces of this file share a position or run back along the line. It looks "
+           "like a shot record or several passes, not one section along a line.")
 #: a section hung from the ground (by zero choice) on a profile without heights
 NO_HEIGHTS = {
     "ground": ("This profile has no heights yet. Choose an elevation model in Context Layers, "
@@ -856,11 +858,14 @@ class AddDataDialog(QDialog):
             self.placement.set_file_line(*(self._line or (None, 0)))
 
     def _show_trace_placement(self, result) -> None:
-        """Warnings for a trace section: unstacked records, positions off an existing
-        profile's line (as for map tables)."""
+        """Warnings for a trace section: unstacked records, traces sharing positions or
+        running back along the line, positions off an existing profile's line (as for map
+        tables)."""
         on_map = self._on_map()
         self.placement.set_guessed_spacing(None)
         warnings = [UNSTACKED] if result.provenance.get("unstacked") else []
+        if result.provenance.get("repeats"):        # a warning, not a block
+            warnings.append(REPEATS)
         warnings += self.segy_box.warnings()        # an unusual velocity: not a block
         if self.segy_box.position_warning():
             warnings.append(self.segy_box.position_warning())

@@ -548,3 +548,22 @@ def test_read_for_places_a_section_by_its_header_positions(qgis_app, project_sto
     result = read_for(st, p, path, "segy", {"position": "map", "xy_field": "source",
                                             "crs": "EPSG:25832", "velocity": 1500.0})
     assert result.mesh is None and result.traces.x[-1] == pytest.approx(p.chainage.length)
+
+
+def test_traces_sharing_positions_are_warned_about(qgis_app, make_dialog, project_store,
+                                                   selected_line, tmp_path):
+    """A shot record (traces repeating positions) gets a warning; Add stays possible."""
+    from groundwork_geophysics.ui.add_data_dialog import REPEATS
+    line = [(500000 + 4 * i, 5700000) for i in range(20)]
+    xy = line + line[-5:] * 4
+    path = write_segy(tmp_path / "shot.sgy", np.zeros((len(xy), 4), np.float32), dt_us=2000,
+                      xy=xy, cdp=list(range(1, len(xy) + 1)))
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    _type(dlg.segy_box.spacing_edit, "2")
+    assert REPEATS in dlg.warning_label.text()
+    assert REPEATS == ("Many traces of this file share a position or run back along the "
+                       "line. It looks like a shot record or several passes, not one section "
+                       "along a line.")
+    assert dlg.add_button.isEnabled()

@@ -25,6 +25,7 @@ from .. import libs
 from ..core.trace_section import TraceSection
 from .base import Reader, ReaderResult
 from .texttable import TableOptions, guess_options, read_table, select_rows
+from .track import repeats, spread_fixes
 
 #: header pairs that can hold trace positions, in the order they are proposed
 POSITION_FIELDS = ("cdp", "source", "group")
@@ -53,6 +54,9 @@ class SegyInfo:
     positions: dict                # field -> ((x0, y0), (x1, y1)) for fields whose positions change
     velocity: float | None         # only from a text line naming a sound velocity in m/s
     unstacked: bool                # looks like gathers: offsets varying, or CDP numbers repeating
+    #: the positions are not one line walked once: traces share positions or run back along
+    #: the line (a shot record, several passes; ``track.repeats`` of the first position field)
+    repeats: bool = False
     geographic: bool = False       # positions are degrees (x = longitude)
     volume: bool = False           # inline and crossline numbers both vary: a 3D volume
     numbers_from_cdp: bool = False  # the CDP field holds one distinct number per trace
@@ -161,6 +165,9 @@ def _scan(segyio, f, path: Path, endian: str) -> tuple[SegyInfo, _Headers]:
     # gathers: offsets that vary, or CDP numbers that repeat. One offset for every trace is a
     # single-channel survey (the Innomar sub-bottom profiles write 1 in every trace)
     unstacked = bool((offsets.any() and len(np.unique(offsets)) > 1) or (cdp.any() and n_cdp < n))
+    # the position field Add Data proposes first (CDP, source, group) says whether the traces
+    # describe one line walked once
+    first = next((heads.coords[k] for k in POSITION_FIELDS if k in heads.coords), None)
     n_il, n_xl = len(np.unique(column("INLINE_3D"))), len(np.unique(column("CROSSLINE_3D")))
     with path.open("rb") as fh:                          # the text header only (see above)
         text = decode_text(fh.read(_TEXT_SIZE))
@@ -170,6 +177,7 @@ def _scan(segyio, f, path: Path, endian: str) -> tuple[SegyInfo, _Headers]:
         step=float(segyio.tools.dt(f, fallback_dt=0.0)) / 1e6, first=delay / 1000.0,
         endian=endian, sample_format=int(f.bin[segyio.BinField.Format]), text=text,
         positions=positions, velocity=stated_velocity(text), unstacked=unstacked,
+        repeats=first is not None and repeats(first),
         geographic=geographic, volume=n_il > 1 and n_xl > 1,
         numbers_from_cdp=bool(n_cdp == n and cdp.any()), n_inlines=n_il, n_crosslines=n_xl,
         flat=tuple(flat))
@@ -229,25 +237,6 @@ def map_positions(path, options: dict) -> np.ndarray:
         return table_positions(table_path, options.get("positions_table") or {},
                                options.get("positions_columns") or {}, _numbers(info, heads))
     raise ValueError(f"{path.name}: the traces are not placed by map positions")
-
-
-def spread_fixes(xy) -> np.ndarray:
-    """Positions with repeated fixes spread out: the traces between two changes of position
-    are placed evenly from one fix to the next; the last run keeps the spacing of the run
-    before it. Without a second fix the positions are returned as they are."""
-    xy = np.asarray(xy, dtype=np.float64)
-    n = len(xy)
-    starts = np.flatnonzero(np.r_[True, (np.diff(xy, axis=0) != 0).any(axis=1)])
-    if starts.size < 2:
-        return xy
-    lengths = np.diff(np.r_[starts, n])
-    fixes = xy[starts]
-    steps = np.empty_like(fixes)
-    steps[:-1] = np.diff(fixes, axis=0) / lengths[:-1, None]
-    steps[-1] = steps[-2]
-    run = np.repeat(np.arange(starts.size), lengths)
-    k = (np.arange(n) - starts[run]).astype(np.float64)
-    return fixes[run] + k[:, None] * steps[run]
 
 
 def table_positions(path, table_options: dict, columns: dict, numbers: np.ndarray) -> np.ndarray:
@@ -381,7 +370,8 @@ class SegyReader(Reader):
         provenance = {"reader": self.name, "source_name": name, "n_traces": n,
                       "n_samples": info.n_samples, "step": info.step, "first": info.first,
                       "endian": info.endian, "sample_format": info.sample_format,
-                      "text": info.text, "unstacked": info.unstacked, "position": position,
+                      "text": info.text, "unstacked": info.unstacked,
+                      "repeats": info.repeats, "position": position,
                       "domain": domain, "step_assumed": step_assumed,
                       "velocity": info.velocity}
         xy_to_distance = options.get("xy_to_distance")
