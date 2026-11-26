@@ -299,9 +299,9 @@ def test_the_mute_is_a_bool_mask_kept_once_per_layer(qgis_app, make_trace_layer,
     calls = {"n": 0}
     real = trace_section.muted_mask
 
-    def counted(a):
+    def counted(*args):
         calls["n"] += 1
-        return real(a)
+        return real(*args)
     monkeypatch.setattr(display_render, "muted_mask", counted)
     layer = _muted_top(make_trace_layer)
     build_drawing(layer, None)

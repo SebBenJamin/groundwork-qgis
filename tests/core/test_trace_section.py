@@ -274,6 +274,23 @@ def test_muted_mask_marks_edges_not_the_inside():
     assert m.dtype == bool and muted_mask(a.astype(np.int16)).tolist() == m.tolist()
 
 
+def test_live_from_mutes_the_samples_above_it():
+    a = np.arange(1, 13, dtype=np.float32).reshape(3, 4)            # no zeros at all
+    m = muted_mask(a, np.array([0, 2, 1]))
+    assert [list(np.flatnonzero(row)) for row in m] == [[], [0, 1], [0]]
+    a[2, 3] = 0.0                                                    # with an end run too
+    assert muted_mask(a, np.array([0, 2, 1]))[2].tolist() == [True, False, False, True]
+
+
+def test_place_carries_live_from_in_the_trace_order():
+    s = TraceSection(np.ones((3, 4), np.float32), np.array([4.0, 2.0, 0.0]), 0.0, 0.001, "time")
+    p = place(s, 0.0, V(2000.0), live_from=np.array([0, 1, 3]))
+    assert list(p.live_from) == [3, 1, 0]
+    assert place(s, 0.0, V(2000.0)).live_from is None
+    with pytest.raises(ValueError):
+        place(s, 0.0, V(2000.0), live_from=np.array([0, 1]))
+
+
 def test_reduce_leaves_fully_muted_cells_empty():
     a = np.zeros((4, 8), np.float32); a[:, 4:] = 1.0
     p = place(_section(a), 0.0, V(2000.0))

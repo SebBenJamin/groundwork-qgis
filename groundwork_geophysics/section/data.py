@@ -262,7 +262,9 @@ def _mirrored_traces(placed: PlacedTraces, length: float) -> PlacedTraces:
     sec = placed.section
     flipped = replace(sec, amplitudes=sec.amplitudes[::-1], x=length - sec.x[::-1],
                       numbers=None if sec.numbers is None else sec.numbers[::-1])
-    return PlacedTraces(flipped, np.ascontiguousarray(placed.z_top[::-1]), placed.depths)
+    live_from = None if placed.live_from is None else np.ascontiguousarray(placed.live_from[::-1])
+    return PlacedTraces(flipped, np.ascontiguousarray(placed.z_top[::-1]), placed.depths,
+                        live_from)
 
 
 @dataclass
@@ -1328,11 +1330,12 @@ class SectionDataProvider:
                 z_top = 0.0
             else:
                 z_top = np.interp(section.x, *surface.line)
+            live_from = None
             try:
                 if zero == "datum_ground":
-                    z_top = self._ground_top(section, surface, datum, velocity,
-                                             options.get("replacement_velocity"))
-                placed = place(section, z_top, velocity)
+                    z_top, live_from = self._ground_top(section, surface, datum, velocity,
+                                                        options.get("replacement_velocity"))
+                placed = place(section, z_top, velocity, live_from)
             except ValueError as exc:
                 if str(exc) == NO_VELOCITY:
                     raise _Plain(NO_VELOCITY_TEXT) from None
@@ -1345,10 +1348,12 @@ class SectionDataProvider:
 
     @staticmethod
     def _ground_top(section: TraceSection, surface: Surface | None, datum: float,
-                    velocity: Velocity, replacement) -> np.ndarray:
-        """Time zero of each trace of a section corrected to the ground: the ground at the
-        trace (the surface sampled as a "ground" section samples it) plus the depth that the
-        trace's ground time reaches with ``velocity``."""
+                    velocity: Velocity, replacement) -> tuple[np.ndarray, np.ndarray]:
+        """(time zero, first sample of the earth) of each trace of a section corrected to the
+        ground: the ground at the trace (the surface sampled as a "ground" section samples
+        it) plus the depth that the trace's ground time reaches with ``velocity``; and the
+        first sample at or after that ground time (the samples before it lie above the
+        ground line and are not drawn)."""
         if surface is None or surface.local:
             raise _Plain(NO_GROUND_TEXT)
         replacement = _number_or_nan(replacement)
@@ -1358,7 +1363,11 @@ class SectionDataProvider:
             raise _Plain("A depth section cannot be corrected to the ground. Hang it at a "
                          "fixed height or on the ground.")
         ground = np.interp(section.x, *surface.line)
-        return ground + depth_at(section, velocity, ground_time(datum, ground, replacement))
+        t = ground_time(datum, ground, replacement)
+        # a sample exactly at the ground time is earth (a hair of tolerance for rounding)
+        first = np.ceil((t - section.first) / section.step - 1e-6)
+        live_from = np.clip(first, 0, section.n_samples).astype(np.int64)
+        return ground + depth_at(section, velocity, t), live_from
 
     def _level_cache(self, d: Dataset) -> tuple | None:
         """(folder, read key text) for ``d``'s picture levels: beside the remembered reads,

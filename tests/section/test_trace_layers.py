@@ -320,6 +320,84 @@ def test_corrected_without_a_datum_says_so(make):
     assert "height of time zero" in provider.layers(pid)[0].error
 
 
+LEVEL = (600.0, 600.0, 600.0)            # the ground 100 m below the datum of 700 m
+
+
+def test_corrected_to_the_ground_the_samples_above_it_are_not_earth(make):
+    provider, _store, pid = make(_on_ground(6000.0), heights=LEVEL)
+    placed = provider.layers(pid)[0].traces
+    # ground time 2 * 100 / 6000 = 33.3 ms: from the 34th sample (index 34) on, the earth
+    assert placed.live_from.tolist() == [34] * 11
+    assert placed.z_top[0] - placed.depths[34] <= 600.0 < placed.z_top[0] - placed.depths[33]
+    back = provider.snapshot(pid, reverse=True).layers[0].traces
+    assert back.live_from.tolist() == [34] * 11
+
+
+def test_a_section_at_a_datum_has_no_ground_line(make):
+    provider, _store, pid = make({"zero": "datum", "datum": 700.0}, heights=LEVEL)
+    assert provider.layers(pid)[0].traces.live_from is None
+
+
+def _picture(layer):
+    """``layer`` painted through ``paint_layers`` on red: s -10 .. 110 m and z 640 .. 580 m at
+    2 px per metre (240 x 120)."""
+    from qgis.core import QgsRenderContext
+    from qgis.PyQt.QtGui import QColor, QImage, QPainter, QTransform
+
+    from groundwork_geophysics.section import display_render
+    from groundwork_geophysics.section.profile_source import paint_layers
+    display_render.clear_cache()
+    img = QImage(240, 120, QImage.Format.Format_ARGB32)
+    img.fill(QColor(255, 0, 0))
+    painter = QPainter(img)
+    try:
+        paint_layers(painter, [display_render.build_drawing(layer, None)],
+                     QTransform(2.0, 0.0, 0.0, -2.0, 20.0, 1280.0),
+                     QgsRenderContext.fromQPainter(painter))
+    finally:
+        painter.end()
+    display_render.clear_cache()
+    raw = np.frombuffer(img.constBits().asstring(img.sizeInBytes()), np.uint32)
+    return raw.reshape(120, img.bytesPerLine() // 4)[:, :240].copy()
+
+
+def test_above_the_ground_line_the_picture_is_transparent(make, qgis_app):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    provider, _store, pid = make(_on_ground(6000.0), heights=LEVEL)
+    layer = provider.snapshot(pid).layers[0]
+    px = _picture(layer)
+    red = 0xFFFF0000
+    # z 630 .. 605 m (rows 20 .. 70) above the ground: red shows through; z 598 .. 586 m
+    # (rows 84 .. 108) just below it: the section
+    assert (px[20:70, 30:210] == red).all()
+    assert (px[84:108, 30:210] != red).all()
+    painted = replace(layer, style=replace(layer.style, gain=DisplayGain(show_muted=True)))
+    assert (_picture(painted)[20:108, 30:210] != red).all()
+
+
+def test_a_new_ground_line_is_a_new_mute(make, qgis_app):
+    from groundwork_geophysics.section import display_render
+    provider, store, pid = make(_on_ground(6000.0), heights=LEVEL)
+    display_render.clear_cache()
+    first = provider.snapshot(pid).layers[0]
+    display_render.build_drawing(first, None)
+    _change(provider, store, pid, replacement_velocity=4000.0)    # ground time 50 ms: all of it
+    second = provider.snapshot(pid).layers[0]
+    display_render.build_drawing(second, None)
+    entry = display_render._trace_entry(second)
+    display_render.clear_cache()
+    assert second.traces.live_from.tolist() == [50] * 11 and entry.mute.all()
+
+
+def test_a_new_replacement_velocity_is_a_new_level_file(make, tmp_path):
+    from groundwork_geophysics.section.display_render import _level_path
+    provider, store, pid = make(_on_ground(6000.0), heights=LEVEL)
+    before = _level_path(provider.layers(pid)[0])
+    _change(provider, store, pid, replacement_velocity=5000.0)
+    after = _level_path(provider.layers(pid)[0])
+    assert before is not None and after is not None and before != after
+
+
 def test_a_depth_section_is_not_corrected_to_the_ground(make):
     provider, _store, pid = make(_on_ground(2000.0, velocity=None, domain="depth", sample_step=2.0),
                                  heights=FALLING)

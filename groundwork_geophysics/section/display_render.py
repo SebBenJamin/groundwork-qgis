@@ -217,9 +217,12 @@ class _TraceEntry:
     #: the values shown, sampled as ``color_limits`` samples them (the limits come from it)
     sample: np.ndarray
     grids: list                      # [(values (h, w) float32, row 0 at zmax, extent)]
-    #: the muted samples of the file's own array (bool, placed order); None until a picture
-    #: that leaves them out was made from the samples
+    #: the muted samples of the file's own array (bool, placed order), with those above the
+    #: ground line of a section corrected to the ground; None until a picture that leaves
+    #: them out was made from the samples
     mute: np.ndarray | None = None
+    #: the ``_live_key`` the mute was made with
+    mute_live: str | None = None
     limits: dict = dc_field(default_factory=dict)      # clip percent -> (lo, hi)
     look: tuple | None = None        # the colours ``levels`` were made with
     levels: list = dc_field(default_factory=list)
@@ -240,7 +243,12 @@ def _digest(*parts) -> str:
 
 def _placement(placed) -> str:
     return _digest(placed.section.x.tobytes(), np.asarray(placed.z_top, float).tobytes(),
-                   np.asarray(placed.depths, float).tobytes())
+                   np.asarray(placed.depths, float).tobytes(), _live_key(placed))
+
+
+def _live_key(placed) -> str | None:
+    """Which samples the hanging leaves above the ground (``live_from``); None for none."""
+    return None if placed.live_from is None else _digest(placed.live_from.tobytes())
 
 
 def _values_key(layer) -> tuple:
@@ -335,11 +343,12 @@ def _make_grids(placed, values, mute=None) -> list:
     return out
 
 
-def _kept_mute(key: tuple):
-    """The mute of an entry kept for the same dataset and samples (another gain), or None."""
+def _kept_mute(key: tuple, live: str | None):
+    """The mute of an entry kept for the same dataset, samples and ground line (another gain
+    or height), or None."""
     with _lock:
         for k, entry in _traces.items():
-            if k[:2] == key[:2] and entry.mute is not None:
+            if k[:2] == key[:2] and entry.mute is not None and entry.mute_live == live:
                 return entry.mute
     return None
 
@@ -362,15 +371,18 @@ def _entry(layer) -> _TraceEntry:
         started = time.perf_counter()
         section = layer.traces.section
         gain = layer.style.gain
-        kept_mute = _kept_mute(key)
+        live = _live_key(layer.traces)
+        kept_mute = _kept_mute(key, live)
         mute = None
         if not gain.show_muted:                 # from the file's own samples, before any gain
-            mute = kept_mute if kept_mute is not None else muted_mask(section.amplitudes)
+            mute = kept_mute if kept_mute is not None else \
+                muted_mask(section.amplitudes, layer.traces.live_from)
         values = display_values(section, gain)
         grids = _make_grids(layer.traces, values, mute)
         sample = np.array(_sample(values))
+        kept = mute if mute is not None else kept_mute
         entry = _TraceEntry(None if values is section.amplitudes else values, sample, grids,
-                            mute if mute is not None else kept_mute)
+                            kept, live if kept is not None else None)
         if path is not None and time.perf_counter() - started > LEVEL_CACHE_MIN_SECONDS:
             _save_levels(path, layer.dataset.id, grids, sample)
     with _lock:

@@ -266,10 +266,13 @@ def depth_at(section: TraceSection, velocity: Velocity | None, times: np.ndarray
 class PlacedTraces:
     """A section hung in the profile: ``section.x`` is the chainage (increasing), ``z_top`` the
     elevation of time zero / depth zero of each trace, ``depths`` the depth of each sample
-    below it (m, increasing)."""
+    below it (m, increasing). ``live_from``, when set, is per trace the first sample that
+    belongs to the earth (one corrected to the ground: the samples above the ground line are
+    not drawn; see ``muted_mask``)."""
     section: TraceSection
     z_top: np.ndarray
     depths: np.ndarray
+    live_from: np.ndarray | None = None
 
     def bounds(self) -> tuple[float, float, float, float]:
         """``(smin, smax, zmin, zmax)``: first to last trace, top of the highest trace to the
@@ -299,11 +302,13 @@ class PlacedTraces:
                 "time": time, "depth": float(self.depths[k])}
 
 
-def place(section: TraceSection, z_top, velocity: Velocity | None) -> PlacedTraces:
+def place(section: TraceSection, z_top, velocity: Velocity | None,
+          live_from: np.ndarray | None = None) -> PlacedTraces:
     """Hang ``section`` from ``z_top`` (one elevation or one per trace), with sample depths
     from ``velocity``. Traces whose ``x`` does not increase are put in order (stable sort); a
     section that runs backwards is a reversed view, any other order a copy in the file's type.
-    In order already, the sample array is shared."""
+    In order already, the sample array is shared. ``live_from`` (one sample index per trace,
+    or None) follows the traces' order."""
     depths = sample_depths(section, velocity)
     n = section.n_traces
     zt = np.asarray(z_top, dtype=np.float64)
@@ -312,6 +317,10 @@ def place(section: TraceSection, z_top, velocity: Velocity | None) -> PlacedTrac
         raise ValueError(f"{n} traces but {zt.size} top elevations.")
     if not np.isfinite(zt).all():
         raise ValueError("Every trace needs a top elevation.")
+    if live_from is not None:
+        live_from = np.asarray(live_from, dtype=np.int64).reshape(-1)
+        if live_from.size != n:
+            raise ValueError(f"{n} traces but {live_from.size} first samples.")
     step = np.diff(section.x)
     if (step < 0).any():
         order = slice(None, None, -1) if (step < 0).all() else np.argsort(section.x, kind="stable")
@@ -319,7 +328,9 @@ def place(section: TraceSection, z_top, velocity: Velocity | None) -> PlacedTrac
         section = replace(section, amplitudes=section.amplitudes[order], x=section.x[order],
                           numbers=numbers)
         zt = zt[order]
-    return PlacedTraces(section, np.ascontiguousarray(zt), depths)
+        live_from = None if live_from is None else live_from[order]
+    return PlacedTraces(section, np.ascontiguousarray(zt), depths,
+                        None if live_from is None else np.ascontiguousarray(live_from))
 
 
 #: AGC and trace balance divide by at least this share of the section's RMS: a muted or dead
@@ -410,10 +421,11 @@ class DisplayGain:
                    bool(d.get("reverse_polarity", False)), bool(d.get("show_muted", False)))
 
 
-def muted_mask(amplitudes: np.ndarray) -> np.ndarray:
+def muted_mask(amplitudes: np.ndarray, live_from: np.ndarray | None = None) -> np.ndarray:
     """True (bool, the shape of ``amplitudes``) for the muted samples: the run of exact zeros
     at the start of each trace, the run at its end, and the whole of a trace that is all zero.
-    Zeros between the first and last other sample are data and stay False."""
+    Zeros between the first and last other sample are data and stay False. ``live_from`` (per
+    trace, ``PlacedTraces.live_from``) also mutes every sample before that index."""
     a = np.asarray(amplitudes)
     n = a.shape[1]
     out = np.empty(a.shape, bool)
@@ -421,6 +433,8 @@ def muted_mask(amplitudes: np.ndarray) -> np.ndarray:
     for r0, r1 in _row_blocks(a.shape[0], n):
         live = a[r0:r1] != 0                    # NaN counts as live: it is not a zero
         first = np.where(live.any(axis=1), live.argmax(axis=1), n)
+        if live_from is not None:
+            first = np.maximum(first, live_from[r0:r1])
         last = n - 1 - live[:, ::-1].argmax(axis=1)
         out[r0:r1] = (k[None, :] < first[:, None]) | (k[None, :] > last[:, None])
     return out
