@@ -108,6 +108,8 @@ class WorkbenchPlugin:
         self.dock = SectionDock(main_window)
         self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         self.dock.hide()
+        if hasattr(self.iface, "messageBar"):          # an install's result is said there
+            self.dock.layer_list.message_bar = self.iface.messageBar()
         self.map_link = MapLink(self.iface, self.dock)
         self.view3d_link = View3dLink(self.iface, self.dock)   # the 3D view's mouse
         self.view3d_link.on_opened = self._view3d_opened

@@ -229,6 +229,13 @@ class SectionLayer:
     #: where a trace section's picture levels may be remembered: (folder, read key text);
     #: None: not on disk (``display_render``)
     level_cache: tuple | None = None
+    #: the optional library (``libs``) whose absence is the ``error``; None for any other
+    missing_library: str | None = None
+
+
+def _missing_library(exc: BaseException) -> str | None:
+    from ..libs import MissingLibrary
+    return exc.name if isinstance(exc, MissingLibrary) else None
 
 
 def layer_bounds(layer: SectionLayer) -> tuple[float, float, float, float] | None:
@@ -506,6 +513,8 @@ class _Failed:
     is not: the build key changes when it appears."""
     message: str
     transient: bool = False
+    #: the optional library whose absence is the message (``SectionLayer.missing_library``)
+    missing: str | None = None
 
 
 @dataclass
@@ -1264,7 +1273,8 @@ class SectionDataProvider:
                 # only the message: the exception (its traceback, or a chained one's) holds
                 # this frame and so ``out``, a cycle that keeps the meshes alive until the
                 # garbage collector runs
-                out[d.id] = _Failed(self._error_text(d, exc), _transient(exc))
+                out[d.id] = _Failed(self._error_text(d, exc), _transient(exc),
+                                    _missing_library(exc))
         return out
 
     def _load_mesh(self, d: Dataset, placed: tuple[SectionMesh, str],
@@ -1304,7 +1314,7 @@ class SectionDataProvider:
         """``d``'s layer from its ``_placed`` entry (a placed mesh, or ``_Failed``)."""
         style = self.style(d.id)
         if isinstance(placed, _Failed):
-            return SectionLayer(d, None, style, placed.message)
+            return SectionLayer(d, None, style, placed.message, missing_library=placed.missing)
         if placed[1] == TRACES:
             return self._trace_layer(d, placed[0], surface, style)
         try:
@@ -1317,7 +1327,8 @@ class SectionDataProvider:
             if style.scale is None:
                 style.scale = _auto_scale(mesh, d)
         except Exception as exc:                # never raise from layers()
-            return SectionLayer(d, None, style, self._error_text(d, exc))
+            return SectionLayer(d, None, style, self._error_text(d, exc),
+                                missing_library=_missing_library(exc))
         return SectionLayer(d, mesh, style, None)
 
     def _trace_layer(self, d: Dataset, section: TraceSection, surface: Surface | None,
@@ -1358,7 +1369,8 @@ class SectionDataProvider:
             if style.scale is None:
                 style.scale = _trace_scale(placed, style)
         except Exception as exc:                # never raise from layers()
-            return SectionLayer(d, None, style, self._error_text(d, exc))
+            return SectionLayer(d, None, style, self._error_text(d, exc),
+                                missing_library=_missing_library(exc))
         return SectionLayer(d, None, style, None, placed, level_cache=self._level_cache(d))
 
     @staticmethod

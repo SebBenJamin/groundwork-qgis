@@ -18,6 +18,8 @@ MIN_WIDTH = 240
 MAX_HINT_WIDTH = 300            # preferred width: full layer names, up to this (the section gets the room)
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
 REMOVE_TEXT = "Remove from profile…"
+#: first entry of a layer whose reader needs a library that is not installed
+INSTALL_TEXT = "Install {name}…"
 #: style fields the Display dialog edits
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
                   "grid_cell", "interpolation", "fade_coverage", "coverage_threshold",
@@ -151,6 +153,9 @@ class LayerList(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.provider = None
+        #: where an install's result is said (QGIS's message bar; None: QGIS's own)
+        self.message_bar = None
+        self._install_task = None
         self._layers: dict[str, SectionLayer] = {}
         self._rows: dict[str, _LayerRow] = {}
         title = QLabel("<b>Layers</b>")
@@ -266,8 +271,14 @@ class LayerList(QWidget):
     def row_menu(self, dataset_id: str) -> QMenu:
         """Context menu of a row (the caller shows and owns it)."""
         menu = QMenu(self)
-        menu.addAction(DISPLAY_TEXT).triggered.connect(lambda: self.edit_scale(dataset_id))
         layer = self._layers.get(dataset_id)
+        name = None if layer is None else layer.missing_library
+        if name:
+            action = menu.addAction(INSTALL_TEXT.format(name=name))
+            action.setEnabled(self._install_task is None)
+            action.triggered.connect(lambda: self.install_library(name))
+            menu.addSeparator()
+        menu.addAction(DISPLAY_TEXT).triggered.connect(lambda: self.edit_scale(dataset_id))
         readings = None if layer is None or layer.mesh is None else layer.mesh.readings
         if readings is not None and readings.has_calculated:
             menu.addAction(MISFIT_TEXT).triggered.connect(
@@ -291,6 +302,23 @@ class LayerList(QWidget):
         action.setToolTip((tip if targets else APPLY_ALL_OFF_TIP).format(what=what))
         menu.setToolTipsVisible(True)
         action.triggered.connect(lambda: self.apply_all_requested.emit(dataset_id))
+
+    def install_library(self, name: str) -> None:
+        """Install segyio… (a layer whose reader needs a library that is missing): ask, then
+        install it in a QGIS task; the result goes to the message bar, and on success the
+        sections are read again."""
+        from ..ui.lib_install import ask_install, start_install
+        if self._install_task is not None or not ask_install(self, name):
+            return
+        self._install_task = start_install(name)
+        self._install_task.done.connect(lambda ok, message: self._installed(name, ok, message))
+
+    def _installed(self, name: str, ok: bool, message: str) -> None:
+        from ..ui.lib_install import show_result
+        self._install_task = None
+        show_result(self.message_bar, name, ok, message, self)
+        if ok and self.provider is not None:
+            self.provider.notify_changed()          # the failed layers are read again
 
     def edit_info(self, dataset_id: str) -> None:
         """Dataset info…: method, array, spacing, inversion, reference (for provenance); a

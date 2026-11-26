@@ -212,8 +212,8 @@ builds differ per system and Python version.
 - **Groundwork → About Groundwork…** shows the segyio version in use, or that it is not
   installed.
 - Everything else in Groundwork works without segyio. A project with sections, opened where
-  segyio is missing, shows the reason in the section's row in **Layers**; install segyio from
-  **Add Data…** as above.
+  segyio is missing, shows the reason in the section's row in **Layers**: right-click the row
+  and choose **Install segyio…**, and the section appears once it is installed.
 
 To find your QGIS profile folder: **Settings → User Profiles → Open Active Profile Folder**.
 
