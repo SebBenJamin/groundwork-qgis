@@ -52,6 +52,8 @@ def read(path, reader: str | None = None, **options) -> ReaderResult:
 
 def _register_builtins() -> None:
     from .bert_data import BertDataReader
+    from .gssi_dzt import GssiDztReader
+    from .pulseekko import PulseEkkoReader
     from .r2_err import R2ErrReader
     from .r2_res import R2ResReader
     from .refrapy_xzv import RefrapyXzvReader
@@ -60,7 +62,7 @@ def _register_builtins() -> None:
     from .vtk_legacy import VtkLegacyReader
     from .zondres import ZondResReader
     # most specific first
-    for cls in (SegyReader, RefrapyXzvReader, BertDataReader, R2ErrReader, R2ResReader,
+    for cls in (SegyReader, GssiDztReader, PulseEkkoReader, RefrapyXzvReader, BertDataReader, R2ErrReader, R2ResReader,
                 VtkLegacyReader, ZondResReader):
         register(cls())
     register(TextColumnsReader())          # never detected; chosen by the user, so last
