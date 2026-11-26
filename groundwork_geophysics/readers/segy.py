@@ -58,6 +58,9 @@ class SegyInfo:
     numbers_from_cdp: bool = False  # the CDP field holds one distinct number per trace
     n_inlines: int = 1
     n_crosslines: int = 1
+    #: position fields whose X or Y has one value on every trace: distances along the line
+    #: (Carfax: source X 4…560, Y 0) rather than map coordinates
+    flat: tuple = ()
 
 
 @dataclass
@@ -139,10 +142,13 @@ def _scan(segyio, f, path: Path, endian: str) -> tuple[SegyInfo, _Headers]:
     geographic = units in (_ARC_SECONDS, _DEGREES)
     heads = _Headers(units=units)
     positions = {}
+    flat = []
     for name in POSITION_FIELDS:
         raw = np.column_stack([column(_XY[name][0]), column(_XY[name][1])])
         if not raw.any() or len(np.unique(raw, axis=0)) < 2:
             continue                                     # all zero or never changing
+        if len(np.unique(raw[:, 0])) < 2 or len(np.unique(raw[:, 1])) < 2:
+            flat.append(name)
         xy = _scaled(raw, scalar[:, None])
         if units == _ARC_SECONDS:
             xy = xy / 3600.0
@@ -165,7 +171,8 @@ def _scan(segyio, f, path: Path, endian: str) -> tuple[SegyInfo, _Headers]:
         endian=endian, sample_format=int(f.bin[segyio.BinField.Format]), text=text,
         positions=positions, velocity=stated_velocity(text), unstacked=unstacked,
         geographic=geographic, volume=n_il > 1 and n_xl > 1,
-        numbers_from_cdp=bool(n_cdp == n and cdp.any()), n_inlines=n_il, n_crosslines=n_xl)
+        numbers_from_cdp=bool(n_cdp == n and cdp.any()), n_inlines=n_il, n_crosslines=n_xl,
+        flat=tuple(flat))
     return info, heads
 
 

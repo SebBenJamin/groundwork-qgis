@@ -92,6 +92,7 @@ def test_a_spacing_file_on_a_new_line_is_a_reflection_section(
     assert "Enter the trace spacing in metres." in dlg.summary_label.text()
     _type(dlg.segy_box.spacing_edit, "2")
     _type(dlg.segy_box.velocity_edit, "1500")
+    dlg.segy_box.set_zero("ground")
     assert dlg.placement.source() == "line"
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
@@ -112,6 +113,7 @@ def test_another_method_still_gives_a_reflection_section(
     dlg.set_file(path)
     _type(dlg.segy_box.spacing_edit, "2")
     _type(dlg.segy_box.velocity_edit, "1500")
+    dlg.segy_box.set_zero("ground")
     dlg.method_combo.setCurrentIndex(dlg.method_combo.findData("ert"))
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
@@ -133,10 +135,11 @@ def test_positions_in_the_file_make_a_profile_through_them(
         __import__("qgis.PyQt.QtWidgets", fromlist=["x"]).QRadioButton,
         "source_file").isEnabled()
     _type(box.velocity_edit, "1500")
+    box.set_zero("ground")
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
     [p] = st.profiles()
-    xy = np.asarray(p.chainage.xy, float)[:, :2]
+    xy =np.asarray(p.chainage.xy, float)[:, :2]
     assert len(xy) == 3                                  # a crooked line stays a polyline
     assert np.allclose(xy[0], LINE[0]) and np.allclose(xy[-1], LINE[-1])
     [d] = st.datasets(p.id)
@@ -153,6 +156,7 @@ def test_the_summary_line(qgis_app, make_dialog, project_store, selected_line, t
     dlg = make_dialog(st, project=prj)
     dlg.set_file(path)
     _type(dlg.segy_box.spacing_edit, "2")
+    dlg.segy_box.set_zero("ground")
     text = (f"{fmt_count(3)} traces × {fmt_count(4)} samples · 2 ms · 0 – 0.008 s")
     assert text == "3 traces × 4 samples · 2 ms · 0 – 0.008 s"
     # what is still missing to hang it follows on a second line
@@ -235,7 +239,7 @@ def test_a_new_profile_with_an_elevation_model_is_not_warned_about(
     dlg.set_file(path)
     _type(dlg.segy_box.spacing_edit, "2")
     _type(dlg.segy_box.velocity_edit, "1500")
-    assert dlg.segy_box.zero() == "ground"
+    dlg.segy_box.set_zero("ground")
     assert "no heights" not in dlg.warning_label.text()
 
 
@@ -371,8 +375,102 @@ def test_the_last_segy_settings_are_offered_again(qgis_app, make_dialog, project
     again = make_dialog(st, project=prj)
     again.set_file(write_segy(tmp_path / "line3.sgy", _amplitudes(), dt_us=2000))
     o = again.segy_box.options()
-    assert o["zero"] == "datum" and o["datum"] == 120.0
+    assert o["zero"] == "datum" and "datum" not in o        # the height is the file's own
     assert "velocity" not in o and "spacing" not in o       # file-specific: not remembered
+
+
+def test_an_old_remembered_crs_and_height_are_ignored(qgis_app, make_dialog, project_store,
+                                                     tmp_path):
+    import json
+
+    from qgis.core import QgsSettings
+
+    from groundwork_geophysics.ui.add_data_dialog import SEGY_SETTINGS_KEY
+    QgsSettings().setValue(SEGY_SETTINGS_KEY, json.dumps(
+        {"zero": "datum", "datum": 120.0, "crs": "EPSG:2056", "position": "map",
+         "velocity_kind": "interval", "domain": "time"}))
+    path = write_segy(tmp_path / "line2.sgy", _amplitudes(len(LINE)), dt_us=2000, xy=LINE)
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    o = dlg.segy_box.options()
+    assert o["zero"] == "datum" and "datum" not in o
+    assert o["crs"] == "EPSG:25832"                         # the project's, not the old one
+    assert dlg.segy_box.kind_combo.currentData() == "interval"
+
+
+def test_time_zero_starts_at_a_fixed_height_to_be_typed(qgis_app, make_dialog, project_store,
+                                                        selected_line, tmp_path):
+    path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    box = dlg.segy_box
+    assert box.zero() == "datum" and box.datum_edit.text() == ""
+    _type(box.spacing_edit, "2")
+    _type(box.velocity_edit, "1500")
+    assert "Enter the height of time zero." in dlg.summary_label.text()
+    assert "Enter the height of time zero." in box.problems()
+
+
+LV03 = [(525014, 161279), (524500, 159000), (522995, 153108)]
+OUTSIDE = ("These positions lie outside the area where CH1903+ / LV95 is used. Check the "
+           "position fields and the CRS.")
+
+
+def _ask(monkeypatch, answer):
+    from qgis.PyQt.QtWidgets import QMessageBox
+    asked = []
+
+    def question(parent, title, text, *a, **k):
+        asked.append(text)
+        return answer
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    return asked
+
+
+def test_positions_outside_the_crs_area_are_warned_about_and_asked(
+        qgis_app, make_dialog, project_store, tmp_path, monkeypatch, warnings_shown):
+    from qgis.core import QgsCoordinateReferenceSystem
+    from qgis.PyQt.QtWidgets import QMessageBox
+    path = write_segy(tmp_path / "vaud.sgy", _amplitudes(len(LV03)), dt_us=2000, xy=LV03,
+                      xy_field="group")
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    box = dlg.segy_box
+    assert box.by_positions.isChecked()
+    box.crs_widget.setCrs(QgsCoordinateReferenceSystem("EPSG:2056"))
+    _type(box.velocity_edit, "3000")
+    box.set_zero("ground")
+    assert OUTSIDE in dlg.warning_label.text()
+    assert dlg.add_button.isEnabled()                       # a warning, not a block
+    asked = _ask(monkeypatch, QMessageBox.StandardButton.No)
+    dlg.accept()
+    assert asked == [OUTSIDE[:-1] + ". Add it anyway?"] and dlg.result() == 0
+    assert st.profiles() == []
+    box.crs_widget.setCrs(QgsCoordinateReferenceSystem("EPSG:21781"))     # LV03: right
+    assert "outside the area" not in dlg.warning_label.text()
+
+
+def test_line_metres_in_a_utm_zone_are_outside_its_area(qgis_app, make_dialog, project_store,
+                                                        tmp_path):
+    from qgis.core import QgsCoordinateReferenceSystem
+    xy = [(4, 0), (100, 0), (560, 0)]
+    path = write_segy(tmp_path / "carfax.sgy", _amplitudes(3), dt_us=2000, xy=xy)
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(path)
+    box = dlg.segy_box
+    assert box.by_spacing.isChecked()                       # not proposed
+    assert box.position_note.text().startswith("The positions in this file look like distances")
+    box.by_positions.setChecked(True)
+    box.crs_widget.setCrs(QgsCoordinateReferenceSystem("EPSG:32632"))
+    _type(box.velocity_edit, "1500")
+    box.set_zero("ground")
+    text = dlg.warning_label.text()
+    assert "look like distances along the line" in text
+    assert "outside the area where WGS 84 / UTM zone 32N is used" in text
 
 
 def test_several_segy_files_take_the_box_settings(qgis_app, make_dialog, project_store,
@@ -388,6 +486,7 @@ def test_several_segy_files_take_the_box_settings(qgis_app, make_dialog, project
     dlg.set_files([a, b])
     _type(dlg.segy_box.spacing_edit, "2")
     _type(dlg.segy_box.velocity_edit, "1500")
+    dlg.segy_box.set_zero("ground")
     for row in range(2):
         dlg.files_box.set_target(row, p.id)
     assert [dlg.files_box.status(r) for r in range(2)] == [READY, READY]
@@ -407,6 +506,7 @@ def test_a_file_without_the_chosen_positions_is_left_for_its_row(
     dlg = make_dialog(st, project=prj)
     dlg.set_files([a, b])
     _type(dlg.segy_box.velocity_edit, "1500")
+    dlg.segy_box.set_zero("ground")
     assert dlg.segy_box.by_positions.isChecked()
     assert dlg.files_box.status(0) == READY
     assert "no positions" in dlg.files_box.status(1)

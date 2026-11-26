@@ -37,6 +37,8 @@ ZERO_ITEMS = (("On the ground line", "ground"), ("At a fixed height", "datum"),
               ("At a fixed height, corrected to the ground", "datum_ground"))
 KIND_ITEMS = (("Average", "average"), ("Interval", "interval"))
 NO_POSITIONS_TIP = "The file has no positions that change along the line"
+LINE_METRES = ("The positions in this file look like distances along the line, not map "
+               "coordinates.")
 DEPTH_GROUND_TIP = ("Only a time section can be corrected to the ground; hang a depth section "
                     "on the ground line or at a fixed height")
 CHECK_STEP = "Check the sample step: the file does not say it is in metres."
@@ -274,6 +276,7 @@ class SegyBox(QGroupBox):
         self.number_combo, self.easting_combo, self.northing_combo = (
             self._column_combo(n) for n in ("number_combo", "easting_combo", "northing_combo"))
         self.table_note = self._note("table_note")
+        self.position_note = self._note("position_note")
         self.text_button = QPushButton("Text Header…")
         self.text_button.setToolTip("The 40 lines of text at the start of the file")
         self.text_button.clicked.connect(self.show_text)
@@ -303,6 +306,7 @@ class SegyBox(QGroupBox):
                 ("datum", "Height (m)", self._datum_row),
                 ("replacement", "Replacement velocity (m/s)", self._replacement_row),
                 ("position", "Traces are placed by", self._position_row),
+                ("position_note", "", self.position_note),
                 ("field", "Position fields", _row(self.field_combo)),
                 ("table_file", "Coordinate file", self.table_file),
                 ("table_options", "", self.table_options),
@@ -351,12 +355,18 @@ class SegyBox(QGroupBox):
 
     def set_info(self, info: segy.SegyInfo, path: str | None = None) -> None:
         """Show what the headers of ``path`` say: its sample step, a velocity it states, its
-        position fields; the user's other choices stay. Silent."""
+        position fields; the user's other choices stay, but the CRS and the height of time
+        zero belong to a file and start afresh with another one. Position fields that look
+        like distances along the line (``SegyInfo.flat``) are not proposed. Silent."""
+        new_file = str(path or "") != self.path
         self.info, self.path = info, str(path or "")
         self._numbers = self._numbers_for = None
         self._listed = None
         self._busy = True
         try:
+            if new_file:
+                self._crs_chosen = None
+                self.datum_edit.clear()
             self.velocity_edit.setText(_show(info.velocity, 1) if info.velocity else "")
             self.step_edit.setText(_show(info.step * 1000.0) if info.step > 0 else "")
             current = self.field_combo.currentData()
@@ -366,6 +376,9 @@ class SegyBox(QGroupBox):
                 self.field_combo.addItem(
                     f"{FIELD_WORDS.get(name, name)}  {_coord(x0, g)} / {_coord(y0, g)} → "
                     f"{_coord(x1, g)} / {_coord(y1, g)}", name)
+            proposed = self._proposed()
+            if current not in info.positions or (current not in proposed and proposed):
+                current = proposed[0] if proposed else None
             self.field_combo.setCurrentIndex(max(0, self.field_combo.findData(current)))
             has = bool(info.positions)
             self.by_positions.setEnabled(has)
@@ -373,13 +386,33 @@ class SegyBox(QGroupBox):
             if not has and self.by_positions.isChecked():
                 self.by_spacing.setChecked(True)
             elif has and not self._position_chosen:
-                self.by_positions.setChecked(True)
+                (self.by_positions if proposed else self.by_spacing).setChecked(True)
             self._preset_crs()
             if self.table_file.filePath():
                 self._read_columns(keep=True)
         finally:
             self._busy = False
         self._sync()
+
+    def _proposed(self) -> list[str]:
+        """The file's position fields that may hold map coordinates (X and Y both change)."""
+        if self.info is None:
+            return []
+        return [n for n in self.info.positions if n not in (self.info.flat or ())]
+
+    def position_warning(self) -> str:
+        """What to warn about the chosen positions: a field that looks like distances along
+        the line, chosen by hand ("" otherwise)."""
+        if self.vertical_only or self.position() != "map" or self.info is None:
+            return ""
+        return LINE_METRES if self.field_combo.currentData() in (self.info.flat or ()) else ""
+
+    def _position_note(self) -> str:
+        """The note under the position rows when no field is proposed for that reason."""
+        if self.vertical_only or self.info is None or not self.info.positions or \
+                self._proposed() or self.position() == "map":
+            return ""
+        return LINE_METRES
 
     def _preset_crs(self) -> None:
         geographic = self.info is not None and self.info.geographic
@@ -422,13 +455,15 @@ class SegyBox(QGroupBox):
 
     def _set_placement(self, o: dict) -> None:
         position = o.get("position")
-        if position == "map" and self.by_positions.isEnabled():
+        if position == "map" and self.by_positions.isEnabled() and \
+                (self._proposed() or self.info is None):
             self.by_positions.setChecked(True)
+            self._position_chosen = True
         elif position == "table":
             self.by_table.setChecked(True)
         elif position == "spacing":
             self.by_spacing.setChecked(True)
-        self._position_chosen = self._position_chosen or position in ("map", "table", "spacing")
+        self._position_chosen = self._position_chosen or position in ("table", "spacing")
         if o.get("spacing") is not None:
             self.spacing_edit.setText(_show(float(o["spacing"]), 3))
         if o.get("xy_field"):
@@ -841,7 +876,8 @@ class SegyBox(QGroupBox):
             "kind": not depth and function,
             "zero": True, "datum": self.zero() != "ground",
             "replacement": self.zero() == "datum_ground",
-            "position": place, "field": place and position == "map",
+            "position": place, "position_note": place and bool(self._position_note()),
+            "field": place and position == "map",
             "table_file": place and position == "table",
             "table_options": place and position == "table",
             "columns": place and position == "table",
@@ -863,6 +899,7 @@ class SegyBox(QGroupBox):
         self._sync_step_note()
         self.table_note.setText(self._table_note() if shown["table_note"] else "")
         self.table_note.setVisible(bool(self.table_note.text()))
+        self.position_note.setText(self._position_note() if shown["position_note"] else "")
         self.text_button.setEnabled(self.info is not None)
 
     def _step_note(self) -> str:

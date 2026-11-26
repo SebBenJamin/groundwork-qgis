@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 from pathlib import Path
 
 import numpy as np
-from qgis.core import Qgis, QgsCoordinateReferenceSystem, QgsProject, QgsSettings
+from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsCsException,
+                       QgsPointXY, QgsProject, QgsSettings)
 from qgis.PyQt.QtCore import Qt
 from qgis.gui import QgsDoubleSpinBox
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
@@ -66,7 +68,14 @@ RESPONSE_NAMES = ("response.vector", "{stem}_response.vector", "{stem}.response"
 SETTINGS_KEY = f"{LEGACY_ID}/import/last"
 #: the last SEG-Y settings that are not about one file, offered for the next SEG-Y file
 SEGY_SETTINGS_KEY = f"{LEGACY_ID}/import/segy"
-SEGY_REMEMBERED = ("domain", "zero", "datum", "velocity_kind", "position", "crs")
+#: what the next SEG-Y file is offered from the last one; the CRS and the height of time zero
+#: belong to a file (older settings that hold them are read without them)
+SEGY_REMEMBERED = ("domain", "zero", "velocity_kind", "position")
+#: where time zero starts the first time: at a height the user types (no height assumed)
+SEGY_FIRST_ZERO = "datum"
+OUTSIDE_CRS = ("These positions lie outside the area where {crs} is used. Check the position "
+               "fields and the CRS.")
+ADD_ANYWAY = " Add it anyway?"
 SEGY = "segy"
 SEGYIO = "segyio"
 SEGYIO_MISSING = ("Reading SEG-Y needs the free library segyio (0.4 MB), which is not "
@@ -269,6 +278,7 @@ class AddDataDialog(QDialog):
         self._segy_remembered = False               # the last SEG-Y settings were offered
         self._install_task = None
         self._install_message = ""                  # why installing segyio failed
+        self._segy_ends = None                      # first and last trace position (file CRS)
 
         self.file_edit = QLineEdit()
         self.file_edit.editingFinished.connect(self._file_typed)
@@ -323,6 +333,7 @@ class AddDataDialog(QDialog):
         prj_crs = self.project.crs()
         self.segy_box.set_default_crs(prj_crs if prj_crs.isValid() else
                                       QgsCoordinateReferenceSystem(store.crs_authid))
+        self.segy_box.set_zero(SEGY_FIRST_ZERO)
         self.segy_box.hide()
 
         self._preview_group = preview = QGroupBox("Preview")
@@ -810,7 +821,8 @@ class AddDataDialog(QDialog):
             self.segy_box.set_info(info, str(path))
             if not self._segy_remembered:           # the last file's settings, once
                 self._segy_remembered = True
-                self.segy_box.set_options(_remembered(SEGY_SETTINGS_KEY) or {})
+                last = _remembered(SEGY_SETTINGS_KEY) or {}
+                self.segy_box.set_options({k: last[k] for k in SEGY_REMEMBERED if k in last})
             self._segy_key, self._segy_info = key, info
         self.segy_box.setVisible(True)
         if self._segy_info.volume:
@@ -827,9 +839,10 @@ class AddDataDialog(QDialog):
                                        "positions_table", "positions_columns", "crs")}
         key = (SEGY, self._path(), json.dumps(where, sort_keys=True))
         if key != self._line_key:
-            self._line, self._line_error = None, ""
+            self._line, self._line_error, self._segy_ends = None, "", None
             try:
                 xy = segy.map_positions(self._path(), o)
+                self._segy_ends = (tuple(map(float, xy[0])), tuple(map(float, xy[-1])))
                 self._line = line_from_cloud(xy_to_store(xy, o.get("crs", ""),
                                                          self.store.crs_authid, self.project))
             except ValueError as exc:
@@ -843,6 +856,12 @@ class AddDataDialog(QDialog):
         on_map = self._on_map()
         self.placement.set_guessed_spacing(None)
         warnings = [UNSTACKED] if result.provenance.get("unstacked") else []
+        if self.segy_box.position_warning():
+            warnings.append(self.segy_box.position_warning())
+        outside = self._outside_crs() if on_map else ""
+        if outside:
+            warnings.append(outside)
+            self._confirm.append(outside + ADD_ANYWAY)
         if on_map and self._line_error:
             warnings.append(self._line_error)
         try:
@@ -858,6 +877,30 @@ class AddDataDialog(QDialog):
         if zero in NO_HEIGHTS and not self._has_heights(placement.profile_id):
             warnings.append(NO_HEIGHTS[zero])
         self._set_warnings(warnings)
+
+    def _outside_crs(self) -> str:
+        """``OUTSIDE_CRS`` when the first or last trace position lies outside the area of use
+        of the chosen CRS, else "" (also when the CRS gives no area to check against)."""
+        crs = self.segy_box.crs_widget.crs()
+        if self._segy_ends is None or not crs.isValid():
+            return ""
+        area = crs.bounds()                         # geographic degrees
+        if area is None or area.isNull() or area.isEmpty() or \
+                not all(math.isfinite(v) for v in (area.xMinimum(), area.yMinimum(),
+                                                   area.xMaximum(), area.yMaximum())):
+            return ""
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        transform = QgsCoordinateTransform(crs, wgs84, self.project)
+        for x, y in self._segy_ends:
+            try:
+                p = transform.transform(QgsPointXY(x, y))
+                inside = math.isfinite(p.x()) and math.isfinite(p.y()) and \
+                    area.contains(QgsPointXY(p.x(), p.y()))
+            except QgsCsException:
+                inside = False                      # beyond what the CRS can even reach
+            if not inside:
+                return OUTSIDE_CRS.format(crs=crs.description() or crs.authid())
+        return ""
 
     def _has_heights(self, profile_id: str | None) -> bool:
         """Whether the profile the placement gives will have heights to hang a section from:

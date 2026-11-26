@@ -38,6 +38,16 @@ def test_inspect_lists_only_position_fields_that_change(tmp_path):   # the swiss
     assert info.positions["source"] == ((2637473.0, 1207148.0), (2637300.0, 1207500.0))
 
 
+def test_a_field_whose_x_or_y_never_changes_looks_like_line_metres(tmp_path):   # Carfax
+    xy = np.array([[4, 0], [10, 0], [560, 0]])
+    p = write_segy(tmp_path / "c.sgy", np.zeros((3, 4), np.float32), xy=xy, xy_field="source")
+    info = inspect(p)
+    assert list(info.positions) == ["source"] and info.flat == ("source",)
+    xy = np.array([[2637473, 1207148], [2637400, 1207300], [2637300, 1207500]])
+    p = write_segy(tmp_path / "s.sgy", np.zeros((3, 4), np.float32), xy=xy, xy_field="source")
+    assert inspect(p).flat == ()
+
+
 def test_scalar_minus_100_divides(tmp_path):
     xy = np.array([[56684695, 603940141], [56684000, 603940100]])
     p = write_segy(tmp_path / "s.sgy", np.zeros((2, 4), np.float32), xy=xy, scalar=-100)

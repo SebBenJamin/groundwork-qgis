@@ -69,6 +69,43 @@ def test_options_round_trip(box):
     assert box.options() == o
 
 
+LINE_METRES = "The positions in this file look like distances along the line, not map coordinates."
+CARFAX = {"source": ((4.0, 0.0), (560.0, 0.0))}
+
+
+def test_positions_that_look_like_line_metres_are_not_proposed(box):
+    box.set_info(info(positions=CARFAX, flat=("source",)))
+    assert box.by_spacing.isChecked() and box.by_positions.isEnabled()
+    assert box.position_note.text() == LINE_METRES and box.position_note.isVisibleTo(box)
+    assert box.position_warning() == ""
+
+
+def test_choosing_line_metres_by_hand_is_warned_about(box):
+    box.set_info(info(positions=CARFAX, flat=("source",)))
+    box.by_positions.setChecked(True)
+    assert box.position() == "map"
+    assert box.position_warning() == LINE_METRES
+    assert not box.position_note.isVisibleTo(box)       # the warning says it instead
+
+
+def test_a_field_that_changes_is_proposed_before_a_flat_one(box):
+    both = {"source": ((4.0, 0.0), (560.0, 0.0)), **{"group": SWISS["source"]}}
+    box.set_info(info(positions=both, flat=("source",)))
+    assert box.by_positions.isChecked() and box.field_combo.currentData() == "group"
+    assert box.position_warning() == "" and not box.position_note.text()
+
+
+def test_a_new_file_starts_from_the_default_crs_and_an_empty_height(box, tmp_path):
+    from qgis.core import QgsCoordinateReferenceSystem
+    box.set_default_crs(QgsCoordinateReferenceSystem("EPSG:2056"))
+    box.set_info(info(positions=SWISS), str(tmp_path / "a.sgy"))
+    box.crs_widget.setCrs(QgsCoordinateReferenceSystem("EPSG:25832"))
+    box.set_zero("datum")
+    box.datum_edit.setText("372")
+    box.set_info(info(positions=SWISS), str(tmp_path / "b.sgy"))
+    assert box.options()["crs"] == "EPSG:2056" and box.datum_edit.text() == ""
+
+
 # -- added --------------------------------------------------------------------------------
 def test_positions_in_the_file_are_chosen_with_their_crs(box):
     from qgis.core import QgsCoordinateReferenceSystem
