@@ -248,7 +248,7 @@ def test_without_an_option_nothing_is_copied(qgis_app, trace_layer):
     build_drawing(trace_layer, None)
     assert display_render.shown_values(trace_layer) is not None
     entry = display_render._trace_entry(trace_layer)
-    assert entry.shown is None                   # the drawing used the file's own array
+    assert entry is not None and not hasattr(entry, "shown")     # no copy of any samples kept
 
 
 def test_one_gained_copy_per_layer(qgis_app, trace_layer):
@@ -312,7 +312,7 @@ def test_show_muted_paints_the_muted_top(qgis_app, make_trace_layer):
     layer = _muted_top(make_trace_layer, gain=DisplayGain(show_muted=True))
     px = _paint([layer])
     assert (px[16:80, 50:150] != RED).all()
-    assert display_render._trace_entry(layer).shown is None       # no gained copy for it
+    assert not hasattr(display_render._trace_entry(layer), "shown")     # no gained copy kept
 
 
 def test_the_mute_is_a_bool_mask_kept_once_per_layer(qgis_app, make_trace_layer, monkeypatch):

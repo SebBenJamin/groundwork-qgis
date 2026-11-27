@@ -36,7 +36,8 @@ from ..core.trace_section import (BAD_RADAR_VELOCITY, BEYOND_RECORD, C_M_PER_NS,
                                   NO_DEPTH_TIME_ZERO, NO_VELOCITY, NOT_A_TIME_ZERO,
                                   TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain, PlacedTraces,
                                   TraceSection, Velocity, color_limits, depth_at, display_values,
-                                  ground_time, place, shown_down_to, smoothed_ground)
+                                  ground_time, in_order, place, shown_down_to,
+                                  smoothed_ground)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -1371,11 +1372,12 @@ class SectionDataProvider:
                profile: Profile | None = None) -> tuple:
         """(``d``'s mesh in chainage, its z kind): file x through ``dmap`` (None for a
         map-coordinate file, whose x is already chainage), z as read. A trace section gives
-        (its ``TraceSection`` in chainage, ``TRACES``); it is hung in ``_layer``."""
+        (its ``TraceSection`` in chainage with its traces in order, ``TRACES``; sorted here,
+        once per placement, so that hanging it in ``_layer`` shares the samples)."""
         result = self._read(d, profile)
         if result.traces is not None:
             traces = result.traces
-            return (traces if dmap is None else traces.with_x(dmap)), TRACES
+            return in_order(traces if dmap is None else traces.with_x(dmap)), TRACES
         base = result.mesh
         if base.readings is not None:
             base = self._shown_mesh(d, base)

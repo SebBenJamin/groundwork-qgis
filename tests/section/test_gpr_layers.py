@@ -175,22 +175,67 @@ def test_the_counter_samples_are_never_painted(make, monkeypatch):
     assert seen and all(m is not None and m[:, :2].all() and not m[:, 2:].any() for m in seen)
 
 
-def test_gain_with_time_counts_from_time_zero_in_the_drawing(make):
+def test_gain_with_time_counts_from_time_zero_in_the_drawing(make, monkeypatch):
     provider, store, pid = make({})
     layer = provider.layers(pid)[0]
     display_render.clear_cache()
+    seen = []
+    real = display_render._make_grids
+
+    def spy(placed, values, mute=None):
+        seen.append(values)
+        return real(placed, values, mute)
+    monkeypatch.setattr(display_render, "_make_grids", spy)
     gained = replace(layer, style=replace(layer.style, gain=DisplayGain(time_power=1.0)))
-    entry = display_render._entry(gained)
+    display_render._entry(gained)
+    (shown,) = seen
     a = layer.traces.section.amplitudes
-    assert entry.shown[0, 4] == 0.0                              # at time zero
-    assert entry.shown[0, 6] == pytest.approx(a[0, 6] * 2 * NS, rel=1e-5)
-    assert np.isnan(entry.shown[:, :2]).all()
+    assert shown[0, 4] == 0.0                                    # at time zero
+    assert shown[0, 6] == pytest.approx(a[0, 6] * 2 * NS, rel=1e-5)
+    assert np.isnan(shown[:, :2]).all()
     path = display_render._level_path(replace(gained, level_cache=("folder", "read")))
     _change(provider, store, pid, time_zero=5 * NS)
     moved = provider.layers(pid)[0]
     moved = replace(moved, style=gained.style, level_cache=("folder", "read"))
     assert display_render._values_key(moved) != display_render._values_key(gained)
     assert display_render._level_path(moved) != path
+
+
+def test_traces_out_of_order_are_sorted_once_and_drawn_once(make, monkeypatch):
+    provider, _store, pid = make({})
+    real_read = provider._read
+
+    def stepping_back(d, profile=None):                # trace 5 lies a hair before trace 4
+        result = real_read(d, profile)
+        x = result.traces.x.copy()
+        x[5] = x[4] - 0.001
+        return replace(result, traces=replace(result.traces, x=x))
+    monkeypatch.setattr(provider, "_read", stepping_back)
+    display_render.clear_cache()
+    made = []
+    real = display_render._make_grids
+
+    def spy(placed, values, mute=None):
+        made.append(1)
+        return real(placed, values, mute)
+    monkeypatch.setattr(display_render, "_make_grids", spy)
+    first = provider.layers(pid)[0]
+    entry = display_render._entry(first)
+    second = provider.layers(pid)[0]
+    assert np.all(np.diff(second.traces.section.x) >= 0)
+    assert second.traces.section.amplitudes is first.traces.section.amplitudes
+    assert display_render._entry(second) is entry and len(made) == 1
+    assert not hasattr(entry, "shown")                 # no spare gained copy is kept
+
+
+def test_a_new_read_of_a_dataset_replaces_its_kept_picture(make, monkeypatch):
+    provider, store, pid = make({})
+    display_render.clear_cache()
+    display_render._entry(provider.layers(pid)[0])
+    provider._cache.clear()                            # the file is read again
+    provider._builds.clear()
+    display_render._entry(provider.layers(pid)[0])
+    assert len([k for k in display_render._traces if k[0] == "g1"]) == 1
 
 
 def test_readout_in_nanoseconds_below_the_ground(make, qgis_app):

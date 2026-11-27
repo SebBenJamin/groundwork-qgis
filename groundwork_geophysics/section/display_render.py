@@ -226,10 +226,7 @@ def _as_cells(layer):
 @dataclass(eq=False)
 class _TraceEntry:
     """One trace layer's kept picture: the value grids of its levels (before colouring) and the
-    last colouring of them."""
-    #: the gained copy the grids were made from; None: the file's own array (no display
-    #: option), or grids read back from disk
-    shown: np.ndarray | None
+    last colouring of them (the gained copy the grids were made from is not kept)."""
     #: the values shown, sampled as ``color_limits`` samples them (the limits come from it)
     sample: np.ndarray
     grids: list                      # [(values (h, w) float32, row 0 at zmax, extent)]
@@ -277,9 +274,19 @@ def _live_key(placed) -> str | None:
     return None if placed.live_from is None else _digest(placed.live_from.tobytes())
 
 
+def _samples_key(layer) -> tuple:
+    """Which samples a layer shows: its read (and how many samples of it are shown) when the
+    layer knows its read, so that a new copy of the same read (sorted or read again) finds
+    its picture; else the samples' buffer."""
+    a = layer.traces.section.amplitudes
+    if layer.level_cache is not None:
+        return ("read", layer.level_cache[1], a.shape)
+    return _array_key(a)
+
+
 def _values_key(layer) -> tuple:
     read = None if layer.level_cache is None else layer.level_cache[1]
-    return (layer.dataset.id, _array_key(layer.traces.section.amplitudes), read,
+    return (layer.dataset.id, _samples_key(layer), read,
             layer.style.gain, _shown_part(layer.traces))
 
 
@@ -382,7 +389,7 @@ def _kept_mute(key: tuple, live: str | None):
 def _entry(layer) -> _TraceEntry:
     """The layer's kept entry: from memory, else from its level file, else made (and kept on
     disk when that took long). One entry per dataset and samples: a new gain or placement
-    replaces the old one, and its gained copy with it."""
+    replaces the old one; a new read replaces every entry of the older one."""
     key = _trace_key(layer)
     with _lock:
         hit = _traces.get(key)
@@ -392,7 +399,7 @@ def _entry(layer) -> _TraceEntry:
     path = _level_path(layer)
     kept = _load_levels(path)
     if kept is not None:
-        entry = _TraceEntry(None, kept[1], kept[0])
+        entry = _TraceEntry(kept[1], kept[0])
     else:
         started = time.perf_counter()
         section = layer.traces.section
@@ -411,12 +418,15 @@ def _entry(layer) -> _TraceEntry:
         values = placed_values(layer.traces, gain)
         grids = _make_grids(layer.traces, values, mute)
         sample = limit_sample(values, skip)
-        entry = _TraceEntry(None if values is section.amplitudes else values, sample, grids,
-                            kept, live if kept is not None else None)
+        entry = _TraceEntry(sample, grids, kept, live if kept is not None else None)
+        del values                              # the gained copy is not kept
         if path is not None and time.perf_counter() - started > LEVEL_CACHE_MIN_SECONDS:
             _save_levels(path, layer.dataset.id, grids, sample)
     with _lock:
-        for k in [k for k in _traces if k[:2] == key[:2] and k != key]:
+        # one entry per dataset and samples (another gain or placement is dropped), and none
+        # of an older read
+        for k in [k for k in _traces if k[0] == key[0] and k != key
+                  and (k[1] == key[1] or k[2] != key[2])]:
             del _traces[k]
         _traces[key] = entry
         while len(_traces) > _TRACE_CACHE_SIZE:

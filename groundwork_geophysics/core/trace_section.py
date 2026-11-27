@@ -430,14 +430,35 @@ def _zero_sample(section: TraceSection, time_zero: float) -> int:
                max(0, math.ceil((float(time_zero) - section.first) / section.step - 1e-6)))
 
 
+def _order(x: np.ndarray):
+    """How to put traces at ``x`` in increasing order: None when they are, a reversed slice
+    when every step goes back, else a stable sort."""
+    step = np.diff(x)
+    if not (step < 0).any():
+        return None
+    return slice(None, None, -1) if (step < 0).all() else np.argsort(x, kind="stable")
+
+
+def in_order(section: TraceSection) -> TraceSection:
+    """``section`` with its traces in increasing ``x`` (stable sort): itself when they are;
+    a reversed view when it runs backwards; any other order a copy in the file's type. Done
+    once where a placed section is kept, so that ``place`` shares its samples."""
+    order = _order(section.x)
+    if order is None:
+        return section
+    numbers = None if section.numbers is None else section.numbers[order]
+    return replace(section, amplitudes=section.amplitudes[order], x=section.x[order],
+                   numbers=numbers)
+
+
 def place(section: TraceSection, z_top, velocity: Velocity | None,
           live_from: np.ndarray | None = None, *, time_zero: float = 0.0,
           data_start: int = 0) -> PlacedTraces:
     """Hang ``section`` from ``z_top`` (one elevation or one per trace), with sample depths
-    from ``velocity``. Traces whose ``x`` does not increase are put in order (stable sort); a
-    section that runs backwards is a reversed view, any other order a copy in the file's type.
-    In order already, the sample array is shared. ``live_from`` (one sample index per trace,
-    or None) follows the traces' order.
+    from ``velocity``. Traces whose ``x`` does not increase are put in order as ``in_order``
+    does (a copy unless the section runs backwards: give ``place`` a section put in order
+    once where it is kept). In order already, the sample array is shared. ``live_from`` (one
+    sample index per trace, or None) follows the traces' order.
 
     ``time_zero`` (s, a time section only) puts the sample at that time on ``z_top`` (see
     ``sample_depths``) and mutes the samples before it: ``live_from`` becomes, for every
@@ -463,12 +484,9 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
     if zero > 0:
         live_from = (np.full(n, zero, np.int64) if live_from is None
                      else np.maximum(live_from, zero))
-    step = np.diff(section.x)
-    if (step < 0).any():
-        order = slice(None, None, -1) if (step < 0).all() else np.argsort(section.x, kind="stable")
-        numbers = None if section.numbers is None else section.numbers[order]
-        section = replace(section, amplitudes=section.amplitudes[order], x=section.x[order],
-                          numbers=numbers)
+    order = _order(section.x)
+    if order is not None:
+        section = in_order(section)
         zt = zt[order]
         live_from = None if live_from is None else live_from[order]
     return PlacedTraces(section, np.ascontiguousarray(zt), depths,
