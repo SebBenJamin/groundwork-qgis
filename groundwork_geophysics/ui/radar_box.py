@@ -54,6 +54,8 @@ TO_TIP = ("Where the file's last trace lies along the profile, in m: smaller tha
           "file against the profile's direction. Without the tick only From and the direction "
           "count")
 NO_SPAN = "Enter From and To in metres along the profile."
+#: To smaller than From: From and To decide the direction, whatever "Distance 0 is at" says
+AGAINST_NOTE = "The file runs against the profile's direction."
 SMOOTHING_TIP = ("Average the ground under the radargram over this length along the profile "
                  "before hanging it, so that steps of the elevation model do not show as "
                  "seams; 0 hangs it on the ground as sampled. The ground line itself is not "
@@ -131,6 +133,7 @@ class RadarBox(QGroupBox):
         self.from_edit = line_edit("from_edit", FROM_TIP, self._span_edited)
         self.to_edit = line_edit("to_edit", TO_TIP, self._span_edited)
         self.length_label = note("length_label")
+        self.direction_note = note("direction_note")
         self.fit_check = QCheckBox(FIT_TEXT)
         self.fit_check.setObjectName("fit_check")
         self.fit_check.setToolTip(FIT_TIP)
@@ -160,6 +163,7 @@ class RadarBox(QGroupBox):
                  row(self.by_file, self.by_spacing, self.by_table)),
                 ("position_note", "", self.position_note),
                 ("span", "From (m)", row(self.from_edit, QLabel("To (m)"), self.to_edit)),
+                ("direction", "", self.direction_note),
                 ("length", "", self.length_label),
                 ("fit", "", self.fit_check),
                 ("spacing", "Trace spacing (m)", row(self.spacing_edit)),
@@ -627,6 +631,9 @@ class RadarBox(QGroupBox):
         self.position_note.setText(NO_WHEEL if place and no_wheel else "")
         fit = self._fit_shown()
         self.length_label.setText(self._length_text() if fit else "")
+        span = self.span() if fit else None
+        self.direction_note.setText(AGAINST_NOTE if span is not None and span[1] < span[0]
+                                    else "")
         shown = {
             "facts": place and bool(self.facts_label.text()),     # Dataset Info has its own
             "velocity": True, "velocity_note": bool(self.velocity_note.text()),
@@ -635,6 +642,7 @@ class RadarBox(QGroupBox):
             "smoothing": self.zero() == "ground",
             "position": place, "position_note": bool(self.position_note.text()),
             "span": fit, "length": fit and bool(self.length_label.text()),
+            "direction": fit and bool(self.direction_note.text()),
             "fit": fit,
             "spacing": place and position == "spacing",
             "table_file": place and position == "table",

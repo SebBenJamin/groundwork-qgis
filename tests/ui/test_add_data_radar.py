@@ -177,6 +177,27 @@ def test_fitting_against_the_profile_direction(
     assert dmap([0.0, 19.5]) == pytest.approx([20.0, 0.0])
 
 
+def test_typing_to_before_from_says_the_file_runs_against_the_profile(
+        qgis_app, make_dialog, project_store, tmp_path):
+    """The placement row's "Distance 0 is at" keeps what was chosen; From and To decide,
+    and a note under them says which way the file runs."""
+    from groundwork_geophysics.ui.radar_box import AGAINST_NOTE
+    st, prj = project_store
+    p = _profile(st, 140.0)
+    dlg = make_dialog(st, p.id, project=prj)
+    dlg.set_file(_long_file(tmp_path))
+    box = dlg.radar_box
+    assert dlg.placement.zero_combo.currentData() == "start"
+    assert box.direction_note.text() == "" and not box.direction_note.isVisibleTo(dlg)
+    _type(box.from_edit, "136,8")
+    _type(box.to_edit, "25,5")
+    assert box.direction_note.text() == AGAINST_NOTE
+    assert box.direction_note.isVisibleTo(dlg)
+    assert (box.from_edit.text(), box.to_edit.text()) == ("136,8", "25,5")   # as typed
+    _type(box.to_edit, "200")
+    assert not box.direction_note.isVisibleTo(dlg)
+
+
 def _long_file(tmp_path):
     """A 124 m file (1241 traces, 10 a metre)."""
     return write_dzt(tmp_path / "long.dzt", _radargram(n=1241), 64.0, scans_per_metre=10.0)
