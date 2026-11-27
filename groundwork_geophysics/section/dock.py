@@ -903,18 +903,23 @@ class SectionDock(QDockWidget):
 
     def apply_style_to_all(self, dataset_id: str) -> None:
         """Give every other model of the same method (type, quantity and unit), on every
-        profile, ``dataset_id``'s style; whether each is shown stays. One step on the
-        panel's undo stack."""
+        profile, ``dataset_id``'s style; whether each is shown stays. A radargram of another
+        known antenna frequency gets the band-pass and the windows scaled to its antenna.
+        One step on the panel's undo stack."""
         from ..core.dataset_types import type_label
-        from .style_store import applied, same_method
+        from .style_store import antenna_ratio, applied, same_method
         if self.provider is None:
             return
         targets = same_method(self.provider.store, dataset_id)
         if not targets:
             return
         source = self.provider.style(dataset_id)
+        store = self.provider.store
+        source_dataset = next(d for p in store.profiles() for d in store.datasets(p.id)
+                              if d.id == dataset_id)
         before = {d.id: self.provider.style(d.id) for d in targets}
-        after = {i: applied(source, s) for i, s in before.items()}
+        after = {d.id: applied(source, before[d.id], antenna_ratio(source_dataset, d))
+                 for d in targets}
         self.interp.undo.push_with(self._apply_styles, "Apply style to all sections",
                                    before, after)
         self.readout.setText(APPLIED_ALL.format(n=len(targets),

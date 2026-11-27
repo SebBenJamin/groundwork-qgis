@@ -230,3 +230,79 @@ def test_a_sections_style_goes_to_the_other_sections_only(tmp_path):
     source = LayerStyle(clip_percent=80.0, gain=DisplayGain(agc_window=0.1))
     got = applied(source, LayerStyle(visible=False))
     assert got.clip_percent == 80.0 and got.gain == source.gain and not got.visible
+
+
+def _antennas(tmp_path, kinds_mhz):
+    """A store with one profile per (kind, frequency) entry; dataset ids d0, d1, …"""
+    from groundwork_geophysics.core.model import Dataset, profile_from_polyline
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    for i, (kind, mhz) in enumerate(kinds_mhz):
+        p = profile_from_polyline(f"L{i}", "EPSG:25832", np.array([[0.0, 0.0], [100.0, 0.0]]))
+        st.save_profile(p)
+        prov = {} if mhz is None else {"frequency_mhz": mhz}
+        st.save_dataset(Dataset(f"d{i}", p.id, "", kind, "x.dzt", 0.0, "", "gssi_dzt", {},
+                                prov))
+    return st, {d.id: d for p in st.profiles() for d in st.datasets(p.id)}
+
+
+def _radar_look():
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    return LayerStyle(scale=ColorScale("gray", -1.0, 1.0, False), clip_percent=95.0,
+                      max_depth=6.0,
+                      gain=DisplayGain(band_low=50e6, band_high=200e6, dewow_window=2e-8,
+                                       agc_window=5e-8, background="window",
+                                       background_traces=21, reverse_polarity=True))
+
+
+def test_a_radar_look_follows_the_other_antennas_frequency(tmp_path):
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import antenna_ratio, applied
+
+    st, ds = _antennas(tmp_path, [("gpr_section", 100), ("gpr_section", 270)])
+    ratio = antenna_ratio(ds["d0"], ds["d1"])
+    assert ratio == pytest.approx(2.7)
+    source = _radar_look()
+    got = applied(source, LayerStyle(visible=False), ratio)
+    assert got.gain.band_low == pytest.approx(135e6)          # corners × f2/f1
+    assert got.gain.band_high == pytest.approx(540e6)
+    assert got.gain.dewow_window == pytest.approx(2e-8 / 2.7)  # windows × f1/f2
+    assert got.gain.agc_window == pytest.approx(5e-8 / 2.7)
+    # copied as they are: background window, clip, ramp, polarity, Show down to
+    assert got.gain.background == "window" and got.gain.background_traces == 21
+    assert got.gain.reverse_polarity
+    assert got.clip_percent == 95.0 and got.scale == source.scale and got.max_depth == 6.0
+    assert not got.visible
+    assert source.gain.band_low == 50e6                        # the source is not changed
+
+
+@pytest.mark.parametrize("pair", [
+    [("gpr_section", 100), ("gpr_section", 100)],              # the same antenna
+    [("gpr_section", 100), ("gpr_section", None)],             # an unknown one
+    [("gpr_section", None), ("gpr_section", 270)],
+    [("refl_section", 100), ("refl_section", 270)],            # seismic: untouched
+])
+def test_a_look_is_copied_unchanged_without_two_known_antennas(tmp_path, pair):
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import antenna_ratio, applied
+
+    st, ds = _antennas(tmp_path, pair)
+    ratio = antenna_ratio(ds["d0"], ds["d1"])
+    assert ratio is None
+    source = _radar_look()
+    assert applied(source, LayerStyle(), ratio).gain == source.gain
+
+
+def test_apply_style_to_all_scales_a_radar_look_per_antenna(qgis_app, tmp_path, make_dock):
+    st, ds = _antennas(tmp_path, [("gpr_section", 100), ("gpr_section", 270),
+                                  ("gpr_section", 100), ("gpr_section", None)])
+    dock = make_dock(st)
+    provider = dock.provider
+    provider.set_style("d0", _radar_look())
+    dock.apply_style_to_all("d0")
+    assert provider.style("d1").gain.band_low == pytest.approx(135e6)
+    assert provider.style("d2").gain == _radar_look().gain
+    assert provider.style("d3").gain == _radar_look().gain

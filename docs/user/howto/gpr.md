@@ -164,8 +164,10 @@ The colour ramp, **Clip at**, **Gain with time**, **Balance traces against each 
 [reflection section](reflection-sections.md#display-options). The options change the picture
 only; the readout keeps showing the file's amplitudes. Below the depth in ① the readout shows
 nothing for the radargram; the data are not cut. **Apply Style to All Sections** in the same
-menu gives the other radargrams the same look; the band-pass goes along in MHz, so give
-radargrams of another antenna their own.
+menu gives the other radargrams the same look. A radargram of another antenna gets it
+fitted to its frequency: a band-pass of 50 to 200 MHz on a 100 MHz line becomes 135 to 540 MHz
+on a 270 MHz line, and the dewow and AGC windows shrink to match. When an antenna is not known,
+the look goes over as it is.
 
 ### Why the look filters around the antenna's frequency
 

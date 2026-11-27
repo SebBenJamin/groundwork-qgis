@@ -130,7 +130,46 @@ def same_method(store, dataset_id: str) -> list:
             and d.quantity == source.quantity and d.unit == source.unit]
 
 
-def applied(source, target):
-    """``target`` (a ``LayerStyle``) with ``source``'s look; whether it is shown stays."""
-    copy = replace(source, scale=None if source.scale is None else replace(source.scale))
+def antenna_ratio(source_dataset, target_dataset) -> float | None:
+    """f2 / f1 when both datasets are radargrams with known, different antenna frequencies
+    (provenance ``frequency_mhz``), else None: the look is copied as it is."""
+    from ..core.dataset_types import is_radar_kind
+
+    def mhz(d):
+        try:
+            f = float((d.provenance or {}).get("frequency_mhz"))
+        except (TypeError, ValueError):
+            return None
+        return f if f == f and 0 < f < float("inf") else None
+
+    if not (is_radar_kind(source_dataset.kind) and is_radar_kind(target_dataset.kind)):
+        return None
+    f1, f2 = mhz(source_dataset), mhz(target_dataset)
+    if f1 is None or f2 is None or f1 == f2:
+        return None
+    return f2 / f1
+
+
+def follow_antenna(gain: DisplayGain | None, ratio: float | None) -> DisplayGain | None:
+    """``gain`` for an antenna ``ratio`` times the frequency: the band-pass corners times
+    ``ratio``, the dewow and AGC windows divided by it (they span periods of the antenna's
+    frequency). The background window, in metres or traces, stays."""
+    if gain is None or ratio is None:
+        return gain
+
+    def scaled(value, factor):
+        return value * factor if value is not None and value > 0 else value
+
+    return replace(gain, band_low=scaled(gain.band_low, ratio),
+                   band_high=scaled(gain.band_high, ratio),
+                   dewow_window=scaled(gain.dewow_window, 1 / ratio),
+                   agc_window=scaled(gain.agc_window, 1 / ratio))
+
+
+def applied(source, target, ratio: float | None = None):
+    """``target`` (a ``LayerStyle``) with ``source``'s look; whether it is shown stays. With
+    an antenna ``ratio`` (``antenna_ratio``) the frequency-bound display options follow the
+    target's antenna (``follow_antenna``)."""
+    copy = replace(source, scale=None if source.scale is None else replace(source.scale),
+                   gain=follow_antenna(source.gain, ratio))
     return replace(copy, visible=target.visible)
