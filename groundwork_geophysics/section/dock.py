@@ -139,6 +139,7 @@ class SectionDock(QDockWidget):
         self.provider = None
         self._source = None
         self._profile = None
+        self._typed_ve: dict[str, float] = {}   # profile id -> exaggeration typed for it
         self._layers = None                     # cached provider.layers() of the open profile
         self._ctx = None                        # cached (context items, station line), dock_context
         self._topo = None
@@ -347,6 +348,7 @@ class SectionDock(QDockWidget):
         self.canvas.setSources([])
         self._refresh_timer.stop()
         self.provider = provider
+        self._typed_ve.clear()                  # another project's profiles
         self._source = None
         self.set_reader(None)
         self._close_profile()
@@ -549,6 +551,8 @@ class SectionDock(QDockWidget):
                 self.profile_combo.blockSignals(False)
             return True
         self._wanted = None
+        if self._profile is not None and self._profile.id != profile.id:
+            self._take_ve(profile.id)
         self._profile = profile
         self.empty_hint.hide()
         self.canvas.show()
@@ -741,7 +745,21 @@ class SectionDock(QDockWidget):
         self.fit.zoom_full()
 
     def _ve_changed(self, value: float) -> None:
+        if self._profile is not None:
+            if value <= self.ve_spin.minimum():
+                self._typed_ve.pop(self._profile.id, None)
+            else:
+                self._typed_ve[self._profile.id] = value
         self.fit.ve_changed(value)
+
+    def _take_ve(self, profile_id: str) -> None:
+        """Another profile opens at the exaggeration typed for it in this session, else at
+        Auto: one typed for a long, shallow line would squeeze a short, deep one into a
+        sliver of the panel (the view fits the whole section at the exaggeration). Silent;
+        the zoom that follows fits the view."""
+        self.ve_spin.blockSignals(True)
+        self.ve_spin.setValue(self._typed_ve.get(profile_id, AUTO_VE))
+        self.ve_spin.blockSignals(False)
 
     def _jobs_changed(self, count: int) -> None:
         self.fit.jobs_changed(count)
