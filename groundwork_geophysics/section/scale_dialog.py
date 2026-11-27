@@ -6,10 +6,10 @@ from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                  QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                                 QLineEdit, QPushButton, QRadioButton, QVBoxLayout)
+                                 QLineEdit, QPushButton, QRadioButton, QVBoxLayout, QWidget)
 
 from ..core.colors import ColorScale
-from ..core.trace_section import display_values
+from ..core.trace_section import display_values, trace_spacing, window_traces
 
 LIMIT = 1e12            # spin box range for linear scales
 MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then it scrolls)
@@ -26,6 +26,8 @@ BACKGROUND_TIP = ("Subtract the mean trace: banding and ringing that run flat al
                   "mean of the traces around each trace.")
 BACKGROUND_ITEMS = (("Whole line", "all"), ("Moving window", "window"))
 BACKGROUND_TRACES_TIP = "How many traces around each trace make its background"
+BACKGROUND_METRES_TIP = ("How much of the line around each trace makes its background, in "
+                         "metres; the number of traces is shown beside it")
 #: the contour lines' colour: from the colour scale (as before), or one the user picks
 FROM_SCALE_TEXT = "From the colour scale"
 PICKED_COLOUR_TEXT = "One colour"
@@ -519,6 +521,9 @@ class DisplayDialog(ColorScaleDialog):
         form.addRow(self.background_check)
         form.addRow("", self.background_combo)
         form.addRow("Traces", self.background_spin)
+        form.addRow("Window", self.background_row)
+        form.setRowVisible(self.background_spin, self._spacing is None)
+        form.setRowVisible(self.background_row, self._spacing is not None)
         form.addRow(self.agc_check)
         form.addRow("Window", self.agc_spin)
         form.addRow(self.time_power_check)
@@ -545,6 +550,8 @@ class DisplayDialog(ColorScaleDialog):
         self.background_combo.currentIndexChanged.connect(self._gain_changed)
         for spin in (self.dewow_spin, self.background_spin):
             spin.valueChanged.connect(self._gain_changed)
+        self.background_spin.valueChanged.connect(self._background_traces_changed)
+        self.background_m_spin.valueChanged.connect(self._background_metres_changed)
         for w in (self.balance_check, self.polarity_check):
             w.toggled.connect(self._gain_changed)
         for spin in (self.agc_spin, self.time_power_spin):
@@ -579,6 +586,8 @@ class DisplayDialog(ColorScaleDialog):
         """"Remove drift (dewow)" with its window and "Remove background" with whole line or
         a moving window of traces: the filters that come first, before any gain."""
         from qgis.gui import QgsDoubleSpinBox, QgsSpinBox
+
+        from .data import BACKGROUND_WINDOW_M
         self.dewow_check = QCheckBox(DEWOW_TEXT)
         self.dewow_check.setObjectName("dewow_check")
         self.dewow_check.setToolTip(DEWOW_TIP)
@@ -609,11 +618,52 @@ class DisplayDialog(ColorScaleDialog):
         self.background_spin.setToolTip(BACKGROUND_TRACES_TIP)
         n = self._traces.section.n_traces
         self.background_spin.setRange(3, max(3, n))
-        start = max(3, (n // 10) | 1)               # a tenth of the line, odd
+        self._spacing = spacing = trace_spacing(self._traces.section)
+        if spacing is None:
+            start = max(3, (n // 10) | 1)           # a tenth of the line, odd
+        else:                                       # as a new radargram starts
+            start = min(window_traces(BACKGROUND_WINDOW_M, spacing), max(3, n))
         self.background_spin.setClearValue(start)
         self.background_spin.setValue(gain.background_traces or start)
+        # the moving window in metres when the traces have a spacing: the traces stay stored
+        self.background_m_spin = QgsDoubleSpinBox()
+        self.background_m_spin.setObjectName("background_m_spin")
+        self.background_m_spin.setToolTip(BACKGROUND_METRES_TIP)
+        self.background_m_spin.setSuffix(" m")
+        self.background_m_spin.setDecimals(2 if spacing is not None and spacing < 0.1 else 1)
+        if spacing is not None:
+            self.background_m_spin.setRange(3 * spacing, max(3, n) * spacing)
+            self.background_m_spin.setClearValue(start * spacing)
+            self.background_m_spin.setValue(self.background_spin.value() * spacing)
+        self.background_count = QLabel()
+        self.background_count.setObjectName("background_count")
+        self.background_row = QWidget()
+        row = QHBoxLayout(self.background_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.background_m_spin, 1)
+        row.addWidget(self.background_count)
+        self._show_count()
         self.background_check.setChecked(gain.background in ("all", "window"))
         self.background_combo.setCurrentIndex(1 if gain.background == "window" else 0)
+
+    def _show_count(self) -> None:
+        from ..core.numbers import fmt_count
+        n = self.background_spin.value()
+        self.background_count.setText(f"{fmt_count(n)} trace{'' if n == 1 else 's'}")
+
+    def _background_metres_changed(self, metres: float) -> None:
+        """A window typed in metres: the odd number of traces it spans (the one stored)."""
+        if self._spacing is None:
+            return
+        self.background_spin.setValue(window_traces(metres, self._spacing))
+        self._show_count()
+
+    def _background_traces_changed(self, n: int) -> None:
+        self._show_count()
+        if self._spacing is not None and not self.background_m_spin.hasFocus():
+            self.background_m_spin.blockSignals(True)
+            self.background_m_spin.setValue(n * self._spacing)
+            self.background_m_spin.blockSignals(False)
 
     def _window(self, spin, given) -> float:
         """The window of ``spin`` in the section's unit; the stored ``given`` itself while the
@@ -650,6 +700,7 @@ class DisplayDialog(ColorScaleDialog):
         self.background_combo.setEnabled(self.background_check.isChecked())
         self.background_spin.setEnabled(self.background_check.isChecked() and
                                         self.background_combo.currentData() == "window")
+        self.background_m_spin.setEnabled(self.background_spin.isEnabled())
         self.agc_spin.setEnabled(self.agc_check.isChecked())
         self.time_power_spin.setEnabled(self.time_power_check.isChecked())
         shown = " (as shown)" if self.gain().active() else ""     # not the file's numbers

@@ -634,6 +634,22 @@ def _odd(n: float) -> int:
     return max(3, 2 * math.floor((float(n) - 1.0) / 2.0 + 0.5) + 1)
 
 
+def trace_spacing(section: TraceSection) -> float | None:
+    """The usual distance between neighbouring traces (m, the median), None when the traces
+    give none (one trace, or all at one place)."""
+    if section.n_traces < 2:
+        return None
+    gaps = np.abs(np.diff(np.asarray(section.x, dtype=np.float64)))
+    spacing = float(np.median(gaps))
+    return spacing if math.isfinite(spacing) and spacing > 0 else None
+
+
+def window_traces(metres: float, spacing: float) -> int:
+    """A window of ``metres`` along the line as an odd number of traces ``spacing`` apart
+    (at least three)."""
+    return _odd(float(metres) / float(spacing))
+
+
 def _dewow_into(out: np.ndarray, window: int) -> None:
     """Subtract from each trace of ``out`` (float32, in place) the mean of the ``window``
     samples centred on each sample (fewer at the ends of a trace; NaN left out and kept)."""

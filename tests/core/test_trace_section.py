@@ -579,3 +579,15 @@ def test_the_ground_is_smoothed_with_a_centred_window_shrinking_at_the_ends():
     assert np.array_equal(smoothed_ground(x[::-1], teeth[::-1], 2.0), z[::-1])
     flat = smoothed_ground(x, np.full(x.size, 7.0), 2.0)
     assert np.allclose(flat, 7.0)
+
+
+def test_a_window_in_metres_is_an_odd_number_of_traces():
+    from groundwork_geophysics.core.trace_section import trace_spacing, window_traces
+    assert window_traces(10.0, 0.02) == 501 and window_traces(10.0, 0.1) == 101
+    assert window_traces(1.0, 1.0) == 3                             # at least three
+    a = np.zeros((4, 3), np.float32)
+    assert trace_spacing(TraceSection(a, np.array([0.0, 0.02, 0.04, 0.06]), 0.0, 1.0,
+                                      "time")) == pytest.approx(0.02)
+    assert trace_spacing(TraceSection(a, np.array([3.0, 2.0, 1.0, 0.0]), 0.0, 1.0,
+                                      "time")) == pytest.approx(1.0)
+    assert trace_spacing(TraceSection(a, np.zeros(4), 0.0, 1.0, "time")) is None

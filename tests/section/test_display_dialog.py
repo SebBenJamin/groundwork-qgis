@@ -483,3 +483,35 @@ def test_the_filters_are_kept_in_the_project(qgis_app):
                        agc_window=2e-8)
     back = styles_from_json(styles_to_json({"g1": LayerStyle(gain=gain)}))
     assert back["g1"].gain == gain
+
+
+def test_the_moving_window_reads_in_metres_with_its_traces(qgis_app, make_trace_layer):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    gain = DisplayGain(background="window", background_traces=5)
+    layer = _radar_layer(make_trace_layer, gain=gain)           # traces 10 m apart
+    dlg = DisplayDialog(None, layer)
+    dlg.show()
+    spin = dlg.background_m_spin
+    assert spin.isVisibleTo(dlg) and not dlg.background_spin.isVisibleTo(dlg)
+    assert spin.suffix() == " m" and spin.value() == pytest.approx(50.0)
+    assert dlg.amplitudes_group.layout().labelForField(dlg.background_row).text() == "Window"
+    assert dlg.background_count.text() == "5 traces"
+    spin.setValue(30.0)
+    assert dlg.style().gain.background_traces == 3 and dlg.background_count.text() == "3 traces"
+    spin.setValue(72.0)
+    assert dlg.style().gain.background_traces == 7
+    dlg.close()
+
+
+def test_without_a_trace_spacing_the_window_is_in_traces(qgis_app, make_trace_layer):
+    import numpy as np
+
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    layer = _radar_layer(make_trace_layer)
+    layer = replace(layer, traces=replace(layer.traces, section=replace(
+        layer.traces.section, x=np.zeros(layer.traces.section.n_traces))))
+    dlg = DisplayDialog(None, layer)
+    dlg.show()
+    assert dlg.background_spin.isVisibleTo(dlg) and not dlg.background_m_spin.isVisibleTo(dlg)
+    dlg.close()

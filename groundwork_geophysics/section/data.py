@@ -36,7 +36,8 @@ from ..core.trace_section import (BAD_RADAR_VELOCITY, BEYOND_RECORD, C_M_PER_NS,
                                   NO_DEPTH_TIME_ZERO, NO_VELOCITY, NOT_A_TIME_ZERO,
                                   TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain, PlacedTraces,
                                   TraceSection, Velocity, color_limits, depth_at, display_values,
-                                  ground_time, place, smoothed_ground)
+                                  ground_time, place, smoothed_ground, trace_spacing,
+                                  window_traces)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -289,25 +290,39 @@ def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
     return ColorScale("gray" if lo < 0 else "gray_r", lo, hi, False)
 
 
-def radar_gain(frequency_mhz, window: float) -> DisplayGain:
+#: m: the moving window a new radargram's background is removed over
+BACKGROUND_WINDOW_M = 10.0
+
+
+def radar_gain(frequency_mhz, window: float, spacing: float | None = None) -> DisplayGain:
     """The look a new radargram starts with: dewow over two periods of the antenna's centre
     frequency and AGC over five (without a known frequency: a twentieth and an eighth of the
-    recorded ``window``, s); no gain with time, no background removal.
+    recorded ``window``, s); the background removed over a moving window of 10 m of line
+    (``spacing``: the trace spacing, m; without one the whole line's); no gain with time.
 
     Chosen by looking at real lines (100 and 270 MHz GSSI files recorded with the
     instrument's own range gain, a 250 MHz pulseEKKO line without one): a further gain with
     time lifted the deep noise until the clip washed out the upper part; AGC showed layering
     and diffraction hyperbolas near the top and still the reflectors further down in all
-    three. Background removal took away ringing but also flat layers, so it is left to the
-    user."""
+    three, but also the antenna's ringing as flat, ground-parallel bands. A whole-line
+    background removal took those away at 270 MHz but not at 100 MHz, where the ringing
+    changes along the line in stretches of some metres; a moving window of 10 m removed it
+    there and kept dipping reflectors and hyperbolas everywhere (5 m took away more of the
+    flat reflectors, 15 m and more brought the bands back). Flat reflectors much longer than
+    the window fade with it; the Display dialog offers the whole line."""
     try:
         f = float(frequency_mhz)
     except (TypeError, ValueError):
         f = float("nan")
+    if spacing is not None and np.isfinite(spacing) and spacing > 0:
+        background = {"background": "window",
+                      "background_traces": window_traces(BACKGROUND_WINDOW_M, spacing)}
+    else:
+        background = {"background": "all"}
     if np.isfinite(f) and f > 0:
         period = 1e-6 / f
-        return DisplayGain(dewow_window=2 * period, agc_window=5 * period)
-    return DisplayGain(dewow_window=window / 20, agc_window=window / 8)
+        return DisplayGain(dewow_window=2 * period, agc_window=5 * period, **background)
+    return DisplayGain(dewow_window=window / 20, agc_window=window / 8, **background)
 
 
 def _mirrored_traces(placed: PlacedTraces, length: float) -> PlacedTraces:
@@ -1471,7 +1486,8 @@ class SectionDataProvider:
                     window = _number_or_nan(prov.get("window"))
                     if not np.isfinite(window):
                         window = section.n_samples * section.step
-                    style.gain = replace(radar_gain(prov.get("frequency_mhz"), window),
+                    style.gain = replace(radar_gain(prov.get("frequency_mhz"), window,
+                                                    trace_spacing(section)),
                                          show_muted=style.gain.show_muted)
                 style.scale = _trace_scale(placed, style)
         except Exception as exc:                # never raise from layers()
