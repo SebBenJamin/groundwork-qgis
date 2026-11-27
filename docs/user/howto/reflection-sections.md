@@ -234,8 +234,8 @@ To find your QGIS profile folder: **Settings → User Profiles → Open Active P
 ## Limits of this version
 
 - The section is drawn as a grey (or coloured) picture: no wiggle traces or variable area.
-- No processing: no filtering, migration, statics or muting. The display options above change
-  only the picture.
+- No processing of the data: no migration, statics or muting. The display options above,
+  the band-pass among them, change only the picture.
 - No time view: the section is always shown in depth.
 - One velocity or one velocity function per section: no velocity that changes along the line.
 - 2D lines only: 3D volumes are not read.

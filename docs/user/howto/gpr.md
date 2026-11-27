@@ -92,7 +92,8 @@ their heights; Groundwork asks before it moves a radargram on a profile with dra
 
 The pulse does not leave the antenna at the first sample: each trace starts with some
 nanoseconds of air before the direct wave arrives. **Time zero (ns)** is the time that lies on
-the ground. Samples before it are above the ground and are not drawn.
+the ground. Samples before it are above the ground and are not drawn, unless **Paint muted
+zones** is ticked (see below).
 
 - A pulseEKKO header states it (*TIMEZERO AT POINT*); it is marked *from the file*.
 - A GSSI file does not. Groundwork proposes the first arrival of the average trace, marked
