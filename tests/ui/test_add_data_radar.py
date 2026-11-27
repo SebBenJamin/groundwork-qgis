@@ -102,7 +102,7 @@ def test_the_summary_speaks_of_ns_and_depth(qgis_app, make_dialog, project_store
     dlg = make_dialog(st, p.id, project=prj)
     dlg.set_file(path)
     _type(dlg.radar_box.velocity_edit, "0,1")
-    # 54 ns below time zero at 0.1 m/ns: 2.7 m
+    # the last sample (63 ns) lies 53 ns below time zero: 2.65 m at 0.1 m/ns
     assert dlg.summary_label.text() == (f"{fmt_count(196)} traces × {fmt_count(64)} samples · "
                                         "1 ns · 0 – 64 ns · to 2.7 m depth")
 

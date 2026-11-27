@@ -158,9 +158,11 @@ def guess_response(path) -> str:
 
 def describe_traces(section, options: dict | None = None) -> str:
     """'1970 traces × 1125 samples · 4 ms · 0 – 4.5 s', with a usable velocity in
-    ``options`` ' · to 6750 m depth' (below time zero, at the end of the record)."""
+    ``options`` ' · to 6744 m depth' (below time zero, at the last sample; the times are the
+    record's window, ``ns`` samples long)."""
     n, ns = section.n_traces, section.n_samples
     end = section.first + ns * section.step
+    last = end - section.step
     if section.domain == "depth":
         return (f"{fmt_count(n)} traces × {fmt_count(ns)} samples · "
                 f"{fmt_trim(section.step, 3)} m · {fmt_trim(section.first, 2)} – "
@@ -170,7 +172,7 @@ def describe_traces(section, options: dict | None = None) -> str:
             f"{fmt_trim(end, 3)} s")
     try:
         depth = float(depth_at(section, Velocity.from_options(options or {}),
-                               np.array([end]))[0])
+                               np.array([last]))[0])
     except ValueError:
         return text                             # no usable velocity yet: the box says so
     return text + f" · to {fmt_count(depth)} m depth" if np.isfinite(depth) else text
@@ -259,15 +261,17 @@ def radar_file(path: str) -> str:
 
 def describe_radar(section, options: dict | None = None) -> str:
     """'6290 traces × 1024 samples · 0.552 ns · 0 – 565 ns', with a usable velocity and time
-    zero in ``options`` ' · to 25.5 m depth' (below time zero, at the end of the record)."""
+    zero in ``options`` ' · to 25.5 m depth' (below time zero, at the last sample; the times
+    are the record's window)."""
     ns = 1e-9
     end = section.first + section.n_samples * section.step
+    last = end - section.step
     text = (f"{fmt_count(section.n_traces)} traces × {fmt_count(section.n_samples)} samples · "
             f"{fmt_trim(section.step / ns, 3)} ns · {fmt_trim(section.first / ns, 1)} – "
             f"{fmt_trim(end / ns, 1)} ns")
     o = options or {}
     try:
-        depth = float(depth_at(section, Velocity.from_options(o), np.array([end]),
+        depth = float(depth_at(section, Velocity.from_options(o), np.array([last]),
                                time_zero=float(o.get("time_zero") or 0.0))[0])
     except (TypeError, ValueError):
         return text                             # no usable velocity yet: the box says so
