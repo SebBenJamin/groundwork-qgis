@@ -55,6 +55,7 @@ range × velocity / 2 to within 4 cm, which confirms the reading of rhf_epsr.
 """
 from __future__ import annotations
 
+import math
 import re
 import struct
 from pathlib import Path
@@ -144,9 +145,32 @@ def _samples(path: Path, info: RadarInfo, offset: int) -> np.ndarray:
     count = info.n_traces * info.n_samples
     raw = np.fromfile(path, dtype=np.dtype(_DTYPES[info.bits]).newbyteorder("<"), count=count,
                       offset=offset).reshape(info.n_traces, info.n_samples)
-    if info.bits == 8:
+    return _decoded(raw, info.bits)
+
+
+def sample_traces(path, limit: int = 2000) -> TraceSection:
+    """Every k-th scan of the file (at most ``limit``, the stride ``first_arrival`` takes),
+    decoded as ``read`` decodes them, for an estimate of time zero without reading the whole
+    file; ``x`` is each scan's index."""
+    path = Path(path)
+    info, offset = _parse(path)
+    k = max(1, math.ceil(info.n_traces / max(1, int(limit))))
+    mm = np.memmap(path, dtype=np.dtype(_DTYPES[info.bits]).newbyteorder("<"), mode="r",
+                   offset=offset, shape=(info.n_traces, info.n_samples))
+    try:
+        raw = np.array(mm[::k])
+    finally:
+        del mm                                  # the file is closed again
+    return TraceSection(_decoded(raw, info.bits), np.arange(0, info.n_traces, k), info.first,
+                        info.step, "time")
+
+
+def _decoded(raw: np.ndarray, bits: int) -> np.ndarray:
+    """Stored scans decoded: 8-bit minus 128 (int8), 16-bit minus 32,768 (int16), 32-bit as
+    stored (int32)."""
+    if bits == 8:
         return (raw ^ np.uint8(0x80)).view(np.int8)          # minus 128 in two's complement
-    if info.bits == 16:
+    if bits == 16:
         return (raw ^ np.uint16(0x8000)).view(np.int16)      # minus 32,768
     return raw.astype(np.int32, copy=False)
 

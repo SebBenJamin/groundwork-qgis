@@ -390,6 +390,47 @@ def test_several_radar_files_each_take_their_own_time_zero(
     assert zeros[p1.id]["velocity"] == zeros[p2.id]["velocity"] == pytest.approx(1.0e8)
 
 
+def test_adding_several_radar_files_reads_each_file_once(
+        qgis_app, make_dialog, project_store, tmp_path, warnings_shown, monkeypatch):
+    from pathlib import Path
+
+    from groundwork_geophysics.readers import gssi_dzt
+    st, prj = project_store
+    _profile(st, name="L1")
+    _profile(st, name="L2")
+    a = write_dzt(tmp_path / "L1.dzt", _radargram(arrival=10), 64.0, scans_per_metre=10.0)
+    b = write_dzt(tmp_path / "L2.dzt", _radargram(arrival=20), 64.0, scans_per_metre=10.0)
+    whole = []
+    real_samples = gssi_dzt._samples
+
+    def counted(path, *args, **kwargs):              # every whole-file read of the samples
+        whole.append(Path(path).name)
+        return real_samples(path, *args, **kwargs)
+    monkeypatch.setattr(gssi_dzt, "_samples", counted)
+    dlg = make_dialog(st, project=prj)
+    dlg.set_files([a, b])
+    _type(dlg.radar_box.velocity_edit, "0,1")
+    dlg.radar_box.set_zero("ground")
+    assert dlg.files_box.time_zero_text(1) == "20 ns (estimated)"
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    assert sorted(whole) == ["L1.dzt", "L2.dzt"]
+
+
+def test_the_estimate_from_a_stride_of_traces_is_the_whole_files(tmp_path):
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.trace_section import first_arrival
+    from groundwork_geophysics.readers import gssi_dzt
+    a = np.repeat(_radargram(n=11, arrival=13), 500, axis=0)      # 5,500 scans
+    path = write_dzt(tmp_path / "long.dzt", a, 64.0, scans_per_metre=10.0)
+    part = gssi_dzt.sample_traces(path)
+    whole = readers.read(path, reader="gssi_dzt").traces
+    assert part.n_traces <= 2000 and part.n_samples == whole.n_samples
+    assert np.array_equal(part.amplitudes, whole.amplitudes[::3])
+    skip = gssi_dzt.inspect(path).reserved
+    assert first_arrival(part, skip=skip) == first_arrival(whole, skip=skip)
+
+
 def test_the_time_zero_column_is_only_for_radar(qgis_app):
     from groundwork_geophysics.ui.add_data_files import FilesBox
     box = FilesBox()

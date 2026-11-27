@@ -53,6 +53,7 @@ STARTING POSITION + i × STEP SIZE USED.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -190,6 +191,21 @@ def _scan(path: Path) -> tuple[RadarInfo, Path, np.ndarray]:
 def inspect(path) -> RadarInfo:
     """What the header file and the trace headers say (no samples are read)."""
     return _scan(Path(path))[0]
+
+
+def sample_traces(path, limit: int = 2000) -> TraceSection:
+    """Every k-th trace of the line (at most ``limit``, the stride ``first_arrival`` takes),
+    for an estimate of time zero without keeping the whole line; ``x`` is each trace's
+    index. (The trace headers are still scanned whole, as ``inspect`` does.)"""
+    info, dt1, _x = _scan(Path(path))
+    k = max(1, math.ceil(info.n_traces / max(1, int(limit))))
+    record = np.dtype([("h", "V128"), ("s", "<i2", (info.n_samples,))])
+    mm = np.memmap(dt1, dtype=record, mode="r", shape=(info.n_traces,))
+    try:
+        samples = np.array(mm["s"][::k], dtype=np.int16)
+    finally:
+        del mm                                  # the file is closed again
+    return TraceSection(samples, np.arange(0, info.n_traces, k), info.first, info.step, "time")
 
 
 class PulseEkkoReader(Reader):

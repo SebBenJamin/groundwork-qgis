@@ -41,7 +41,7 @@ from ..readers.errors import plain_error
 from ..core.coarsen import proposed_block
 from ..readers.text_columns import grid_of_file, map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
-from ..section.data import HANG_KEYS, read_options
+from ..section.data import HANG_KEYS
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from ..section.topography import station_line
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
@@ -1234,7 +1234,8 @@ class AddDataDialog(QDialog):
     def _radar_time_zero(self, path: str):
         """(time zero in s, how it was found) of one of several radar files, or why there is
         none: the box's for the file shown above it; for every other file the time zero its
-        header states, else its own first-arrival estimate (the file read once per change).
+        header states, else its own first-arrival estimate (from the stride of traces the
+        estimate takes, ``sample_traces``: the whole file is read only when it is added).
         The velocity is the box's for all."""
         if path == self._path():
             t = self.radar_box.time_zero()
@@ -1247,18 +1248,15 @@ class AddDataDialog(QDialog):
         if cached is None or cached[0] != key:
             try:
                 if self._reader() == "pulseekko":
-                    from ..readers.pulseekko import inspect
+                    from ..readers.pulseekko import inspect, sample_traces
                 else:
-                    from ..readers.gssi_dzt import inspect
-                stated = inspect(Path(path)).time_zero
-                if stated is not None:
-                    found = (float(stated), "file")
+                    from ..readers.gssi_dzt import inspect, sample_traces
+                info = inspect(Path(path))
+                if info.time_zero is not None:
+                    found = (float(info.time_zero), "file")
                 else:
-                    result = readers.read(Path(path), reader=self._reader(),
-                                          **read_options(options))
-                    skip = int(result.provenance.get("reserved_samples") or 0)
-                    found = (first_arrival(result.traces, skip=skip), "estimate")
-                    del result
+                    found = (first_arrival(sample_traces(Path(path)), skip=info.reserved),
+                             "estimate")
             except (OSError, ValueError) as exc:
                 found = str(exc)
             cached = self._radar_zeros[path] = (key, found)
@@ -1359,12 +1357,17 @@ class AddDataDialog(QDialog):
             path, target = rows[i]
             try:
                 placement = self._file_placement(path, target)
+                # the file shown above was read whole for its preview: not read again (a
+                # file placed by map positions is read on its own target's line)
+                shown = (self._preview_read() if path == self._path() and not self._on_map()
+                         else None)
                 try:
                     profile, dataset = add_data(
                         self.store, placement, Path(path), self._reader(),
                         self._file_options(path, box.cells_checked(i)),
                         readers.default_name(path, self._reader() or None),
-                        self.method_combo.currentData(), self.project, self.provider)
+                        self.method_combo.currentData(), self.project, self.provider,
+                        result=shown)
                 except NotRefreshed as exc:         # saved: never reported as a failure
                     profile, dataset = exc.saved
                     notes.append(str(exc))
