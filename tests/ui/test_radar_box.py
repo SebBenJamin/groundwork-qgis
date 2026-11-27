@@ -72,13 +72,21 @@ def test_without_a_stated_dielectric_the_velocity_is_empty_and_needed(box):
 @pytest.mark.parametrize("field, text, problem", [
     ("dielectric_edit", "0,5", "The dielectric constant must be 1 or greater."),
     ("velocity_edit", "0,4", "The velocity must be greater than 0 and not above the speed of "
-                             "light (0.2998 m/ns)."),
+                             "light (0.29979 m/ns)."),
     ("velocity_edit", "0", "The velocity must be greater than 0 and not above the speed of "
-                           "light (0.2998 m/ns).")])
+                           "light (0.29979 m/ns).")])
 def test_an_impossible_velocity_is_a_problem(box, field, text, problem):
     box.set_info(info())
     _type(getattr(box, field), text)
     assert problem in box.problems() and "velocity" not in box.options()
+
+
+def test_the_speed_of_light_the_message_names_is_accepted(box):
+    box.set_info(info())
+    _type(box.velocity_edit, "0,29979")
+    assert box.options()["velocity"] == pytest.approx(0.29979e9)
+    _type(box.velocity_edit, "0,2998")                   # just above it
+    assert "velocity" not in box.options()
 
 
 def test_time_zero_comes_from_the_file_or_the_first_arrival(box):

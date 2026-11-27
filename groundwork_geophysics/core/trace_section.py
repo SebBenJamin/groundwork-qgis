@@ -32,7 +32,7 @@ C_M_PER_NS = 0.299792458
 _C = C_M_PER_NS * 1e9                 # m/s
 BAD_DIELECTRIC = "The dielectric constant must be 1 or greater."
 BAD_RADAR_VELOCITY = ("The velocity must be greater than 0 and not above the speed of light "
-                      "(0.2998 m/ns).")
+                      "(0.29979 m/ns).")
 BEYOND_RECORD = "Time zero lies beyond the end of the record."
 NOT_A_TIME_ZERO = "Time zero must be a number."
 NO_DEPTH_TIME_ZERO = "A depth section has no time zero."

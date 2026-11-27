@@ -127,7 +127,7 @@ def test_missing_velocity_is_the_layers_error(make):
     ({"time_zero": 80 * NS}, "Time zero lies beyond the end of the record. Set it in Dataset Info."),
     ({"time_zero": "x"}, "Time zero must be a number. Set it in Dataset Info."),
     ({"velocity": 4.0e8}, "The velocity must be greater than 0 and not above the speed of light "
-                          "(0.2998 m/ns). Set it in Dataset Info.")])
+                          "(0.29979 m/ns). Set it in Dataset Info.")])
 def test_a_time_zero_or_velocity_that_cannot_be_is_the_layers_error(make, options, text):
     provider, _store, pid = make(options)
     (layer,) = provider.layers(pid)
