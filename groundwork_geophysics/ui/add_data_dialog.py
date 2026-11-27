@@ -1230,7 +1230,9 @@ class AddDataDialog(QDialog):
         The velocity is the box's for all."""
         if path == self._path():
             t = self.radar_box.time_zero()
-            return (t, self.radar_box.time_zero_source()) if t is not None else                 "Enter time zero first (above)"
+            if t is None:
+                return "Enter time zero first (above)"
+            return t, self.radar_box.time_zero_source()
         options = {k: v for k, v in self._radar_options(path).items() if k not in HANG_KEYS}
         key = (Path(path).stat().st_mtime, self._reader(), json.dumps(options, sort_keys=True))
         cached = self._radar_zeros.get(path)

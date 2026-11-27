@@ -180,10 +180,10 @@ class RadarBox(QGroupBox):
                 grid.addWidget(widget, r, 1)
             self._rows[name] = (label, widget)
         chain = (self.velocity_edit, self.dielectric_edit, self.time_zero_edit, self.zero_combo,
-                 self.datum_edit, self.smoothing_edit, self.by_file, self.by_spacing, self.by_table, self.from_edit,
-                 self.to_edit, self.fit_check,
-                 self.spacing_edit, self.coords.file, self.coords.number_combo,
-                 self.coords.easting_combo, self.coords.northing_combo, self.crs_widget)
+                 self.datum_edit, self.smoothing_edit, self.by_file, self.by_spacing,
+                 self.by_table, self.from_edit, self.to_edit, self.fit_check, self.spacing_edit,
+                 self.coords.file, self.coords.number_combo, self.coords.easting_combo,
+                 self.coords.northing_combo, self.crs_widget)
         for first, second in zip(chain, chain[1:]):
             QWidget.setTabOrder(first, second)
 
