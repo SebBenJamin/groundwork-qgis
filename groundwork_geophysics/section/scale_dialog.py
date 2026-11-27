@@ -28,6 +28,8 @@ BAND_DEPTH_TIP = "A depth section has no frequencies: the band-pass works on tim
 BAND_UNSET = "Not set"
 BAND_BOTH = "Type both corners of the band-pass (From and To)."
 BAND_ORDER = "The band-pass's From must lie below its To."
+BAND_ABOVE_NYQUIST = ("The band-pass's From must lie below {limit}, half the sampling rate of "
+                      "this section: above it the band-pass does nothing.")
 DEPTH_LABEL = "Show down to (m)"
 DEPTH_EMPTY = "Whole record"
 DEPTH_TIP = ("Draw the section only down to this depth below its top (time zero, the ground "
@@ -762,6 +764,12 @@ class DisplayDialog(ColorScaleDialog):
             raise ValueError(BAND_BOTH)
         if low >= high:
             raise ValueError(BAND_ORDER)
+        from ..core.numbers import fmt_trim
+        nyquist = 0.5 / float(self._traces.section.step) * self._band_scale
+        if low >= nyquist:                          # band_weights: nothing would be filtered
+            unit = self.band_low_spin.suffix().strip()
+            raise ValueError(BAND_ABOVE_NYQUIST.format(
+                limit=f"{fmt_trim(nyquist, 1)} {unit}"))
 
     def _show_count(self) -> None:
         from ..core.numbers import fmt_count

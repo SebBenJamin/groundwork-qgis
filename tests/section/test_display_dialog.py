@@ -527,6 +527,21 @@ def test_ticking_the_band_pass_of_a_radargram_proposes_the_antennas_band(qgis_ap
     assert again.style().gain == g
 
 
+def test_a_band_pass_above_half_the_sampling_rate_says_so(qgis_app, trace_layer):
+    from groundwork_geophysics.core.numbers import fmt_trim
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)              # 1 ms samples: 500 Hz
+    dlg.band_check.setChecked(True)
+    dlg.band_low_spin.setValue(600.0)
+    dlg.band_high_spin.setValue(900.0)
+    assert not dlg.apply()
+    assert dlg.message.text() == (f"The band-pass's From must lie below {fmt_trim(500.0, 1)} Hz, "
+                                  "half the sampling rate of this section: above it the "
+                                  "band-pass does nothing.")
+    dlg.band_low_spin.setValue(100.0)
+    assert dlg.apply()
+
+
 def test_a_band_pass_without_both_corners_is_not_applied(qgis_app, trace_layer):
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, trace_layer)              # seismic: no antenna to propose from
