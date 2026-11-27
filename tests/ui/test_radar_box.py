@@ -91,7 +91,8 @@ def test_time_zero_comes_from_the_file_or_the_first_arrival(box):
     assert box.time_zero_edit.text() == ""
     box.set_estimate(55.18 * NS)
     assert box.time_zero_edit.text() == "55.18"
-    assert box.time_zero_note.text() == "estimated from the first arrival"
+    assert box.time_zero_note.text() == ("estimated from the first arrival (first break "
+                                         "of the direct wave)")
     assert box.options()["time_zero"] == pytest.approx(55.18 * NS)
     _type(box.time_zero_edit, "50")
     assert box.time_zero_note.text() == "" and box.options()["time_zero"] == pytest.approx(50 * NS)
@@ -234,3 +235,8 @@ def test_the_ground_under_a_new_radargram_is_smoothed_over_2_m(box):
     assert "The smoothing length must be 0 m or more." in box.problems()
     box.set_zero("datum")
     assert not box.smoothing_edit.isVisibleTo(box) and "ground_smoothing" not in box.options()
+
+
+def test_the_time_zero_tooltip_says_what_is_not_drawn(box):
+    assert box.time_zero_edit.toolTip() == ("Samples before time zero are above the ground and "
+                                            "are not drawn.")

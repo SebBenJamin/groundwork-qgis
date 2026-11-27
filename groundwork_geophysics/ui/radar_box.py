@@ -36,7 +36,7 @@ LIGHT = C_M_PER_NS * 1e9                    # m/s
 FROM_FILE = "from the file"
 #: a dielectric in a GSSI header is what the instrument was set to, not a measurement
 FROM_HEADER = "from the file's header (an instrument setting; check it)"
-ESTIMATED = "estimated from the first arrival"
+ESTIMATED = "estimated from the first arrival (first break of the direct wave)"
 NO_WHEEL = "This file was recorded without a distance wheel."
 NO_WHEEL_TIP = "The file holds no distances: enter the trace spacing"
 NO_VELOCITY = "Enter the velocity or the dielectric constant."
@@ -65,8 +65,7 @@ SAME_POINTS = "From and To must be two different points."
 VELOCITY_TIP = ("Radar velocity in the ground, in m/ns (0.1 m/ns is common in dry sand); "
                 "Groundwork assumes none")
 DIELECTRIC_TIP = "Relative dielectric constant: the velocity is 0.2998 m/ns divided by its root"
-TIME_ZERO_TIP = ("Two-way time of the ground surface in the file, in ns: the samples before it "
-                 "are not drawn")
+TIME_ZERO_TIP = "Samples before time zero are above the ground and are not drawn."
 #: the "Time zero is" choices of a radargram (no correction to the ground)
 ZEROS = ("ground", "datum")
 #: metres: lengths closer than this are the same

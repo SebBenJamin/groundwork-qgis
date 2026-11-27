@@ -77,7 +77,8 @@ def test_a_dzt_on_an_existing_profile_is_a_radargram(
     assert box.by_file.isChecked()
     # time zero estimated from the first arrival on the preview read (counter samples skipped)
     assert box.options()["time_zero"] == pytest.approx(10 * NS)
-    assert box.time_zero_note.text() == "estimated from the first arrival"
+    assert box.time_zero_note.text() == ("estimated from the first arrival (first break "
+                                         "of the direct wave)")
     assert "Enter the velocity or the dielectric constant." in dlg.missing_label.text()
     _type(box.velocity_edit, "0,1")
     box.set_zero("ground")
