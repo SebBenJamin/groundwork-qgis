@@ -17,6 +17,9 @@ from .scale_dialog import DisplayDialog, ramp_icon
 
 MIN_WIDTH = 240
 MAX_HINT_WIDTH = 300            # preferred width: full layer names, up to this (the section gets the room)
+#: ... and wider, up to this, when only then the longest name fits in full (its look summary
+#: at its least, the colour swatch)
+MAX_FIT_WIDTH = 420
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
 #: the look summary, cut, keeps at least its colour swatch and this (the full look is in its
 #: tooltip): the layer name gets the room first
@@ -309,6 +312,11 @@ class _LayerRow(QWidget):
         return (self._others() + MIN_NAME_WIDTH + button.minimumSizeHint().width(),
                 self._others() + self.check.sizeHint().width() + button.sizeHint().width())
 
+    def name_width(self) -> int:
+        """The row's width with the name in full and the summary at its least."""
+        return (self._others() + self.check.sizeHint().width()
+                + self.scale_button.minimumSizeHint().width())
+
     def _share_room(self) -> None:
         """The name gets the room first: the summary is cut (down to its least) before the
         name is; only then is the name cut too."""
@@ -420,14 +428,18 @@ class LayerList(QWidget):
         self._fit_width()
 
     def _fit_width(self) -> None:
-        """Wide enough for every row's controls (the list never scrolls sideways)."""
+        """Wide enough for every row's controls (the list never scrolls sideways). The
+        preferred width shows every name and look in full up to ``MAX_HINT_WIDTH``, and the
+        longest name in full (its look cut to the swatch) up to ``MAX_FIT_WIDTH``."""
         rows = list(self._rows.values())
         extra = (self.layout().contentsMargins().left() + self.layout().contentsMargins().right()
                  + self._scroll.verticalScrollBar().sizeHint().width() + 4)
         need = max([r.widths()[0] for r in rows], default=0) + extra
         full = max([r.widths()[1] for r in rows], default=0) + extra
+        names = max([r.name_width() for r in rows], default=0) + extra
         self.setMinimumWidth(max(MIN_WIDTH, need))
-        self._hint_width = max(self.minimumWidth(), min(full, MAX_HINT_WIDTH))
+        self._hint_width = max(self.minimumWidth(), min(full, MAX_HINT_WIDTH),
+                               min(names, MAX_FIT_WIDTH))
         self.updateGeometry()
         self._grow_in_splitter()
 
