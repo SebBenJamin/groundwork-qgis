@@ -705,3 +705,12 @@ def test_a_moving_background_takes_runs_of_neighbouring_traces():
                         limit=600 * 500)
     steps = np.round(np.diff(part.x) / 0.05).astype(int)
     assert part.n_traces <= 500 and (steps == 1).sum() >= 0.9 * steps.size   # runs of 44
+
+
+def test_the_readout_gives_nothing_above_the_ground_line():
+    a = np.arange(4 * 10, dtype=np.float32).reshape(4, 10) + 1.0
+    sec = TraceSection(a, np.arange(4) * 1.0, 0.0, 0.001, "time")
+    placed = place(sec, 100.0, Velocity(2000.0), live_from=np.array([0, 3, 0, 0]))
+    assert placed.hit(1.0, 100.0 - 2.0) is None          # sample 2 of trace 1: above the ground
+    assert placed.hit(1.0, 100.0 - 3.0)["sample"] == 3
+    assert placed.hit(0.0, 100.0 - 2.0)["sample"] == 2

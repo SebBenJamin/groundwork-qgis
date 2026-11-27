@@ -402,9 +402,10 @@ class PlacedTraces:
     def hit(self, s: float, z: float) -> dict | None:
         """The sample under the profile point ``(s, z)``: the nearest trace when ``s`` lies
         within half a trace spacing of it, the nearest sample when ``z`` lies below the
-        trace's top and within half a sample spacing of it; None outside the picture and for
-        a sample before the time zero. The amplitude is the file's own number (no gain, no
-        polarity swap); ``time`` is the sample's time as the file counts it."""
+        trace's top and within half a sample spacing of it; None outside the picture, for a
+        sample before the time zero and for one the hanging leaves above the ground line
+        (``live_from``: not drawn there either). The amplitude is the file's own number (no
+        gain, no polarity swap); ``time`` is the sample's time as the file counts it."""
         sec = self.section
         i = int(_find(_edges(sec.x), s))
         if not 0 <= i < sec.n_traces:
@@ -414,6 +415,8 @@ class PlacedTraces:
             return None
         k = int(_find(_edges(self.depths), d))
         if not 0 <= k < sec.n_samples or k < _zero_sample(sec, self.time_zero):
+            return None
+        if self.live_from is not None and k < int(self.live_from[i]):
             return None
         number = None if sec.numbers is None else int(sec.numbers[i])
         time = float(sec.first + k * sec.step) if sec.domain == "time" else None
