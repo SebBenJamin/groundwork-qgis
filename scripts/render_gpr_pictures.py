@@ -17,10 +17,10 @@ project is never written. Writes to ``out_dir`` (default docs/images/howto):
 - ``gpr-section.jpg``: radar over resistivity on SreKan4, the top 8 m;
 - ``gpr-add-data.png``: Add Data with a 270 MHz file on SreKan4, its radar parts numbered in a
   gutter as in render_doc_images.py (``ADD_DATA_PARTS``);
-- ``gpr-display.png``: the radargram's Display… dialog, its filters numbered
-  (``DISPLAY_PARTS``);
-- ``gpr-look-before.jpg`` / ``gpr-look-after.jpg``: one radargram without and with the
-  background removal of the default look;
+- ``gpr-display.png``: the radargram's Display… dialog, the depth shown and its filters
+  numbered (``DISPLAY_PARTS``);
+- ``gpr-look-before.jpg`` / ``gpr-look-after.jpg``: one 100 MHz radargram as recorded with
+  AGC only, and with the default look (band-pass, background, AGC);
 - ``gpr-antenna-100.jpg`` / ``gpr-antenna-270.jpg``: the 100 and 270 MHz files of one line.
 
 Data: Grützner et al. 2020, PANGAEA, CC BY 4.0. Terrain: ARSO (Slovenian Environment Agency).
@@ -49,7 +49,7 @@ JPEG_QUALITY = 82
 ERT_LINE = "SreKan4"
 ERT = "SreKan4 resistivity"
 GPR_100, GPR_270 = "GPR12 100 MHz", "GPR12 270 MHz"
-LOOK_LINE, LOOK_LAYER = "GPR9", "GPR9 270 MHz"
+LOOK_LINE, LOOK_LAYER = "GPR9", "GPR9 100 MHz"
 #: the file Add Data is shown with, relative to the project folder, and the velocity typed
 ADD_FILE = "data/gpr/270MHz/270_AAA_____034.DZT"
 ADD_NAME = "GPR12 270 MHz, W to E"
@@ -65,7 +65,7 @@ DISPLAY_WIDTH = 520
 ADD_DATA_PARTS = (("box", "velocity"), ("box", "time_zero"), ("box", "zero"),
                   ("box", "smoothing"), ("box", "position"), ("box", "span"),
                   ("dialog", "placement"), ("dialog", "status_block"))
-DISPLAY_PARTS = ("dewow_check", "background_check", "agc_check")
+DISPLAY_PARTS = ("depth_edit", "dewow_check", "band_check", "background_check", "agc_check")
 
 
 def tops(dialog, widgets) -> list[int]:
@@ -194,6 +194,7 @@ def render(folder: Path, out_dir: Path) -> None:
     from qgis.core import QgsApplication, QgsProject
     from render_demo_section import FakeIface
 
+    from groundwork_geophysics.core.trace_section import DisplayGain
     from groundwork_geophysics.plugin import WorkbenchPlugin
 
     app = QgsApplication.instance()
@@ -232,7 +233,7 @@ def render(folder: Path, out_dir: Path) -> None:
 
         look = Views(app, plugin, profile(LOOK_LINE))
         after = default_look(look.layer(LOOK_LAYER))
-        look.show({LOOK_LAYER: {"gain": replace(after, background="", background_traces=0)}})
+        look.show({LOOK_LAYER: {"gain": DisplayGain(agc_window=after.agc_window)}})
         look.save(out_dir / "gpr-look-before.jpg", LOOK_VIEW)
         look.show({LOOK_LAYER: {"gain": after}})
         look.save(out_dir / "gpr-look-after.jpg", LOOK_VIEW)

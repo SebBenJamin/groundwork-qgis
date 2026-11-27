@@ -147,41 +147,57 @@ the file by its start and leave the tick off.
 Right-click the radargram in the panel's **Layers** list → **Display…**. A new radargram
 starts with a look chosen on real lines, so that reflections show without opening this dialog.
 
-![The Display dialog of a radargram, the Amplitudes group with Remove drift (dewow), Remove background over a moving window of 10 m, and Balance along the trace (AGC); the three are numbered 1 to 3](../../images/howto/gpr-display.png)
+![The Display dialog of a 270 MHz radargram: Show down to (m) empty for the whole record, and the Amplitudes group with Remove drift (dewow) off, Band-pass from 135 to 540 MHz, Remove background over the whole line, and Balance along the trace (AGC); the five are numbered 1 to 5](../../images/howto/gpr-display.png)
 
 | | Option | What it does | At the start |
 |---|---|---|---|
-| ① | Remove drift (dewow) | Takes away the slow drift of each trace, a running mean over the window | On, over two periods of the antenna's frequency |
-| ② | Remove background | Takes away what is the same in every trace: the antenna's ringing, the direct wave. **Whole line** subtracts the mean trace of the line, **Moving window** the mean of the traces around each one, typed in metres | On, a moving window of 10 m |
-| ③ | Balance along the trace (AGC) | Evens out the amplitudes down each trace, so weak deep reflections show | On, over five periods of the antenna's frequency |
+| ① | Show down to (m) | Draws the radargram only down to this depth below the ground. Empty: the whole record. Zoom Full, plates and the 3D view fit the part shown | Empty: the whole record |
+| ② | Remove drift (dewow) | Takes away the slow drift of each trace, a running mean over the window | Off when the antenna is known (the band-pass does it), else on |
+| ③ | Band-pass | Keeps the frequencies from **From** to **To** (MHz) and takes away the noise far below or above the antenna's band | On, from half to twice the antenna's frequency |
+| ④ | Remove background | Takes away what is the same in every trace: the antenna's ringing, the direct wave. **Whole line** subtracts the mean trace of the line, **Moving window** the mean of the traces around each one, typed in metres | On, the whole line |
+| ⑤ | Balance along the trace (AGC) | Evens out the amplitudes down each trace, so weak deep reflections show | On, over five periods of the antenna's frequency |
 
 *Data: Grützner et al. 2020, PANGAEA, CC BY 4.0.*
 
 The colour ramp, **Clip at**, **Gain with time**, **Balance traces against each other**,
 **Swap polarity** and **Paint muted zones** work as for a
 [reflection section](reflection-sections.md#display-options). The options change the picture
-only; the readout keeps showing the file's amplitudes.
+only; the readout keeps showing the file's amplitudes. Below the depth in ① the readout shows
+nothing for the radargram; the data are not cut. **Apply Style to All Sections** in the same
+menu gives the other radargrams the same look; the band-pass goes along in MHz, so give
+radargrams of another antenna their own.
 
-### Why the background is removed over 10 m
+### Why the look filters around the antenna's frequency
 
-Most antennas ring: the same wiggle in every trace, which shows as flat bands parallel to the
-ground, often down to the end of the record. They look like layers and are not.
+A radar antenna sends a pulse around its centre frequency: about 100 MHz for a 100 MHz
+antenna. The files often hold more than that. Slow swings far below the antenna's band,
+from the instrument and from cables, can be stronger than the reflections. AGC lifts
+whatever is in the trace, so these swings turn into broad flat bands, or a checkerboard where
+they switch on and off along the line. They look like layers and are not.
 
-![GPR9 at 270 MHz with dewow and AGC only: strong bands parallel to the ground in the top metre, all along the line](../../images/howto/gpr-look-before.jpg)
+![GPR9 at 100 MHz with AGC only: broad dark and light bands parallel to the ground hide the reflections](../../images/howto/gpr-look-before.jpg)
 
-![The same view with the background removed over a moving window of 10 m: the bands are gone, the dipping reflectors stay](../../images/howto/gpr-look-after.jpg)
+![The same view with the look a new radargram starts with: band-pass, background over the whole line and AGC; reflectors and their dips show](../../images/howto/gpr-look-after.jpg)
 
-*Line GPR9, 270 MHz, the upper 6 to 8 m: above with dewow and AGC only, below with the
-background removed over 10 m as well. Data: Grützner et al. 2020, PANGAEA, CC BY 4.0.*
+*Line GPR9, 100 MHz, the upper 6 to 8 m: above as recorded with AGC only, below with the look
+a new radargram starts with. Data: Grützner et al. 2020, PANGAEA, CC BY 4.0.*
 
-The ringing of a real antenna changes along the line, in stretches of some metres. A moving
-window of 10 m follows it and removes it; the mean of the whole line does not. Dipping
-reflectors and the hyperbolas of small objects stay, because they differ from trace to trace.
+- **The band-pass** keeps half to twice the antenna's frequency and takes everything else
+  away: the slow swings, and the drift dewow was there for. The reflections lie inside that
+  band and stay. A running-mean dewow alone leaves a quarter or so of the swings in a 100 MHz
+  file. Cost: an antenna with a far wider band loses some of it; type other corners then.
+- **The background over the whole line** takes away the ringing that is the same along the
+  line, and keeps flat reflectors, however long they run. Cost: ringing that changes along
+  the line stays, mostly deep down below the last reflections.
+- **A moving window** (**Remove background** → **Moving window**, typed in metres) follows
+  ringing that changes along the line, in stretches of some metres, and removes it. Cost:
+  anything flat that runs much longer than the window fades too, such as a layer or a water
+  table tens of metres long. Try 10 m when deep flat bands start and stop along the line.
 
-The cost: anything flat that runs much longer than 10 m is removed too. A flat layer, or a
-water table, tens of metres long fades. When you look for one, choose **Whole line** in
-**Remove background**, or untick it: one click in **Display…**. **Apply Style to All Sections**
-in the same menu gives the other radargrams the same look.
+On the lines of this page the band-pass and the whole line's background gave clean reflectors
+at 100 and 270 MHz, at 400 MHz and on a 250 MHz pulseEKKO line; the moving window of 10 m broke
+long flat reflectors into dashes. Below the last reflection the record holds only noise, which
+AGC lifts to full strength; **Show down to** (①) leaves it out of the picture.
 
 ## Two antennas on one line
 
@@ -232,8 +248,8 @@ Good to know:
 - Not read: GPS files beside GSSI files (`.DZG`), the GPS fields of pulseEKKO traces, marks,
   and other makers' formats (MALÅ `.rd3`/`.rd7`, IDS, ImpulseRadar, 3D-Radar). Export these as
   SEG-Y to load them as a reflection section.
-- No processing: no migration, no frequency filters, no velocity analysis. The display options
-  change only the picture.
+- No processing: no migration, no velocity analysis. The display options, the band-pass
+  among them, change only the picture.
 - One velocity per radargram.
 
 The readers were checked against 150 real GSSI files (16-bit, 100, 270 and 400 MHz) and four

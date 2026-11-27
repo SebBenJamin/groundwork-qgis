@@ -166,6 +166,14 @@ Right-click the section in the panel's **Layers** list → **Display…**.
 | ③ | Amplitudes | **Balance along the trace (AGC)** with its window, **Gain with time** with its power, **Balance traces against each other** and **Swap polarity**: for sections delivered with true amplitudes, which fade with time. |
 | ④ | Paint muted zones | Samples that are exactly zero at the top or bottom of a trace are left transparent unless this is ticked, so they do not cover what lies behind. |
 
+Also in the dialog:
+
+- **Show down to (m)**: the section is drawn only down to this depth below time zero (or
+  depth zero); empty shows the whole record. Zoom Full, plates and the 3D view fit the part
+  shown.
+- **Band-pass**: keeps the frequencies from **From** to **To** (Hz) of a time section and takes
+  away the rest, such as a slow drift or high noise.
+
 These options change the picture only. The data stay as they are, and the readout under the
 mouse shows the file's amplitude with the trace number, the time and the depth below time
 zero (*102.4 m below time zero*; *below depth zero* for a depth section).
