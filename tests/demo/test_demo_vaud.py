@@ -100,7 +100,10 @@ def test_vaud_folder_is_small_and_complete():
                  "context/dem_swissalti3d_10m.tif"):
         assert (VAUD / need).is_file(), need
     assert (VAUD / "context/dem_swissalti3d_10m.tif").stat().st_size < 3_000_000
-    total = sum(f.stat().st_size for f in VAUD.rglob("*") if f.is_file())
+    # what the demo zip ships: not the 3D view's pictures or the remembered reads that QGIS
+    # makes beside the store on a user's machine (git-ignored, made again where needed)
+    from scripts.package import files_under
+    total = sum(f.stat().st_size for f in files_under(VAUD))
     assert total < MAX_BYTES
     # only the stacks: not swisstopo's picture, report or catalogue
     assert sorted(p.name for p in (VAUD / "data").iterdir()) == [
