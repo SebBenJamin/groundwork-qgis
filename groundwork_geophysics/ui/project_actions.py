@@ -481,6 +481,9 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
         read_kind = said                        # a radargram whatever method was chosen
     elif result.traces is not None and not is_trace_kind(read_kind or ""):
         read_kind = said if is_trace_kind(said or "") else TRACE_KINDS[0]   # never a model
+    if is_trace_kind(read_kind or "") and isinstance(opts.get("placement"), dict):
+        # placed by its own zero, offset, direction or pins, never by the station metres
+        opts["placement"] = {**opts["placement"], "own": True}
     data = result.traces if result.traces is not None else result.mesh
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
                       read_kind or "ert_model",
