@@ -42,11 +42,19 @@ NO_WHEEL_TIP = "The file holds no distances: enter the trace spacing"
 NO_VELOCITY = "Enter the velocity or the dielectric constant."
 NO_TIME_ZERO = "Enter time zero in ns."
 FACTS_LENGTH = "{length} m from the distance wheel"
-LENGTH_TEXT = "The file is {file} m long, the line {line} m ({share} % {word})."
-SAME_LENGTH = "The file and the line are both {file} m long."
-FIT_TEXT = "Fit the file to the line's length"
-FIT_TIP = ("Stretch the file's distances evenly so that its first trace lies at the start of the "
-           "line and its last trace at the end (against the line when distance 0 is at its end)")
+LENGTH_TEXT = ("The file is {file} m long, the stretch from From to To {line} m "
+               "({share} % {word}).")
+SAME_LENGTH = "The file and the stretch from From to To are both {file} m long."
+FIT_TEXT = "Fit the file between these two points"
+FIT_TIP = ("Stretch the file's distances evenly so that its first trace lies at From and its last "
+           "trace at To")
+FROM_TIP = ("Where the file's first trace lies along the profile, in m; untouched, it follows "
+            "\"Distance 0 is at\" and the offset")
+TO_TIP = ("Where the file's last trace lies along the profile, in m: smaller than From runs the "
+          "file against the profile's direction. Without the tick only From and the direction "
+          "count")
+NO_SPAN = "Enter From and To in metres along the profile."
+SAME_POINTS = "From and To must be two different points."
 VELOCITY_TIP = ("Radar velocity in the ground, in m/ns (0.1 m/ns is common in dry sand); "
                 "Groundwork assumes none")
 DIELECTRIC_TIP = "Relative dielectric constant: the velocity is 0.2998 m/ns divided by its root"
@@ -80,7 +88,8 @@ class RadarBox(QGroupBox):
         self._velocity_from = "velocity"            # the field the velocity is taken from
         self._time_zero_from = None                 # "file", "estimate", "stored", "user"
         self._position_chosen = False
-        self._lengths = None                        # (file, line) in m, when compared
+        self._span = None                           # (file length, From, To) offered, m
+        self._span_typed = False                    # From or To typed by the user
         self._crs_chosen: QgsCoordinateReferenceSystem | None = None
         prj = QgsProject.instance().crs()
         self._default_crs = prj if prj.isValid() else QgsCoordinateReferenceSystem()
@@ -111,6 +120,8 @@ class RadarBox(QGroupBox):
             r.clicked.connect(self._position_clicked)
         self.by_file.setChecked(True)
         self.position_note = note("position_note")
+        self.from_edit = line_edit("from_edit", FROM_TIP, self._span_edited)
+        self.to_edit = line_edit("to_edit", TO_TIP, self._span_edited)
         self.length_label = note("length_label")
         self.fit_check = QCheckBox(FIT_TEXT)
         self.fit_check.setObjectName("fit_check")
@@ -139,6 +150,7 @@ class RadarBox(QGroupBox):
                 ("position", "Traces are placed by",
                  row(self.by_file, self.by_spacing, self.by_table)),
                 ("position_note", "", self.position_note),
+                ("span", "From (m)", row(self.from_edit, QLabel("To (m)"), self.to_edit)),
                 ("length", "", self.length_label),
                 ("fit", "", self.fit_check),
                 ("spacing", "Trace spacing (m)", row(self.spacing_edit)),
@@ -159,7 +171,8 @@ class RadarBox(QGroupBox):
                 grid.addWidget(widget, r, 1)
             self._rows[name] = (label, widget)
         chain = (self.velocity_edit, self.dielectric_edit, self.time_zero_edit, self.zero_combo,
-                 self.datum_edit, self.by_file, self.by_spacing, self.by_table, self.fit_check,
+                 self.datum_edit, self.by_file, self.by_spacing, self.by_table, self.from_edit,
+                 self.to_edit, self.fit_check,
                  self.spacing_edit, self.coords.file, self.coords.number_combo,
                  self.coords.easting_combo, self.coords.northing_combo, self.crs_widget)
         for first, second in zip(chain, chain[1:]):
@@ -192,7 +205,7 @@ class RadarBox(QGroupBox):
                 self.datum_edit.clear()
                 self.spacing_edit.clear()
                 self.fit_check.setChecked(False)
-                self._lengths = None
+                self._span, self._span_typed = None, False
                 self._fill_velocity(info.velocity if info.dielectric else None,
                                     FROM_HEADER if info.dielectric else "")
                 if info.dielectric:
@@ -230,11 +243,25 @@ class RadarBox(QGroupBox):
         self._sync()
 
     def set_line_length(self, file_length: float | None, line_length: float | None) -> None:
-        """The file's and the line's lengths (m) to compare, None when there is no line to
-        fit to (the tick is then hidden and not given). Silent."""
-        ok = file_length is not None and line_length is not None and file_length > 0 \
-            and line_length > 0
-        self._lengths = (float(file_length), float(line_length)) if ok else None
+        """A new line: From 0 and To its length (``set_span``). Silent."""
+        self.set_span(file_length, 0.0, line_length)
+
+    def set_span(self, file_length: float | None, start: float | None,
+                 end: float | None) -> None:
+        """The file's length and where the placement puts its first and last trace along the
+        profile (m), offered in From and To while the user has not typed there; None when
+        there is no line to fit to (the fields and the tick are then hidden and not given).
+        Silent."""
+        values = (file_length, start, end)
+        ok = all(v is not None and math.isfinite(v) for v in values) and file_length > 0
+        self._span = tuple(float(v) for v in values) if ok else None
+        if self._span is not None and not self._span_typed:
+            self._busy = True
+            try:
+                self._set_exact(self.from_edit, show(self._span[1], 2), self._span[1])
+                self._set_exact(self.to_edit, show(self._span[2], 2), self._span[2])
+            finally:
+                self._busy = False
         self._sync()
 
     def set_options(self, options: dict) -> None:
@@ -359,8 +386,9 @@ class RadarBox(QGroupBox):
 
     def options(self) -> dict:
         """The reader options and the hanging (``velocity`` m/s, ``time_zero`` s, ``zero``,
-        ``datum``); ``fit_length`` when the file is to be fitted to the line; only the keys
-        that apply, and only values that can be read."""
+        ``datum``); ``span`` (From, To in m) when the user typed them and ``fit_length`` when
+        the file is to be fitted between them; only the keys that apply, and only values that
+        can be read."""
         o: dict = {}
         if not self.vertical_only:
             o.update(self._placement_options())
@@ -375,9 +403,20 @@ class RadarBox(QGroupBox):
             datum = number(self.datum_edit.text())
             if datum is not None:
                 o["datum"] = datum
-        if self._fit_shown() and self.fit_check.isChecked():
-            o["fit_length"] = True
+        if self._fit_shown():
+            span = self.span()
+            if self._span_typed and span is not None:
+                o["span"] = span
+            if self.fit_check.isChecked():
+                o["fit_length"] = True
         return o
+
+    def span(self) -> tuple[float, float] | None:
+        """(From, To) in m as shown (typed or offered), None when hidden or unreadable."""
+        if not self._fit_shown():
+            return None
+        a, b = self._exact_or(self.from_edit, 1.0), self._exact_or(self.to_edit, 1.0)
+        return None if a is None or b is None else (a, b)
 
     def _placement_options(self) -> dict:
         position = self.position()
@@ -395,7 +434,18 @@ class RadarBox(QGroupBox):
 
     def problems(self) -> list[str]:
         """What must be entered before the radargram can be read and hung."""
-        return self.read_problems() + self.hang_problems()
+        return self.read_problems() + self.hang_problems() + self.span_problems()
+
+    def span_problems(self) -> list[str]:
+        """From and To, when shown: two numbers, and two points to fit between."""
+        if not self._fit_shown():
+            return []
+        span = self.span()
+        if span is None:
+            return [NO_SPAN]
+        if self.fit_check.isChecked() and abs(span[1] - span[0]) < SAME:
+            return [SAME_POINTS]
+        return []
 
     def read_problems(self) -> list[str]:
         """What the file cannot be read without: the trace positions."""
@@ -450,7 +500,10 @@ class RadarBox(QGroupBox):
         return " · ".join(parts)
 
     def _length_text(self) -> str:
-        file_length, line_length = self._lengths
+        span = self.span()
+        if span is None:
+            return ""
+        file_length, line_length = self._span[0], abs(span[1] - span[0])
         if abs(line_length - file_length) < SAME:
             return SAME_LENGTH.format(file=show(file_length, 2))
         share = abs(line_length - file_length) / file_length * 100.0
@@ -459,9 +512,7 @@ class RadarBox(QGroupBox):
                                   word="shorter" if line_length < file_length else "longer")
 
     def _fit_shown(self) -> bool:
-        return (not self.vertical_only and self.position() == "file"
-                and self._lengths is not None
-                and abs(self._lengths[1] - self._lengths[0]) >= SAME)
+        return not self.vertical_only and self.position() == "file" and self._span is not None
 
     # -- state ---------------------------------------------------------------------------------
     def _trace_numbers(self):
@@ -508,6 +559,15 @@ class RadarBox(QGroupBox):
         self.time_zero_note.setText("")
         self._edited()
 
+    def _span_edited(self) -> None:
+        if self._busy:
+            return
+        if all(self._exact.get(e) is not None and self._exact[e][0] == e.text()
+               for e in (self.from_edit, self.to_edit)):
+            return                                  # focus left the field, nothing typed
+        self._span_typed = True
+        self._edited()
+
     def _crs_edited(self, *_args) -> None:
         if self._busy:
             return
@@ -537,16 +597,15 @@ class RadarBox(QGroupBox):
         position = self.position()
         no_wheel = self.info is not None and not self.by_file.isEnabled()
         self.position_note.setText(NO_WHEEL if place and no_wheel else "")
-        if self._lengths is not None:
-            self.length_label.setText(self._length_text())
         fit = self._fit_shown()
+        self.length_label.setText(self._length_text() if fit else "")
         shown = {
             "facts": place and bool(self.facts_label.text()),     # Dataset Info has its own
             "velocity": True, "velocity_note": bool(self.velocity_note.text()),
             "time_zero": True, "time_zero_note": bool(self.time_zero_note.text()),
             "zero": True, "datum": self.zero() != "ground",
             "position": place, "position_note": bool(self.position_note.text()),
-            "length": place and position == "file" and self._lengths is not None,
+            "span": fit, "length": fit and bool(self.length_label.text()),
             "fit": fit,
             "spacing": place and position == "spacing",
             "table_file": place and position == "table",

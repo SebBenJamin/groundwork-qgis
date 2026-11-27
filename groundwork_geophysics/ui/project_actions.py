@@ -565,11 +565,13 @@ def dataset_options(placement: Placement, profile: Profile, sets: list[StationSe
     if _on_map(opts):                               # placed by its own coordinates
         return station_set_id, opts
     opts["chainage_offset"] = float(placement.offset or 0.0)
-    if placement.fit is not None:                   # pinned at the line's two ends
+    if placement.fit is not None:                   # pinned at two points of the line
         length = float(profile.chainage.length)
         ends = (length, 0.0) if placement.zero == "end" else (0.0, length)
+        if placement.fit_to is not None:
+            ends = tuple(float(s) for s in placement.fit_to)
         opts["chainage_offset"] = 0.0
-        opts["placement"] = {"zero": ends[0], "direction": -1 if placement.zero == "end" else 1,
+        opts["placement"] = {"zero": ends[0], "direction": -1 if ends[1] < ends[0] else 1,
                              "pins": [[float(placement.fit[0]), ends[0]],
                                       [float(placement.fit[1]), ends[1]]]}
     elif placement.zero == "end":

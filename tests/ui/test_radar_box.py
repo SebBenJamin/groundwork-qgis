@@ -151,19 +151,50 @@ def test_the_options_round_trip(box, qgis_app):
 def test_the_line_length_offers_to_fit_the_file(box):
     box.set_info(info(length=386.2))
     assert not box.fit_check.isVisibleTo(box)
-    box.set_line_length(386.2, 381.0)
+    box.set_line_length(386.2, 381.0)               # a new line: from 0 to its end
+    assert (box.from_edit.text(), box.to_edit.text()) == ("0", "381")
     # the difference as a share of the file's length: the stretch the tick gives it
-    assert box.length_label.text() == "The file is 386.2 m long, the line 381 m (1.3 % shorter)."
+    assert box.length_label.text() == ("The file is 386.2 m long, the stretch from From to To "
+                                       "381 m (1.3 % shorter).")
     assert box.fit_check.isVisibleTo(box) and not box.fit_check.isChecked()
-    assert box.fit_check.text() == "Fit the file to the line's length"
+    assert box.fit_check.text() == "Fit the file between these two points"
     assert "fit_length" not in box.options()
     box.fit_check.setChecked(True)
     assert box.options()["fit_length"] is True
     box.set_line_length(100.0, 104.567)
-    assert box.length_label.text() == ("The file is 100 m long, the line 104.57 m "
-                                       "(4.6 % longer).")
+    assert box.length_label.text() == ("The file is 100 m long, the stretch from From to To "
+                                       "104.57 m (4.6 % longer).")
     box.set_line_length(None, None)
     assert not box.fit_check.isVisibleTo(box) and "fit_length" not in box.options()
+    assert not box.from_edit.isVisibleTo(box)
+
+
+def test_from_and_to_start_where_the_placement_puts_the_file(box):
+    box.set_info(info(length=124.0))
+    box.set_span(124.0, 25.5, 149.5)
+    assert box.from_edit.isVisibleTo(box) and box.to_edit.isVisibleTo(box)
+    assert (box.from_edit.text(), box.to_edit.text()) == ("25.5", "149.5")
+    assert box.length_label.text() == ("The file and the stretch from From to To are both "
+                                       "124 m long.")
+    assert box.fit_check.isVisibleTo(box)
+    assert "span" not in box.options()              # untouched: the placement decides
+    _type(box.to_edit, "136,8")
+    assert box.options()["span"] == pytest.approx((25.5, 136.8))
+    assert box.length_label.text() == ("The file is 124 m long, the stretch from From to To "
+                                       "111.3 m (10.2 % shorter).")
+    box.set_span(124.0, 30.0, 154.0)                # the placement moved: typed numbers stay
+    assert box.options()["span"] == pytest.approx((25.5, 136.8))
+    _type(box.from_edit, "abc")
+    assert "Enter From and To in metres along the profile." in box.problems()
+
+
+def test_from_and_to_are_forgotten_for_another_file(box):
+    box.set_info(info(length=124.0), "a.dzt")
+    box.set_span(124.0, 0.0, 124.0)
+    _type(box.to_edit, "130")
+    box.set_info(info(length=124.0), "b.dzt")
+    box.set_span(124.0, 0.0, 124.0)
+    assert box.to_edit.text() == "124" and "span" not in box.options()
 
 
 def test_vertical_only_hides_the_placement(qgis_app):

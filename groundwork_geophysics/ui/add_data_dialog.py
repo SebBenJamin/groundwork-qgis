@@ -519,7 +519,8 @@ class AddDataDialog(QDialog):
         """The radar box's options for ``path`` (the fit is a placement, not an option); a
         pulseEKKO line names its header file, which is read with it."""
         from ..readers.radar_info import partner
-        options = {k: v for k, v in self.radar_box.options().items() if k != "fit_length"}
+        options = {k: v for k, v in self.radar_box.options().items()
+                   if k not in ("fit_length", "span")}
         if self._reader() == "pulseekko":
             header = partner(Path(path), ".HD")
             if header is not None and header.parent == Path(path).parent:
@@ -982,23 +983,47 @@ class AddDataDialog(QDialog):
             self._line_key = key
             self.placement.set_file_line(*(self._line or (None, 0)))
 
-    def _compare_lengths(self, result, profile) -> None:
-        """The file's length against the line's, for the fit, when the traces are placed
-        by the file's distances on an existing profile or a line (not by positions)."""
-        lengths = (None, None)
+    def _compare_lengths(self, result, profile, sets, placement: Placement) -> None:
+        """From and To for the fit, when the traces are placed by the file's distances on an
+        existing profile or a line (not by positions): where ``placement`` puts the first and
+        last trace on an existing profile; a new line's start and end (its end and start for
+        "End of the line")."""
+        span = (None, None, None)
         if self.radar_box.position() == "file" and profile is not None and \
                 self.placement.source() in ("existing", "line", "points"):
             x = np.asarray(result.traces.x, dtype=float)
-            lengths = (float(x[-1] - x[0]), float(profile.chainage.length))
-        self.radar_box.set_line_length(*lengths)
+            ends = np.array([x[0], x[-1]])
+            length = float(profile.chainage.length)
+            if self.placement.source() == "existing":
+                set_id, options = dataset_options(placement, profile, sets, {})
+                draft = Dataset("", profile.id, set_id, "gpr_section", "", 0.0, "",
+                                self._reader(), options, {})
+                ends = resolve(profile, sets, draft, ProfileLayout()).map(ends)
+            else:
+                ends = (length, 0.0) if placement.zero == "end" else (0.0, length)
+            span = (float(x[-1] - x[0]), float(ends[0]), float(ends[1]))
+        self.radar_box.set_span(*span)
 
     def _fitted(self, placement: Placement) -> Placement:
-        """``placement`` pinned at the file's first and last trace when the fit is ticked."""
-        if not self._is_radar() or not self.radar_box.options().get("fit_length") or \
-                self._result is None or self._result.traces is None:
+        """``placement`` as From and To say: pinned at them (the file's first and last trace)
+        when the fit is ticked; else, when the user typed them, the first trace at From, the
+        file running towards To."""
+        if not self._is_radar() or self._result is None or self._result.traces is None:
+            return placement
+        options, span = self.radar_box.options(), self.radar_box.span()
+        if span is None:
             return placement
         x = self._result.traces.x
-        placement.fit = (float(x[0]), float(x[-1]))
+        x0 = float(x[0])
+        if options.get("fit_length"):
+            placement.fit, placement.fit_to = (x0, float(x[-1])), span
+        elif "span" in options:
+            start, end = span
+            if end < start:                     # against the profile's direction
+                length = float(self._draft()[0].chainage.length)
+                placement.zero, placement.offset = "end", length - start - x0
+            else:
+                placement.zero, placement.offset = "start", start - x0
         return placement
 
     def _segy_line(self) -> None:
@@ -1041,15 +1066,15 @@ class AddDataDialog(QDialog):
             warnings.append(self._line_error)
         try:
             placement = self.placement.placement()
-            profile = self._draft()[0]
+            profile, sets, _new = self._draft()
         except ValueError as exc:
             if self._is_radar():
-                self.radar_box.set_line_length(None, None)
+                self.radar_box.set_span(None, None, None)
             self.fit_label.setText(str(exc))
             self._set_warnings(warnings)
             return
         if self._is_radar():
-            self._compare_lengths(result, profile)
+            self._compare_lengths(result, profile, sets, placement)
         if on_map and self.placement.source() != "file":
             warnings += self._map_fit(result.provenance, "traces")
         zero = box.zero()

@@ -135,15 +135,18 @@ def test_the_line_length_is_compared_and_the_file_fitted(
     dlg = make_dialog(st, p.id, project=prj)
     dlg.set_file(path)
     box = dlg.radar_box
-    assert box.length_label.text() == "The file is 19.5 m long, the line 20 m (2.6 % longer)."
+    assert (box.from_edit.text(), box.to_edit.text()) == ("0", "19.5")
     assert box.fit_check.isVisibleTo(dlg) and not box.fit_check.isChecked()
+    _type(box.to_edit, "20")
+    assert box.length_label.text() == ("The file is 19.5 m long, the stretch from From to To "
+                                       "20 m (2.6 % longer).")
     box.fit_check.setChecked(True)
     _type(box.velocity_edit, "0,1")
     box.set_zero("ground")
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
     [d] = st.datasets(p.id)
-    assert "fit_length" not in d.reader_options
+    assert "fit_length" not in d.reader_options and "span" not in d.reader_options
     dmap = resolve(st.profile(p.id), st.station_sets(p.id), d, ProfileLayout()).map
     assert dmap([0.0, 19.5]) == pytest.approx([0.0, 20.0])
 
@@ -160,14 +163,86 @@ def test_fitting_against_the_profile_direction(
     combo = dlg.placement.zero_combo
     combo.setCurrentIndex(combo.findData("end"))
     combo.activated.emit(combo.currentIndex())
-    dlg.radar_box.fit_check.setChecked(True)
-    _type(dlg.radar_box.velocity_edit, "0,1")
-    dlg.radar_box.set_zero("ground")
+    box = dlg.radar_box
+    assert (box.from_edit.text(), box.to_edit.text()) == ("20", "0.5")
+    _type(box.to_edit, "0")
+    box.fit_check.setChecked(True)
+    _type(box.velocity_edit, "0,1")
+    box.set_zero("ground")
     dlg.accept()
     assert dlg.result() == 1, warnings_shown
     [d] = st.datasets(p.id)
     dmap = resolve(st.profile(p.id), st.station_sets(p.id), d, ProfileLayout()).map
     assert dmap([0.0, 19.5]) == pytest.approx([20.0, 0.0])
+
+
+def _long_file(tmp_path):
+    """A 124 m file (1241 traces, 10 a metre)."""
+    return write_dzt(tmp_path / "long.dzt", _radargram(n=1241), 64.0, scans_per_metre=10.0)
+
+
+def _add_between(make_dialog, st, prj, p, path, start, end, fit):
+    dlg = make_dialog(st, p.id, project=prj)
+    dlg.set_file(path)
+    box = dlg.radar_box
+    _type(box.from_edit, start)
+    _type(box.to_edit, end)
+    box.fit_check.setChecked(fit)
+    _type(box.velocity_edit, "0,1")
+    box.set_zero("ground")
+    dlg.accept()
+    assert dlg.result() == 1
+    return dlg
+
+
+@pytest.mark.parametrize("start, end, fit, expected", [
+    ("25,5", "136,8", True, [25.5, 136.8]),
+    ("136,8", "25,5", True, [136.8, 25.5]),
+    ("25,5", "136,8", False, [25.5, 149.5]),
+    ("136,8", "25,5", False, [136.8, 12.8])])
+def test_a_file_fitted_between_two_points_of_the_profile(
+        qgis_app, make_dialog, project_store, tmp_path, start, end, fit, expected):
+    from groundwork_geophysics.section.placement_resolve import ProfileLayout, resolve
+    st, prj = project_store
+    p = _profile(st, 140.0)
+    dlg = _add_between(make_dialog, st, prj, p, _long_file(tmp_path), start, end, fit)
+    [d] = st.datasets(p.id)
+    dmap = resolve(st.profile(p.id), st.station_sets(p.id), d, ProfileLayout()).map
+    assert dmap([0.0, 124.0]) == pytest.approx(expected)
+    assert "span" not in d.reader_options
+
+
+def test_untouched_from_and_to_place_the_file_as_before(
+        qgis_app, make_dialog, project_store, tmp_path, warnings_shown):
+    st, prj = project_store
+    p = _profile(st, 140.0)
+    dlg = make_dialog(st, p.id, project=prj)
+    dlg.set_file(_long_file(tmp_path))
+    dlg.placement._expand()
+    combo = dlg.placement.zero_combo
+    combo.setCurrentIndex(combo.findData("end"))
+    combo.activated.emit(combo.currentIndex())
+    dlg.placement.offset_spin.setValue(16.9)
+    box = dlg.radar_box
+    assert (box.from_edit.text(), box.to_edit.text()) == ("123.1", "-0.9")
+    _type(box.velocity_edit, "0,1")
+    box.set_zero("ground")
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    [d] = st.datasets(p.id)
+    assert d.reader_options["placement"] == {"zero": pytest.approx(140.0), "direction": -1,
+                                             "own": True}
+    assert d.reader_options["chainage_offset"] == pytest.approx(16.9)
+
+
+def test_a_new_line_offers_its_start_and_end(qgis_app, make_dialog, project_store, tmp_path):
+    st, prj = project_store
+    dlg = make_dialog(st, project=prj)
+    dlg.set_file(write_dzt(tmp_path / "a.dzt", _radargram(), 64.0, scans_per_metre=10.0))
+    dlg.placement.select_source("points")
+    dlg.placement.set_points(1000.0, 2000.0, 1030.0, 2000.0)
+    box = dlg.radar_box
+    assert (box.from_edit.text(), box.to_edit.text()) == ("0", "30")
 
 
 def test_a_file_without_a_distance_wheel_asks_for_the_spacing(
