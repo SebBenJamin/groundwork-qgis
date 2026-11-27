@@ -252,6 +252,58 @@ def test_a_new_radargram_starts_with_a_band_pass_around_its_antenna(make):
     assert radar_gain(100.0, 64 * NS).dewow_window is None
 
 
+def test_a_radargram_is_shown_down_to_the_chosen_depth(make, file_reads):
+    provider, _store, pid = make({})                    # 64 ns, 0.05 m a sample below 4 ns
+    whole = provider.layers(pid)[0]
+    reads = file_reads["n"]
+    assert whole.style.max_depth is None                # a new radargram: the whole record
+    top = float(whole.traces.z_top.max())
+    provider.set_style("g1", replace(whole.style, max_depth=1.0))
+    layer = provider.layers(pid)[0]
+    assert layer.traces.section.n_samples == 25 and layer.traces.depths[-1] == pytest.approx(1.0)
+    from groundwork_geophysics.section.data import layer_bounds
+    assert layer_bounds(layer)[2] == pytest.approx(float(whole.traces.z_top.min()) - 1.0)
+    x = layer.traces.section.x[2]
+    ground = layer.traces.z_top[2]
+    assert provider.identify(pid, x, ground - 1.5) == []                 # below: nothing
+    assert provider.identify(pid, x, ground - 0.5) != []
+    provider.set_style("g1", replace(layer.style, max_depth=50.0))       # deeper than the record
+    assert provider.layers(pid)[0].traces.section.n_samples == N_SAMPLES
+    assert file_reads["n"] == reads and top == pytest.approx(501.0)      # never read again
+    assert provider.layers(pid)[0].traces.section.amplitudes is whole.traces.section.amplitudes
+
+
+def test_a_plate_frame_shows_the_depth_its_look_says(make):
+    from groundwork_geophysics.core.plates import FrameLook, ModelLook
+    from groundwork_geophysics.plates.build import snapshot_extent
+    provider, store, pid = make({})
+    whole = provider.layers(pid)[0]
+    provider.set_style("g1", replace(whole.style, max_depth=1.0))
+    length = store.profile(pid).chainage.length
+    low = min(whole.traces.z_top)
+    panel = snapshot_extent(provider.snapshot(pid), length)
+    assert panel[2] == pytest.approx(low - 1.0)
+    frame = provider.snapshot(pid, look=FrameLook([ModelLook("g1", max_depth=2.0)]))
+    assert snapshot_extent(frame, length)[2] == pytest.approx(low - 2.0)
+    whole_frame = provider.snapshot(pid, look=FrameLook([ModelLook("g1")]))
+    assert snapshot_extent(whole_frame, length)[2] == pytest.approx(
+        low - whole.traces.depths[-1])
+
+
+def test_the_depth_limit_is_kept_and_old_styles_show_the_whole_record():
+    import json
+
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import applied, styles_from_json, styles_to_json
+    back = styles_from_json(styles_to_json({"g1": LayerStyle(max_depth=8.0), "g2": LayerStyle()}))
+    assert back["g1"].max_depth == 8.0 and back["g2"].max_depth is None
+    assert applied(LayerStyle(max_depth=8.0), LayerStyle(visible=False)).max_depth == 8.0
+    old = json.dumps([{"dataset_id": "g1", "visible": True, "opacity": 1.0, "mode": "cells"}])
+    assert styles_from_json(old)["g1"].max_depth is None
+    bad = json.dumps([{"dataset_id": "g1", "max_depth": -3.0}])
+    assert styles_from_json(bad)["g1"].max_depth is None
+
+
 def test_a_radargram_keeps_the_look_it_was_given(make):
     provider, _store, pid = make({})
     layer = provider.layers(pid)[0]

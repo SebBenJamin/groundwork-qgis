@@ -137,6 +137,15 @@ def test_paint_layers_draws_the_section(qgis_app, trace_layer):
     assert (px[:12] == RED).all() and (px[86:] == RED).all()
 
 
+def test_below_the_depth_limit_nothing_is_painted(qgis_app, trace_layer):
+    from groundwork_geophysics.core.trace_section import shown_down_to
+    # 1 m a sample: shown down to 20 m below 500 m, i.e. to z 479.5 (half a sample below)
+    shallow = replace(trace_layer, traces=shown_down_to(trace_layer.traces, 20.0))
+    px = _paint([shallow])          # z 510 .. 440 over 100 px: z 479.5 is y 43.6
+    assert (px[20:42, 50:150] != RED).all()
+    assert (px[46:, :] == RED).all()
+
+
 def test_the_profile_generator_draws_a_trace_layer(qgis_app, trace_layer):
     from qgis.core import QgsProfileRenderContext, QgsRenderContext
     from qgis.PyQt.QtGui import QColor, QImage, QPainter, QTransform
@@ -172,6 +181,18 @@ def test_the_3d_section_picture_draws_a_trace_layer(qgis_app, trace_layer):
     px = _pixels(pic.image)
     h, w = px.shape
     assert (px[h // 4:3 * h // 4, w // 4:3 * w // 4] != RED).all()
+
+
+def test_the_3d_section_picture_ends_at_the_depth_limit(qgis_app, trace_layer):
+    from qgis.PyQt.QtGui import QColor
+
+    from groundwork_geophysics.section.data import shown_layer
+    from groundwork_geophysics.section.picture import section_pictures
+    whole = section_pictures([trace_layer], None, base=QColor(255, 0, 0))[0]
+    shallow = shown_layer(replace(trace_layer, style=replace(trace_layer.style, max_depth=20.0)))
+    pic = section_pictures([shallow], None, base=QColor(255, 0, 0))[0]
+    assert shallow.whole_traces is trace_layer.traces
+    assert pic.z0 == pytest.approx(500.0 - 20.0) and whole.z0 < pic.z0     # the last sample
 
 
 def test_opacity_is_drawn(qgis_app, trace_layer):

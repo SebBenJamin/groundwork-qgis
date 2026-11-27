@@ -530,6 +530,30 @@ def test_a_depth_section_offers_no_band_pass(qgis_app, make_trace_layer):
     assert not dlg.band_check.isEnabled() and "depth" in dlg.band_check.toolTip()
 
 
+def test_show_down_to_is_empty_for_the_whole_record_and_takes_a_depth(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    assert dlg.depth_edit.text() == "" and dlg.depth_edit.placeholderText() == "Whole record"
+    assert dlg.style().max_depth is None
+    dlg.depth_edit.setText("8")
+    assert dlg.style().max_depth == 8.0
+    again = DisplayDialog(None, replace(trace_layer, style=dlg.style()))
+    assert again.depth_edit.text() == "8" and again.style().max_depth == 8.0
+    for text in ("0", "-2", "abc"):
+        dlg.depth_edit.setText(text)
+        with pytest.raises(ValueError, match="greater than 0"):
+            dlg.style()
+        assert not dlg.apply() and "empty for the whole record" in dlg.message.text()
+    dlg.depth_edit.clear()                               # one step back to the whole record
+    assert dlg.style().max_depth is None
+
+
+def test_a_model_has_no_depth_limit(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, _layer(store_with_model)[1])
+    assert getattr(dlg, "depth_edit", None) is None
+
+
 def test_a_model_has_no_filters(qgis_app, store_with_model):
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, _layer(store_with_model)[1])
@@ -549,6 +573,14 @@ def test_a_trace_row_names_its_filters(qgis_app, make_trace_layer, gain, text):
     from groundwork_geophysics.core.trace_section import DisplayGain
     from groundwork_geophysics.section.layer_list import _scale_text
     assert _scale_text(make_trace_layer(gain=DisplayGain(**gain))) == text
+
+
+def test_a_trace_row_names_its_depth_limit(qgis_app, make_trace_layer):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.layer_list import _scale_text
+    layer = make_trace_layer(gain=DisplayGain(agc_window=0.02), max_depth=8.0)
+    assert _scale_text(layer) == "clip 98 % · AGC · to 8 m"
+    assert _scale_text(make_trace_layer(max_depth=2.5)) == "clip 98 % · to 2.5 m"
 
 
 def test_the_filters_are_kept_in_the_project(qgis_app):

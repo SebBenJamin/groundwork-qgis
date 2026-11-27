@@ -56,7 +56,8 @@ def _scale_text(layer: SectionLayer) -> str:
     if scale is None:
         return "Scale…"
     if layer.traces is not None:
-        return trace_look_text(layer.style.clip_percent, layer.style.gain, scale)
+        return trace_look_text(layer.style.clip_percent, layer.style.gain, scale,
+                               layer.style.max_depth)
     log = " log" if scale.log else ""
     return f"{format_value(scale.vmin)}–{format_value(scale.vmax)}{log}"
 
@@ -83,15 +84,27 @@ def filter_words(gain) -> list[str]:
     return out + (["background"] if gain.background in ("all", "window") else [])
 
 
-def trace_look_text(clip_percent, gain, scale=None) -> str:
+def trace_look_text(clip_percent, gain, scale=None, max_depth=None) -> str:
     """A trace section's look in a few words, what is on in processing order: "clip 98 %",
-    "clip 98 % · band-pass · background · AGC", or the typed limits ("-500–500 · gain")."""
+    "clip 98 % · band-pass · background · AGC", or the typed limits ("-500–500 · gain");
+    the depth it is shown down to last ("to 8 m")."""
     if clip_percent is not None or scale is None:
         text = clip_text(98.0 if clip_percent is None else clip_percent)
     else:
         text = f"{format_value(scale.vmin)}–{format_value(scale.vmax)}"
     words = filter_words(gain) + ([gain_word(gain)] if gain_word(gain) else [])
+    if max_depth is not None and max_depth > 0:
+        words.append(f"to {depth_text(max_depth)} m")
     return " · ".join([text] + words)
+
+
+def depth_text(metres: float) -> str:
+    """"8", "2.5", "0.25": a depth limit to the centimetre without trailing zeros, in the
+    QGIS locale."""
+    from qgis.PyQt.QtCore import QLocale
+    v = round(float(metres), 2)
+    decimals = 0 if v == int(v) else 1 if round(v, 1) == v else 2
+    return QLocale().toString(v, "f", decimals)
 
 
 def error_line(layer: SectionLayer) -> str:

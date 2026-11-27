@@ -36,7 +36,7 @@ from ..core.trace_section import (BAD_RADAR_VELOCITY, BEYOND_RECORD, C_M_PER_NS,
                                   NO_DEPTH_TIME_ZERO, NO_VELOCITY, NOT_A_TIME_ZERO,
                                   TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain, PlacedTraces,
                                   TraceSection, Velocity, color_limits, depth_at, display_values,
-                                  ground_time, place, smoothed_ground)
+                                  ground_time, place, shown_down_to, smoothed_ground)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -228,6 +228,9 @@ class LayerStyle:
     clip_percent: float | None = 98.0
     #: trace sections: how they are shown (display only; the samples stay as read)
     gain: DisplayGain = DisplayGain()
+    #: trace sections: shown down to this depth (m) below their top (time zero / the ground);
+    #: None = the whole record
+    max_depth: float | None = None
 
 
 @dataclass
@@ -244,6 +247,19 @@ class SectionLayer:
     level_cache: tuple | None = None
     #: the optional library (``libs``) whose absence is the ``error``; None for any other
     missing_library: str | None = None
+    #: a trace section shown down to a depth (``LayerStyle.max_depth``): the whole hung
+    #: section, of which ``traces`` is the part shown; None when ``traces`` is the whole
+    whole_traces: PlacedTraces | None = None
+
+
+def shown_layer(layer: SectionLayer) -> SectionLayer:
+    """``layer`` with its trace section cut to the depth its style shows (``shown_down_to``
+    of the whole hung section); any other layer as it is."""
+    base = layer.whole_traces if layer.whole_traces is not None else layer.traces
+    if base is None:
+        return layer
+    shown = shown_down_to(base, layer.style.max_depth)
+    return replace(layer, traces=shown, whole_traces=None if shown is base else base)
 
 
 def _missing_library(exc: BaseException) -> str | None:
@@ -403,7 +419,7 @@ def _layers_for_look(layers: list, look) -> list:
         if m is None or not m.visible:
             continue
         from .style_store import styled
-        out.append(replace(la, style=styled(_copy_style(la.style), m)))
+        out.append(shown_layer(replace(la, style=styled(_copy_style(la.style), m))))
     return out
 
 
@@ -1505,7 +1521,8 @@ class SectionDataProvider:
         except Exception as exc:                # never raise from layers()
             return SectionLayer(d, None, style, self._error_text(d, exc),
                                 missing_library=_missing_library(exc))
-        return SectionLayer(d, None, style, None, placed, level_cache=self._level_cache(d))
+        return shown_layer(SectionLayer(d, None, style, None, placed,
+                                        level_cache=self._level_cache(d)))
 
     def _read_provenance(self, d: Dataset) -> dict:
         """What the reader recorded for ``d``: the read held in memory (it is current), else
@@ -1742,6 +1759,7 @@ class SectionDataProvider:
                     la.mesh = la.mesh.with_x(lambda x: length - x)
                 if la.traces is not None:
                     la.traces = _mirrored_traces(la.traces, length)
+                    la.whole_traces = None      # the shown part is mirrored; the rest unused
             if topo is not None:
                 topo = (length - topo[0][::-1], topo[1][::-1].copy())
             stations = [(length - s, label) for s, label in stations]

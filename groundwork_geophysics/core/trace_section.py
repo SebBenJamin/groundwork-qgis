@@ -472,6 +472,29 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
                         float(time_zero) if section.domain == "time" else 0.0, data_start)
 
 
+def shown_down_to(placed: PlacedTraces, max_depth) -> PlacedTraces:
+    """``placed`` shown only down to ``max_depth`` metres below its top (the samples whose
+    depth is at most that, a view of the same samples: nothing is copied or cut from the
+    data). ``placed`` itself when ``max_depth`` is off (None, not a number, 0 or less) or
+    reaches the last sample. The first sample at or after time zero always stays."""
+    try:
+        limit = float(max_depth)
+    except (TypeError, ValueError):
+        return placed
+    if not (math.isfinite(limit) and limit > 0):
+        return placed
+    depths = placed.depths
+    tol = 1e-9 * max(1.0, abs(limit))
+    k = int(np.searchsorted(depths, limit + tol, side="right"))
+    sec = placed.section
+    zero = max(_zero_sample(sec, placed.time_zero), placed.data_start)
+    k = max(k, min(sec.n_samples, zero + 1), 1)
+    if k >= sec.n_samples:
+        return placed
+    return replace(placed, section=replace(sec, amplitudes=sec.amplitudes[:, :k]),
+                   depths=depths[:k])
+
+
 def first_arrival(section: TraceSection, sample_limit: int = 2000, skip: int = 0) -> float:
     """An estimate of time zero (s; m for a depth section) from the mean trace of at most
     ``sample_limit`` traces taken with a regular stride: the first sample where the absolute

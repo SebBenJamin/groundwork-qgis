@@ -562,6 +562,21 @@ def test_band_pass_comes_through_the_dict_and_old_dicts_have_none():
     assert DisplayGain.from_dict({"band_low": "x", "band_high": 2e8}).band_low is None
 
 
+def test_a_section_shown_down_to_a_depth_keeps_only_the_samples_above_it():
+    from groundwork_geophysics.core.trace_section import shown_down_to
+    s = _section(np.arange(30.0).reshape(3, 10), step=1e-9)
+    p = place(s, 100.0, V(1.0e8), time_zero=2e-9)          # depths (k - 2) * 0.05 m
+    q = shown_down_to(p, 0.2)
+    assert q.section.n_samples == 7 and q.depths[-1] == pytest.approx(0.2)
+    assert np.shares_memory(q.section.amplitudes, p.section.amplitudes)      # no copy
+    assert q.bounds()[2] == pytest.approx(99.8) and q.bounds()[3] == p.bounds()[3]
+    assert q.hit(2.0, 99.75) is None and q.hit(2.0, 99.85) is not None
+    assert q.time_zero == p.time_zero and list(q.live_from) == list(p.live_from)
+    for limit in (None, 0.0, -1.0, float("nan"), "x", 0.4, 5.0):     # off, or below the record
+        assert shown_down_to(p, limit) is p, limit
+    assert shown_down_to(p, 0.001).section.n_samples == 3           # the top sample stays
+
+
 def test_filters_survive_the_dict_round_trip_and_old_dicts_load():
     g = DisplayGain(dewow_window=20e-9, background="window", background_traces=11)
     assert DisplayGain.from_dict(g.to_dict()) == g and g.active()

@@ -28,6 +28,12 @@ BAND_DEPTH_TIP = "A depth section has no frequencies: the band-pass works on tim
 BAND_UNSET = "Not set"
 BAND_BOTH = "Type both corners of the band-pass (From and To)."
 BAND_ORDER = "The band-pass's From must lie below its To."
+DEPTH_LABEL = "Show down to (m)"
+DEPTH_EMPTY = "Whole record"
+DEPTH_TIP = ("Draw the section only down to this depth below its top (time zero, the ground "
+             "for a radargram). Empty: the whole record. The data are not changed.")
+DEPTH_BAD = ("Show down to: type a depth greater than 0 m, or leave it empty for the whole "
+             "record.")
 BACKGROUND_TEXT = "Remove background"
 BACKGROUND_TIP = ("Subtract the mean trace: banding and ringing that run flat along the line "
                   "go, and so do flat layers. Whole line: one mean trace; moving window: the "
@@ -470,6 +476,13 @@ class DisplayDialog(ColorScaleDialog):
         self.clip_spin.setValue(98.0 if style.clip_percent is None else style.clip_percent)
         self.clip_check.setChecked(style.clip_percent is not None)
         self._scale_form.insertRow(1, self.clip_check, self.clip_spin)
+        from .layer_list import depth_text
+        self.depth_edit = QLineEdit(depth_text(style.max_depth) if style.max_depth else "")
+        self.depth_edit.setObjectName("depth_edit")
+        self.depth_edit.setPlaceholderText(DEPTH_EMPTY)
+        self.depth_edit.setClearButtonEnabled(True)
+        self.depth_edit.setToolTip(DEPTH_TIP)
+        self._scale_form.addRow(DEPTH_LABEL, self.depth_edit)
 
         group = QGroupBox("Amplitudes")
         group.setObjectName("amplitudes_group")
@@ -897,13 +910,38 @@ class DisplayDialog(ColorScaleDialog):
     def _trace_style(self):
         from dataclasses import replace
         self._check_band()
+        max_depth = self._max_depth()
         clip = self.clip_spin.value() if self.clip_check.isChecked() else None
         scale = self.scale()
         if clip is not None:                        # the exact limits, not the rounded spins
             lo, hi = self._limits
             if hi > lo:
                 scale = replace(scale, vmin=float(lo), vmax=float(hi))
-        return replace(self._style, scale=scale, clip_percent=clip, gain=self.gain())
+        return replace(self._style, scale=scale, clip_percent=clip, gain=self.gain(),
+                       max_depth=max_depth)
+
+    def _max_depth(self) -> float | None:
+        """The typed "Show down to" in metres (the stored figure while the field still shows
+        it); None when empty. ValueError for anything but a depth greater than 0."""
+        from qgis.PyQt.QtCore import QLocale
+
+        from .layer_list import depth_text
+        text = self.depth_edit.text().strip()
+        if not text:
+            return None
+        old = self._style.max_depth
+        if old and text == depth_text(old):
+            return old
+        value, ok = QLocale().toDouble(text)
+        if not ok:
+            try:
+                value, ok = float(text), True
+            except ValueError:
+                ok = False
+        value = round(float(value), 2) if ok and np.isfinite(value) else 0.0   # to the cm
+        if value <= 0:
+            raise ValueError(DEPTH_BAD)
+        return value
 
     # -- interpolation of the smooth field -------------------------------------------------
     def _build_interpolation(self, form, interp) -> None:

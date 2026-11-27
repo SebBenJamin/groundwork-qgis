@@ -46,6 +46,8 @@ class ModelLook:
     #: in mm (None = the standard widths)
     contour_colour: str | None = None
     contour_width: float | None = None
+    #: trace sections: shown down to this depth (m) below their top; None = the whole record
+    max_depth: float | None = None
 
 
 @dataclass
@@ -163,7 +165,14 @@ def _model(d) -> ModelLook | None:
                      d.get("interpolation") if isinstance(d.get("interpolation"), dict)
                      else None,
                      _clip(d), d.get("gain") if isinstance(d.get("gain"), dict) else None,
-                     _colour(d.get("contour_colour")), _width(d.get("contour_width")))
+                     _colour(d.get("contour_colour")), _width(d.get("contour_width")),
+                     _depth(d.get("max_depth")))
+
+
+def _depth(v) -> float | None:
+    """A depth limit: a number above 0, else None (the whole record)."""
+    v = _num(v)
+    return v if v is not None and v > 0 else None
 
 
 def _colour(v) -> str | None:

@@ -104,7 +104,8 @@ def _trace_look(m) -> str:
     scale = m.scale if isinstance(m.scale, dict) else {}
     limits = SimpleNamespace(vmin=scale["vmin"], vmax=scale["vmax"]) \
         if all(isinstance(scale.get(k), (int, float)) for k in ("vmin", "vmax")) else None
-    return trace_look_text(m.clip_percent, DisplayGain.from_dict(m.gain), limits)
+    return trace_look_text(m.clip_percent, DisplayGain.from_dict(m.gain), limits,
+                           getattr(m, "max_depth", None))
 
 
 class PlateDetailsDialog(QDialog):
