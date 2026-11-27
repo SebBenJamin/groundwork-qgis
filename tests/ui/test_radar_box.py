@@ -218,3 +218,19 @@ def test_the_box_tells_its_edits(box):
     assert seen == []                                   # silent
     _type(box.velocity_edit, "0,12")
     assert seen
+
+
+def test_the_ground_under_a_new_radargram_is_smoothed_over_2_m(box):
+    box.set_info(info())
+    assert box.smoothing_edit.isVisibleTo(box) and box.smoothing_edit.text() == "2"
+    assert box.options()["ground_smoothing"] == 2.0
+    label = box._rows["smoothing"][0]
+    assert label.text() == "Smooth the ground over (m)"
+    _type(box.smoothing_edit, "0")
+    assert box.options()["ground_smoothing"] == 0.0
+    box.set_options({"ground_smoothing": 3.5})
+    assert box.smoothing_edit.text() == "3.5"
+    _type(box.smoothing_edit, "-1")
+    assert "The smoothing length must be 0 m or more." in box.problems()
+    box.set_zero("datum")
+    assert not box.smoothing_edit.isVisibleTo(box) and "ground_smoothing" not in box.options()

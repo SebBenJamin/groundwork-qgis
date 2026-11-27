@@ -70,7 +70,8 @@ def _hanging(options: dict) -> tuple:
     return (domain, o.get("sample_step"), velocity, zero,
             o.get("datum") if zero != "ground" else None,
             o.get("replacement_velocity") if zero == "datum_ground" else None,
-            o.get("time_zero"))
+            o.get("time_zero"),
+            float(o.get("ground_smoothing") or 0.0) if zero != "datum" else None)
 
 
 def _stored_info(d):
@@ -214,6 +215,7 @@ class DatasetInfoDialog(QDialog):
             stated = (self.dataset.provenance or {}).get("time_zero_file")
             self._time_zero_shown = float(stated) if stated is not None else 0.0
             options["time_zero"] = self._time_zero_shown
+        options.setdefault("ground_smoothing", 0.0)     # added before smoothing: off
         box.set_options(options)
         box.changed.connect(self._check)
         box_layout.addWidget(box)

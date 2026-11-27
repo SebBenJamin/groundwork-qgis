@@ -36,12 +36,13 @@ def make(tmp_path):
     (stations at 0, 0.1 and 0.2 m, heights 500, 500.5, 501) holding a radargram of 11 traces
     50 scans per metre apart with ``options`` (velocity 1.0e8 m/s and time zero 4 ns unless
     given; None leaves one out)."""
-    def factory(options, fmt="dzt", amplitudes=None):
+    def factory(options, fmt="dzt", amplitudes=None, stations=None):
         folder = tmp_path / f"store{len(list(tmp_path.iterdir()))}"
         folder.mkdir()
         store = ProjectStore.create(folder / "p.gpkg", "EPSG:25832")
-        p, s = profile_from_stations("P1", "EPSG:25832",
-                                     np.array([[0, 0, 500.0], [0.1, 0, 500.5], [0.2, 0, 501.0]]))
+        if stations is None:
+            stations = np.array([[0, 0, 500.0], [0.1, 0, 500.5], [0.2, 0, 501.0]])
+        p, s = profile_from_stations("P1", "EPSG:25832", stations)
         store.save_profile(p)
         store.save_station_set(s)
         a = _radar_samples() if amplitudes is None else amplitudes
@@ -251,3 +252,40 @@ def test_a_radargram_keeps_the_look_it_was_given(make):
     plain = replace(layer.style, gain=DisplayGain())
     provider.set_style("g1", plain)
     assert provider.layers(pid)[0].style.gain == DisplayGain()
+
+
+def _saw_tooth(make, **options):
+    """A 4 m radargram (201 traces) on ground that rises 0.5 m and falls back every metre."""
+    xs = np.arange(0.0, 4.01, 0.5)
+    stations = np.column_stack([xs, np.zeros(xs.size), 500.0 + 0.5 * (np.arange(xs.size) % 2)])
+    return make(options, amplitudes=_radar_samples(n=201), stations=stations)
+
+
+def test_the_ground_under_a_radargram_can_be_smoothed(make):
+    provider, _store, pid = _saw_tooth(make, ground_smoothing=2.0)
+    placed = provider.layers(pid)[0].traces
+    x = placed.section.x
+    assert x[-1] == pytest.approx(4.0)
+    middle = (x >= 1.0) & (x <= 3.0)
+    assert np.ptp(placed.z_top[middle]) < 0.02                  # the teeth are gone
+    s, z = provider.topography(pid)
+    assert np.ptp(np.interp(x[middle], s, z)) == pytest.approx(0.5)     # the drawn ground keeps them
+
+
+@pytest.mark.parametrize("smoothing", [0.0, None])
+def test_no_smoothing_hangs_on_the_ground_as_sampled(make, smoothing):
+    provider, _store, pid = _saw_tooth(make, ground_smoothing=smoothing)
+    placed = provider.layers(pid)[0].traces
+    s, z = provider.topography(pid)
+    assert np.allclose(placed.z_top, np.interp(placed.section.x, s, z))
+
+
+def test_smoothing_the_ground_does_not_read_the_file_again(make, file_reads):
+    from groundwork_geophysics.section.data import HANG_KEYS
+    assert "ground_smoothing" in HANG_KEYS
+    provider, store, pid = _saw_tooth(make)
+    before = provider.layers(pid)[0].traces.z_top.copy()
+    reads = file_reads["n"]
+    _change(provider, store, pid, ground_smoothing=2.0)
+    after = provider.layers(pid)[0].traces.z_top
+    assert file_reads["n"] == reads and not np.allclose(before, after)

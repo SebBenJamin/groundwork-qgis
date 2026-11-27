@@ -563,3 +563,19 @@ def test_no_hit_before_time_zero():
     assert p.hit(2.0, 100.0)["sample"] == 4
     assert p.hit(2.0, 100.0 - 0.1)["sample"] == 6
     assert p.hit(2.0, 100.0 + 0.01) is None
+
+
+def test_the_ground_is_smoothed_with_a_centred_window_shrinking_at_the_ends():
+    from groundwork_geophysics.core.trace_section import smoothed_ground
+    x = np.arange(0.0, 4.001, 0.02)
+    teeth = 500.0 + 0.5 * np.abs(((x + 0.5) % 1.0) - 0.5) * 2      # a 1 m saw tooth
+    z = smoothed_ground(x, teeth, 2.0)
+    middle = (x >= 1.0) & (x <= 3.0)
+    assert np.ptp(teeth[middle]) == pytest.approx(0.5)
+    assert np.ptp(z[middle]) < 0.02 and z[middle].mean() == pytest.approx(500.25, abs=0.01)
+    assert z[0] == pytest.approx(teeth[0]) and z[-1] == pytest.approx(teeth[-1])  # no window
+    assert z[5] == pytest.approx(teeth[:11].mean())                 # 0.1 m each side
+    assert np.array_equal(smoothed_ground(x, teeth, 0.0), teeth)
+    assert np.array_equal(smoothed_ground(x[::-1], teeth[::-1], 2.0), z[::-1])
+    flat = smoothed_ground(x, np.full(x.size, 7.0), 2.0)
+    assert np.allclose(flat, 7.0)

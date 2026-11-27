@@ -310,6 +310,18 @@ def test_a_radargram_left_as_it_is_keeps_its_options(qgis_app, tmp_path):
     assert st.datasets(p.id)[0].reader_options == stored
 
 
+def test_an_older_radargram_shows_no_smoothing_and_takes_one(qgis_app, tmp_path):
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _radar_store(tmp_path)            # stored before the key existed
+    dlg = DatasetInfoDialog(st, "g1", provider=provider)
+    edit = dlg.radar_box.smoothing_edit
+    assert edit.isVisibleTo(dlg) and edit.text() == "0"
+    edit.setText("0,5")
+    edit.editingFinished.emit()
+    dlg.accept()
+    assert st.datasets(p.id)[0].reader_options["ground_smoothing"] == pytest.approx(0.5)
+
+
 def test_moving_a_radargram_under_drawings_asks_first(qgis_app, tmp_path, monkeypatch):
     from qgis.PyQt.QtWidgets import QMessageBox
 

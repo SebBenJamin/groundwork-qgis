@@ -54,6 +54,13 @@ TO_TIP = ("Where the file's last trace lies along the profile, in m: smaller tha
           "file against the profile's direction. Without the tick only From and the direction "
           "count")
 NO_SPAN = "Enter From and To in metres along the profile."
+SMOOTHING_TIP = ("Average the ground under the radargram over this length along the profile "
+                 "before hanging it, so that steps of the elevation model do not show as "
+                 "seams; 0 hangs it on the ground as sampled. The ground line itself is not "
+                 "smoothed")
+#: m: the ground under a new radargram is averaged over this length
+DEFAULT_SMOOTHING = 2.0
+BAD_SMOOTHING = "The smoothing length must be 0 m or more."
 SAME_POINTS = "From and To must be two different points."
 VELOCITY_TIP = ("Radar velocity in the ground, in m/ns (0.1 m/ns is common in dry sand); "
                 "Groundwork assumes none")
@@ -111,6 +118,8 @@ class RadarBox(QGroupBox):
         self.zero_combo = zero_combo("radar_zero_combo", ZEROS, self._edited)
         self.datum_edit = line_edit("datum_edit", "Height of time zero above sea level, in m",
                                     self._edited)
+        self.smoothing_edit = line_edit("smoothing_edit", SMOOTHING_TIP, self._edited)
+        self.smoothing_edit.setText(show(DEFAULT_SMOOTHING, 2))
         group = QButtonGroup(self)
         self.by_file, self.by_spacing, self.by_table = (
             QRadioButton(t) for t in ("Distance in the file", "Trace spacing", "A coordinate file"))
@@ -147,6 +156,7 @@ class RadarBox(QGroupBox):
                 ("time_zero_note", "", self.time_zero_note),
                 ("zero", "Time zero is", row(self.zero_combo)),
                 ("datum", "Height of time zero (m)", row(self.datum_edit)),
+                ("smoothing", "Smooth the ground over (m)", row(self.smoothing_edit)),
                 ("position", "Traces are placed by",
                  row(self.by_file, self.by_spacing, self.by_table)),
                 ("position_note", "", self.position_note),
@@ -171,7 +181,7 @@ class RadarBox(QGroupBox):
                 grid.addWidget(widget, r, 1)
             self._rows[name] = (label, widget)
         chain = (self.velocity_edit, self.dielectric_edit, self.time_zero_edit, self.zero_combo,
-                 self.datum_edit, self.by_file, self.by_spacing, self.by_table, self.from_edit,
+                 self.datum_edit, self.smoothing_edit, self.by_file, self.by_spacing, self.by_table, self.from_edit,
                  self.to_edit, self.fit_check,
                  self.spacing_edit, self.coords.file, self.coords.number_combo,
                  self.coords.easting_combo, self.coords.northing_combo, self.crs_widget)
@@ -203,6 +213,7 @@ class RadarBox(QGroupBox):
             if new_file:
                 self._crs_chosen = None
                 self.datum_edit.clear()
+                self.smoothing_edit.setText(show(DEFAULT_SMOOTHING, 2))
                 self.spacing_edit.clear()
                 self.fit_check.setChecked(False)
                 self._span, self._span_typed = None, False
@@ -285,6 +296,11 @@ class RadarBox(QGroupBox):
                 self.zero_combo.setCurrentIndex(self.zero_combo.findData(o["zero"]))
             if o.get("datum") is not None:
                 self.datum_edit.setText(show(float(o["datum"]), 3))
+            if o.get("ground_smoothing") is not None:
+                try:
+                    self.smoothing_edit.setText(show(float(o["ground_smoothing"]), 2))
+                except (TypeError, ValueError):
+                    self.smoothing_edit.setText(str(o["ground_smoothing"]))
             if not self.vertical_only:
                 self._set_placement(o)
         finally:
@@ -403,6 +419,10 @@ class RadarBox(QGroupBox):
             datum = number(self.datum_edit.text())
             if datum is not None:
                 o["datum"] = datum
+        else:
+            smoothing = number(self.smoothing_edit.text())
+            if smoothing is not None and smoothing >= 0:
+                o["ground_smoothing"] = smoothing
         if self._fit_shown():
             span = self.span()
             if self._span_typed and span is not None:
@@ -474,6 +494,10 @@ class RadarBox(QGroupBox):
                 out.append(BEYOND_RECORD)
         if self.zero() != "ground" and number(self.datum_edit.text()) is None:
             out.append(NO_DATUM)
+        if self.zero() == "ground":
+            smoothing = number(self.smoothing_edit.text())
+            if smoothing is None or smoothing < 0:
+                out.append(BAD_SMOOTHING)
         return out
 
     def _velocity_problems(self) -> list[str]:
@@ -604,6 +628,7 @@ class RadarBox(QGroupBox):
             "velocity": True, "velocity_note": bool(self.velocity_note.text()),
             "time_zero": True, "time_zero_note": bool(self.time_zero_note.text()),
             "zero": True, "datum": self.zero() != "ground",
+            "smoothing": self.zero() == "ground",
             "position": place, "position_note": bool(self.position_note.text()),
             "span": fit, "length": fit and bool(self.length_label.text()),
             "fit": fit,

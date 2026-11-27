@@ -309,6 +309,32 @@ def _time_depths(axis: np.ndarray, velocity: Velocity | None) -> np.ndarray:
     return depths
 
 
+def smoothed_ground(x, z, length: float) -> np.ndarray:
+    """The ground ``z`` at the traces ``x`` (chainage, m; in either order) as a centred moving
+    average over ``length`` metres of chainage: each trace takes the mean of the traces within
+    half of it on either side, the window shrinking near the ends so that it stays centred
+    (the first and last trace keep their own height). ``length`` 0 (or not a positive number)
+    gives ``z`` unchanged. Used for hanging a section, never for the drawn ground."""
+    z = np.asarray(z, dtype=np.float64)
+    try:
+        length = float(length)
+    except (TypeError, ValueError):
+        return z
+    x = np.asarray(x, dtype=np.float64)
+    if not (math.isfinite(length) and length > 0) or z.size < 3:
+        return z
+    order = np.argsort(x, kind="stable")
+    xs, zs = x[order], z[order]
+    half = np.minimum(length / 2.0, np.minimum(xs - xs[0], xs[-1] - xs))
+    tol = 1e-9 * max(1.0, float(np.abs(xs).max()))     # a trace exactly at the edge counts
+    lo = np.searchsorted(xs, xs - half - tol, side="left")
+    hi = np.searchsorted(xs, xs + half + tol, side="right")
+    sums = np.concatenate([[0.0], np.cumsum(zs)])
+    out = np.empty_like(z)
+    out[order] = (sums[hi] - sums[lo]) / (hi - lo)
+    return out
+
+
 def ground_time(datum: float, ground: np.ndarray, replacement_velocity: float) -> np.ndarray:
     """Two-way time (s) from the datum down to the ground at each trace with the replacement
     velocity (m/s): ``2 * (datum - ground) / replacement_velocity``, negative where the ground

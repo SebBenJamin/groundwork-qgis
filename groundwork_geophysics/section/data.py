@@ -36,7 +36,7 @@ from ..core.trace_section import (BAD_RADAR_VELOCITY, BEYOND_RECORD, C_M_PER_NS,
                                   NO_DEPTH_TIME_ZERO, NO_VELOCITY, NOT_A_TIME_ZERO,
                                   TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain, PlacedTraces,
                                   TraceSection, Velocity, color_limits, depth_at, display_values,
-                                  ground_time, place)
+                                  ground_time, place, smoothed_ground)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -46,12 +46,14 @@ from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local
 #: reader_options keys applied by the provider, not passed to the reader as such: the
 #: placement, and how a trace section is hung (velocity, the height of time zero)
 WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement", "velocity", "velocity_table",
-                  "velocity_kind", "zero", "datum", "replacement_velocity", "time_zero")
+                  "velocity_kind", "zero", "datum", "replacement_velocity", "time_zero",
+                  "ground_smoothing")
 #: those only used to hang a trace section once read: not in the read key, so trying another
 #: velocity or time zero never reads the file again; ``time_zero`` (s) is the time that lies
-#: on the ground (a radargram's first arrival)
+#: on the ground (a radargram's first arrival); ``ground_smoothing`` (m) the length the ground
+#: is averaged over for hanging a section on it (0 or missing: as sampled)
 HANG_KEYS = ("velocity", "velocity_table", "velocity_kind", "zero", "datum",
-             "replacement_velocity", "time_zero")
+             "replacement_velocity", "time_zero", "ground_smoothing")
 #: z kind of a placed trace section in ``SectionDataProvider._placed`` (never a model's)
 TRACES = "traces"
 #: the next step a hanging error ends with
@@ -1422,6 +1424,10 @@ class SectionDataProvider:
         profile's surface at the trace. A profile without real heights (no surface, or a
         local one, as ``is_local`` reads it) has no ground to correct to.
 
+        On the ground (``zero`` "ground" or "datum_ground") the ground at the traces is
+        averaged over the stored ``ground_smoothing`` metres of chainage (missing: 0, as
+        sampled); the ground line drawn is never smoothed.
+
         The sample at the stored ``time_zero`` (s; a radargram without one: the time zero its
         file states, else 0) is the one hung on the top; the samples before it are not drawn,
         nor are the leading samples the reader says are not data (``reserved_samples``). A
@@ -1442,12 +1448,14 @@ class SectionDataProvider:
             elif surface is None:
                 z_top = 0.0
             else:
-                z_top = np.interp(section.x, *surface.line)
+                z_top = smoothed_ground(section.x, np.interp(section.x, *surface.line),
+                                        options.get("ground_smoothing") or 0.0)
             live_from = None
             try:
                 if zero == "datum_ground":
                     z_top, live_from = self._ground_top(section, surface, datum, velocity,
-                                                        options.get("replacement_velocity"))
+                                                        options.get("replacement_velocity"),
+                                                        options.get("ground_smoothing") or 0.0)
                 placed = place(section, z_top, velocity, live_from, time_zero=time_zero,
                                data_start=_reserved(self._read_provenance(d)))
             except ValueError as exc:
@@ -1494,12 +1502,13 @@ class SectionDataProvider:
 
     @staticmethod
     def _ground_top(section: TraceSection, surface: Surface | None, datum: float,
-                    velocity: Velocity, replacement) -> tuple[np.ndarray, np.ndarray]:
+                    velocity: Velocity, replacement,
+                    smoothing: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
         """(time zero, first sample of the earth) of each trace of a section corrected to the
         ground: the ground at the trace (the surface sampled as a "ground" section samples
-        it) plus the depth that the trace's ground time reaches with ``velocity``; and the
-        first sample at or after that ground time (the samples before it lie above the
-        ground line and are not drawn)."""
+        it, averaged over ``smoothing`` m) plus the depth that the trace's ground time reaches
+        with ``velocity``; and the first sample at or after that ground time (the samples
+        before it lie above the ground line and are not drawn)."""
         if surface is None or surface.local:
             raise _Plain(NO_GROUND_TEXT)
         replacement = _number_or_nan(replacement)
@@ -1508,7 +1517,7 @@ class SectionDataProvider:
         if section.domain != "time":
             raise _Plain("A depth section cannot be corrected to the ground. Hang it at a "
                          "fixed height or on the ground.")
-        ground = np.interp(section.x, *surface.line)
+        ground = smoothed_ground(section.x, np.interp(section.x, *surface.line), smoothing)
         t = ground_time(datum, ground, replacement)
         # a sample exactly at the ground time is earth (a hair of tolerance for rounding)
         first = np.ceil((t - section.first) / section.step - 1e-6)
