@@ -164,7 +164,9 @@ class ContextItems:
             points=sorted((replace(p, s=length - p.s) for p in self.points), key=lambda p: p.s),
             band=sorted((replace(b, s0=length - b.s1, s1=length - b.s0) for b in self.band),
                         key=lambda b: b.s0),
-            ties=sorted((replace(t, s=length - t.s) for t in self.ties), key=lambda t: t.s),
+            ties=sorted((replace(t, s=length - t.s, stretch=None if t.stretch is None else
+                                 (length - t.stretch[1], length - t.stretch[0]))
+                         for t in self.ties), key=lambda t: t.s),
             dem=dem, dem_tolerance=self.dem_tolerance,
             borehole_views=dict(self.borehole_views), curve_styles=dict(self.curve_styles),
             field_notes=sorted((_mirrored_note(n, length) for n in self.field_notes),
@@ -282,12 +284,95 @@ def polygon_intervals(profile_xy, polygons, labels: list[str]) -> list[BandSegme
     return out
 
 
-def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float]]:
-    """Ties between two profiles as (s_a, s_b, distance). True crossings have
-    distance 0; without one, the single closest approach if within ``near_miss``."""
+#: crossings of the same two profiles closer than this along both profiles (metres, or this
+#: share of the shorter profile's length when that is more) follow each other ...
+STRETCH_GAP_M = 10.0
+STRETCH_GAP_SHARE = 0.05
+#: ... and this many of them in a row are one shared stretch
+STRETCH_MIN_CROSSINGS = 3
+
+
+@dataclass
+class TieHit:
+    """Where two profiles tie: ``s`` on the first, ``s_other`` on the second, their gap there
+    (0 at a crossing); ``stretch`` (start, end on the first) when they run along each other,
+    the tie then at the stretch's middle."""
+    s: float
+    s_other: float
+    distance: float
+    stretch: tuple[float, float] | None = None
+
+
+def _groups(hits: list[tuple], gap: float) -> list[list[int]]:
+    """Indices of ``hits`` ((s_a, s_b, …)) in groups: two hits less than ``gap`` apart along
+    both profiles belong together, and so do the hits linked through such pairs. The same
+    groups whichever profile is first; each group in the order of ``hits``."""
+    parent = list(range(len(hits)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i in range(len(hits)):
+        for j in range(i + 1, len(hits)):
+            if abs(hits[i][0] - hits[j][0]) < gap and abs(hits[i][1] - hits[j][1]) < gap:
+                parent[root(j)] = root(i)
+    out: dict[int, list[int]] = {}
+    for i in range(len(hits)):
+        out.setdefault(root(i), []).append(i)
+    return sorted(out.values(), key=lambda g: g[0])
+
+
+def _first_of_pair(a, b) -> bool:
+    """True when ``a`` is the profile whose side a shared stretch's tie is worked out from
+    (any fixed choice that does not depend on which profile asks)."""
+    return np.asarray(a, float).tobytes() <= np.asarray(b, float).tobytes()
+
+
+def tie_hits(a_xy, b_xy, near_miss: float) -> list[TieHit]:
+    """Ties between two profiles: every true crossing (distance 0), except that crossings
+    following each other closely along both profiles (``STRETCH_GAP_M`` /
+    ``STRETCH_GAP_SHARE`` of the shorter one), at least ``STRETCH_MIN_CROSSINGS`` of them,
+    are one shared stretch with one tie at its middle (on the other profile: the point there
+    nearest to that middle). The pair gives the same crossings, stretches and ties whichever
+    profile asks: the tie of a stretch is worked out from the same one of the two. Without a
+    crossing, the single closest approach if within ``near_miss``. Every tie between
+    profiles (markers, tie strips, the ties panel, interpretation marks) comes from here."""
     hits = _intersections(a_xy, b_xy)
-    if hits:
-        return [(sa, sb, 0.0) for sa, sb, _ang in hits]
+    if not hits:
+        near = _near_miss(a_xy, b_xy, near_miss)
+        return [] if near is None else [TieHit(*near)]
+    ca, cb = Chainage(a_xy), Chainage(b_xy)
+    shorter = min(float(_cum(ca.xy)[-1]), float(_cum(cb.xy)[-1]))
+    gap = max(STRETCH_GAP_M, STRETCH_GAP_SHARE * shorter)
+    a_first = _first_of_pair(a_xy, b_xy)
+    out = []
+    for group in _groups(hits, gap):
+        if len(group) < STRETCH_MIN_CROSSINGS:
+            out += [TieHit(hits[i][0], hits[i][1], 0.0) for i in group]
+            continue
+        sa = [hits[i][0] for i in group]
+        sb = [hits[i][1] for i in group]
+        if a_first:
+            s = 0.5 * (min(sa) + max(sa))
+            s_other = float(np.ravel(cb.project(ca.to_xy(s)[None, :])[0])[0])
+        else:
+            s_other = 0.5 * (min(sb) + max(sb))
+            s = float(np.ravel(ca.project(cb.to_xy(s_other)[None, :])[0])[0])
+        out.append(TieHit(s, s_other, 0.0, (min(sa), max(sa))))
+    return sorted(out, key=lambda h: h.s)
+
+
+def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float]]:
+    """Ties between two profiles as (s_a, s_b, distance) (``tie_hits`` without the
+    stretches)."""
+    return [(h.s, h.s_other, h.distance) for h in tie_hits(a_xy, b_xy, near_miss)]
+
+
+def _near_miss(a_xy, b_xy, near_miss: float) -> tuple[float, float, float] | None:
+    """(s_a, s_b, distance) of the closest approach of two profiles that do not cross, when
+    within ``near_miss``."""
     ca, cb = Chainage(a_xy), Chainage(b_xy)
     best = None   # (distance, s_a, s_b)
     for one, other, flip in ((ca, cb, False), (cb, ca, True)):
@@ -300,5 +385,5 @@ def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float
         if best is None or cand[0] < best[0]:
             best = cand
     if best is not None and best[0] <= near_miss:
-        return [(best[1], best[2], best[0])]
-    return []
+        return best[1], best[2], best[0]
+    return None

@@ -88,7 +88,9 @@ class WorkbenchPlugin:
         return None if self.provider is None else self.provider.store
 
     def initGui(self):
+        from . import libs
         from .patterns import register_svg_path
+        libs.ensure_on_path()                            # optional libraries the user installed
         from .plates import items as plate_items
         from .plates.sources import read_plates
         register_svg_path()                              # FGDC patterns in the SVG pickers
@@ -106,6 +108,8 @@ class WorkbenchPlugin:
         self.dock = SectionDock(main_window)
         self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         self.dock.hide()
+        if hasattr(self.iface, "messageBar"):          # an install's result is said there
+            self.dock.layer_list.message_bar = self.iface.messageBar()
         self.map_link = MapLink(self.iface, self.dock)
         self.view3d_link = View3dLink(self.iface, self.dock)   # the 3D view's mouse
         self.view3d_link.on_opened = self._view3d_opened
@@ -269,8 +273,10 @@ class WorkbenchPlugin:
         if store is not None:
             project = QgsProject.instance()
             from .section.model_reading import ModelReader
-            from .section.style_store import load_styles, save_styles
-            self.provider = SectionDataProvider(store, styles=load_styles(project))
+            from .section.style_store import (load_layer_orders, load_styles,
+                                              save_layer_orders, save_styles)
+            self.provider = SectionDataProvider(store, styles=load_styles(project),
+                                                orders=load_layer_orders(project))
             self.model_reader = ModelReader(self.provider)
             reader, provider_ = self.model_reader, self.provider
             # ties to crossing profiles: drawn at once, their columns once those are read
@@ -278,6 +284,8 @@ class WorkbenchPlugin:
                 ids, lambda ok: provider_.notify_redraw(ties=True))
             provider = self.provider
             self.provider.on_style.append(lambda: save_styles(project, provider.styles()))
+            self.provider.on_style.append(
+                lambda: save_layer_orders(project, provider.layer_orders()))
             project_actions.reload_stale_layers(store, project)  # 0.8 stations, no inline
             migrate_letter_styles(store, project)       # 0.7 styles named "letter"
             ensure_3d_styles(store, project)            # before 0.14: no 3D style
@@ -656,7 +664,7 @@ class WorkbenchPlugin:
         profiles stay as they are. True when it did, False when something of it was shown
         already, None when it has nothing to show."""
         choice = view3d_layers.read_choice(project)
-        models = {d.id for d in self.store.datasets(profile_id) if d.kind.endswith("_model")}
+        models = {d.id for d in self.store.datasets(profile_id) if view3d_layers.in_3d(d.kind)}
         if profile_id in choice.boreholes or models & choice.models:
             return False
         boreholes = {profile_id} & view3d_layers.profiles_with_boreholes_of(

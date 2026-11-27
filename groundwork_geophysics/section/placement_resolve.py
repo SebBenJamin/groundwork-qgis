@@ -3,15 +3,23 @@ built. QGIS-free; plain data in, plain data out, nothing stored.
 
 The order, strongest first:
 
+Before all of them: the dataset's own pins (``placement["pins"]``), a file the user fitted
+between two points of its line (source "fitted").
+
 1. pinned at the known points: two or more stations of the dataset's station set (else the
    profile's first set) with a distance in the file (``core.layout.inline_distances``). A
    guessed spacing whose fit report warns is not used: the stations with a stronger source
    pin when there are two or more, else the next rule applies ("guess_rejected", with a
    note); a set of known points that cannot pin (a station out of order) is not used either,
-   with a note;
+   with a note. Only for a dataset whose file metres are station metres (``by_stations``),
+   such as a model read from an inversion file; a dataset placed by itself skips this rule;
 2. the dataset's own ``reader_options["placement"]`` (``{"zero": chainage, "direction": ±1}``);
 3. 0.8's station-set rule, ``metre0 + direction * x``;
 4. file distance 0 at chainage 0.
+
+Whether a dataset is placed by itself: its placement's ``"own"`` marker when stored (Add Data
+stores ``"own": True`` for a trace section), else its kind: a trace section (radargram,
+reflection section) never takes station metres; a model keeps the station rule.
 
 Stations invented by 0.8 ("from line" / "from points": no heights, on the line, evenly
 spaced) are never known points. The dataset's ``chainage_offset`` is added to file x before
@@ -22,6 +30,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
+from ..core.dataset_types import is_trace_kind
 from ..core.layout import inline_distances
 from ..core.model import Dataset, Profile, StationSet
 from ..core.placement import DistanceMap, FitReport, fit_report, pinned_map, rigid_map
@@ -110,6 +119,28 @@ def _not_used(exc: ValueError) -> str:
     return NOT_USED_NOTE.format(reason=reason)
 
 
+def _own_pins(dataset: Dataset) -> DistanceMap | None:
+    """The dataset's own pins (``placement["pins"]``: [[file distance, chainage], …], a
+    file fitted to its line's length in Add Data), or None."""
+    placement = dataset.reader_options.get("placement")
+    pins = placement.get("pins") if isinstance(placement, dict) else None
+    try:
+        d, s = zip(*[(float(a), float(b)) for a, b in pins])
+        return pinned_map(d, s)
+    except (TypeError, ValueError):
+        return None
+
+
+def by_stations(dataset: Dataset) -> bool:
+    """True when the dataset's file metres are station metres, so the known points pin it
+    (rule 1): the stored ``placement["own"]`` decides when there is one, else the kind (a
+    trace section is placed by itself, a model by the stations)."""
+    placement = dataset.reader_options.get("placement")
+    if isinstance(placement, dict) and "own" in placement:
+        return not bool(placement["own"])
+    return not is_trace_kind(dataset.kind or "")
+
+
 def _own_placement(dataset: Dataset) -> DistanceMap | None:
     placement = dataset.reader_options.get("placement")
     if not isinstance(placement, dict):
@@ -143,9 +174,13 @@ def resolve(profile: Profile, sets: list[StationSet], dataset: Dataset,
         offset = float(dataset.reader_options.get("chainage_offset", 0.0) or 0.0)
     except (TypeError, ValueError):
         offset = 0.0
+    own = _own_pins(dataset)
+    if own is not None:                         # the user fitted the file to its line
+        return Resolution(_with_offset(own, offset), "fitted")
     station_set = _station_set(sets, dataset)
     source, note = "rigid", ""
-    pins = None if station_set is None or invented(station_set) else _pins(station_set, layout)
+    pins = None if station_set is None or invented(station_set) or not by_stations(dataset) \
+        else _pins(station_set, layout)
     if pins is not None:
         d, s, labels, pin_source = pins
         fit = fit_report(d, s, labels)

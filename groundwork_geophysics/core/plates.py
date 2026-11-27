@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import asdict, dataclass, field
 
 #: standard scales, close enough together that a fitted section fills most of its frame
@@ -37,6 +38,16 @@ class ModelLook:
     contour_minor: list = field(default_factory=list)
     #: how the smooth field is gridded (``Interpolation.to_dict``); None = linear
     interpolation: dict | None = None
+    #: trace sections: colour limits clipped at this percentile; None: typed limits
+    clip_percent: float | None = 98.0
+    #: trace sections: the display options (``DisplayGain.to_dict``); None = none
+    gain: dict | None = None
+    #: contour lines: one colour ("#rrggbb"; None = from the colour scale) and the width
+    #: in mm (None = the standard widths)
+    contour_colour: str | None = None
+    contour_width: float | None = None
+    #: trace sections: shown down to this depth (m) below their top; None = the whole record
+    max_depth: float | None = None
 
 
 @dataclass
@@ -152,7 +163,36 @@ def _model(d) -> ModelLook | None:
                      text("shown", None), _levels(d.get("contour_major")),
                      _levels(d.get("contour_minor")),
                      d.get("interpolation") if isinstance(d.get("interpolation"), dict)
-                     else None)
+                     else None,
+                     _clip(d), d.get("gain") if isinstance(d.get("gain"), dict) else None,
+                     _colour(d.get("contour_colour")), _width(d.get("contour_width")),
+                     _depth(d.get("max_depth")))
+
+
+def _depth(v) -> float | None:
+    """A depth limit: a number above 0, else None (the whole record)."""
+    v = _num(v)
+    return v if v is not None and v > 0 else None
+
+
+def _colour(v) -> str | None:
+    """A stored "#rrggbb" colour; anything else: None (the colour scale's)."""
+    return v if isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v) else None
+
+
+def _width(v) -> float | None:
+    """A stored line width in mm (positive); anything else: None (the standard width)."""
+    v = _num(v)
+    return v if v is not None and v > 0 else None
+
+
+def _clip(d: dict) -> float | None:
+    """The stored clip percentile: 98 when it was never stored (an older look), None when
+    the limits were typed, else 0.1 .. 100."""
+    if "clip_percent" not in d:
+        return 98.0
+    v = _num(d.get("clip_percent"))
+    return None if v is None else min(max(v, 0.1), 100.0)
 
 
 #: a model's look from its stored dict, or None when unusable (the section styles use it too)

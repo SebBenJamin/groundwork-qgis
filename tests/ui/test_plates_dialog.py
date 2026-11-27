@@ -164,6 +164,18 @@ def test_plate_details_set_project_variables(env):
     assert reopened.fields["client"].text() == "LfU Brandenburg"
 
 
+def test_the_look_of_a_section_is_named_like_its_layer_row(qgis_app):
+    from groundwork_geophysics.core.plates import FrameLook, ModelLook
+    from groundwork_geophysics.ui.plates_dialog import look_summary
+    look = FrameLook([ModelLook("s1", gain={"agc_window": 0.2}), ModelLook("m1", mode="smooth"),
+                      ModelLook("s2", clip_percent=95.0)], boreholes=False, field_notes=False,
+                     context=False)
+    text = look_summary(look, {"s1": "VD-P760057", "m1": "ERT", "s2": "VD-P760068"},
+                        traces={"s1", "s2"})
+    assert text.startswith("VD-P760057 (clip 98 % · AGC) · ERT (smooth) · VD-P760068 (clip 95 %)")
+    assert "(cells)" not in text
+
+
 def test_frame_cells_read_like_a_user_types_them():
     """Usability review 2: "1.000" (German) became scale 1:1; "1:250" was refused."""
     from groundwork_geophysics.ui.plates_dialog import parse_cell

@@ -43,7 +43,6 @@ def pending_3d(store, provider, project) -> list[Job3D]:
 
 
 def _pending(store, provider, project) -> list[Job3D]:
-    from ..section.data import SectionLayer
     choice = v3.read_choice(project)
     jobs, topos = [], {}
     for profile, d, la in v3._gather(store, provider, choice):
@@ -52,8 +51,8 @@ def _pending(store, provider, project) -> list[Job3D]:
         if profile.id not in topos:
             topos[profile.id] = v3._surface_line(provider, profile.id)
         topo = topos[profile.id]
-        look = choice.look_of(d.id)
-        copy = SectionLayer(la.dataset, la.mesh, replace(la.style), la.error)
+        look = choice.look_for(d)
+        copy = replace(la, style=replace(la.style))     # every field, the style a copy
         mine = replace(profile, xy=profile.xy.copy(), metadata=dict(profile.metadata))
         if look == "cloud" or (look == "section" and la.style.mode in v3._SMOOTH):
             path = v3.cloud_path(store, d.id, profile, la, topo)
@@ -72,7 +71,6 @@ def _pending(store, provider, project) -> list[Job3D]:
 def _pending_pictures(store, provider, project, choice, topos: dict) -> list[Job3D]:
     """The section pictures the choice needs that have no file yet, with copies of all
     they paint (the interpretation's symbols cloned: a symbol renders in one thread)."""
-    from ..section.data import SectionLayer
     from ..section.picture import panel_colour
     jobs = []
     context = project.transformContext()
@@ -92,8 +90,7 @@ def _pending_pictures(store, provider, project, choice, topos: dict) -> list[Job
             symbols = {k: ((v[0].clone(), v[1]) if isinstance(v, tuple) else v.clone())
                        for k, v in symbols.items()}
             interp = (list(pieces), dict(features), symbols)
-        copies = [SectionLayer(la.dataset, la.mesh, replace(la.style), la.error)
-                  for la in layers]
+        copies = [replace(la, style=replace(la.style)) for la in layers]
         mine = replace(profile, xy=profile.xy.copy(), metadata=dict(profile.metadata))
         jobs.append(Job3D("picture", path, profile.name, store.crs_authid, mine, None, None,
                           topo, copies, interp, gap, panel_colour(), context, to_ecef))

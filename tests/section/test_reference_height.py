@@ -113,9 +113,11 @@ def test_local_switch_state(qgis_app, tmp_path, make_dock):
     dock = make_dock(st)
     dock.open_profile(p.id)
     combo, button = dock.topo_combo, dock.topo.reference_button
-    assert [combo.itemData(i) for i in range(combo.count())] == ["stations", "dem", "local"]
+    assert [combo.itemData(i) for i in range(combo.count())] == ["stations", "dem", "local",
+                                                                 "model"]
     assert combo.currentText() == "Local" and combo.currentData() == "local"
-    assert [combo.model().item(i).isEnabled() for i in range(3)] == [False, False, True]
+    assert [combo.model().item(i).isEnabled() for i in range(4)] == [False, False, True, False]
+    assert combo.view().isRowHidden(3)                  # "Model top": only for a model's top
     assert button.isEnabled() and button.text() == "Reference Height…"
     _heights(st, p)
     dock.provider.notify_changed()

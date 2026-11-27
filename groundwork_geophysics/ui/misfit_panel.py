@@ -60,6 +60,8 @@ class MisfitSummary(QDialog):
         self.resize(460, 380)
 
     def show_layer(self, layer) -> None:
+        if layer.mesh is None or layer.mesh.readings is None:
+            return                              # a model or a trace section: no readings
         r = layer.mesh.readings
         mis = r.misfit_percent()
         n_ok = int(np.isfinite(mis).sum())

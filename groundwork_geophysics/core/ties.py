@@ -27,6 +27,9 @@ class Tie:
     s_other: float          # chainage on the crossing profile
     distance: float         # horizontal gap between the two lines at the crossing
     columns: list[TieColumn]
+    #: the two profiles run along each other: (start, end) of the shared stretch on this
+    #: profile, the tie at its middle; None for an ordinary crossing or near miss
+    stretch: tuple[float, float] | None = None
 
 
 def shown_column(tie: Tie) -> TieColumn | None:

@@ -15,7 +15,7 @@ from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsLineStri
                        QgsProfilePoint, QgsProject, QgsSettings)
 from qgis.gui import QgsElevationProfileCanvas, QgsPlotToolPan
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import QEvent, QLineF, Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import QEvent, QLineF, QRectF, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QKeySequence, QPen, QShortcut
 from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphicsEllipseItem,
                                  QGraphicsLineItem,
@@ -28,7 +28,7 @@ from qgis.PyQt.QtWidgets import (QComboBox, QDockWidget, QDoubleSpinBox, QGraphi
 from ..core.layout import KIND_TEXT, kind_text
 from ..core.numbers import fmt_trim
 from ..ids import LEGACY_ID
-from .data import identify_layers, layer_name
+from .data import identify_layers
 from .dock_context import context_lines
 from .layer_list import LayerList
 from .profile_source import SOURCE_ID
@@ -139,6 +139,7 @@ class SectionDock(QDockWidget):
         self.provider = None
         self._source = None
         self._profile = None
+        self._typed_ve: dict[str, float] = {}   # profile id -> exaggeration typed for it
         self._layers = None                     # cached provider.layers() of the open profile
         self._ctx = None                        # cached (context items, station line), dock_context
         self._topo = None
@@ -206,6 +207,7 @@ class SectionDock(QDockWidget):
         self.cursor_marker.setZValue(1001)
         self.cursor_marker.hide()
         self.canvas.scene().addItem(self.cursor_marker)
+        self._pin_scene_rect()
 
         self.layer_list = LayerList()
         self.layer_list.apply_all_requested.connect(self.apply_style_to_all)
@@ -303,10 +305,9 @@ class SectionDock(QDockWidget):
         splitter.setCollapsible(0, False)
         self.splitter = splitter
         state = QgsSettings().value(SPLITTER_KEY)       # the width the user dragged to
-        if state is not None:
-            splitter.restoreState(state)
-        splitter.splitterMoved.connect(
-            lambda *_a: QgsSettings().setValue(SPLITTER_KEY, splitter.saveState()))
+        if state is not None and splitter.restoreState(state):
+            self.layer_list.sized_by_user = True
+        splitter.splitterMoved.connect(self._splitter_moved)
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -346,6 +347,7 @@ class SectionDock(QDockWidget):
         self.canvas.setSources([])
         self._refresh_timer.stop()
         self.provider = provider
+        self._typed_ve.clear()                  # another project's profiles
         self._source = None
         self.set_reader(None)
         self._close_profile()
@@ -356,6 +358,12 @@ class SectionDock(QDockWidget):
                 self.canvas.setSources([self._source])
         self._fill_combo()
         self._set_hint()
+
+    def _splitter_moved(self, *_args) -> None:
+        """The user dragged the handle beside the Layers list: keep that width (also for
+        the next session), and stop the list widening by itself."""
+        self.layer_list.sized_by_user = True
+        QgsSettings().setValue(SPLITTER_KEY, self.splitter.saveState())
 
     def set_reader(self, reader) -> None:
         """Read models in the background with ``reader`` (a ``ModelReader`` of this panel's
@@ -548,6 +556,8 @@ class SectionDock(QDockWidget):
                 self.profile_combo.blockSignals(False)
             return True
         self._wanted = None
+        if self._profile is not None and self._profile.id != profile.id:
+            self._take_ve(profile.id)
         self._profile = profile
         self.empty_hint.hide()
         self.canvas.show()
@@ -696,8 +706,8 @@ class SectionDock(QDockWidget):
     def _sync_layers(self) -> None:
         layers = self._current_layers()
         self.layer_list.set_layers(self.provider, layers)
-        self._show_errors([f"{layer_name(la.dataset)}: {la.error}"
-                           for la in layers if la.error is not None])
+        from .layer_list import error_line
+        self._show_errors([error_line(la) for la in layers if la.error is not None])
 
     def info_text(self) -> str:
         return self.info.text()
@@ -740,7 +750,21 @@ class SectionDock(QDockWidget):
         self.fit.zoom_full()
 
     def _ve_changed(self, value: float) -> None:
+        if self._profile is not None:
+            if value <= self.ve_spin.minimum():
+                self._typed_ve.pop(self._profile.id, None)
+            else:
+                self._typed_ve[self._profile.id] = value
         self.fit.ve_changed(value)
+
+    def _take_ve(self, profile_id: str) -> None:
+        """Another profile opens at the exaggeration typed for it in this session, else at
+        Auto: one typed for a long, shallow line would squeeze a short, deep one into a
+        sliver of the panel (the view fits the whole section at the exaggeration). Silent;
+        the zoom that follows fits the view."""
+        self.ve_spin.blockSignals(True)
+        self.ve_spin.setValue(self._typed_ve.get(profile_id, AUTO_VE))
+        self.ve_spin.blockSignals(False)
 
     def _jobs_changed(self, count: int) -> None:
         self.fit.jobs_changed(count)
@@ -754,7 +778,9 @@ class SectionDock(QDockWidget):
             return False                        # being taken apart (plugin reload): ignore
         etype = event.type()
         if obj is self.canvas.viewport():
-            if etype == QEvent.Type.Leave:
+            if etype == QEvent.Type.Resize:
+                self._pin_scene_rect(event.size())
+            elif etype == QEvent.Type.Leave:
                 self.cursor_left.emit()
             elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
                 self.fit.user_navigated()       # the user navigates: keep their view
@@ -777,6 +803,17 @@ class SectionDock(QDockWidget):
             elif etype == QEvent.Type.Resize and self._profile is not None:
                 self.fit.schedule_refit()
         return super().eventFilter(obj, event)
+
+    def _pin_scene_rect(self, size=None) -> None:
+        """Keep the view's scene rect at the viewport, so the view never scrolls and viewport
+        pixels (mouse positions) stay scene pixels (overlay items, canvasPointToPlotPoint).
+        Unpinned, the scene grows to every item, also hidden ones and those reaching outside
+        the plot, and the view scrolls by a few pixels or more: drawing lands beside the
+        cursor. Items outside are clipped."""
+        size = self.canvas.viewport().size() if size is None else size
+        self.canvas.setSceneRect(QRectF(0.0, 0.0, size.width(), size.height()))
+        self.canvas.horizontalScrollBar().setValue(0)
+        self.canvas.verticalScrollBar().setValue(0)
 
     def details_at(self, pos) -> list[str]:
         """Borehole and interpretation details under canvas position ``pos``."""
@@ -866,18 +903,23 @@ class SectionDock(QDockWidget):
 
     def apply_style_to_all(self, dataset_id: str) -> None:
         """Give every other model of the same method (type, quantity and unit), on every
-        profile, ``dataset_id``'s style; whether each is shown stays. One step on the
-        panel's undo stack."""
+        profile, ``dataset_id``'s style; whether each is shown stays. A radargram of another
+        known antenna frequency gets the band-pass and the windows scaled to its antenna.
+        One step on the panel's undo stack."""
         from ..core.dataset_types import type_label
-        from .style_store import applied, same_method
+        from .style_store import antenna_ratio, applied, same_method
         if self.provider is None:
             return
         targets = same_method(self.provider.store, dataset_id)
         if not targets:
             return
         source = self.provider.style(dataset_id)
+        store = self.provider.store
+        source_dataset = next(d for p in store.profiles() for d in store.datasets(p.id)
+                              if d.id == dataset_id)
         before = {d.id: self.provider.style(d.id) for d in targets}
-        after = {i: applied(source, s) for i, s in before.items()}
+        after = {d.id: applied(source, before[d.id], antenna_ratio(source_dataset, d))
+                 for d in targets}
         self.interp.undo.push_with(self._apply_styles, "Apply style to all sections",
                                    before, after)
         self.readout.setText(APPLIED_ALL.format(n=len(targets),

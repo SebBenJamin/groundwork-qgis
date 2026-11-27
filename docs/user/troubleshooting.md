@@ -22,6 +22,67 @@ What to do when something doesn't look right.
 | The model is shifted along the line | Distance 0 of the file is not the start of the line | Set where distance 0 lies under ③ in **Add Data…**, or add the surveyed positions ([Placement](howto/placement.md)) |
 | The model is drawn in depth with no terrain | The profile has no heights: a local section | See below |
 
+## Reflection sections
+
+### Reading SEG-Y needs the library segyio
+
+Groundwork reads SEG-Y with segyio, a small free library that QGIS does not include. In
+**Add Data…**, choose the SEG-Y file and press **Install segyio**: it is installed into a
+Groundwork folder in your QGIS profile, and nothing else is changed. When the install fails,
+the message shows two commands to run by hand. With internet, run the first. Without
+internet: download the segyio file for your system from
+<https://pypi.org/project/segyio/#files> on another computer, then run the second, with the
+path of the downloaded file in place of `<path to the downloaded file>`. Then restart QGIS.
+See [segyio](howto/reflection-sections.md#segyio). Everything else in Groundwork works
+without it.
+
+### The section sits at the wrong depth
+
+| What you see | Usual cause | Fix |
+|---|---|---|
+| Reflectors too shallow or too deep against boreholes | The velocity does not fit. One velocity for a deep section is increasingly wrong with depth | Type the velocity, or a velocity function, from the processing report in [Dataset info](howto/dataset-info.md) |
+| The whole section too high or too low | Time zero is at the wrong height | **Time zero is** and **Height of time zero** in Dataset info: the datum from the processing report. With velocities from the processing sheet, choose **At a fixed height**, not **corrected to the ground** |
+| The depths are far off, by a factor | The sample step is wrong (files in depth, radar exported as SEG-Y) | Correct **Sample step** in Dataset info |
+| "Enter the velocity in m/s." | A time section has no velocity, and Groundwork assumes none | Type it in Add Data or Dataset info |
+
+Drawings stay at their heights when the section moves; Groundwork asks first.
+
+### The section has a flat top and does not follow the ground
+
+This is how processed land sections are delivered: every trace was moved to a flat datum, and
+the ground shows only as the blank zone above the first data. When your velocities come from
+the processing sheet, they count from that datum: keep **At a fixed height**, the flat top is
+right. When your velocity is the velocity of the ground below the surface (typically one
+velocity for a shallow line), choose **At a fixed height, corrected to the ground** in Dataset
+info and type the replacement velocity from the processing sheet; the profile needs heights
+(stations with heights, or a DEM). The first data
+of a stack still lie some tens of metres below the ground line, because processing muted the
+first arrivals. On a line several kilometres deep, zoom in to see the ground at all
+([A flat top, and where the ground is](howto/reflection-sections.md#a-flat-top-and-where-the-ground-is)).
+
+### Nothing is drawn above the ground
+
+Samples that are exactly zero at the top of a trace (the muted zone) are left transparent, and
+so is everything above the ground line in a section corrected to the ground. To see them, tick
+**Paint muted zones** in the section's **Display…**.
+
+## Radargrams
+
+| What you see | Usual cause | Fix |
+|---|---|---|
+| "Enter the velocity or the dielectric constant." | The file states no velocity, and Groundwork assumes none | Type one in Add Data; see [where a value comes from](howto/gpr.md#velocity-and-dielectric-constant) |
+| Reflectors far too shallow or too deep against a borehole | The velocity does not fit. A GSSI header's dielectric constant is an instrument setting, not a measurement | Change the velocity in [Dataset info](howto/dataset-info.md): every depth moves by the same factor |
+| The whole radargram a little too high or too low | Time zero is off | **Time zero (ns)** in Dataset info: later lifts the picture, earlier lowers it |
+| Flat bands or a checkerboard down the radargram | Noise far below the antenna's band, lifted by AGC; a radargram that keeps a look from before the band-pass shows it | Tick **Band-pass** in **Display…**: ticking it proposes half to twice the antenna's frequency ([why](howto/gpr.md#why-the-look-filters-around-the-antennas-frequency)) |
+| Flat bands parallel to the ground all along the line | The antenna's ringing | Tick **Remove background** in **Display…**, **Whole line** |
+| Deep flat bands that start and stop along the line | Ringing that changes along the line | **Remove background** → **Moving window**, for example 10 m; long flat layers fade with it |
+| A long flat layer fades | The background is removed over a moving window that is shorter than the layer | **Remove background** → **Whole line** ([why](howto/gpr.md#why-the-look-filters-around-the-antennas-frequency)) |
+| The radargram is a thin strip, or shows noise far below the reflections | The whole record is drawn, often much deeper than the radar reached | **Show down to (m)** in **Display…**, for example 8 m; empty again shows the whole record |
+| The radargram is longer or shorter than the line | The wheel measures along the ground; the line is straight between its ends | Usually right as it is. Fit it with **From** and **To** only when both points are better than the wheel ([fitting](howto/gpr.md#fitting-a-file-between-two-points)) |
+| Vertical seams in the radargram | Steps of the elevation model under it | **Smooth the ground over (m)** in Dataset info, for example 2 m |
+| "…holds 2 channels; Groundwork reads single-channel files." | A GSSI file of a multi-channel system | Not read yet. One channel exported as SEG-Y from the radar software loads as a reflection section |
+| "…the header file … is missing beside it." | A pulseEKKO `.DT1` without its `.HD`, or the other way round | Put both files with the same name in one folder |
+
 ## Local sections (no heights)
 
 A profile without any heights (no station heights, no DEM, a depth model) is drawn as a local

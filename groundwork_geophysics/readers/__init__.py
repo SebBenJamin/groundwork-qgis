@@ -50,17 +50,34 @@ def read(path, reader: str | None = None, **options) -> ReaderResult:
     return get(reader).read(path, **options)
 
 
+def default_name(path, reader: str | None = None) -> str:
+    """The name a dataset read from ``path`` (by ``reader``, else the detected one) gets
+    unless the user types one: ``Reader.default_name``; the file's stem when the format is
+    not known or the file cannot be read."""
+    path = Path(path)
+    try:
+        if reader is None:
+            found = detect(path)
+            reader = found[0] if found else None
+        return get(reader).default_name(path) if reader else path.stem
+    except Exception:                          # a name must never fail: the read says why
+        return path.stem
+
+
 def _register_builtins() -> None:
     from .bert_data import BertDataReader
+    from .gssi_dzt import GssiDztReader
+    from .pulseekko import PulseEkkoReader
     from .r2_err import R2ErrReader
     from .r2_res import R2ResReader
     from .refrapy_xzv import RefrapyXzvReader
+    from .segy import SegyReader
     from .text_columns import TextColumnsReader
     from .vtk_legacy import VtkLegacyReader
     from .zondres import ZondResReader
     # most specific first
-    for cls in (RefrapyXzvReader, BertDataReader, R2ErrReader, R2ResReader, VtkLegacyReader,
-                ZondResReader):
+    for cls in (SegyReader, GssiDztReader, PulseEkkoReader, RefrapyXzvReader, BertDataReader,
+                R2ErrReader, R2ResReader, VtkLegacyReader, ZondResReader):
         register(cls())
     register(TextColumnsReader())          # never detected; chosen by the user, so last
 

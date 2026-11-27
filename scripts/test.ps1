@@ -1,9 +1,13 @@
 # Runs pytest inside QGIS 4.2.3's Python. Extra args are passed through.
 # pytest is not bundled with QGIS; install it locally with:
 #   $env:PYTHONNOUSERSITE=1; python-qgis.bat -m pip install --target .testlibs pytest
+# The SEG-Y tests need the optional library segyio (--no-deps: QGIS's own NumPy is used):
+#   $env:PYTHONNOUSERSITE=1; python-qgis.bat -m pip install --target .testlibs --no-deps segyio
 $ErrorActionPreference = "Stop"
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:PYTHONNOUSERSITE = "1"
+# a missing segyio fails the SEG-Y tests instead of skipping them (tests/segy_files.py)
+$env:GW_REQUIRE_SEGYIO = "1"
 $repo = Split-Path -Parent $PSScriptRoot
 $env:GW_TESTLIBS = Join-Path $repo ".testlibs"
 # os._exit: QGIS/Qt teardown at interpreter shutdown crashes (access violation 0xC0000005) even when

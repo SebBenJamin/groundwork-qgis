@@ -203,3 +203,11 @@ def test_an_interpretation_past_the_models_widens_the_picture(qgis_app, store_wi
     assert _pixel(picture, s1 + 2, z0 - 2)[:3] == pytest.approx((0, 200, 0), abs=3)
     rows = picture.image.height()
     assert picture.alpha[int(rows * 0.99), -2] == 255             # painted: shown in 3D
+
+
+def test_text_is_sized_by_the_height_of_a_shallow_section_and_the_length_of_a_deep_one():
+    from groundwork_geophysics.section import picture
+    # an ERT line 300 m long and 30 m deep: a 25th of the height, as before
+    assert picture.label_height(0.0, 300.0, -30.0, 0.0) == 30.0 / 25
+    # a seismic line 8.5 km long reaching 10.2 km down: a 100th of the length, not 408 m
+    assert picture.label_height(0.0, 8500.0, -9700.0, 500.0) == 8500.0 / 100

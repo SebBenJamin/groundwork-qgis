@@ -6,14 +6,50 @@ from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                  QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                                 QLineEdit, QPushButton, QRadioButton, QVBoxLayout)
+                                 QLineEdit, QPushButton, QRadioButton, QVBoxLayout, QWidget)
 
 from ..core.colors import ColorScale
+from ..core.trace_section import display_values, trace_spacing, window_traces
 
 LIMIT = 1e12            # spin box range for linear scales
 MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then it scrolls)
 MIN_WIDTH = 420         # its groups never squeezed below this
 LOG_MIN = 0.001         # smallest minimum on a log scale (= the spin boxes' 3 decimals)
+AGC_MAX_MS = 200        # the AGC window starts at a quarter of the record, at most this
+#: the display filters before the gain (``DisplayGain``: dewow, background)
+DEWOW_TEXT = "Remove drift (dewow)"
+DEWOW_TIP = ("Subtract a running mean along each trace over this window: the slow drift at "
+             "the top of a radar trace goes, the reflections stay")
+BAND_TEXT = "Band-pass"
+BAND_TIP = ("Keep the frequencies from one corner to the other: noise far below or above "
+            "them goes, the reflections stay. For a radargram, half to twice the antenna's "
+            "frequency is usual.")
+BAND_DEPTH_TIP = "A depth section has no frequencies: the band-pass works on time sections"
+BAND_UNSET = "Not set"
+BAND_BOTH = "Type both corners of the band-pass (From and To)."
+BAND_ORDER = "The band-pass's From must lie below its To."
+BAND_ABOVE_NYQUIST = ("The band-pass's From must lie below {limit}, half the sampling rate of "
+                      "this section: above it the band-pass does nothing.")
+DEPTH_LABEL = "Show down to (m)"
+DEPTH_EMPTY = "Whole record"
+DEPTH_TIP = ("Draw the section only down to this depth below its top (time zero, the ground "
+             "for a radargram). Empty: the whole record. The data are not changed.")
+DEPTH_BAD = ("Show down to: type a depth greater than 0 m, or leave it empty for the whole "
+             "record.")
+BACKGROUND_TEXT = "Remove background"
+BACKGROUND_TIP = ("Subtract the mean trace: banding and ringing that run flat along the line "
+                  "go, and so do flat layers. Whole line: one mean trace; moving window: the "
+                  "mean of the traces around each trace.")
+BACKGROUND_ITEMS = (("Whole line", "all"), ("Moving window", "window"))
+BACKGROUND_TRACES_TIP = "How many traces around each trace make its background"
+BACKGROUND_METRES_TIP = ("How much of the line around each trace makes its background, in "
+                         "metres; the number of traces is shown beside it")
+#: the contour lines' colour: from the colour scale (as before), or one the user picks
+FROM_SCALE_TEXT = "From the colour scale"
+PICKED_COLOUR_TEXT = "One colour"
+LINE_COLOUR_TIP = "The colour of every contour line of this model"
+LINE_WIDTH_TIP = ("Width of the labelled (major) lines; minor levels are drawn thinner by "
+                  "the same ratio as before")
 
 
 def ramp_icon(scale, width: int = 64, height: int = 14) -> QIcon:
@@ -90,6 +126,7 @@ class ColorScaleDialog(QDialog):
         self.message.hide()
 
         form = QFormLayout()
+        self._scale_form = form
         form.addRow("Colour ramp", self.ramp_button)
         form.addRow("Minimum", self.min_spin)
         form.addRow("Maximum", self.max_spin)
@@ -195,9 +232,11 @@ class DisplayDialog(ColorScaleDialog):
         from .data import DISPLAY_MODES, READINGS_MODES, layer_name
         from .readout import unit_label
         mesh = layer.mesh
+        traces = getattr(layer, "traces", None)
+        # a trace section's unit is the file's (usually none), not the dataset's default
+        unit = traces.section.unit if traces is not None else layer.dataset.unit
         super().__init__(layer.style.scale, None if mesh is None else mesh.values,
-                         unit_label(layer.dataset.unit), f"Display: {layer_name(layer.dataset)}",
-                         parent)
+                         unit_label(unit), f"Display: {layer_name(layer.dataset)}", parent)
         self._style = layer.style
         style = layer.style
         coverage = None if mesh is None else getattr(mesh, "coverage", None)
@@ -242,6 +281,14 @@ class DisplayDialog(ColorScaleDialog):
         row.addWidget(self.auto_cell)
         form.addRow("Grid cell", row)
         self._mesh = mesh
+        # a typed cell finer than the grid allows is drawn coarser: say so, as the user types
+        self.cell_note = QLabel()
+        self.cell_note.setObjectName("cell_note")
+        self.cell_note.setWordWrap(True)
+        form.addRow("", self.cell_note)
+        self.cell_spin.valueChanged.connect(lambda _v: self._cell_used())
+        self.auto_cell.toggled.connect(lambda _on: self._cell_used())
+        self._cell_used()
         self._build_interpolation(form, getattr(style, "interpolation", None))
 
         contours = QGroupBox("Contours")
@@ -278,6 +325,7 @@ class DisplayDialog(ColorScaleDialog):
             edit.textChanged.connect(self._levels_typed)
         form.addRow("Major levels", self.major_edit)
         form.addRow("Minor levels", self.minor_edit)
+        self._build_line_look(form, style)
         self._step_tip = self.step_spin.toolTip()
         self._levels_typed()
         self.contours_group = contours
@@ -316,14 +364,28 @@ class DisplayDialog(ColorScaleDialog):
             self.coverage_group.setEnabled(False)
             self.coverage_group.setToolTip("This model file has no coverage or sensitivity")
 
-        # the scale and the three groups scroll, the buttons stay: at most MAX_HEIGHT tall
+        boxes = [display, contours, self.coverage_group]
+        #: a trace layer's own controls (None for a model)
+        self.amplitudes_group = self.clip_check = self.clip_spin = self.show_muted_check = None
+        self._traces = getattr(layer, "traces", None)
+        if self._traces is not None:
+            self._layer = layer
+            boxes.append(self._build_traces(style))
+            for box in (display, contours, self.coverage_group):
+                box.setVisible(False)           # cells, contours, coverage: models only
+        from ..ui.help import add_help_button
+        add_help_button(self.findChild(QDialogButtonBox),
+                        "display" if self._traces is None else "gpr_display"
+                        if self._is_radar() else "trace_display")
+
+        # the scale and the groups scroll, the buttons stay: at most MAX_HEIGHT tall
         from qgis.PyQt.QtWidgets import QFrame, QScrollArea, QWidget
         layout = self.layout()
         self._page = QWidget()
         column = QVBoxLayout(self._page)
         column.setContentsMargins(0, 0, 0, 0)
         column.addLayout(layout.takeAt(0).layout())
-        for box in (display, contours, self.coverage_group):
+        for box in boxes:
             column.addWidget(box)
         column.addStretch(1)
         self._scroll = QScrollArea()
@@ -335,6 +397,50 @@ class DisplayDialog(ColorScaleDialog):
         self._rest = layout.sizeHint().height() - self._scroll.sizeHint().height()
         self._fit_height()
 
+    def _build_line_look(self, form, style) -> None:
+        """"Line colour" (from the colour scale, or one the user picks) and "Line width (mm)"
+        of the contour lines."""
+        from qgis.gui import QgsColorButton, QgsDoubleSpinBox
+
+        from .display_render import CONTOUR_PEN_MM
+        self.line_colour_combo = QComboBox()
+        self.line_colour_combo.addItem(FROM_SCALE_TEXT)
+        self.line_colour_combo.addItem(PICKED_COLOUR_TEXT)
+        self.line_colour_button = QgsColorButton()
+        self.line_colour_button.setAllowOpacity(False)
+        self.line_colour_button.setColorDialogTitle("Contour line colour")
+        self.line_colour_button.setToolTip(LINE_COLOUR_TIP)
+        picked = getattr(style, "contour_colour", None)
+        if picked:
+            self.line_colour_button.setColor(QColor(picked))
+        self.line_colour_combo.setCurrentIndex(1 if picked else 0)
+        self.line_colour_button.setEnabled(bool(picked))
+        self.line_colour_combo.currentIndexChanged.connect(
+            lambda i: self.line_colour_button.setEnabled(i == 1))
+        row = QHBoxLayout()
+        row.addWidget(self.line_colour_combo, 1)
+        row.addWidget(self.line_colour_button)
+        form.addRow("Line colour", row)
+        self.line_width_spin = QgsDoubleSpinBox()
+        self.line_width_spin.setRange(0.05, 5.0)
+        self.line_width_spin.setDecimals(2)
+        self.line_width_spin.setSingleStep(0.05)
+        self.line_width_spin.setClearValue(CONTOUR_PEN_MM)
+        self.line_width_spin.setToolTip(LINE_WIDTH_TIP)
+        width = getattr(style, "contour_width", None)
+        self.line_width_spin.setValue(CONTOUR_PEN_MM if width is None else width)
+        form.addRow("Line width (mm)", self.line_width_spin)
+
+    def _line_look(self) -> tuple:
+        """(contour colour or None, contour width or None) as the dialog sets them."""
+        from .display_render import CONTOUR_PEN_MM
+        colour = None
+        if self.line_colour_combo.currentIndex() == 1:
+            c = self.line_colour_button.color()
+            colour = c.name() if c.isValid() else None
+        width = round(self.line_width_spin.value(), 2)
+        return colour, None if abs(width - CONTOUR_PEN_MM) < 1e-9 else width
+
     def _fit_height(self) -> None:
         """As tall as the content, at most ``MAX_HEIGHT`` (then the groups scroll)."""
         scroll = getattr(self, "_scroll", None)
@@ -345,7 +451,533 @@ class DisplayDialog(ColorScaleDialog):
         scroll.setMinimumHeight(min(self._page.sizeHint().height(), MAX_HEIGHT - self._rest))
         self.adjustSize()
 
+    # -- reflection sections ---------------------------------------------------------------
+    def _build_traces(self, style) -> QGroupBox:
+        """The clip under the colour ramp and the "Amplitudes" group (display options: the
+        samples are never changed). Returns the group."""
+        from dataclasses import replace
+
+        from qgis.gui import QgsDoubleSpinBox
+
+        from .display_render import shown_values
+        section = self._traces.section
+        depth = section.domain == "depth"
+        self._syncing = False
+        self._signed = section.signed()
+        self._limits = (self._scale.vmin, self._scale.vmax)
+        # values shown per gain, sampled for the limits: the drawing's when it has them
+        kept = shown_values(self._layer)
+        self._shown_by_gain = {} if kept is None else {replace(style.gain, show_muted=False): kept}
+        self.log_check.setVisible(False)            # amplitudes: linear, clipped
+        self.auto_button.setVisible(False)
+
+        self.clip_check = QCheckBox("Clip at")
+        self.clip_check.setObjectName("clip_check")
+        self.clip_check.setToolTip("The limits follow the amplitudes shown: this percentile "
+                                   "of their absolute values. Typing a limit turns it off.")
+        self.clip_spin = QgsDoubleSpinBox()
+        self.clip_spin.setObjectName("clip_spin")
+        self.clip_spin.setRange(0.1, 100.0)
+        self.clip_spin.setDecimals(1)
+        self.clip_spin.setSingleStep(0.5)
+        self.clip_spin.setSuffix(" %")
+        self.clip_spin.setClearValue(98.0)
+        self.clip_spin.setKeyboardTracking(False)
+        self.clip_spin.setValue(98.0 if style.clip_percent is None else style.clip_percent)
+        self.clip_check.setChecked(style.clip_percent is not None)
+        self._scale_form.insertRow(1, self.clip_check, self.clip_spin)
+        from .layer_list import depth_text
+        self.depth_edit = QLineEdit(depth_text(style.max_depth) if style.max_depth else "")
+        self.depth_edit.setObjectName("depth_edit")
+        self.depth_edit.setPlaceholderText(DEPTH_EMPTY)
+        self.depth_edit.setClearButtonEnabled(True)
+        self.depth_edit.setToolTip(DEPTH_TIP)
+        self._scale_form.addRow(DEPTH_LABEL, self.depth_edit)
+
+        group = QGroupBox("Amplitudes")
+        group.setObjectName("amplitudes_group")
+        form = QFormLayout(group)
+        gain = style.gain
+        unit, scale = self._window_unit(depth)
+        self._window_scale = scale
+        span = max(section.step, (section.n_samples - 1) * section.step)
+        radar = self._is_radar()
+        self._build_filters(form, gain, span, unit, scale)
+        self.agc_check = QCheckBox("Balance along the trace (AGC)")
+        self.agc_check.setToolTip("Each sample divided by the strength of the samples around "
+                                  "it, so weak and strong parts of a trace look alike")
+        self.agc_spin = QgsDoubleSpinBox()
+        self.agc_spin.setObjectName("agc_spin")
+        if depth:
+            self.agc_spin.setDecimals(1)
+            self.agc_spin.setRange(0.1, 1e5)
+            default = round(span / 10, 1)
+        elif radar:                                 # five periods of the antenna
+            self.agc_spin.setDecimals(1)
+            self.agc_spin.setRange(0.1, 1e5)
+            default = round(self._radar_default().agc_window * scale, 1)
+        else:                                       # a quarter of the record, at most 200 ms
+            self.agc_spin.setDecimals(0)
+            self.agc_spin.setRange(1.0, 1e5)
+            default = float(max(1, min(AGC_MAX_MS, round(span * 1000.0 / 4))))
+        self.agc_spin.setSuffix(f" {unit}")
+        self.agc_spin.setClearValue(default)
+        on = gain.agc_window is not None and gain.agc_window > 0
+        self.agc_spin.setValue(gain.agc_window * scale if on else default)
+        self.agc_check.setChecked(on)
+        self.time_power_check = QCheckBox("Gain with depth" if depth else "Gain with time")
+        self.time_power_check.setToolTip(
+            f"Each sample multiplied by its {'depth' if depth else 'time'} to this power: the "
+            "deep part, weakened on its way, shows")
+        self.time_power_spin = QgsDoubleSpinBox()
+        self.time_power_spin.setObjectName("time_power_spin")
+        self.time_power_spin.setRange(0.1, 5.0)
+        self.time_power_spin.setDecimals(1)
+        self.time_power_spin.setSingleStep(0.5)
+        self.time_power_spin.setClearValue(2.0)
+        powered = gain.time_power is not None and gain.time_power != 0
+        self.time_power_spin.setValue(gain.time_power if powered else 2.0)
+        self.time_power_check.setChecked(powered)
+        self.balance_check = QCheckBox("Balance traces against each other")
+        self.balance_check.setToolTip("Each trace divided by its own strength (RMS)")
+        self.balance_check.setChecked(gain.balance_traces)
+        self.polarity_check = QCheckBox("Swap polarity")
+        self.polarity_check.setChecked(gain.reverse_polarity)
+        if not self._signed:
+            self.polarity_check.setEnabled(False)
+            self.polarity_check.setToolTip("The data are never negative")
+        else:
+            self.polarity_check.setToolTip("Positive and negative amplitudes swap colours")
+        form.addRow(self.dewow_check)
+        form.addRow("Window", self.dewow_spin)
+        form.addRow(self.band_check)
+        form.addRow("From", self.band_row)
+        form.addRow(self.background_check)
+        form.addRow("", self.background_combo)
+        form.addRow("Traces", self.background_spin)
+        form.addRow("Window", self.background_row)
+        form.setRowVisible(self.background_spin, self._spacing is None)
+        form.setRowVisible(self.background_row, self._spacing is not None)
+        form.addRow(self.agc_check)
+        form.addRow("Window", self.agc_spin)
+        form.addRow(self.time_power_check)
+        form.addRow("Power", self.time_power_spin)
+        form.addRow(self.balance_check)
+        form.addRow(self.polarity_check)
+        self.show_muted_check = QCheckBox("Paint muted zones")
+        self.show_muted_check.setObjectName("show_muted_check")
+        self.show_muted_check.setToolTip("Samples that are zero at the top or bottom of a trace "
+                                         "are left transparent unless this is ticked.")
+        self.show_muted_check.setChecked(gain.show_muted)
+        form.addRow(self.show_muted_check)
+        self.amplitudes_note = QLabel("These change the picture only. The readout shows the "
+                                      "file's amplitudes.")
+        self.amplitudes_note.setObjectName("amplitudes_note")
+        self.amplitudes_note.setWordWrap(True)
+        form.addRow(self.amplitudes_note)
+        self.amplitudes_group = group
+
+        self.agc_check.toggled.connect(self._gain_changed)
+        self.time_power_check.toggled.connect(self._gain_changed)
+        self.band_check.toggled.connect(self._band_toggled)
+        for w in (self.dewow_check, self.background_check):
+            w.toggled.connect(self._gain_changed)
+        self.background_combo.currentIndexChanged.connect(self._gain_changed)
+        for spin in (self.dewow_spin, self.background_spin, self.band_low_spin,
+                     self.band_high_spin):
+            spin.valueChanged.connect(self._gain_changed)
+        self.background_spin.valueChanged.connect(self._background_traces_changed)
+        self.background_m_spin.valueChanged.connect(self._background_metres_changed)
+        for w in (self.balance_check, self.polarity_check):
+            w.toggled.connect(self._gain_changed)
+        for spin in (self.agc_spin, self.time_power_spin):
+            spin.valueChanged.connect(self._gain_changed)
+        self.clip_check.toggled.connect(self._clip_changed)
+        self.clip_spin.valueChanged.connect(self._clip_percent_changed)
+        self.min_spin.valueChanged.connect(lambda v: self._limit_typed(v, True))
+        self.max_spin.valueChanged.connect(lambda v: self._limit_typed(v, False))
+        self._sync_gain_widgets()
+        if self.clip_check.isChecked():
+            self._recompute()
+        return group
+
+    def _is_radar(self) -> bool:
+        from ..core.dataset_types import is_radar_kind
+        return is_radar_kind(getattr(self._layer.dataset, "kind", "") or "")
+
+    def _window_unit(self, depth: bool) -> tuple[str, float]:
+        """The unit of the windows along the trace and its factor from the section's unit:
+        m for a depth section, ns for a radargram, ms for a seismic time section."""
+        if depth:
+            return "m", 1.0
+        return ("ns", 1e9) if self._is_radar() else ("ms", 1000.0)
+
+    def _radar_default(self):
+        from .data import radar_gain
+        section = self._traces.section
+        p = self._layer.dataset.provenance or {}
+        return radar_gain(p.get("frequency_mhz"), section.n_samples * section.step)
+
+    def _build_filters(self, form, gain, span: float, unit: str, scale: float) -> None:
+        """"Remove drift (dewow)" with its window and "Remove background" with whole line or
+        a moving window of traces: the filters that come first, before any gain."""
+        from qgis.gui import QgsDoubleSpinBox, QgsSpinBox
+
+        from .data import BACKGROUND_WINDOW_M
+        self.dewow_check = QCheckBox(DEWOW_TEXT)
+        self.dewow_check.setObjectName("dewow_check")
+        self.dewow_check.setToolTip(DEWOW_TIP)
+        self.dewow_spin = QgsDoubleSpinBox()
+        self.dewow_spin.setObjectName("dewow_spin")
+        self.dewow_spin.setDecimals(2 if unit == "m" else 1)
+        self.dewow_spin.setRange(0.01 if unit == "m" else 0.1, 1e5)
+        self.dewow_spin.setSuffix(f" {unit}")
+        if self._is_radar():                        # two periods of the antenna
+            from .data import radar_dewow_window
+            section = self._traces.section
+            default = radar_dewow_window((self._layer.dataset.provenance or {}).get(
+                "frequency_mhz"), section.n_samples * section.step) * scale
+        else:
+            default = span * scale / 20
+        default = round(default, self.dewow_spin.decimals())
+        self.dewow_spin.setClearValue(default)
+        on = gain.dewow_window is not None and gain.dewow_window > 0
+        self.dewow_spin.setValue(gain.dewow_window * scale if on else default)
+        self.dewow_check.setChecked(on)
+        self._build_band(gain, depth=unit == "m")
+        self.background_check = QCheckBox(BACKGROUND_TEXT)
+        self.background_check.setObjectName("background_check")
+        self.background_check.setToolTip(BACKGROUND_TIP)
+        self.background_combo = QComboBox()
+        self.background_combo.setObjectName("background_combo")
+        for text, value in BACKGROUND_ITEMS:
+            self.background_combo.addItem(text, value)
+        self.background_combo.setToolTip(BACKGROUND_TIP)
+        self.background_spin = QgsSpinBox()
+        self.background_spin.setObjectName("background_spin")
+        self.background_spin.setToolTip(BACKGROUND_TRACES_TIP)
+        n = self._traces.section.n_traces
+        self.background_spin.setRange(3, max(3, n))
+        self._spacing = spacing = trace_spacing(self._traces.section)
+        if spacing is None:
+            start = max(3, (n // 10) | 1)           # a tenth of the line, odd
+        else:                                       # 10 m of line
+            start = min(window_traces(BACKGROUND_WINDOW_M, spacing), max(3, n))
+        self.background_spin.setClearValue(start)
+        self.background_spin.setValue(gain.background_traces or start)
+        # the moving window in metres when the traces have a spacing: the traces stay stored
+        self.background_m_spin = QgsDoubleSpinBox()
+        self.background_m_spin.setObjectName("background_m_spin")
+        self.background_m_spin.setToolTip(BACKGROUND_METRES_TIP)
+        self.background_m_spin.setSuffix(" m")
+        self.background_m_spin.setDecimals(2 if spacing is not None and spacing < 0.1 else 1)
+        if spacing is not None:
+            self.background_m_spin.setRange(3 * spacing, max(3, n) * spacing)
+            self.background_m_spin.setClearValue(start * spacing)
+            self.background_m_spin.setValue(self.background_spin.value() * spacing)
+        self.background_count = QLabel()
+        self.background_count.setObjectName("background_count")
+        self.background_row = QWidget()
+        row = QHBoxLayout(self.background_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.background_m_spin, 1)
+        row.addWidget(self.background_count)
+        self._show_count()
+        self.background_check.setChecked(gain.background in ("all", "window"))
+        self.background_combo.setCurrentIndex(1 if gain.background == "window" else 0)
+
+    def _antenna_hz(self) -> float | None:
+        """A radargram's antenna frequency (Hz) when the file gives one; else None."""
+        if not self._is_radar():
+            return None
+        try:
+            f = float((self._layer.dataset.provenance or {}).get("frequency_mhz"))
+        except (TypeError, ValueError):
+            return None
+        return f * 1e6 if np.isfinite(f) and f > 0 else None
+
+    def _build_band(self, gain, depth: bool) -> None:
+        """"Band-pass" with its "From" and "To" corners: MHz for a radargram, Hz otherwise
+        (stored in Hz); off on a depth section. Empty corners show "Not set"."""
+        from qgis.gui import QgsDoubleSpinBox
+        radar = self._is_radar()
+        unit, self._band_scale = ("MHz", 1e-6) if radar else ("Hz", 1.0)
+        self.band_check = QCheckBox(BAND_TEXT)
+        self.band_check.setObjectName("band_check")
+        self.band_check.setToolTip(BAND_TIP)
+        spins = []
+        for name, given in (("band_low_spin", gain.band_low), ("band_high_spin", gain.band_high)):
+            spin = QgsDoubleSpinBox()
+            spin.setObjectName(name)
+            spin.setDecimals(1)
+            spin.setRange(0.0, 1e5)
+            spin.setSuffix(f" {unit}")
+            spin.setSpecialValueText(BAND_UNSET)
+            spin.setClearValue(0.0)
+            spin.setToolTip(BAND_TIP)
+            spin.setValue(given * self._band_scale if given and given > 0 else 0.0)
+            spins.append(spin)
+        self.band_low_spin, self.band_high_spin = spins
+        self.band_row = QWidget()
+        self.band_row.setObjectName("band_row")
+        row = QHBoxLayout(self.band_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.band_low_spin, 1)
+        row.addWidget(QLabel("To"))
+        row.addWidget(self.band_high_spin, 1)
+        self.band_check.setChecked(gain.band_on())
+        if depth:
+            self.band_check.setEnabled(False)
+            self.band_check.setToolTip(BAND_DEPTH_TIP)
+
+    def _band_toggled(self, on: bool) -> None:
+        """Ticked with empty corners on a radargram of a known antenna: half and twice its
+        frequency."""
+        f = self._antenna_hz()
+        if on and f is not None and not self.band_low_spin.value() \
+                and not self.band_high_spin.value():
+            for spin, share in ((self.band_low_spin, 0.5), (self.band_high_spin, 2.0)):
+                spin.blockSignals(True)
+                spin.setValue(round(share * f * self._band_scale, 1))
+                spin.blockSignals(False)
+        self._gain_changed()
+
+    def _band_corner(self, spin, given) -> float | None:
+        """A corner in Hz (the stored ``given`` while the spin still shows it); None for an
+        empty one."""
+        if not spin.value() > 0:
+            return None
+        if given is not None and round(given * self._band_scale, spin.decimals()) == spin.value():
+            return given
+        return spin.value() / self._band_scale
+
+    def _band(self) -> tuple:
+        """(low, high) in Hz as the dialog sets them; (None, None) when the band-pass is off
+        or not complete."""
+        if not self.band_check.isChecked():
+            return None, None
+        old = self._style.gain
+        low = self._band_corner(self.band_low_spin, old.band_low)
+        high = self._band_corner(self.band_high_spin, old.band_high)
+        if low is None or high is None or low >= high:
+            return None, None
+        return low, high
+
+    def _check_band(self) -> None:
+        """ValueError when the band-pass is ticked without both corners, or turned round."""
+        if not (self.band_check.isChecked() and self.band_check.isEnabled()):
+            return
+        low, high = self.band_low_spin.value(), self.band_high_spin.value()
+        if not (low > 0 and high > 0):
+            raise ValueError(BAND_BOTH)
+        if low >= high:
+            raise ValueError(BAND_ORDER)
+        from ..core.numbers import fmt_trim
+        nyquist = 0.5 / float(self._traces.section.step) * self._band_scale
+        if low >= nyquist:                          # band_weights: nothing would be filtered
+            unit = self.band_low_spin.suffix().strip()
+            raise ValueError(BAND_ABOVE_NYQUIST.format(
+                limit=f"{fmt_trim(nyquist, 1)} {unit}"))
+
+    def _show_count(self) -> None:
+        from ..core.numbers import fmt_count
+        n = self.background_spin.value()
+        self.background_count.setText(f"{fmt_count(n)} trace{'' if n == 1 else 's'}")
+
+    def _background_metres_changed(self, metres: float) -> None:
+        """A window typed in metres: the odd number of traces it spans (the one stored)."""
+        if self._spacing is None:
+            return
+        self.background_spin.setValue(window_traces(metres, self._spacing))
+        self._show_count()
+
+    def _background_traces_changed(self, n: int) -> None:
+        self._show_count()
+        if self._spacing is not None and not self.background_m_spin.hasFocus():
+            self.background_m_spin.blockSignals(True)
+            self.background_m_spin.setValue(n * self._spacing)
+            self.background_m_spin.blockSignals(False)
+
+    def _window(self, spin, given) -> float:
+        """The window of ``spin`` in the section's unit; the stored ``given`` itself while the
+        spin still shows it (a rounded figure never changes the look)."""
+        if given is not None and round(given * self._window_scale, spin.decimals()) == \
+                spin.value():
+            return given
+        return spin.value() / self._window_scale
+
+    def gain(self):
+        """The display options as chosen (a ``DisplayGain``); a field without a widget here
+        keeps what the layer has."""
+        from dataclasses import replace
+        old = self._style.gain
+        background = self.background_combo.currentData() if self.background_check.isChecked() \
+            else ""
+        if self.band_check.isEnabled():
+            old = replace(old, **dict(zip(("band_low", "band_high"), self._band())))
+        return replace(
+            old,
+            dewow_window=self._window(self.dewow_spin, old.dewow_window)
+            if self.dewow_check.isChecked() else None,
+            background=background,
+            background_traces=self.background_spin.value() if background
+            else old.background_traces,
+            agc_window=self._window(self.agc_spin, old.agc_window)
+            if self.agc_check.isChecked() else None,
+            time_power=self.time_power_spin.value() if self.time_power_check.isChecked()
+            else None,
+            balance_traces=self.balance_check.isChecked(),
+            reverse_polarity=self.polarity_check.isChecked() and self.polarity_check.isEnabled(),
+            show_muted=self.show_muted_check.isChecked())
+
+    def _sync_gain_widgets(self) -> None:
+        self.dewow_spin.setEnabled(self.dewow_check.isChecked())
+        self.band_row.setEnabled(self.band_check.isChecked() and self.band_check.isEnabled())
+        self.background_combo.setEnabled(self.background_check.isChecked())
+        self.background_spin.setEnabled(self.background_check.isChecked() and
+                                        self.background_combo.currentData() == "window")
+        self.background_m_spin.setEnabled(self.background_spin.isEnabled())
+        self.agc_spin.setEnabled(self.agc_check.isChecked())
+        self.time_power_spin.setEnabled(self.time_power_check.isChecked())
+        shown = " (as shown)" if self.gain().active() else ""     # not the file's numbers
+        for spin, text in ((self.min_spin, "Minimum"), (self.max_spin, "Maximum")):
+            label = self._scale_form.labelForField(spin)
+            if label is not None:
+                label.setText(text + shown)
+
+    def _shown(self, gain):
+        """The values shown with ``gain`` for the limits: the file's own without an option,
+        else a sample of a gained copy (the drawing's when it has one; made here otherwise
+        from a part of the traces, ``limit_traces``, so that the dialog keeps up on a large
+        section, and only the sample kept). Painting the muted zones or not changes no
+        value."""
+        from dataclasses import replace
+
+        from ..core.trace_section import limit_sample, limit_traces
+        if not gain.active():
+            return self._traces.section.amplitudes
+        gain = replace(gain, show_muted=False)
+        hit = self._shown_by_gain.get(gain)
+        if hit is None:
+            placed = self._traces                   # its time zero, not its counter samples
+            part = limit_traces(placed.section, gain)
+            hit = limit_sample(display_values(part, gain, time_zero=placed.time_zero,
+                                              skip=placed.data_start), placed.data_start)
+            self._shown_by_gain[gain] = hit
+        return hit
+
+    def _gain_changed(self, *_args) -> None:
+        self._sync_gain_widgets()
+        if self.clip_check.isChecked():
+            self._recompute()
+
+    def _clip_changed(self, on: bool) -> None:
+        if on and not self._syncing:
+            self._recompute()
+
+    def _clip_percent_changed(self, *_args) -> None:
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            self.clip_check.setChecked(True)
+        finally:
+            self._syncing = False
+        self._recompute()
+
+    def _recompute(self) -> None:
+        """The limits of the clip on the values shown (``data.trace_limits``)."""
+        from dataclasses import replace
+
+        from .data import trace_limits
+        gain = self.gain()
+        style = replace(self._style, gain=gain, clip_percent=self.clip_spin.value())
+        lo, hi = trace_limits(self._traces, style, values=self._shown(gain))
+        self._signed = lo < 0
+        self._set_limits(lo, hi)
+
+    def _set_limits(self, lo: float, hi: float) -> None:
+        import math
+        c = max(abs(lo), abs(hi))
+        decimals = 3 if not c > 0 else min(12, max(3, 2 - math.floor(math.log10(c))))
+        if c >= 100:                                # large amplitudes: whole numbers
+            decimals = 0
+        self._limits = (lo, hi)
+        self._syncing = True
+        try:
+            for spin, v in ((self.min_spin, lo), (self.max_spin, hi)):
+                spin.setDecimals(decimals)
+                spin.setValue(v)
+        finally:
+            self._syncing = False
+
+    def _limit_typed(self, value: float, is_min: bool) -> None:
+        """A typed limit: the clip is off; on signed data the other limit mirrors it."""
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            self.clip_check.setChecked(False)
+            if self._signed:
+                c = abs(value)
+                self.min_spin.setValue(-c)
+                self.max_spin.setValue(c)
+        finally:
+            self._syncing = False
+        self._limits = (self.min_spin.value(), self.max_spin.value())
+
+    def _trace_style(self):
+        from dataclasses import replace
+        self._check_band()
+        max_depth = self._max_depth()
+        clip = self.clip_spin.value() if self.clip_check.isChecked() else None
+        scale = self.scale()
+        if clip is not None:                        # the exact limits, not the rounded spins
+            lo, hi = self._limits
+            if hi > lo:
+                scale = replace(scale, vmin=float(lo), vmax=float(hi))
+        return replace(self._style, scale=scale, clip_percent=clip, gain=self.gain(),
+                       max_depth=max_depth)
+
+    def _max_depth(self) -> float | None:
+        """The typed "Show down to" in metres (the stored figure while the field still shows
+        it); None when empty. ValueError for anything but a depth greater than 0."""
+        from qgis.PyQt.QtCore import QLocale
+
+        from .layer_list import depth_text
+        text = self.depth_edit.text().strip()
+        if not text:
+            return None
+        old = self._style.max_depth
+        if old and text == depth_text(old):
+            return old
+        value, ok = QLocale().toDouble(text)
+        if not ok:
+            try:
+                value, ok = float(text), True
+            except ValueError:
+                ok = False
+        value = round(float(value), 2) if ok and np.isfinite(value) else 0.0   # to the cm
+        if value <= 0:
+            raise ValueError(DEPTH_BAD)
+        return value
+
     # -- interpolation of the smooth field -------------------------------------------------
+    def _cell_used(self) -> None:
+        """The note under Grid cell: the cell the field is really drawn with, when the typed
+        one would need more grid points than allowed; empty and hidden otherwise."""
+        from ..core.gridding import MAX_GRID_NODES, grid_cell_used
+        from ..core.numbers import fmt_count, fmt_trim
+        text = ""
+        if self._mesh is not None and not self.auto_cell.isChecked():
+            typed = self.cell_spin.value()
+            used = grid_cell_used(self._mesh, typed)
+            if used > typed * 1.001:
+                text = (f"Drawn at {fmt_trim(used, 2)} m: the grid is limited to "
+                        f"{fmt_count(MAX_GRID_NODES)} points.")
+        self.cell_note.setText(text)
+        self.cell_note.setVisible(bool(text))
+
     def _build_interpolation(self, form, interp) -> None:
         """Interpolation, the chosen method's few settings and the anisotropy, under the
         grid cell (``core.interpolators``)."""
@@ -573,6 +1205,8 @@ class DisplayDialog(ColorScaleDialog):
         from dataclasses import replace
 
         from ..core.numbers import parse_levels
+        if self._traces is not None:
+            return self._trace_style()
         major = parse_levels(self.major_edit.text())
         minor = parse_levels(self.minor_edit.text())
         if major or minor:
@@ -580,8 +1214,9 @@ class DisplayDialog(ColorScaleDialog):
         shown = self.shown_combo.currentData() if self._readings is not None else \
             self._style.shown
         changed = self._readings is not None and shown != self._shown_before
+        colour, width = self._line_look()
         return replace(
-            self._style, shown=shown,
+            self._style, shown=shown, contour_colour=colour, contour_width=width,
             scale=None if changed else self.scale(),      # a new value: automatic scale
             mode=self.mode_combo.currentData(),
             grid_cell=None if self.auto_cell.isChecked() else self.cell_spin.value(),

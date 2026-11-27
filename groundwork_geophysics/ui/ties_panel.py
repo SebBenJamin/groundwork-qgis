@@ -18,6 +18,8 @@ from .ties_plot import TiesPlot
 NOTE = ("2D profiles in different directions are not expected to match exactly; "
         "the figure is an indication.")
 NO_MODEL = "no model at tie"
+#: two profiles running along each other: one row for the stretch they share
+SHARED_TEXT = "shared stretch"
 HEADERS = ("Profiles", "At", "Distance", "Compared", "Mismatch")
 REFRESH_MS = 300
 SORT_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -36,6 +38,10 @@ class TieRow:
     col_b: TieColumn | None
     mismatch: TieMismatch | None
     text: str                       # mismatch column
+    #: (start, end) on A of a stretch the two profiles share (the tie at its middle)
+    stretch: tuple[float, float] | None = None
+    #: the same stretch on B
+    stretch_b: tuple[float, float] | None = None
 
     @property
     def key(self) -> tuple:
@@ -47,8 +53,18 @@ class TieRow:
 
     @property
     def title(self) -> str:
-        kind = "crossing" if self.crossing else f"{self.distance:.0f} m near miss"
+        if self.stretch is not None:
+            kind = SHARED_TEXT
+        else:
+            kind = "crossing" if self.crossing else f"{self.distance:.0f} m near miss"
         return f"{self.a_name} × {self.b_name} ({kind})"
+
+
+def _at(s: float, stretch) -> str:
+    """Where a tie lies on one profile: "210 m", or a shared stretch "165–255 m"."""
+    if stretch is None:
+        return f"{s:.0f} m"
+    return f"{round(stretch[0])}–{round(stretch[1])} m"
 
 
 def _natural(name: str) -> list:
@@ -91,7 +107,8 @@ def build_rows(provider: SectionDataProvider) -> list[TieRow]:
                 col_b = shown_column(t)
                 m, text = _mismatch(col_a, col_b)
                 rows.append(TieRow(a.id, b.id, a.name, b.name, t.s, t.s_other, t.distance,
-                                   col_a, col_b, m, text))
+                                   col_a, col_b, m, text, t.stretch,
+                                   None if back is None else back.stretch))
     return rows
 
 
@@ -185,10 +202,14 @@ class TiesPanel(QDockWidget):
         t.setSortingEnabled(False)
         t.setRowCount(len(self.rows))
         for r, row in enumerate(self.rows):
-            kind = "crossing" if row.crossing else f"{row.distance:.0f} m (near miss)"
+            if row.stretch is not None:
+                kind = SHARED_TEXT
+            else:
+                kind = "crossing" if row.crossing else f"{row.distance:.0f} m (near miss)"
             compared = " · ".join(c.dataset_name if c else "–" for c in (row.col_a, row.col_b))
             cells = (f"{row.a_name} × {row.b_name}",
-                     f"{row.a_name} {row.s_a:.0f} m · {row.b_name} {row.s_b:.0f} m",
+                     f"{row.a_name} {_at(row.s_a, row.stretch)} · "
+                     f"{row.b_name} {_at(row.s_b, row.stretch_b)}",
                      kind, compared, row.text)
             m = row.mismatch
             figure = None if m is None else (m.factor if m.factor is not None else m.rel_diff)

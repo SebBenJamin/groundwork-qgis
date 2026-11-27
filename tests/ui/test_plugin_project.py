@@ -64,3 +64,39 @@ def test_a_models_section_style_comes_back_with_the_project(qgis_app, fake_iface
     finally:
         plugin.unload()
         project.clear()
+
+
+def test_a_profiles_layer_order_comes_back_with_the_project(qgis_app, fake_iface, tmp_path,
+                                                            store_with_model):
+    """The drawing order the user set in the Layers list is kept in the project file beside
+    the section styles."""
+    import shutil
+
+    from qgis.core import QgsProject
+
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint
+    from groundwork_geophysics.plugin import WorkbenchPlugin
+    from groundwork_geophysics.ui.project_actions import write_store_entry
+
+    st, p, src = store_with_model
+    copy = src.with_name("d2.dat")
+    shutil.copy(src, copy)
+    mt, sha = file_fingerprint(copy)
+    st.save_dataset(Dataset("d2", p.id, st.station_sets(p.id)[0].id, "ert_model", str(copy),
+                            mt, sha, "r2_res_dat", {"z_kind": "elevation"}, {}, name="d2"))
+    project = QgsProject.instance()
+    project.setFileName(str(tmp_path / "p.qgz"))
+    write_store_entry(project, st.path)
+    plugin = WorkbenchPlugin(fake_iface)
+    plugin.initGui()
+    try:
+        plugin.set_store(st)
+        assert [la.dataset.id for la in plugin.provider.layers(p.id)] == ["d1", "d2"]
+        plugin.provider.set_layer_order(p.id, ["d2", "d1"])
+        assert project.write()
+        project.clear()
+        assert project.read(str(tmp_path / "p.qgz"))
+        assert [la.dataset.id for la in plugin.provider.layers(p.id)] == ["d2", "d1"]
+    finally:
+        plugin.unload()
+        project.clear()

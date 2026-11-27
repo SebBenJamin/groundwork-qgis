@@ -55,6 +55,7 @@ BAR_COLUMN = 0.18       # landscape: colour-bar column, share of the area width
 BAR_ROW = 0.12          # portrait: colour-bar row, share of a frame slot's height
 BAR_MAX_MM = 20.0       # a new vertical colour bar's width (the bar is 30 % of it) ...
 BAR_MAX_LEN_MM = 80.0   # ... and its greatest length (horizontal bars: their width)
+KEY_LEN_MM = 35.0       # a reflection section's amplitude key: its length
 TOP_PAD = 0.02          # share of the depth range added above the data (labels: label_room_mm)
 DETAILS = (("project", "Project"), ("client", "Client"), ("job", "Job no."),
            ("date", "Date"), ("author", "Drawn"), ("checked", "Checked"),
@@ -187,10 +188,12 @@ def _slots(area, count: int, portrait: bool, bars: list[int]) -> list[dict]:
 def snapshot_extent(snap, length: float) -> tuple[float, float, float, float]:
     """(s0, s1, z0, z1) of a frame's data, like the panel's "Zoom Full"."""
     from ..section.context_render import context_z_values
+    from ..section.data import layer_bounds
     s, z = [0.0, float(length)], []
     for layer in snap.layers:
-        if layer.mesh is not None:
-            s0, s1, z0, z1 = layer.mesh.bounds()
+        bounds = layer_bounds(layer)
+        if bounds is not None:
+            s0, s1, z0, z1 = bounds
             s += [s0, s1]
             z += [z0, z1]
     if snap.topo is not None and len(snap.topo[0]):
@@ -265,8 +268,9 @@ def label_room_mm(snap) -> float:
 def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: float,
               top_mm: float = 0.0) -> None:
     """Set the plot range so the plot area shows 1:``scale`` horizontally and ``ve`` times
-    that vertically: the data and ``top_mm`` above it for the labels, centred (axis labels
-    change the plot area: settle three times)."""
+    that vertically: the data and ``top_mm`` above it for the labels, centred; data deeper
+    than the frame keep their top (and the label room) in it and are cut at the bottom
+    (axis labels change the plot area: settle three times)."""
     plot = item.plot()
     for _ in range(3):
         w_mm, h_mm = _interior_mm(item)
@@ -274,7 +278,8 @@ def fit_frame(item, scale: int, ve: float, s0: float, s1: float, z0: float, z1: 
         span_z = h_mm * scale / (1000.0 * ve)
         room = top_mm * scale / (1000.0 * ve)
         sc = (s0 + s1) / 2.0
-        y_min = z0 - (span_z - (z1 - z0) - room) / 2.0
+        spare = span_z - (z1 - z0) - room
+        y_min = z0 - spare / 2.0 if spare >= 0 else z1 + room - span_z
         plot.setXMinimum(sc - span_s / 2.0)
         plot.setXMaximum(sc + span_s / 2.0)
         plot.setYMinimum(y_min)
@@ -590,6 +595,14 @@ def _concrete_scales(frame, snap) -> None:
             m.scale = asdict(la.style.scale)
 
 
+def frame_models(store, profile_id: str, look, snap) -> list:
+    """The datasets a frame shows (one colour bar each), in the section's drawing order
+    (bottom first, as ``snap``, the frame's snapshot, has them)."""
+    have = {d.id: d for d in store.datasets(profile_id)}
+    wanted = {m.dataset_id for m in look.models if m.visible and m.dataset_id in have}
+    return [have[la.dataset.id] for la in snap.layers if la.dataset.id in wanted]
+
+
 def create_or_update_plate(project, store, provider, plate) -> QgsPrintLayout:
     register_items()
     detach_frame_items(project)                     # before their sources are replaced
@@ -625,9 +638,7 @@ def _build_plate(project, store, provider, plate) -> QgsPrintLayout:
             _concrete_scales(f, snap)
             snaps[f.frame_id] = snap
             extents[f.frame_id] = snapshot_extent(snap, profile.chainage.length)
-            have = {d.id: d for d in store.datasets(f.profile_id)}
-            models = [have[m.dataset_id] for m in f.look.models
-                      if m.visible and m.dataset_id in have]
+            models = frame_models(store, f.profile_id, f.look, snap)
         shown.append(models)
     write_plates(project, plates + [plate])
 
@@ -799,6 +810,7 @@ def _free_id(layout, n: int, k: int) -> str:
 def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool) -> None:
     """One colour bar per shown model, found by (frame, model), never by position: a tuned
     bar stays with its model when frames or models are removed or reordered."""
+    from ..core.dataset_types import is_trace_kind
     from ..section.readout import unit_label
     portrait = slot["bars"] and slot["bars"][0][2] > slot["bars"][0][3]
     mine = {i.dataset_id: i for i in layout.items()
@@ -806,16 +818,21 @@ def _update_bars(layout, n: int, frame, models: list, slot: dict, relayout: bool
     for k, d in enumerate(models, start=1):
         bar = mine.get(d.id)
         fresh = bar is None
+        amplitude = is_trace_kind(d.kind)       # a section: its amplitude key
         if fresh:
             bar = ColourBarItem(layout)
             bar.setId(_free_id(layout, n, k))
             bar.settings.setOrientation(Qt.Orientation.Horizontal if portrait
                                         else Qt.Orientation.Vertical)
-            bar.title = quantity_label(d.quantity)
-            bar.unit = unit_label(d.unit)
+            bar.title = "Amplitude" if amplitude else quantity_label(d.quantity)
+            bar.unit = "" if amplitude else unit_label(d.unit)
             layout.addLayoutItem(bar)
+        bar.amplitude = amplitude
         if fresh or relayout:
-            _place(bar, *slot["bars"][k - 1])
+            x, y, w, h = slot["bars"][k - 1]
+            if amplitude:                       # a short key, not a scale to read off
+                w, h = (min(w, KEY_LEN_MM), h) if portrait else (w, min(h, KEY_LEN_MM))
+            _place(bar, x, y, w, h)
         bar.frame_id, bar.dataset_id = frame.frame_id, d.id
         bar.refresh()
 

@@ -101,3 +101,78 @@ def test_overhang_within_the_limit_stays_silent(qgis_app, fake_iface, p4, questi
         assert len(st.datasets(p.id)) == 1
     finally:
         _close(dlg, qgis_app)
+
+
+@pytest.fixture
+def flat_line(qgis_app, tmp_path):
+    """Store with profile L1 drawn on the map: no stations, so no heights."""
+    from groundwork_geophysics.core.model import profile_from_polyline
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p = profile_from_polyline("L1", st.crs_authid, np.array([[0.0, 0.0], [100.0, 0.0]]))
+    st.save_profile(p)
+    src = tmp_path / "zond_model.dat"
+    shutil.copy(FIXTURES / "zond_model.dat", src)
+    return st, p, src
+
+
+@pytest.mark.parametrize("z_kind", ["depth", "local"])
+def test_a_hanging_model_on_a_line_without_heights_is_hinted(qgis_app, fake_iface, flat_line,
+                                                              z_kind):
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog, FLAT_MODEL
+
+    st, p, src = flat_line
+    dlg = AddDataDialog(fake_iface, st, p.id)
+    try:
+        dlg.set_file(src)
+        dlg.z_combo.setCurrentIndex(dlg.z_combo.findData(z_kind))
+        assert FLAT_MODEL in dlg.warning_label.text()
+        assert dlg.add_button.isEnabled()                   # a hint, not a block
+        dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("elevation"))
+        assert FLAT_MODEL not in dlg.warning_label.text()   # real elevations: no hint
+    finally:
+        _close(dlg, qgis_app)
+
+
+def test_a_hanging_model_on_stations_with_heights_is_not_hinted(qgis_app, fake_iface, p4):
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog, FLAT_MODEL
+
+    st, p, src = p4
+    for provider in (None, SectionDataProvider(st)):
+        dlg = AddDataDialog(fake_iface, st, p.id, provider=provider)
+        try:
+            dlg.set_file(src)
+            dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("depth"))
+            assert FLAT_MODEL not in dlg.warning_label.text()
+        finally:
+            _close(dlg, qgis_app)
+
+
+def test_a_hanging_model_with_an_elevation_model_is_not_hinted(qgis_app, fake_iface, flat_line,
+                                                               tmp_path):
+    from osgeo import gdal
+    from qgis.core import QgsProject, QgsRasterLayer
+
+    from groundwork_geophysics.core.context_settings import ContextSettings
+    from groundwork_geophysics.ui.add_data_dialog import AddDataDialog, FLAT_MODEL
+    from groundwork_geophysics.ui.context_dialog import write_settings
+    gdal.UseExceptions()
+    tif = str(tmp_path / "dem.tif")
+    ds = gdal.GetDriverByName("GTiff").Create(tif, 4, 4, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((-100, 100, 0, 200, 0, -100))
+    ds.GetRasterBand(1).Fill(50.0)
+    ds = None
+    st, p, src = flat_line
+    prj = QgsProject()
+    dem = QgsRasterLayer(tif, "dem")
+    prj.addMapLayer(dem)
+    write_settings(prj, ContextSettings(dem_layer_id=dem.id()))
+    dlg = AddDataDialog(fake_iface, st, p.id, project=prj)
+    try:
+        dlg.set_file(src)
+        dlg.z_combo.setCurrentIndex(dlg.z_combo.findData("depth"))
+        assert FLAT_MODEL not in dlg.warning_label.text()
+    finally:
+        _close(dlg, qgis_app)

@@ -1,7 +1,7 @@
 """Build the release zips in dist/:
 
     python-qgis.bat scripts/package.py [--guelpe <fresh Gülpe demo folder>] [--erfurt <fresh Erfurt demo folder>]
-    [--calhoun <fresh Calhoun demo folder>]
+    [--calhoun <fresh Calhoun demo folder>] [--vaud <fresh Vaud demo folder>]
 
 dist/groundwork_geophysics-<version>.zip       the plugin, top folder groundwork_geophysics/
                                               (what Plugins > Install from ZIP expects)
@@ -10,6 +10,7 @@ dist/groundwork_geophysics-demo-<version>.zip  the contents of demo/: unzip anyw
 dist/groundwork_geophysics-demo-guelpe-<version>.zip  the real-data demo (demo_guelpe/); open guelpe_project.qgz
 dist/groundwork_geophysics-demo-erfurt-<version>.zip  the real-data demo (demo_erfurt/); open erfurt_project.qgz
 dist/groundwork_geophysics-demo-calhoun-<version>.zip  the refraction demo (demo_calhoun/); open calhoun_project.qgz
+dist/groundwork_geophysics-demo-vaud-<version>.zip  the reflection demo (demo_vaud/); open vaud_project.qgz
 
 The version comes from groundwork_geophysics/metadata.txt. Byte caches, editor or SQLite
 side files and GDAL .aux.xml statistics are left out; so are tests, spikes and the demo
@@ -29,6 +30,7 @@ DEMO = REPO / "demo"
 DEMO_GUELPE = REPO / "demo_guelpe"
 DEMO_ERFURT = REPO / "demo_erfurt"
 DEMO_CALHOUN = REPO / "demo_calhoun"
+DEMO_VAUD = REPO / "demo_vaud"
 DIST = REPO / "dist"
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 #: folders by pattern: the 3D view's point clouds and section pictures, and the remembered
@@ -110,9 +112,11 @@ def write_zip(target: Path, entries: list[tuple[Path, str]]) -> Path:
 
 def build(dist: Path = DIST, guelpe_src: Path = DEMO_GUELPE,
           erfurt_src: Path = DEMO_ERFURT,
-          calhoun_src: Path = DEMO_CALHOUN) -> tuple[Path, ...]:
-    """The five zips. ``guelpe_src`` / ``erfurt_src`` / ``calhoun_src``: the real-data demo
-    folders to ship, by default the committed demo_guelpe/, demo_erfurt/ and demo_calhoun/; a freshly built folder
+          calhoun_src: Path = DEMO_CALHOUN,
+          vaud_src: Path = DEMO_VAUD) -> tuple[Path, ...]:
+    """The six zips. ``guelpe_src`` / ``erfurt_src`` / ``calhoun_src`` / ``vaud_src``: the
+    real-data demo folders to ship, by default the committed demo_guelpe/, demo_erfurt/,
+    demo_calhoun/ and demo_vaud/; a freshly built folder
     (``build_demo_guelpe.py --out``, ``build_demo_erfurt.py --out``) ships a clean demo without
     touching the committed one."""
     ver = version()
@@ -131,7 +135,9 @@ def build(dist: Path = DIST, guelpe_src: Path = DEMO_GUELPE,
         raise RuntimeError(f"{plugin_zip.name} is {size} bytes (limit {MAX_PLUGIN_BYTES})")
     calhoun_zip = _demo_zip(Path(calhoun_src), f"{PLUGIN.name}-demo-calhoun-{ver}",
                             "calhoun_project.qgz", dist)
-    return plugin_zip, demo_zip, guelpe_zip, erfurt_zip, calhoun_zip
+    vaud_zip = _demo_zip(Path(vaud_src), f"{PLUGIN.name}-demo-vaud-{ver}", "vaud_project.qgz",
+                         dist)
+    return plugin_zip, demo_zip, guelpe_zip, erfurt_zip, calhoun_zip, vaud_zip
 
 
 def _demo_zip(src: Path, name: str, project: str, dist: Path) -> Path:
@@ -155,8 +161,11 @@ def main() -> int:
     calhoun = DEMO_CALHOUN
     if "--calhoun" in sys.argv:
         calhoun = Path(sys.argv[sys.argv.index("--calhoun") + 1]).resolve()
+    vaud = DEMO_VAUD
+    if "--vaud" in sys.argv:
+        vaud = Path(sys.argv[sys.argv.index("--vaud") + 1]).resolve()
     try:
-        zips = build(guelpe_src=guelpe, erfurt_src=erfurt, calhoun_src=calhoun)
+        zips = build(guelpe_src=guelpe, erfurt_src=erfurt, calhoun_src=calhoun, vaud_src=vaud)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

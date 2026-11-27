@@ -551,3 +551,100 @@ def test_map_points_repeated_for_every_depth_are_projected_once(monkeypatch):
     assert s[:3] == pytest.approx([-5.0, 5.0, 25.0]) and len(s) == 300
     assert (s.reshape(100, 3) == s[:3]).all() and beyond.reshape(100, 3).all(axis=0).tolist() \
         == [True, False, True]
+
+
+# -- a dataset's own placement against the profile's stations ----------------------------
+
+def _surveyed(tmp_path):
+    """A 124.5 m line with three surveyed electrodes (file metres 0, 50, 75 at chainage 0,
+    50, 73.4) and an ERT model on them."""
+    return _known_points(tmp_path, inline=np.array([0.0, 50.0, 75.0]))
+
+
+def _trace_dataset(p, s, kind, options):
+    return Dataset("g", p.id, s.id, kind, "line.dzt", 0.0, "", "gssi_dzt", options, {})
+
+
+def _map_of(st, p, d):
+    from groundwork_geophysics.section.placement_resolve import ProfileLayout, resolve
+    return resolve(st.profile(p.id), st.station_sets(p.id), d, ProfileLayout())
+
+
+def test_a_radargram_from_the_end_runs_back_from_the_end_on_a_surveyed_line(tmp_path):
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    d = _trace_dataset(p, s, "gpr_section", {"chainage_offset": 16.9,
+                                            "placement": {"zero": 124.5, "direction": -1}})
+    r = _map_of(st, p, d)
+    assert r.source == "rigid"
+    assert r.map(np.array([0.0, 10.0])) == pytest.approx([124.5 - 16.9, 124.5 - 26.9])
+
+
+def test_a_radargram_from_the_start_with_an_offset_starts_there(tmp_path):
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    d = _trace_dataset(p, s, "gpr_section", {"chainage_offset": 25.5,
+                                            "placement": {"zero": 0.0, "direction": 1}})
+    assert _map_of(st, p, d).map(np.array([0.0, 75.0])) == pytest.approx([25.5, 100.5])
+
+
+def test_a_seismic_section_by_trace_spacing_follows_its_placement(tmp_path):
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    d = _trace_dataset(p, s, "refl_section", {"position": "spacing", "spacing": 2.0,
+                                             "chainage_offset": 10.0,
+                                             "placement": {"zero": 0.0, "direction": 1}})
+    assert _map_of(st, p, d).map(np.array([0.0, 75.0])) == pytest.approx([10.0, 85.0])
+
+
+def test_the_ert_model_on_the_same_line_is_still_placed_by_the_electrodes(tmp_path):
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    model = next(d for d in st.datasets(p.id) if d.id == "t")
+    with_placement = replace(model, reader_options={**model.reader_options,
+                                                    "placement": {"zero": 0.0, "direction": 1}})
+    for d in (model, with_placement):          # Add Data stores zero 0 for "Start of the line"
+        r = _map_of(st, p, d)
+        assert r.source == "distances" and r.map(np.array([75.0])) == pytest.approx([73.4])
+
+
+def test_a_trace_section_without_a_placement_never_takes_electrode_metres(tmp_path):
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    d = _trace_dataset(p, s, "gpr_section", {})
+    r = _map_of(st, p, d)                      # 0.8's station-set rule, never pinned
+    assert r.source == "rigid" and r.map(np.array([75.0])) == pytest.approx([75.0])
+
+
+def test_the_stored_marker_decides_over_the_kind(tmp_path):
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    own = {"zero": 0.0, "direction": 1}
+    model = next(d for d in st.datasets(p.id) if d.id == "t")
+    marked = replace(model, reader_options={**model.reader_options,
+                                            "placement": {**own, "own": True},
+                                            "chainage_offset": 5.0})
+    assert _map_of(st, p, marked).map(np.array([75.0])) == pytest.approx([80.0])
+    trace = _trace_dataset(p, s, "gpr_section", {"placement": {**own, "own": False}})
+    assert _map_of(st, p, trace).map(np.array([75.0])) == pytest.approx([73.4])
+
+
+def test_a_trace_section_added_is_marked_as_placed_by_itself(tmp_path, qgis_app):
+    from groundwork_geophysics.ui.project_actions import add_model
+    from groundwork_geophysics.readers.base import ReaderResult
+    from groundwork_geophysics.core.trace_section import TraceSection
+    st, p = _surveyed(tmp_path)
+    [s] = st.station_sets(p.id)
+    path = tmp_path / "line.dzt"
+    path.write_bytes(b"x")
+    section = TraceSection(np.zeros((3, 4), dtype=np.float32), np.arange(3.0), 0.0, 1e-9,
+                           "time")
+    result = ReaderResult(None, "elevation", {"kind": "gpr_section", "reader": "gssi_dzt"},
+                          traces=section)
+    opts = {"placement": {"zero": 0.0, "direction": 1}, "velocity": 1e8}
+    d = add_model(st, p.id, s.id, path, "gssi_dzt", opts, "G", result=result)
+    assert d.reader_options["placement"] == {"zero": 0.0, "direction": 1, "own": True}
+    assert opts["placement"] == {"zero": 0.0, "direction": 1}       # the caller's dict kept
+    m = add_model(st, p.id, s.id, tmp_path / "model.txt", "text_columns",
+                  {**TEXT_OPTIONS, "placement": {"zero": 0.0, "direction": 1}}, "M")
+    assert m.reader_options["placement"] == {"zero": 0.0, "direction": 1}

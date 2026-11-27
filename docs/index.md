@@ -6,8 +6,8 @@ Groundwork shows your geophysical profiles where they are: on the map, next to t
 and the geology. Sections open as a panel under the map, with your boreholes, geology and
 crossing lines on them; your interpretation is kept as ordinary QGIS layers, and report plates
 come from the QGIS layout, and all of it can stand in QGIS's 3D view. Today it works with
-resistivity (ERT) and seismic refraction (P-wave velocity models); ground-penetrating radar and
-seismic reflection sections are planned.
+resistivity (ERT), seismic refraction (P-wave velocity models), processed seismic reflection
+sections and ground-penetrating radar (GPR).
 
 ![The Gülpe demo in Groundwork: aerial image with the profile and its cores above, the resistivity section with cores and two geology strips below](images/overview.jpg)
 
@@ -29,6 +29,7 @@ seismic reflection sections are planned.
 | Gülpe | Real: ERT, sediment cores and state survey data from Lake Gülpe (Havel, Brandenburg) | `guelpe_project.qgz` |
 | Erfurt | Real: seven ERT lines and 56 cores from Erfurt (Thuringia) | `erfurt_project.qgz` |
 | Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
+| Vaud | Real: two crossing seismic reflection lines (stacks) from swisstopo, canton of Vaud (Switzerland) | `vaud_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
 The background maps and the Gülpe geology maps load from the internet. Opening a demo writes

@@ -19,6 +19,14 @@ MAX_PIXELS = 8_000_000          # per model: long lines get coarser instead of h
 #: (each picture is held by the graphics card, and decoded again for every 2D map redraw)
 MAX_PX = 8192                   # the longest side of one piece
 LABEL_SHARE = 1 / 25            # contour label text height as a share of the picture height
+#: ... and never more than this share of its length: a section as deep as it is long (a
+#: seismic line of 8 km reaching 10 km down) would otherwise get text 400 m tall
+LENGTH_SHARE = 1 / 100
+
+
+def label_height(s0: float, s1: float, z0: float, z1: float) -> float:
+    """Text height in metres for a picture of this extent (line widths scale with it)."""
+    return min(LABEL_SHARE * (z1 - z0), LENGTH_SHARE * (s1 - s0))
 
 
 @dataclass
@@ -42,7 +50,12 @@ def layout(s0: float, s1: float, z0: float, z1: float) -> tuple[float, np.ndarra
 def extent(mesh, topo) -> tuple[float, float, float, float]:
     """(s0, s1, z0, z1) a model's picture covers: the mesh, raised to the ground above it
     (the smooth field fills up to the surface)."""
-    s0, s1, z0, z1 = (float(v) for v in mesh.bounds())
+    return _raised(mesh.bounds(), topo)
+
+
+def _raised(bounds, topo) -> tuple[float, float, float, float]:
+    """``bounds`` (s0, s1, z0, z1) raised to the ground above them."""
+    s0, s1, z0, z1 = (float(v) for v in bounds)
     if topo is not None and len(topo[0]) > 1:
         ts, tz = (np.asarray(a, float) for a in topo)
         inside = (ts >= s0) & (ts <= s1)
@@ -53,8 +66,10 @@ def extent(mesh, topo) -> tuple[float, float, float, float]:
 
 def joint_extent(layers, topo, pieces=()) -> tuple[float, float, float, float]:
     """(s0, s1, z0, z1) of several models' pictures together, widened to the interpretation
-    ``pieces`` drawn over them."""
-    boxes = [extent(layer.mesh, topo) for layer in layers]
+    ``pieces`` drawn over them. A trace section counts with its picture's box; a layer that
+    failed does not count."""
+    from .data import layer_bounds
+    boxes = [_raised(b, topo) for b in map(layer_bounds, layers) if b is not None]
     for piece in pieces:
         v = np.asarray(piece.vertices, float).reshape(-1, 2)
         if len(v):
@@ -74,7 +89,7 @@ def section_pictures(layers, topo, interpretation=None, base=None) -> list[Pictu
     pieces = list(interpretation[0]) if interpretation else []
     s0, s1, z0, z1 = joint_extent(layers, topo, pieces)
     ppm, cuts = layout(s0, s1, z0, z1)
-    label_px = LABEL_SHARE * (z1 - z0) * ppm
+    label_px = label_height(s0, s1, z0, z1) * ppm
     out = []
     for a, b in zip(cuts[:-1], cuts[1:]):
         painted = _paint(drawings, interpretation if pieces else None, a, b, z0, z1, ppm,

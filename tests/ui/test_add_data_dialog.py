@@ -851,3 +851,16 @@ def test_cell_counts_are_grouped_in_threes(qgis_app, make_dialog, project_store,
     dlg.set_file(_fine_export(tmp_path))
     assert dlg.coarse_note.text().startswith("101\u202f000 cells")
     assert "25\u202f250" in dlg.coarse_count.text()
+
+
+def test_the_depth_reached_rounds_half_up(qgis_app):
+    # Python's round() would give 4 for 4.5 and 12 for 12.5 (half to even)
+    from groundwork_geophysics.ui.add_data_dialog import depth_reached
+    assert depth_reached(4.5) == "4.5"              # below 10 m: one decimal
+    assert depth_reached(4.45) == "4.5"
+    assert depth_reached(2.65) == "2.7"
+    assert depth_reached(4.0) == "4"
+    assert depth_reached(9.96) == "10"
+    assert depth_reached(12.5) == "13"              # from 10 m: whole metres
+    assert depth_reached(6744.5) == "6 745"
+    assert depth_reached(25.45, whole_from=None) == "25.5"   # radar: always one decimal

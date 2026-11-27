@@ -350,7 +350,7 @@ class InterpController(QObject):
     def _based_on(self, profile_id: str) -> tuple[str, str]:
         try:
             for layer in self.dock.provider.layers(profile_id):
-                if layer.mesh is not None:
+                if layer.mesh is not None or layer.traces is not None:
                     return layer.dataset.id, str(layer.dataset.version)
         except Exception:                   # a broken layer must not block saving
             pass

@@ -1,5 +1,6 @@
 """Usability round 1, Task 4: the section uses the docked panel's space; an empty panel says
 what to do."""
+import numpy as np
 import pytest
 
 
@@ -114,3 +115,39 @@ def test_labels_above_the_plot_top_are_left_out(qgis_app):
         assert all(lab.y == lowest for lab in clipped.values())
     finally:
         painter.end()
+
+
+def test_another_profile_opens_on_its_data_not_at_the_last_typed_ve(
+        qgis_app, store_with_model, make_dock):
+    """A vertical exaggeration typed for one profile is that profile's: another profile
+    opens at Auto (its data filling the panel's width), and going back brings the typed one
+    back. Seen when a profile opened at 11.7× from the one before: 1.8 km of width for
+    155 m of data."""
+    import time
+
+    from groundwork_geophysics.core.model import Dataset, profile_from_stations
+    from groundwork_geophysics.section.dock import AUTO_VE
+    st, p, src = store_with_model
+    q, s = profile_from_stations("P2", "EPSG:25832", np.array([[0, 10, 100], [50, 10, 102.0]]))
+    st.save_profile(q); st.save_station_set(s)
+    d1 = st.datasets(p.id)[0]
+    st.save_dataset(Dataset("d2", q.id, s.id, "ert_model", d1.source_path, d1.source_mtime,
+                            d1.source_sha1, d1.reader, dict(d1.reader_options), {},
+                            name="P2 model"))
+    dock = _dock(make_dock, st, qgis_app, h=500)
+
+    def width_of(profile_id):
+        dock.open_profile(profile_id)
+        for _ in range(40):
+            qgis_app.processEvents()
+            time.sleep(0.02)
+        d = dock.canvas.visibleDistanceRange()
+        return d.upper() - d.lower()
+
+    at_auto = width_of(q.id)                    # P2 opened first: Auto fills the panel
+    width_of(p.id)
+    dock.ve_spin.setValue(20.0)                 # typed for P1
+    assert width_of(q.id) == pytest.approx(at_auto, rel=0.01)
+    assert dock.ve_spin.value() == AUTO_VE
+    width_of(p.id)
+    assert dock.ve_spin.value() == pytest.approx(20.0)

@@ -259,3 +259,14 @@ def test_running_out_of_memory_falls_back_to_linear(monkeypatch):
     g = grid_model(mesh, None, (25, 13), log=False, interp=Interpolation(method="idw"))
     assert np.array_equal(g.values, linear.values, equal_nan=True)
     assert "not enough memory" in g.note and "()" not in g.note
+
+
+def test_the_cell_used_is_the_typed_one_unless_the_grid_is_too_big():
+    from groundwork_geophysics.core.gridding import MAX_GRID_NODES, grid_cell_used
+    mesh = regular_mesh(200, 40)                                    # 200 m x 40 m
+    assert grid_cell_used(mesh, 1.0) == pytest.approx(1.0)
+    used = grid_cell_used(mesh, 0.05)                               # 4001 x 801 nodes asked
+    assert used > 0.17 and used < 0.2
+    nx, nz = grid_shape(mesh, 0.05)
+    assert nx * nz <= MAX_GRID_NODES
+    assert used == pytest.approx(max(200.0 / (nx - 1), 40.0 / (nz - 1)), rel=0.02)

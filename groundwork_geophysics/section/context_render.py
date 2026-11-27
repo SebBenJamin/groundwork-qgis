@@ -360,6 +360,11 @@ def strip_scale(col, host_layers):
 
 
 def tie_label(tie) -> str:
+    """The other profile's name; with the gap of a near miss ("R2 · 8 m"), or the shared
+    stretch of profiles running along each other ("R2 · along 165–260 m")."""
+    stretch = getattr(tie, "stretch", None)
+    if stretch is not None:
+        return f"{tie.other_name} · along {round(stretch[0])}–{round(stretch[1])} m"
     return tie.other_name + (f" · {round(tie.distance)} m" if tie.distance >= 0.5 else "")
 
 

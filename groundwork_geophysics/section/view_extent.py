@@ -8,6 +8,7 @@ import numpy as np
 from qgis.PyQt.QtGui import QFont, QFontMetrics
 
 from .context_render import context_headroom_px, context_z_values, label_font_px
+from .data import layer_bounds
 from .topography import station_line
 
 Extent = tuple[float, float, float, float]
@@ -19,8 +20,9 @@ def data_extent(dock) -> Extent:
     s = [0.0, profile.chainage.length]
     z = []
     for layer in dock._current_layers():                 # also fills dock._topo
-        if layer.mesh is not None:
-            s0, s1, z0, z1 = layer.mesh.bounds()
+        bounds = layer_bounds(layer)
+        if bounds is not None:
+            s0, s1, z0, z1 = bounds
             s += [s0, s1]
             z += [z0, z1]
     topo = dock._topo

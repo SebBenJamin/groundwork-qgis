@@ -23,7 +23,8 @@ def test_topo_switch_saves_metadata_and_refreshes(store_with_model, make_dock, q
     dock.provider.context_source = lambda profile: _items()
     dock.open_profile(p.id)
     assert _topo_texts(dock) == [("Stations", "stations", True), ("DEM", "dem", True),
-                                 ("Local", "local", False)]       # only for no heights
+                                 ("Local", "local", False),       # only for no heights
+                                 ("Model top", "model", False)]   # only for a model's top
     assert dock.topo_combo.currentData() == "stations"
     changes = []
     dock.provider.on_change.append(lambda: changes.append(1))
@@ -53,6 +54,80 @@ def test_topo_combo_reflects_saved_choice_and_disables_missing_dem(store_with_mo
     dock.topo.sync()
     assert dock.topo_combo.currentData() == "dem"
     assert _topo_texts(dock)[1] == ("DEM", "dem", True)
+
+
+def test_a_profile_without_stations_shows_the_dem_it_hangs_from(tmp_path, make_dock):
+    """A line from the map (Add Data on a selected line) has no stations: the section hangs
+    from the DEM by itself, and the combo says so instead of "Stations"."""
+    from groundwork_geophysics.core.model import profile_from_polyline
+    from groundwork_geophysics.section.topo_switch import NO_STATIONS_TIP
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p = profile_from_polyline("Line", "EPSG:25832", np.array([[0.0, 0.0], [50.0, 0.0]]))
+    st.save_profile(p)
+    dock = make_dock(st)
+    dock.provider.context_source = lambda profile: _items()
+    dock.open_profile(p.id)
+    assert dock.provider.surface(p.id).kind == "dem"
+    assert dock.topo_combo.currentData() == "dem"
+    assert _topo_texts(dock)[:2] == [("Stations", "stations", False), ("DEM", "dem", True)]
+    assert dock.topo_combo.model().item(0).toolTip() == NO_STATIONS_TIP
+    assert "topography" not in st.profile(p.id).metadata     # shown, never saved
+    # without a DEM the profile has no heights: "Local", as before
+    dock.provider.context_source = lambda profile: _items(with_dem=False)
+    dock.topo.sync()
+    assert dock.topo_combo.currentData() == "local"
+
+
+def _line_with_elevation_model(tmp_path):
+    """A line from the map (no stations) with one model whose Z is elevation."""
+    import shutil
+    from pathlib import Path
+
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_polyline
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    src = tmp_path / "f001_res.dat"
+    shutil.copy(Path(__file__).resolve().parent.parent / "fixtures" / "ert" / "f001_res.dat",
+                src)
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p = profile_from_polyline("Line", "EPSG:25832", np.array([[0.0, 0.0], [50.0, 0.0]]))
+    st.save_profile(p)
+    mt, sha = file_fingerprint(src)
+    st.save_dataset(Dataset("d1", p.id, None, "ert_model", str(src), mt, sha, "r2_res_dat",
+                            {"z_kind": "elevation"}, {}, name="Line model"))
+    return st, p
+
+
+def test_a_model_top_ground_is_named_in_the_topography_box(tmp_path, make_dock):
+    """No DEM, no station heights: the ground is the top of the model with elevations, and
+    the box says "Model top" instead of "Stations"."""
+    from groundwork_geophysics.section.topo_switch import MODEL_TOP_TIP
+    st, p = _line_with_elevation_model(tmp_path)
+    dock = make_dock(st)
+    dock.provider.context_source = lambda profile: _items(with_dem=False)
+    dock.open_profile(p.id)
+    assert dock.provider.surface(p.id).kind == "model"
+    assert dock.topo_combo.currentData() == "model"
+    assert dock.topo_combo.currentText() == "Model top"
+    assert [e for e in _topo_texts(dock) if e[2]] == [("Model top", "model", True)]
+    assert not dock.topo_combo.view().isRowHidden(3)
+    assert dock.topo_combo.toolTip() == MODEL_TOP_TIP
+    assert dock.topo_combo.model().item(3).toolTip() == MODEL_TOP_TIP
+    assert "topography" not in st.profile(p.id).metadata     # shown, never saved
+    dock.topo.sync()
+    assert "topography" not in st.profile(p.id).metadata
+
+
+def test_model_top_leaves_the_dem_choosable(tmp_path, make_dock):
+    st, p = _line_with_elevation_model(tmp_path)
+    dock = make_dock(st)
+    dock.provider.context_source = lambda profile: _items()
+    dock.open_profile(p.id)
+    kind = dock.provider.surface(p.id).kind
+    texts = dict((key, on) for _t, key, on in _topo_texts(dock))
+    assert texts["dem"] and not texts["stations"] and not texts["local"]
+    assert texts["model"] == (kind == "model")
+    assert dock.topo_combo.view().isRowHidden(3) is (kind != "model")
 
 
 def test_readout_lists_context_lines(store_with_model, make_dock):
