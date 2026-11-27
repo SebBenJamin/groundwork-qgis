@@ -476,13 +476,14 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     if read_kind not in READINGS_KINDS and kind:
         read_kind = kind
     if result.traces is not None and not is_trace_kind(read_kind or ""):
-        read_kind = TRACE_KINDS[0]              # a trace section is never a cell model
+        said = result.provenance.get("kind")    # a trace section is never a cell model
+        read_kind = said if is_trace_kind(said or "") else TRACE_KINDS[0]
     data = result.traces if result.traces is not None else result.mesh
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
                       read_kind or "ert_model",
                       model_source_path(store, path),
                       mtime, sha1, reader or result.provenance.get("reader", ""), opts,
-                      dict(result.provenance), name=name or path.stem,
+                      dict(result.provenance), name=name or readers.default_name(path, reader or None),
                       quantity=data.quantity, unit=data.unit)
     if profile is None and station_set is None:
         store.save_dataset(dataset)

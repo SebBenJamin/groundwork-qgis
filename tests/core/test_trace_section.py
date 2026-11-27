@@ -497,3 +497,69 @@ def test_filters_survive_the_dict_round_trip_and_old_dicts_load():
     assert DisplayGain(background="all").active() and DisplayGain(dewow_window=1e-8).active()
     assert DisplayGain().to_dict() == DisplayGain.from_dict({}).to_dict()
     assert "background" not in DisplayGain(agc_window=0.2).to_dict()      # stored as before
+
+
+# -- leading samples that are not data (GSSI's scan counter and marks), time zero ------------
+def _counter_section(n=30, ns=60, step=1e-9):
+    """A quiet section with a direct wave at sample 20 and two huge leading samples."""
+    a = np.zeros((n, ns), np.float32)
+    a[:, 20:23] = [300.0, -500.0, 200.0]
+    a += np.random.default_rng(2).normal(0, 1, a.shape).astype(np.float32)
+    a[:, 0] = -32768.0 + np.arange(n)
+    a[:, 1] = -7168.0
+    return _section(a, step=step)
+
+
+def test_first_arrival_skips_the_leading_samples_that_are_not_data():
+    s = _counter_section()
+    assert first_arrival(s) == pytest.approx(0.0)                 # the counter wins
+    assert first_arrival(s, skip=2) == pytest.approx(20e-9, abs=1e-9)
+
+
+def test_colour_limits_skip_the_leading_samples():
+    s = _counter_section()
+    lo, hi = color_limits(s, 100.0, skip=2)
+    assert hi == pytest.approx(500.0, rel=0.05) and lo == -hi
+    assert color_limits(s, 100.0)[1] > 30000                      # without the skip
+    assert color_limits(s.amplitudes, 100.0, skip=2) == (lo, hi)   # an array as well
+
+
+def test_display_filters_leave_the_leading_samples_out():
+    s = _counter_section()
+    g = DisplayGain(dewow_window=5e-9, balance_traces=True)
+    d = display_values(s, g, skip=2)
+    assert np.isnan(d[:, :2]).all() and np.isfinite(d[:, 2:]).all()
+    plain = display_values(replace_amplitudes(s, s.amplitudes[:, 2:]), g)
+    assert np.allclose(d[:, 2:], plain, atol=1e-4)
+    assert s.amplitudes[0, 0] == -32768.0                          # the file's samples stay
+
+
+def replace_amplitudes(s, a):
+    from dataclasses import replace
+    return replace(s, amplitudes=np.ascontiguousarray(a))
+
+
+def test_gain_with_time_counts_from_time_zero():
+    s = _section(np.ones((2, 6)), step=1.0)
+    assert list(display_values(s, DisplayGain(time_power=1.0))[0]) == [0, 1, 2, 3, 4, 5]
+    got = display_values(s, DisplayGain(time_power=1.0), time_zero=2.0)
+    assert list(got[0]) == [0, 0, 0, 1, 2, 3]
+    agc_only = DisplayGain(agc_window=2.0)                        # unaffected by time zero
+    assert np.array_equal(display_values(s, agc_only, time_zero=2.0), display_values(s, agc_only))
+
+
+def test_place_keeps_time_zero_and_the_data_start():
+    s = _section(np.ones((3, 10)), step=1e-9)
+    p = place(s, 100.0, Velocity(1e8), time_zero=4e-9, data_start=2)
+    assert list(p.live_from) == [4, 4, 4] and p.time_zero == 4e-9 and p.data_start == 2
+    q = place(s, 100.0, Velocity(1e8), data_start=2)
+    assert list(q.live_from) == [2, 2, 2] and q.time_zero == 0.0
+    assert place(s, 100.0, Velocity(1e8)).data_start == 0
+
+
+def test_no_hit_before_time_zero():
+    s = _section(np.arange(30, dtype=float).reshape(3, 10), step=1e-9)
+    p = place(s, 100.0, Velocity(1e8), time_zero=4e-9)            # 0.05 m per sample
+    assert p.hit(2.0, 100.0)["sample"] == 4
+    assert p.hit(2.0, 100.0 - 0.1)["sample"] == 6
+    assert p.hit(2.0, 100.0 + 0.01) is None

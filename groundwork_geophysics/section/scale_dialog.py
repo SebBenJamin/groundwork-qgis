@@ -560,13 +560,15 @@ class DisplayDialog(ColorScaleDialog):
         and only the sample kept). Painting the muted zones or not changes no value."""
         from dataclasses import replace
 
-        from ..core.trace_section import _sample
+        from ..core.trace_section import limit_sample
         if not gain.active():
             return self._traces.section.amplitudes
         gain = replace(gain, show_muted=False)
         hit = self._shown_by_gain.get(gain)
         if hit is None:
-            hit = np.array(_sample(display_values(self._traces.section, gain)))
+            placed = self._traces                   # its time zero, not its counter samples
+            hit = limit_sample(display_values(placed.section, gain, time_zero=placed.time_zero,
+                                              skip=placed.data_start), placed.data_start)
             self._shown_by_gain[gain] = hit
         return hit
 

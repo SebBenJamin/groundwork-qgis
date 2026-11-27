@@ -593,7 +593,7 @@ class AddDataDialog(QDialog):
             self.format_combo.blockSignals(False)
             self._format_settings(path)
             if self.name_edit.text() in ("", self._auto_name):
-                self._auto_name = Path(path).stem
+                self._auto_name = readers.default_name(path, found[0] if found else None)
                 self.name_edit.setText(self._auto_name)
         self._refresh()
 
@@ -1083,7 +1083,8 @@ class AddDataDialog(QDialog):
                 try:
                     profile, dataset = add_data(
                         self.store, placement, Path(path), self._reader(),
-                        self._file_options(path, box.cells_checked(i)), Path(path).stem,
+                        self._file_options(path, box.cells_checked(i)),
+                        readers.default_name(path, self._reader() or None),
                         self.method_combo.currentData(), self.project, self.provider)
                 except NotRefreshed as exc:         # saved: never reported as a failure
                     profile, dataset = exc.saved

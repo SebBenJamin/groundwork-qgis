@@ -108,3 +108,33 @@ def test_the_plate_line_of_a_section_carries_its_depth():
     d = with_info(_section({"velocity": 1500.0}), {"software": "ProMAX"})
     assert provenance_line("T1", d) == \
         "T1 · Seismic reflection · section: ProMAX · depth from v = 1500 m/s below the ground"
+
+
+# -- radargrams -------------------------------------------------------------------------------
+def _radargram(options=None, provenance=None):
+    prov = {"n_traces": 19310, "n_samples": 1024, "step": 565e-9 / 1024, "window": 565e-9,
+            "antenna": "270MHz", **(provenance or {})}
+    return Dataset("g1", "p1", "", "gpr_section", "/x/AAA_____023.DZT", 0.0, "", "gssi_dzt",
+                   dict(options or {}), prov)
+
+
+def test_depth_text_of_a_radargram_in_m_per_ns_with_its_dielectric():
+    from groundwork_geophysics.core.dataset_info import depth_text
+    assert depth_text(_radargram({"velocity": 1.0e8})) == "depth from v = 0.10 m/ns (ε 9.0)"
+    assert depth_text(_radargram({"velocity": 1.0e8, "zero": "datum", "datum": 372.5})) == \
+        "depth from v = 0.10 m/ns (ε 9.0) below 372.5 m"
+    assert depth_text(_radargram({})) == ""                 # no velocity known: nothing invented
+
+
+def test_traces_text_of_a_radargram_gives_its_window_and_antenna():
+    from groundwork_geophysics.core.dataset_info import traces_text
+    from groundwork_geophysics.core.numbers import fmt_count
+    assert traces_text(_radargram()) == \
+        f"{fmt_count(19310)} traces × {fmt_count(1024)} samples, 565 ns, 270MHz"
+    assert traces_text(_radargram(provenance={"antenna": ""})) == \
+        f"{fmt_count(19310)} traces × {fmt_count(1024)} samples, 565 ns"
+
+
+def test_the_plate_line_of_a_radargram():
+    d = _radargram({"velocity": 1.0e8})
+    assert provenance_line("T1", d) == "T1 · GPR · radargram · depth from v = 0.10 m/ns (ε 9.0)"

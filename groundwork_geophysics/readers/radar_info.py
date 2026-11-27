@@ -44,6 +44,13 @@ class RadarInfo:
     #: the traces' map positions share positions or run back along the line
     #: (``track.repeats``); False while a reader reads no map positions
     repeats: bool = False
+    #: the leading samples of every trace that are not radar data (GSSI: a scan counter and
+    #: marks); kept as stored, they are left out of what is drawn and estimated
+    reserved: int = 0
+
+
+#: the dataset kind and method a radar read gives (``core.dataset_types``)
+KIND, METHOD = "gpr_section", "gpr"
 
 
 def velocity_from_dielectric(dielectric) -> float | None:
@@ -102,13 +109,22 @@ def trace_x(path: Path, options: dict, file_x, n: int, provenance: dict) -> np.n
 
 
 def provenance_of(reader: str, name: str, info: RadarInfo) -> dict:
-    """The provenance both radar readers record."""
-    return {"reader": reader, "source_name": name, "n_traces": info.n_traces,
+    """The provenance both radar readers record. ``reserved_samples``: how many leading
+    samples of every trace are not radar data."""
+    return {"reader": reader, "kind": KIND, "method": METHOD, "source_name": name,
+            "n_traces": info.n_traces, "reserved_samples": info.reserved,
             "n_samples": info.n_samples, "step": info.step, "window": info.window,
             "antenna": info.antenna, "frequency_mhz": info.frequency_mhz,
             "trace_step": info.trace_step, "dielectric": info.dielectric,
             "time_zero_file": info.time_zero, "bits": info.bits, "notes": list(info.notes),
             "repeats": info.repeats}
+
+
+def named_after(path: Path, antenna: str) -> str:
+    """A radar dataset's name: the file's stem, followed by the antenna in brackets when one
+    is known ("AAA_____023 (270MHz)")."""
+    antenna = (antenna or "").strip()
+    return f"{Path(path).stem} ({antenna})" if antenna else Path(path).stem
 
 
 def partner(path: Path, suffix: str) -> Path | None:

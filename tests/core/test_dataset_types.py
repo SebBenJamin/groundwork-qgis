@@ -26,7 +26,7 @@ def test_model_kind_and_words():
     assert model_kind("srt") == "srt_model"
     assert model_kind("ert") == "ert_model"
     with pytest.raises(ValueError):
-        model_kind("gpr")
+        model_kind("xyz")                   # "gpr" became a method (radargrams)
     assert station_words("srt") == ("geophone", "geophones")
     assert station_words("") == ("electrode", "electrodes")
 
@@ -64,3 +64,18 @@ def test_reflection_section_type():
 def test_reversed_grey_is_offered():
     from groundwork_geophysics.core.colors import COLORMAPS, ColorScale
     assert "gray_r" in COLORMAPS and ColorScale("gray_r", 0.0, 1.0, False).rgba([0.0])[0, 0] == 255
+
+
+def test_radargram_type():
+    from groundwork_geophysics.core.dataset_types import (METHODS, is_radar_kind, is_trace_kind,
+                                                          method_of)
+    t = TYPES["gpr_section"]
+    assert (t.method, t.shows, t.quantity, t.unit, t.log) == ("GPR", "radargram", "amplitude", "",
+                                                              False)
+    assert type_label("gpr_section") == "GPR radargram"
+    assert ("GPR", "gpr") in METHODS and model_kind("gpr") == "gpr_section"
+    assert is_trace_kind("gpr_section") and is_radar_kind("gpr_section")
+    assert not is_radar_kind("refl_section") and not is_radar_kind("ert_model")
+    assert method_of(["gpr_section"]) == "gpr" and method_of(["gpr_section", "refl_section"]) == "ert"
+    with pytest.raises(ValueError):
+        model_kind("magnetics")

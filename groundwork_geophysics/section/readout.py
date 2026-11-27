@@ -30,7 +30,8 @@ def format_readout(s: float, z: float | None = None, depth: float | None = None,
     """``s = 123.4 m · z = 61.2 m · depth = 3.8 m · X 432105.2 Y 5851234.9 · P1 model: 27.3 Ω·m``.
     Parts whose input is ``None`` are left out; ``hits`` are ``identify`` dicts (a trace
     section's: ``Line 1: 0.42 · trace 123 · 245.0 ms · 183.8 m below time zero``; no time
-    for a depth section, whose depth is "below depth zero"). ``beyond``
+    for a depth section, whose depth is "below depth zero"; a radargram's: ``Radar: 312 · trace
+    1234 · 45.2 ns · 2.26 m below the ground``, the time counted from its time zero). ``beyond``
     (s outside the station coverage) appends `` · beyond stations``. ``extra`` (context lines)
     follow on a second line, joined by `` · ``."""
     parts = [f"s = {fmt(s, 1)} m"]
@@ -44,7 +45,14 @@ def format_readout(s: float, z: float | None = None, depth: float | None = None,
         unit = unit_label(hit.get("unit", ""))
         text = f"{hit['name']}: {format_value(hit['value'])}" + (f" {unit}" if unit else "")
         trace = hit.get("trace")
-        if trace:                                  # a trace section: trace, time, depth
+        if trace and trace.get("radar"):           # a radargram: ns after time zero, cm depths
+            text += f"{SEP}trace {trace['number']}"
+            if trace.get("time") is not None:
+                ns = (trace["time"] - (trace.get("time_zero") or 0.0)) * 1e9
+                text += f"{SEP}{fmt(ns, 1)} ns"
+            below = "the ground" if trace.get("ground") else "time zero"
+            text += f"{SEP}{fmt(trace['depth'], 2)} m below {below}"
+        elif trace:                                # a trace section: trace, time, depth
             text += f"{SEP}trace {trace['number']}"
             timed = trace.get("time") is not None
             if timed:

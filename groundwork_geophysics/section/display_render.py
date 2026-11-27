@@ -26,7 +26,7 @@ from qgis.PyQt.QtGui import QColor, QImage, QPainterPath, QPolygonF
 from ..core.gridding import (FADE_ALPHA, contour_levels, contour_lines, coverage_alpha,
                              default_threshold, fade_band, grid_model, grid_shape,
                              next_to_empty, soft_coverage_alpha)
-from ..core.trace_section import _sample, display_values, muted_mask, reduce_image
+from ..core.trace_section import limit_sample, muted_mask, placed_values, reduce_image
 
 CONTOUR_PEN_MM = 0.25
 CONTOUR_MINOR_PEN_MM = 0.13          # typed minor levels: thinner, no label
@@ -258,8 +258,18 @@ def _digest(*parts) -> str:
 
 
 def _placement(placed) -> str:
+    # time zero and the samples that are not data only when set, so the digests (and level
+    # files) of sections without them stay as they were
+    shown = _shown_part(placed)
     return _digest(placed.section.x.tobytes(), np.asarray(placed.z_top, float).tobytes(),
-                   np.asarray(placed.depths, float).tobytes(), _live_key(placed))
+                   np.asarray(placed.depths, float).tobytes(), _live_key(placed),
+                   *((shown,) if shown != (0.0, 0) else ()))
+
+
+def _shown_part(placed) -> tuple:
+    """What of the hanging the values shown depend on: the time zero (gain with time counts
+    from it) and the leading samples that are not data."""
+    return (float(getattr(placed, "time_zero", 0.0)), int(getattr(placed, "data_start", 0)))
 
 
 def _live_key(placed) -> str | None:
@@ -270,7 +280,7 @@ def _live_key(placed) -> str | None:
 def _values_key(layer) -> tuple:
     read = None if layer.level_cache is None else layer.level_cache[1]
     return (layer.dataset.id, _array_key(layer.traces.section.amplitudes), read,
-            layer.style.gain)
+            layer.style.gain, _shown_part(layer.traces))
 
 
 def _trace_key(layer) -> tuple:
@@ -289,7 +299,7 @@ def shown_values(layer):
     key = _values_key(layer)
     with _lock:
         for k, entry in _traces.items():
-            if k[:4] == key:
+            if k[:len(key)] == key:
                 return entry.sample
     return None
 
@@ -393,10 +403,14 @@ def _entry(layer) -> _TraceEntry:
         if not gain.show_muted:                 # from the file's own samples, before any gain
             mute = kept_mute if kept_mute is not None else \
                 muted_mask(section.amplitudes, layer.traces.live_from)
-        values = display_values(section, gain)
-        grids = _make_grids(layer.traces, values, mute)
-        sample = np.array(_sample(values))
         kept = mute if mute is not None else kept_mute
+        skip = layer.traces.data_start
+        if mute is None and skip:               # samples that are not data: never painted
+            mute = np.zeros(section.amplitudes.shape, bool)
+            mute[:, :skip] = True
+        values = placed_values(layer.traces, gain)
+        grids = _make_grids(layer.traces, values, mute)
+        sample = limit_sample(values, skip)
         entry = _TraceEntry(None if values is section.amplitudes else values, sample, grids,
                             kept, live if kept is not None else None)
         if path is not None and time.perf_counter() - started > LEVEL_CACHE_MIN_SECONDS:

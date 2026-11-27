@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from .dataset_types import TYPES, is_trace_kind, type_label
+from .dataset_types import TYPES, is_radar_kind, is_trace_kind, type_label
 
 INFO_FIELDS = ("method", "array", "spacing", "date", "software", "reference", "note")
 #: how a velocity function's rows are read, as the provenance names it
@@ -63,10 +63,13 @@ def depth_text(d) -> str:
     """How a reflection section's depths come about and from where: "depth from v = 1500 m/s
     below the ground", "depth from a velocity function (1800–3400 m/s, RMS) below 500 m"
     (with ", corrected to the ground with 3200 m/s" for a section corrected to the ground),
-    "depth section"; "" for other kinds and for a time section without a velocity."""
+    "depth section"; a radargram's in m/ns (``_radar_depth_text``); "" for other kinds and for
+    a time section without a velocity."""
     if not is_trace_kind(d.kind):
         return ""
     options = d.reader_options or {}
+    if is_radar_kind(d.kind):
+        return _radar_depth_text(options)
     if (options.get("domain") or "time") == "depth":
         return "depth section"
     from .trace_section import Velocity
@@ -89,16 +92,41 @@ def depth_text(d) -> str:
     return text
 
 
+def _radar_depth_text(options: dict) -> str:
+    """A radargram's: "depth from v = 0.10 m/ns (ε 9.0)" (the velocity stored in m/s, said in
+    m/ns with the dielectric constant it stands for), " below 372.5 m" when hung at a datum;
+    "" without a usable velocity."""
+    from .trace_section import C_M_PER_NS, Velocity
+    v = Velocity.from_options(options).value
+    if v is None or not (math.isfinite(v) and v > 0):
+        return ""
+    per_ns = v * 1e-9
+    text = f"depth from v = {per_ns:.2f} m/ns"
+    if per_ns <= C_M_PER_NS:
+        text += f" (ε {(C_M_PER_NS / per_ns) ** 2:.1f})"
+    datum = options.get("datum")
+    if options.get("zero") == "datum" and isinstance(datum, (int, float)) and \
+            not isinstance(datum, bool) and math.isfinite(datum):
+        text += f" below {_speed(datum)} m"
+    return text
+
+
 def traces_text(d) -> str:
     """"1 970 traces × 1 125 samples, 4 ms" of a reflection section (from what the reader
-    recorded; the sample step as the dataset reads it), else ""."""
+    recorded; the sample step as the dataset reads it); "19 310 traces × 1 024 samples, 565 ns,
+    270MHz" of a radargram (its recorded window and antenna); else ""."""
     p, options = d.provenance or {}, d.reader_options or {}
     n, ns = p.get("n_traces"), p.get("n_samples")
     if not is_trace_kind(d.kind) or not all(isinstance(v, (int, float)) for v in (n, ns)):
         return ""
     from .numbers import fmt_count, fmt_trim
     text = f"{fmt_count(n)} traces × {fmt_count(ns)} samples"
-    depth = (options.get("domain") or "time") == "depth"
+    if is_radar_kind(d.kind):                   # the recorded window and the antenna
+        window, antenna = p.get("window"), str(p.get("antenna") or "").strip()
+        if isinstance(window, (int, float)) and window > 0:
+            text += f", {fmt_trim(window * 1e9, 1)} ns"
+        return text + (f", {antenna}" if antenna else "")
+    depth =(options.get("domain") or "time") == "depth"
     step = options.get("sample_step")
     if not isinstance(step, (int, float)):
         step = p.get("step")                    # the file's, s; a depth section: × 1000 in m

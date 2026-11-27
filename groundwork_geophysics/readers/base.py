@@ -43,6 +43,11 @@ class Reader:
         """Read the file. Raises ValueError with a readable message for unusable content."""
         raise NotImplementedError
 
+    def default_name(self, path: Path) -> str:
+        """The name a dataset read from ``path`` gets unless the user types one: the file's
+        stem (a reader may add what its header says, such as a radar antenna)."""
+        return Path(path).stem
+
 
 FILL_VALUE = -9999.0
 #: z meanings a user can choose; the ``z_kind`` read option wins over the file's own hint

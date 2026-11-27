@@ -31,6 +31,8 @@ BAD_DIELECTRIC = "The dielectric constant must be 1 or greater."
 BAD_RADAR_VELOCITY = ("The velocity must be greater than 0 and not above the speed of light "
                       "(0.2998 m/ns).")
 BEYOND_RECORD = "Time zero lies beyond the end of the record."
+NOT_A_TIME_ZERO = "Time zero must be a number."
+NO_DEPTH_TIME_ZERO = "A depth section has no time zero."
 #: how the background is removed: "" off, "all" the mean trace of the line, "window" a moving mean
 BACKGROUNDS = ("", "all", "window")
 
@@ -228,10 +230,10 @@ def _time_zero(section: TraceSection, time_zero) -> float:
     """``time_zero`` as a float, checked: 0 for a depth section, not after the last sample."""
     tz = float(time_zero)
     if not math.isfinite(tz):
-        raise ValueError("Time zero must be a number.")
+        raise ValueError(NOT_A_TIME_ZERO)
     if section.domain == "depth":
         if tz != 0.0:
-            raise ValueError("A depth section has no time zero.")
+            raise ValueError(NO_DEPTH_TIME_ZERO)
         return 0.0
     if tz > section.first + (section.n_samples - 1) * section.step + 1e-6 * section.step:
         raise ValueError(BEYOND_RECORD)
@@ -349,11 +351,15 @@ class PlacedTraces:
     below it (m, increasing; negative for samples before a time zero, which lie above the
     top). ``live_from``, when set, is per trace the first sample that belongs to the earth
     (one corrected to the ground, or the samples before a time zero: those above the ground
-    line are not drawn; see ``muted_mask``)."""
+    line are not drawn; see ``muted_mask``). ``time_zero`` (s) is the time hung on ``z_top``;
+    ``data_start`` the number of leading samples of every trace that are not data (GSSI's
+    scan counter and marks): kept as stored, left out of the statistics and never drawn."""
     section: TraceSection
     z_top: np.ndarray
     depths: np.ndarray
     live_from: np.ndarray | None = None
+    time_zero: float = 0.0
+    data_start: int = 0
 
     def bounds(self) -> tuple[float, float, float, float]:
         """``(smin, smax, zmin, zmax)``: first to last trace, top of the highest trace to the
@@ -366,8 +372,9 @@ class PlacedTraces:
     def hit(self, s: float, z: float) -> dict | None:
         """The sample under the profile point ``(s, z)``: the nearest trace when ``s`` lies
         within half a trace spacing of it, the nearest sample when ``z`` lies below the
-        trace's top and within half a sample spacing of it; None outside the picture. The
-        amplitude is the file's own number (no gain, no polarity swap)."""
+        trace's top and within half a sample spacing of it; None outside the picture and for
+        a sample before the time zero. The amplitude is the file's own number (no gain, no
+        polarity swap); ``time`` is the sample's time as the file counts it."""
         sec = self.section
         i = int(_find(_edges(sec.x), s))
         if not 0 <= i < sec.n_traces:
@@ -376,7 +383,7 @@ class PlacedTraces:
         if d < 0:
             return None
         k = int(_find(_edges(self.depths), d))
-        if not 0 <= k < sec.n_samples:
+        if not 0 <= k < sec.n_samples or k < _zero_sample(sec, self.time_zero):
             return None
         number = None if sec.numbers is None else int(sec.numbers[i])
         time = float(sec.first + k * sec.step) if sec.domain == "time" else None
@@ -384,8 +391,18 @@ class PlacedTraces:
                 "time": time, "depth": float(self.depths[k])}
 
 
+def _zero_sample(section: TraceSection, time_zero: float) -> int:
+    """The first sample at or after ``time_zero`` (a hair of tolerance for rounding: a sample
+    exactly at time zero is earth); 0 for a depth section."""
+    if section.domain != "time":
+        return 0
+    return min(section.n_samples,
+               max(0, math.ceil((float(time_zero) - section.first) / section.step - 1e-6)))
+
+
 def place(section: TraceSection, z_top, velocity: Velocity | None,
-          live_from: np.ndarray | None = None, *, time_zero: float = 0.0) -> PlacedTraces:
+          live_from: np.ndarray | None = None, *, time_zero: float = 0.0,
+          data_start: int = 0) -> PlacedTraces:
     """Hang ``section`` from ``z_top`` (one elevation or one per trace), with sample depths
     from ``velocity``. Traces whose ``x`` does not increase are put in order (stable sort); a
     section that runs backwards is a reversed view, any other order a copy in the file's type.
@@ -395,8 +412,12 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
     ``time_zero`` (s, a time section only) puts the sample at that time on ``z_top`` (see
     ``sample_depths``) and mutes the samples before it: ``live_from`` becomes, for every
     trace, the larger of the given index and the first sample at or after time zero (still
-    None when none is given and no sample lies before time zero)."""
+    None when none is given and no sample lies before time zero).
+
+    ``data_start``: the leading samples of every trace that are not data (``PlacedTraces``);
+    ``live_from`` is at least that, so they are never drawn."""
     depths = sample_depths(section, velocity, time_zero)
+    data_start = min(section.n_samples, max(0, int(data_start)))
     n = section.n_traces
     zt = np.asarray(z_top, dtype=np.float64)
     zt = np.full(n, float(zt)) if zt.ndim == 0 else zt.reshape(-1)
@@ -408,13 +429,10 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
         live_from = np.asarray(live_from, dtype=np.int64).reshape(-1)
         if live_from.size != n:
             raise ValueError(f"{n} traces but {live_from.size} first samples.")
-    if section.domain == "time":
-        # a sample exactly at time zero is earth (a hair of tolerance for rounding)
-        zero = min(section.n_samples,
-                   max(0, math.ceil((float(time_zero) - section.first) / section.step - 1e-6)))
-        if zero > 0:
-            live_from = (np.full(n, zero, np.int64) if live_from is None
-                         else np.maximum(live_from, zero))
+    zero = max(_zero_sample(section, time_zero), data_start)
+    if zero > 0:
+        live_from = (np.full(n, zero, np.int64) if live_from is None
+                     else np.maximum(live_from, zero))
     step = np.diff(section.x)
     if (step < 0).any():
         order = slice(None, None, -1) if (step < 0).all() else np.argsort(section.x, kind="stable")
@@ -424,16 +442,21 @@ def place(section: TraceSection, z_top, velocity: Velocity | None,
         zt = zt[order]
         live_from = None if live_from is None else live_from[order]
     return PlacedTraces(section, np.ascontiguousarray(zt), depths,
-                        None if live_from is None else np.ascontiguousarray(live_from))
+                        None if live_from is None else np.ascontiguousarray(live_from),
+                        float(time_zero) if section.domain == "time" else 0.0, data_start)
 
 
-def first_arrival(section: TraceSection, sample_limit: int = 2000) -> float:
+def first_arrival(section: TraceSection, sample_limit: int = 2000, skip: int = 0) -> float:
     """An estimate of time zero (s; m for a depth section) from the mean trace of at most
     ``sample_limit`` traces taken with a regular stride: the first sample where the absolute
     mean trace, after removing its median, exceeds 5 % of its maximum; ``section.first`` when
-    no sample does."""
+    no sample does. The first ``skip`` samples of every trace (not data) are left out."""
+    skip = min(section.n_samples, max(0, int(skip)))
     a = section.amplitudes[::max(1, math.ceil(section.n_traces / max(1, int(sample_limit))))]
+    a = a[:, skip:]
     ns = a.shape[1]
+    if ns == 0:
+        return section.first
     total, count = np.zeros(ns), np.zeros(ns)
     for r0, r1 in _row_blocks(a.shape[0], ns):
         b = a[r0:r1].astype(np.float64)
@@ -448,7 +471,7 @@ def first_arrival(section: TraceSection, sample_limit: int = 2000) -> float:
     top = float(m.max())
     if not top > 0:
         return section.first
-    return float(section.first + int(np.argmax(m > 0.05 * top)) * section.step)
+    return float(section.first + (skip + int(np.argmax(m > 0.05 * top))) * section.step)
 
 
 #: AGC and trace balance divide by at least this share of the section's RMS: a muted or dead
@@ -651,25 +674,46 @@ def _background_window_into(out: np.ndarray, width: int) -> None:
         out[r0:r1] = a[r0 - lo:r1 - lo] - mean
 
 
-def display_values(section: TraceSection, gain: DisplayGain) -> np.ndarray:
+def display_values(section: TraceSection, gain: DisplayGain, *, time_zero: float = 0.0,
+                   skip: int = 0) -> np.ndarray:
     """The values to draw: the section's own array when ``gain`` is not active, else one
     float32 copy with, in this order, dewow, background removal, time power, AGC, trace
-    balance and polarity applied (each worked through in blocks of traces)."""
+    balance and polarity applied (each worked through in blocks of traces).
+
+    ``skip``: the leading samples of every trace that are not data; in the copy they are NaN
+    and no filter sees them. ``time_zero`` (s): the time power counts from it (``t -
+    time_zero``, 0 before it); the other options do not depend on it."""
     if not gain.active():
         return section.amplitudes
-    out = section.amplitudes.astype(np.float32)
+    copy = section.amplitudes.astype(np.float32)
+    skip = min(section.n_samples, max(0, int(skip)))
+    if skip:
+        copy[:, :skip] = np.nan
+    out = copy[:, skip:]                        # the data samples (a view of the copy)
+    if out.shape[1]:
+        _gain_into(out, section.sample_axis()[skip:], section.step, gain, float(time_zero))
+    return copy
+
+
+def _gain_into(out: np.ndarray, axis: np.ndarray, step: float, gain: DisplayGain,
+               time_zero: float) -> None:
+    """``display_values``' options applied to ``out`` (float32, in place); ``axis`` the time
+    (or depth) of each of its samples."""
     if gain.dewow_window is not None and gain.dewow_window > 0:
-        _dewow_into(out, _odd(gain.dewow_window / section.step))
+        _dewow_into(out, _odd(gain.dewow_window / step))
     if gain.background == "all":
         _background_all_into(out)
     elif gain.background == "window":
         _background_window_into(out, _odd(gain.background_traces))
     if gain.time_power is not None and gain.time_power != 0:
+        t = axis - time_zero
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            f = np.abs(section.sample_axis()) ** gain.time_power
+            f = np.abs(t) ** gain.time_power
+        if time_zero:
+            f = np.where(t < 0, 0.0, f)         # nothing before time zero
         out *= np.where(np.isfinite(f), f, 0.0).astype(np.float32)
     if gain.agc_window is not None and gain.agc_window > 0:
-        _agc_into(out, out, max(1, round(gain.agc_window / section.step)), quiet_floor(out))
+        _agc_into(out, out, max(1, round(gain.agc_window / step)), quiet_floor(out))
     if gain.balance_traces:
         floor = quiet_floor(out)                # a dead trace stays dead
         for r0, r1 in _row_blocks(out.shape[0], out.shape[1]):
@@ -682,14 +726,34 @@ def display_values(section: TraceSection, gain: DisplayGain) -> np.ndarray:
             out[r0:r1] = a / rms[:, None]
     if gain.reverse_polarity:
         np.negative(out, out=out)
-    return out
 
 
-def color_limits(values, percent: float) -> tuple[float, float]:
+def placed_values(placed: PlacedTraces, gain: DisplayGain) -> np.ndarray:
+    """``display_values`` of a hung section: with its time zero and its leading samples that
+    are not data."""
+    return display_values(placed.section, gain, time_zero=placed.time_zero,
+                          skip=placed.data_start)
+
+
+def _data_part(a: np.ndarray, skip: int) -> np.ndarray:
+    """``a`` (traces x samples) without its first ``skip`` samples; ``a`` itself otherwise."""
+    return a[:, max(0, int(skip)):] if skip and a.ndim == 2 else a
+
+
+def limit_sample(values, skip: int = 0) -> np.ndarray:
+    """The values ``color_limits`` looks at (a regular subsample of at most ``SAMPLE_LIMIT``,
+    as a small array of its own), without the first ``skip`` samples of every trace."""
+    return np.array(_sample(_data_part(np.asarray(values), skip)))
+
+
+def color_limits(values, percent: float, skip: int = 0) -> tuple[float, float]:
     """Colour range for ``values`` (a TraceSection or an array) clipped at the ``percent``
     percentile of the absolute values: ``(-c, c)`` for signed data, ``(0, c)`` for data that
-    are never negative; never empty (``(-1, 1)`` / ``(0, 1)`` without a usable ``c``)."""
+    are never negative; never empty (``(-1, 1)`` / ``(0, 1)`` without a usable ``c``).
+    ``skip``: the leading samples of every trace (traces x samples) that are not data are
+    left out; a one-dimensional sample (``limit_sample``) is taken as it is."""
     a = values.amplitudes if isinstance(values, TraceSection) else np.asarray(values)
+    a = _data_part(a, skip)
     signed, c = _signed(a), _clip(a, percent)
     if not (math.isfinite(c) and c > 0):
         c = 1.0

@@ -229,3 +229,24 @@ def test_detection_by_extension(tmp_path):
     names = readers.names()
     assert names.index("segy") < names.index("gssi_dzt") < names.index("pulseekko") \
         < names.index("refrapy_xzv")
+
+
+def test_the_readers_say_how_many_leading_samples_are_not_radar_data(tmp_path):
+    r = readers.read(write_dzt(tmp_path / "a.dzt", _ramp(3, 16), 64.0))
+    assert r.provenance["reserved_samples"] == gssi_dzt.RESERVED == 2
+    assert r.provenance["kind"] == "gpr_section" and r.provenance["method"] == "gpr"
+    p = readers.read(write_pulseekko(tmp_path / "L.DT1", _ramp(3, 16), 32.0)).provenance
+    assert p["reserved_samples"] == 0 and p["kind"] == "gpr_section"
+
+
+def test_a_radar_file_is_named_after_its_file_and_antenna(tmp_path):
+    dzt = write_dzt(tmp_path / "AAA_____023.DZT", _ramp(3, 16), 64.0, antenna="270MHz")
+    assert readers.default_name(dzt) == "AAA_____023 (270MHz)"
+    assert readers.default_name(dzt, "gssi_dzt") == "AAA_____023 (270MHz)"
+    nameless = write_dzt(tmp_path / "b.dzt", _ramp(3, 16), 64.0, antenna="")
+    assert readers.default_name(nameless) == "b"
+    line = write_pulseekko(tmp_path / "LINE00.DT1", _ramp(3, 16), 32.0, frequency=250.0)
+    assert readers.default_name(line) == "LINE00 (250MHz)"
+    assert readers.default_name(line.with_suffix(".HD")) == "LINE00 (250MHz)"
+    assert readers.default_name(tmp_path / "model.vtk") == "model"      # other kinds: the stem
+    assert readers.default_name(tmp_path / "gone.dzt") == "gone"        # unreadable: the stem

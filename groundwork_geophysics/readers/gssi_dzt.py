@@ -63,8 +63,8 @@ import numpy as np
 
 from ..core.trace_section import TraceSection
 from .base import Reader, ReaderResult
-from .radar_info import (NANOSECOND, RadarInfo, check_position, provenance_of, trace_x,
-                         velocity_from_dielectric)
+from .radar_info import (NANOSECOND, RadarInfo, check_position, named_after, provenance_of,
+                         trace_x, velocity_from_dielectric)
 
 SUFFIX = ".dzt"
 HEADER_SIZE = 1024
@@ -129,7 +129,7 @@ def _parse(path: Path) -> tuple[RadarInfo, int]:
         velocity=velocity_from_dielectric(dielectric), dielectric=dielectric, antenna=antenna,
         frequency_mhz=float(m.group(1)) if m else None, trace_step=trace_step, start=0.0,
         length=(n - 1) * trace_step if trace_step is not None else None, notes=notes,
-        bits=int(bits))
+        bits=int(bits), reserved=RESERVED if nsamp > RESERVED else 0)
     return info, offset
 
 
@@ -161,6 +161,10 @@ class GssiDztReader(Reader):
             return Path(path).suffix.lower() == SUFFIX
         except Exception:
             return False
+
+    def default_name(self, path: Path) -> str:
+        """The file's name followed by the antenna the header names: "AAA_____023 (270MHz)"."""
+        return named_after(path, inspect(path).antenna)
 
     def read(self, path: Path, **options) -> ReaderResult:
         """Options: ``position`` ("file", the default | "spacing" | "table"), ``spacing`` and,

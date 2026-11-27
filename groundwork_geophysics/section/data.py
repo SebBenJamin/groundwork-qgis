@@ -24,7 +24,7 @@ from ..readers.errors import plain_error
 from ..core.colors import ColorScale
 from ..core.context import ContextItems, borehole_key
 from ..core.coverage import station_coverage
-from ..core.dataset_types import is_trace_kind, method_of, station_words
+from ..core.dataset_types import is_radar_kind, is_trace_kind, method_of, station_words
 from ..core.interpolators import Interpolation
 from ..core.layout import Electrodes, derived_electrodes, model_stations
 from ..core.model import Dataset, Profile, StationSet
@@ -32,9 +32,11 @@ from ..core.placement import DistanceMap, FitReport
 from ..core.read_cache import load_result, save_result
 from ..core.section_mesh import SectionMesh
 from ..core.ties import Tie
-from ..core.trace_section import (NO_VELOCITY, TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain,
-                                  PlacedTraces, TraceSection, Velocity, color_limits, depth_at,
-                                  display_values, ground_time, place)
+from ..core.trace_section import (BAD_RADAR_VELOCITY, BEYOND_RECORD, C_M_PER_NS,
+                                  NO_DEPTH_TIME_ZERO, NO_VELOCITY, NOT_A_TIME_ZERO,
+                                  TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain, PlacedTraces,
+                                  TraceSection, Velocity, color_limits, depth_at, display_values,
+                                  ground_time, place)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -44,13 +46,16 @@ from .topography import (TOPOGRAPHY_SOURCES, Surface, dem_line, flat_line, local
 #: reader_options keys applied by the provider, not passed to the reader as such: the
 #: placement, and how a trace section is hung (velocity, the height of time zero)
 WORKBENCH_KEYS = ("z_kind", "chainage_offset", "placement", "velocity", "velocity_table",
-                  "velocity_kind", "zero", "datum", "replacement_velocity")
+                  "velocity_kind", "zero", "datum", "replacement_velocity", "time_zero")
 #: those only used to hang a trace section once read: not in the read key, so trying another
-#: velocity or time zero never reads the file again
+#: velocity or time zero never reads the file again; ``time_zero`` (s) is the time that lies
+#: on the ground (a radargram's first arrival)
 HANG_KEYS = ("velocity", "velocity_table", "velocity_kind", "zero", "datum",
-             "replacement_velocity")
+             "replacement_velocity", "time_zero")
 #: z kind of a placed trace section in ``SectionDataProvider._placed`` (never a model's)
 TRACES = "traces"
+#: the next step a hanging error ends with
+SET_IN_INFO = "Set it in Dataset Info."
 #: a time section without a velocity, and one hung from a datum without a height
 NO_VELOCITY_TEXT = NO_VELOCITY + " Set it in Dataset Info."
 NO_DATUM_TEXT = "The height of time zero is missing. Set it in Dataset Info."
@@ -260,15 +265,17 @@ def trace_limits(layer_or_placed, style: LayerStyle, values=None) -> tuple[float
     """Colour limits of a trace layer (or a ``PlacedTraces``) as it is drawn: the typed limits
     of ``style.scale`` when ``clip_percent`` is None, else the values shown clipped at that
     percentile. The values shown are ``values`` when given (the drawing's gained copy, or a
-    sample of it), else ``display_values(section, style.gain)``: the file's own numbers
-    without a display option, a gained copy with one."""
+    sample of it), else ``display_values`` of the hung section: the file's own numbers
+    without a display option, a gained copy with one. The leading samples that are not data
+    (``PlacedTraces.data_start``) never count."""
     if style.clip_percent is None and style.scale is not None:
         return float(style.scale.vmin), float(style.scale.vmax)
+    placed = getattr(layer_or_placed, "traces", layer_or_placed)
     if values is None:
-        placed = getattr(layer_or_placed, "traces", layer_or_placed)
-        values = display_values(placed.section, style.gain)
+        values = display_values(placed.section, style.gain, time_zero=placed.time_zero,
+                                skip=placed.data_start)
     percent = style.clip_percent if style.clip_percent is not None else 98.0
-    return color_limits(values, percent)
+    return color_limits(values, percent, skip=placed.data_start)   # not the counter samples
 
 
 def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
@@ -287,8 +294,8 @@ def _mirrored_traces(placed: PlacedTraces, length: float) -> PlacedTraces:
     flipped = replace(sec, amplitudes=sec.amplitudes[::-1], x=length - sec.x[::-1],
                       numbers=None if sec.numbers is None else sec.numbers[::-1])
     live_from = None if placed.live_from is None else np.ascontiguousarray(placed.live_from[::-1])
-    return PlacedTraces(flipped, np.ascontiguousarray(placed.z_top[::-1]), placed.depths,
-                        live_from)
+    return replace(placed, section=flipped, z_top=np.ascontiguousarray(placed.z_top[::-1]),
+                   live_from=live_from)
 
 
 @dataclass
@@ -440,17 +447,21 @@ def _trace_hit(layer: SectionLayer, s: float, z: float) -> dict | None:
         return None
     d, sec = layer.dataset, layer.traces.section
     number = hit["number"] if hit["number"] is not None else hit["trace"] + 1
+    trace = {"number": int(number), "time": hit["time"], "depth": hit["depth"]}
+    if is_radar_kind(d.kind):                   # read in ns after time zero, below the ground
+        trace.update(radar=True, time_zero=layer.traces.time_zero,
+                     ground=(d.reader_options or {}).get("zero") not in ("datum", "datum_ground"))
     return {"name": layer_name(d), "value": hit["amplitude"], "unit": sec.unit,
             "version": d.version, "quantity": sec.quantity, "dataset_id": d.id,
-            "s": float(s), "z": float(z),
-            "trace": {"number": int(number), "time": hit["time"], "depth": hit["depth"]}}
+            "s": float(s), "z": float(z), "trace": trace}
 
 
 def identify_layers(layers: list[SectionLayer], s: float, z: float) -> list[dict]:
     """Values under (s, z), topmost (last drawn) layer first. Hidden layers, layers
     with errors and cells without a value are skipped. A trace section's hit also gives
-    ``"trace"``: its number, the sample's two-way time (s; None for a depth section) and its
-    depth below time zero (m)."""
+    ``"trace"``: its number, the sample's two-way time (s, as the file counts it; None for a
+    depth section) and its depth below time zero (m); a radargram's also ``radar`` (True),
+    its ``time_zero`` (s) and ``ground`` (hung on the ground, not at a datum)."""
     out = []
     for layer in reversed(layers):
         if not layer.style.visible or layer.error is not None:
@@ -548,6 +559,13 @@ def _number_or_nan(v) -> float:
         return float(v)
     except (TypeError, ValueError):
         return float("nan")
+
+
+def _reserved(provenance: dict) -> int:
+    """How many leading samples of every trace are not data, as the reader recorded
+    (``reserved_samples``: GSSI's scan counter and marks); 0 when it says nothing."""
+    n = (provenance or {}).get("reserved_samples")
+    return int(n) if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0 else 0
 
 
 def _transient(exc: BaseException) -> bool:
@@ -1380,11 +1398,20 @@ class SectionDataProvider:
         ``zero`` "datum_ground": the section was moved to the datum with a replacement
         velocity; each trace is hung so that its ground time (``ground_time``) lies on the
         profile's surface at the trace. A profile without real heights (no surface, or a
-        local one, as ``is_local`` reads it) has no ground to correct to."""
+        local one, as ``is_local`` reads it) has no ground to correct to.
+
+        The sample at the stored ``time_zero`` (s; a radargram without one: the time zero its
+        file states, else 0) is the one hung on the top; the samples before it are not drawn,
+        nor are the leading samples the reader says are not data (``reserved_samples``). A
+        radargram's velocity cannot be above the speed of light."""
         options = d.reader_options or {}
         zero = options.get("zero")
         velocity = Velocity.from_options(options)
         try:
+            time_zero = self._time_zero(d)
+            if is_radar_kind(d.kind) and velocity.value is not None and \
+                    velocity.value > C_M_PER_NS * 1e9:
+                raise _Plain(f"{BAD_RADAR_VELOCITY} {SET_IN_INFO}")
             if zero in ("datum", "datum_ground"):
                 datum = _number_or_nan(options.get("datum"))
                 if not np.isfinite(datum):
@@ -1399,12 +1426,14 @@ class SectionDataProvider:
                 if zero == "datum_ground":
                     z_top, live_from = self._ground_top(section, surface, datum, velocity,
                                                         options.get("replacement_velocity"))
-                placed = place(section, z_top, velocity, live_from)
+                placed = place(section, z_top, velocity, live_from, time_zero=time_zero,
+                               data_start=_reserved(self._read_provenance(d)))
             except ValueError as exc:
                 if str(exc) == NO_VELOCITY:
                     raise _Plain(NO_VELOCITY_TEXT) from None
-                if str(exc) in (TIMES_DO_NOT_INCREASE, TURNS_BACK):
-                    raise _Plain(f"{exc} Set it in Dataset Info.") from None
+                if str(exc) in (TIMES_DO_NOT_INCREASE, TURNS_BACK, BEYOND_RECORD,
+                                NO_DEPTH_TIME_ZERO):
+                    raise _Plain(f"{exc} {SET_IN_INFO}") from None
                 raise
             if style.scale is None:
                 style.scale = _trace_scale(placed, style)
@@ -1412,6 +1441,27 @@ class SectionDataProvider:
             return SectionLayer(d, None, style, self._error_text(d, exc),
                                 missing_library=_missing_library(exc))
         return SectionLayer(d, None, style, None, placed, level_cache=self._level_cache(d))
+
+    def _read_provenance(self, d: Dataset) -> dict:
+        """What the reader recorded for ``d``: the read held in memory (it is current), else
+        what was stored when the dataset was added."""
+        hit = self._cache.get(d.id)
+        provenance = getattr(hit[1], "provenance", None) if hit is not None else None
+        return provenance if isinstance(provenance, dict) else (d.provenance or {})
+
+    def _time_zero(self, d: Dataset) -> float:
+        """``d``'s time zero (s): the stored ``time_zero``; a radargram without one takes the
+        time zero its file states (``time_zero_file``), else 0. Never estimated here (the
+        estimate is offered in the dialogs)."""
+        value = (d.reader_options or {}).get("time_zero")
+        if value is None and is_radar_kind(d.kind):
+            value = self._read_provenance(d).get("time_zero_file")
+        if value is None:
+            return 0.0
+        tz = _number_or_nan(value)
+        if not np.isfinite(tz):
+            raise _Plain(f"{NOT_A_TIME_ZERO} {SET_IN_INFO}")
+        return tz
 
     @staticmethod
     def _ground_top(section: TraceSection, surface: Surface | None, datum: float,

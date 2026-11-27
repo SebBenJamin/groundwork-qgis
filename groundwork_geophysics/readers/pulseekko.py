@@ -59,8 +59,8 @@ import numpy as np
 
 from ..core.trace_section import TraceSection
 from .base import Reader, ReaderResult
-from .radar_info import (NANOSECOND, RadarInfo, check_position, partner, provenance_of,
-                         trace_x)
+from .radar_info import (NANOSECOND, RadarInfo, check_position, named_after, partner,
+                         provenance_of, trace_x)
 
 SUFFIXES = (".dt1", ".hd")
 TRACE_HEADER = 128
@@ -207,6 +207,13 @@ class PulseEkkoReader(Reader):
             return suffix == ".hd" and partner(path, ".DT1") is not None
         except Exception:
             return False
+
+    def default_name(self, path: Path) -> str:
+        """The line's name followed by the antenna's nominal frequency from the header file
+        (only that file is read): "LINE00 (250MHz)"."""
+        _dt1, hd_path = _pair(Path(path))
+        freq = _number(read_hd(hd_path), "NOMINAL FREQUENCY", hd_path.name, required=False)
+        return named_after(path, f"{freq:g}MHz" if freq else "")
 
     def read(self, path: Path, **options) -> ReaderResult:
         """Either file of the line. Options: ``position`` ("file", the default | "spacing" |

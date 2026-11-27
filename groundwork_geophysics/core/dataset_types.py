@@ -24,16 +24,20 @@ TYPES: dict[str, DatasetType] = {t.code: t for t in (
     DatasetType("ert_misfit", "ERT", "misfit", "misfit", "%", False),
     DatasetType("srt_model", "Seismic refraction", "Vp model", "p_velocity", "m/s", False),
     DatasetType("refl_section", "Seismic reflection", "section", "amplitude", "", False),
+    DatasetType("gpr_section", "GPR", "radargram", "amplitude", "", False),
 )}
 
 #: kinds of readings files (measured data, misfit): never a model, always ERT so far
 READINGS_KINDS = ("ert_measured", "ert_misfit")
 #: kinds read as a trace section (traces x samples), not as a cell model
-TRACE_KINDS = ("refl_section",)
+TRACE_KINDS = ("refl_section", "gpr_section")
+#: trace kinds that are radargrams: times in nanoseconds, hung with a time zero
+RADAR_KINDS = ("gpr_section",)
 #: station-set and dataset method choices: (label, code)
 METHODS: list[tuple[str, str]] = [("ERT", "ert"), ("Seismic refraction", "srt"),
-                                  ("Seismic reflection", "refl")]
-_MODEL_KINDS = {"ert": "ert_model", "srt": "srt_model", "refl": "refl_section"}
+                                  ("Seismic reflection", "refl"), ("GPR", "gpr")]
+_MODEL_KINDS = {"ert": "ert_model", "srt": "srt_model", "refl": "refl_section",
+                "gpr": "gpr_section"}
 _QUANTITY_LABELS = {"resistivity": "Resistivity", "p_velocity": "P-wave velocity",
                     "misfit": "Misfit", "amplitude": "Amplitude"}
 
@@ -64,21 +68,26 @@ def model_kind(method: str) -> str:
 
 def method_of(kinds, station_methods=()) -> str:
     """A profile's method code: its first station set's, else "srt" when every dataset is a
-    refraction one, "refl" when every dataset is a reflection one, else "ert" (mixed or no
-    data keep the ERT words)."""
+    refraction one, "refl" when every dataset is a reflection one, "gpr" when every dataset is
+    a radargram, else "ert" (mixed or no data keep the ERT words)."""
     for m in station_methods:
         if m:
             return m
     kinds = list(kinds)
-    for code in ("srt", "refl"):
+    for code in ("srt", "refl", "gpr"):
         if kinds and all(k.startswith(code + "_") for k in kinds):
             return code
     return "ert"
 
 
 def is_trace_kind(kind: str) -> bool:
-    """True for a kind read as a trace section (a seismic reflection section)."""
+    """True for a kind read as a trace section (a seismic reflection section, a radargram)."""
     return kind in TRACE_KINDS
+
+
+def is_radar_kind(kind: str) -> bool:
+    """True for a radargram (ground-penetrating radar): times in ns, hung with a time zero."""
+    return kind in RADAR_KINDS
 
 
 def station_words(method: str) -> tuple[str, str]:
