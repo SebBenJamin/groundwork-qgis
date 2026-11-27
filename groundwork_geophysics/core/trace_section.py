@@ -929,6 +929,29 @@ def placed_values(placed: PlacedTraces, gain: DisplayGain) -> np.ndarray:
                           skip=placed.data_start)
 
 
+#: at most about this many values are gained for the colour limits of a display option
+LIMIT_VALUES = 1 << 21
+
+
+def limit_traces(section: TraceSection, gain: DisplayGain,
+                 limit: int = LIMIT_VALUES) -> TraceSection:
+    """A part of ``section``'s traces that is enough for the colour limits of
+    ``display_values(…, gain)`` (only a regular subsample of the values counts for them):
+    ``section`` itself when it holds at most ``limit`` values; else runs of neighbouring
+    traces spread evenly over the line, about ``limit`` values in all. A run is one trace,
+    or, with the moving-window background removal, four windows wide (so that most of its
+    traces see a whole window). The amplitudes of the part are a copy of those traces."""
+    n, ns = section.n_traces, section.n_samples
+    keep = max(1, int(limit) // ns)
+    if n <= keep:
+        return section
+    run = 4 * _odd(gain.background_traces) if gain.background == "window" else 1
+    run = min(run, keep)
+    starts = np.unique(np.linspace(0, n - run, max(1, keep // run)).round().astype(np.int64))
+    idx = np.unique((starts[:, None] + np.arange(run)[None, :]).reshape(-1))
+    return replace(section, amplitudes=section.amplitudes[idx], x=section.x[idx], numbers=None)
+
+
 def _data_part(a: np.ndarray, skip: int) -> np.ndarray:
     """``a`` (traces x samples) without its first ``skip`` samples; ``a`` itself otherwise."""
     return a[:, max(0, int(skip)):] if skip and a.ndim == 2 else a

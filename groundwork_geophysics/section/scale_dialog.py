@@ -831,18 +831,21 @@ class DisplayDialog(ColorScaleDialog):
 
     def _shown(self, gain):
         """The values shown with ``gain`` for the limits: the file's own without an option,
-        else a sample of a gained copy (the drawing's when it has one; made here otherwise,
-        and only the sample kept). Painting the muted zones or not changes no value."""
+        else a sample of a gained copy (the drawing's when it has one; made here otherwise
+        from a part of the traces, ``limit_traces``, so that the dialog keeps up on a large
+        section, and only the sample kept). Painting the muted zones or not changes no
+        value."""
         from dataclasses import replace
 
-        from ..core.trace_section import limit_sample
+        from ..core.trace_section import limit_sample, limit_traces
         if not gain.active():
             return self._traces.section.amplitudes
         gain = replace(gain, show_muted=False)
         hit = self._shown_by_gain.get(gain)
         if hit is None:
             placed = self._traces                   # its time zero, not its counter samples
-            hit = limit_sample(display_values(placed.section, gain, time_zero=placed.time_zero,
+            part = limit_traces(placed.section, gain)
+            hit = limit_sample(display_values(part, gain, time_zero=placed.time_zero,
                                               skip=placed.data_start), placed.data_start)
             self._shown_by_gain[gain] = hit
         return hit

@@ -173,6 +173,27 @@ def test_the_clip_percent_sets_the_limits(qgis_app, trace_layer):
     assert (s.scale.vmin, s.scale.vmax) == pytest.approx((lo, hi), abs=1e-3)
 
 
+def test_an_option_on_a_large_section_gains_only_a_part_of_it_for_the_limits(
+        qgis_app, make_trace_layer, monkeypatch):
+    import numpy as np
+
+    from groundwork_geophysics.section import scale_dialog
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    a = np.random.default_rng(2).standard_normal((3000, 1000)).astype(np.float32)
+    layer = make_trace_layer(a)
+    dlg = DisplayDialog(None, layer)
+    seen = []
+    real = scale_dialog.display_values
+
+    def spy(section, gain, **kwargs):
+        seen.append(section.n_traces)
+        return real(section, gain, **kwargs)
+    monkeypatch.setattr(scale_dialog, "display_values", spy)
+    dlg.agc_check.setChecked(True)
+    assert seen and max(seen) < 3000                 # not the whole section
+    assert dlg.max_spin.value() > 0
+
+
 def test_a_typed_limit_is_mirrored_and_ends_the_clip(qgis_app, trace_layer):
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, trace_layer)

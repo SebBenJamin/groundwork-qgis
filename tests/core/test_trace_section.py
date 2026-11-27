@@ -678,3 +678,30 @@ def test_a_window_in_metres_is_an_odd_number_of_traces():
     assert trace_spacing(TraceSection(a, np.array([3.0, 2.0, 1.0, 0.0]), 0.0, 1.0,
                                       "time")) == pytest.approx(1.0)
     assert trace_spacing(TraceSection(a, np.zeros(4), 0.0, 1.0, "time")) is None
+
+
+def test_the_limits_of_a_large_section_come_from_a_part_of_its_traces():
+    from groundwork_geophysics.core.trace_section import limit_traces
+    rng = np.random.default_rng(5)
+    a = (rng.standard_normal((4000, 600)) * np.linspace(1, 3, 4000)[:, None]).astype(np.float32)
+    sec = TraceSection(a, np.arange(4000) * 0.05, 0.0, 1e-9, "time")
+    small = TraceSection(a[:100], np.arange(100) * 0.05, 0.0, 1e-9, "time")
+    assert limit_traces(small, DisplayGain(agc_window=5e-9)) is small
+    gain = DisplayGain(agc_window=20e-9)
+    part = limit_traces(sec, gain, limit=600 * 500)
+    assert part.n_traces == 500 and part.n_samples == 600
+    assert part.x[0] == 0.0 and part.x[-1] == sec.x[-1]              # spread over the line
+    assert np.all(np.diff(part.x) > 0)
+    whole = color_limits(display_values(sec, gain), 98.0)[1]
+    from_part = color_limits(display_values(part, gain), 98.0)[1]
+    assert from_part == pytest.approx(whole, rel=0.01)
+
+
+def test_a_moving_background_takes_runs_of_neighbouring_traces():
+    from groundwork_geophysics.core.trace_section import limit_traces
+    a = np.ones((4000, 600), np.float32)
+    sec = TraceSection(a, np.arange(4000) * 0.05, 0.0, 1e-9, "time")
+    part = limit_traces(sec, DisplayGain(background="window", background_traces=11),
+                        limit=600 * 500)
+    steps = np.round(np.diff(part.x) / 0.05).astype(int)
+    assert part.n_traces <= 500 and (steps == 1).sum() >= 0.9 * steps.size   # runs of 44
