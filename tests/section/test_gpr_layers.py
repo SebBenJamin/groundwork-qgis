@@ -233,21 +233,23 @@ def test_a_radar_file_added_is_a_radargram_named_with_its_antenna(tmp_path, qgis
     assert named.name == "Mine"
 
 
-def test_a_new_radargram_starts_with_dewow_agc_and_a_10_m_background(make):
-    # chosen by looking at real 100 / 270 MHz GSSI lines and a 250 MHz pulseEKKO line: a
-    # moving background of 10 m takes out the antenna ringing that changes along a line
+def test_a_new_radargram_starts_with_a_band_pass_around_its_antenna(make):
+    # chosen by looking at real 100 / 270 / 400 MHz GSSI lines and a 250 MHz pulseEKKO line:
+    # the band-pass takes out the noise far below the antenna's band that dewow left and AGC
+    # lifted; the whole line's background keeps the long flat reflectors
     from groundwork_geophysics.section.data import radar_gain
     provider, _store, pid = make({})                    # 270MHz, 50 traces a metre
     layer = provider.layers(pid)[0]
     period = 1 / 270e6
-    assert layer.style.gain == DisplayGain(dewow_window=pytest.approx(2 * period),
+    assert layer.style.gain == DisplayGain(band_low=pytest.approx(135e6),
+                                           band_high=pytest.approx(540e6),
                                            agc_window=pytest.approx(5 * period),
-                                           background="window", background_traces=501)
+                                           background="all")
     assert layer.style.clip_percent == 98.0
     assert radar_gain(None, 64 * NS) == DisplayGain(dewow_window=pytest.approx(3.2 * NS),
                                                     agc_window=pytest.approx(8 * NS),
                                                     background="all")
-    assert radar_gain(250.0, 64 * NS, 0.1).background_traces == 101
+    assert radar_gain(100.0, 64 * NS).dewow_window is None
 
 
 def test_a_radargram_keeps_the_look_it_was_given(make):

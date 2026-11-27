@@ -36,8 +36,7 @@ from ..core.trace_section import (BAD_RADAR_VELOCITY, BEYOND_RECORD, C_M_PER_NS,
                                   NO_DEPTH_TIME_ZERO, NO_VELOCITY, NOT_A_TIME_ZERO,
                                   TIMES_DO_NOT_INCREASE, TURNS_BACK, DisplayGain, PlacedTraces,
                                   TraceSection, Velocity, color_limits, depth_at, display_values,
-                                  ground_time, place, smoothed_ground, trace_spacing,
-                                  window_traces)
+                                  ground_time, place, smoothed_ground)
 from ..store.gpkg_store import ProjectStore
 from .context_cache import GatheredContext
 from .placement_resolve import NO_STATIONS_NOTE, ProfileLayout, Resolution, resolve
@@ -290,39 +289,53 @@ def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
     return ColorScale("gray" if lo < 0 else "gray_r", lo, hi, False)
 
 
-#: m: the moving window a new radargram's background is removed over
+#: m: the moving window offered for removing a radargram's background (the Display dialog)
 BACKGROUND_WINDOW_M = 10.0
 
 
-def radar_gain(frequency_mhz, window: float, spacing: float | None = None) -> DisplayGain:
-    """The look a new radargram starts with: dewow over two periods of the antenna's centre
-    frequency and AGC over five (without a known frequency: a twentieth and an eighth of the
-    recorded ``window``, s); the background removed over a moving window of 10 m of line
-    (``spacing``: the trace spacing, m; without one the whole line's); no gain with time.
+#: a new radargram's band-pass: from this share of the antenna's frequency to this one
+RADAR_BAND = (0.5, 2.0)
 
-    Chosen by looking at real lines (100 and 270 MHz GSSI files recorded with the
-    instrument's own range gain, a 250 MHz pulseEKKO line without one): a further gain with
-    time lifted the deep noise until the clip washed out the upper part; AGC showed layering
-    and diffraction hyperbolas near the top and still the reflectors further down in all
-    three, but also the antenna's ringing as flat, ground-parallel bands. A whole-line
-    background removal took those away at 270 MHz but not at 100 MHz, where the ringing
-    changes along the line in stretches of some metres; a moving window of 10 m removed it
-    there and kept dipping reflectors and hyperbolas everywhere (5 m took away more of the
-    flat reflectors, 15 m and more brought the bands back). Flat reflectors much longer than
-    the window fade with it; the Display dialog offers the whole line."""
+
+def _antenna_mhz(frequency_mhz) -> float | None:
     try:
         f = float(frequency_mhz)
     except (TypeError, ValueError):
-        f = float("nan")
-    if spacing is not None and np.isfinite(spacing) and spacing > 0:
-        background = {"background": "window",
-                      "background_traces": window_traces(BACKGROUND_WINDOW_M, spacing)}
-    else:
-        background = {"background": "all"}
-    if np.isfinite(f) and f > 0:
-        period = 1e-6 / f
-        return DisplayGain(dewow_window=2 * period, agc_window=5 * period, **background)
-    return DisplayGain(dewow_window=window / 20, agc_window=window / 8, **background)
+        return None
+    return f if np.isfinite(f) and f > 0 else None
+
+
+def radar_dewow_window(frequency_mhz, window: float) -> float:
+    """The dewow window offered for a radargram (s): two periods of the antenna's centre
+    frequency, without a known one a twentieth of the recorded ``window`` (s)."""
+    f = _antenna_mhz(frequency_mhz)
+    return 2e-6 / f if f is not None else window / 20
+
+
+def radar_gain(frequency_mhz, window: float) -> DisplayGain:
+    """The look a new radargram starts with: a band-pass from half to twice the antenna's
+    centre frequency, the background (the mean trace of the whole line) removed and AGC over
+    five periods; without a known frequency dewow over a twentieth and AGC over an eighth of
+    the recorded ``window`` (s) instead of the band-pass and the five periods. No gain with
+    time.
+
+    Chosen by looking at real lines (100, 270 and 400 MHz GSSI files recorded with the
+    instrument's own range gain, a 250 MHz pulseEKKO line without one). The 100 MHz files
+    carry strong noise far below the antenna's band (a period of about 50 ns) that switches
+    on and off along the line; a running-mean dewow left a quarter of it and AGC lifted it to
+    flat bands or a checkerboard. The band-pass removes it, and makes the 270 MHz, 400 MHz
+    and pulseEKKO lines cleaner too. With it, the whole line's background keeps the long flat
+    reflectors that a moving window of 10 m broke into dashes; that window still takes out
+    more of the deep ringing that changes along a 100 MHz line, and the Display dialog
+    offers it. AGC over 10 or 20 periods quietened the deep noise on the 100 MHz lines but
+    let the strong reflectors near the top darken the weaker ones below them on the others."""
+    f = _antenna_mhz(frequency_mhz)
+    if f is not None:
+        lo, hi = RADAR_BAND
+        return DisplayGain(band_low=lo * f * 1e6, band_high=hi * f * 1e6,
+                           agc_window=5e-6 / f, background="all")
+    return DisplayGain(dewow_window=radar_dewow_window(None, window), agc_window=window / 8,
+                       background="all")
 
 
 def _mirrored_traces(placed: PlacedTraces, length: float) -> PlacedTraces:
@@ -1486,8 +1499,7 @@ class SectionDataProvider:
                     window = _number_or_nan(prov.get("window"))
                     if not np.isfinite(window):
                         window = section.n_samples * section.step
-                    style.gain = replace(radar_gain(prov.get("frequency_mhz"), window,
-                                                    trace_spacing(section)),
+                    style.gain = replace(radar_gain(prov.get("frequency_mhz"), window),
                                          show_muted=style.gain.show_muted)
                 style.scale = _trace_scale(placed, style)
         except Exception as exc:                # never raise from layers()

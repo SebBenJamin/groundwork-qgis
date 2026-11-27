@@ -81,11 +81,10 @@ def tops(dialog, widgets) -> list[int]:
 
 def default_look(layer):
     """The look a new radargram starts with (``radar_gain``), whatever the trial stored."""
-    from groundwork_geophysics.core.trace_section import trace_spacing
     from groundwork_geophysics.section.data import radar_gain
     section = layer.traces.section
     return radar_gain((layer.dataset.provenance or {}).get("frequency_mhz"),
-                      section.n_samples * section.step, trace_spacing(section))
+                      section.n_samples * section.step)
 
 
 class Views:

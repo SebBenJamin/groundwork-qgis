@@ -610,7 +610,10 @@ class DisplayDialog(ColorScaleDialog):
         self.dewow_spin.setRange(0.01 if unit == "m" else 0.1, 1e5)
         self.dewow_spin.setSuffix(f" {unit}")
         if self._is_radar():                        # two periods of the antenna
-            default = self._radar_default().dewow_window * scale
+            from .data import radar_dewow_window
+            section = self._traces.section
+            default = radar_dewow_window((self._layer.dataset.provenance or {}).get(
+                "frequency_mhz"), section.n_samples * section.step) * scale
         else:
             default = span * scale / 20
         default = round(default, self.dewow_spin.decimals())
@@ -635,7 +638,7 @@ class DisplayDialog(ColorScaleDialog):
         self._spacing = spacing = trace_spacing(self._traces.section)
         if spacing is None:
             start = max(3, (n // 10) | 1)           # a tenth of the line, odd
-        else:                                       # as a new radargram starts
+        else:                                       # 10 m of line
             start = min(window_traces(BACKGROUND_WINDOW_M, spacing), max(3, n))
         self.background_spin.setClearValue(start)
         self.background_spin.setValue(gain.background_traces or start)
