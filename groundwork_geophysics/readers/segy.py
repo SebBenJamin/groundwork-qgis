@@ -76,27 +76,52 @@ class _Headers:
 
 
 def _segyio():
-    """The segyio module; ``MissingLibrary("segyio")`` when it is not installed."""
+    """The segyio module; ``MissingLibrary("segyio")`` when it is not installed, ValueError
+    (``CANNOT_LOAD``, no install offered: installing the same files again does not help)
+    when it is installed but cannot be loaded."""
     try:
         libs.ensure_on_path()
     except Exception:          # outside QGIS (plain Python, tests) there is no profile folder
         pass
     try:
         import segyio
-    except ImportError:
-        raise libs.MissingLibrary("segyio") from None
+    except ModuleNotFoundError as exc:
+        if (exc.name or "segyio").split(".")[0] == "segyio":
+            raise libs.MissingLibrary("segyio") from None
+        raise ValueError(CANNOT_LOAD.format(reason=_reason(exc))) from None
+    except Exception as exc:   # noqa: BLE001 - a DLL, a NumPy mismatch, a half-written folder
+        raise ValueError(CANNOT_LOAD.format(reason=_reason(exc))) from None
     return segyio
+
+
+#: segyio is there but its import fails
+CANNOT_LOAD = ("Reading SEG-Y needs the library segyio, which is installed but cannot be loaded "
+               "({reason}). Restart QGIS. If this stays, close QGIS, delete the segyio folders "
+               "in the folder python/groundwork_libs of the QGIS profile, then start QGIS and "
+               "install segyio again.")
+
+
+def _reason(exc: BaseException) -> str:
+    return str(exc).strip() or type(exc).__name__
 
 
 def _open(segyio, path: Path):
     """``(file, endian)``: opened big-endian, else little-endian; ValueError when segyio cannot
-    open it either way."""
+    open it either way. An OSError from opening a file that is there stays an OSError (not
+    "no such file"), with what segyio said."""
     reason = ""
     for endian in ("big", "little"):
         try:
             return segyio.open(str(path), "r", ignore_geometry=True, endian=endian), endian
         except RuntimeError as exc:
             reason = reason or (str(exc).strip() or type(exc).__name__)
+        except OSError as exc:
+            if not path.is_file():
+                raise
+            # one argument: a plain OSError, never FileNotFoundError for a file that is there
+            raise OSError(f"segyio cannot open it although it is there: "
+                          f"{exc.strerror or _reason(exc)}. Copy the file to a folder with a "
+                          "short, plain name and add it from there") from None
     raise ValueError(f"{path.name}: segyio cannot read this file ({reason}). "
                      "Re-export it as standard SEG-Y.")
 
