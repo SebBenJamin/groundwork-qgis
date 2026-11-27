@@ -473,6 +473,63 @@ def test_the_filters_round_trip_and_keep_every_field(qgis_app, make_trace_layer)
     assert kept.style().gain == whole                   # nothing it shows is lost
 
 
+def test_the_band_pass_sits_between_dewow_and_background(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    form = dlg.amplitudes_group.layout()
+    widgets = [form.itemAt(i).widget() for i in range(form.count())]
+    order = [dlg.dewow_check, dlg.band_check, dlg.band_row, dlg.background_check]
+    assert [widgets.index(w) for w in order] == sorted(widgets.index(w) for w in order)
+    assert dlg.band_check.text() == "Band-pass"
+    assert form.labelForField(dlg.band_row).text() == "From"
+    assert dlg.band_low_spin.suffix() == " Hz" and dlg.band_high_spin.suffix() == " Hz"
+    assert not dlg.band_check.isChecked() and not dlg.band_low_spin.isEnabled()
+    assert dlg.style().gain == trace_layer.style.gain
+
+
+def _antenna(layer, mhz):
+    return replace(layer, dataset=replace(layer.dataset, provenance={"frequency_mhz": mhz}))
+
+
+def test_ticking_the_band_pass_of_a_radargram_proposes_the_antennas_band(qgis_app,
+                                                                         make_trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, _antenna(_radar_layer(make_trace_layer), 100.0))
+    assert dlg.band_low_spin.suffix() == " MHz"
+    assert dlg.band_low_spin.value() == 0 and dlg.band_low_spin.text().strip() != "0"
+    dlg.band_check.setChecked(True)
+    assert (dlg.band_low_spin.value(), dlg.band_high_spin.value()) == (50.0, 200.0)
+    g = dlg.style().gain
+    assert g.band_low == pytest.approx(50e6) and g.band_high == pytest.approx(200e6)
+    again = DisplayDialog(None, replace(_radar_layer(make_trace_layer), style=dlg.style()))
+    assert again.band_check.isChecked() and again.band_high_spin.value() == 200.0
+    assert again.style().gain == g
+
+
+def test_a_band_pass_without_both_corners_is_not_applied(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)              # seismic: no antenna to propose from
+    dlg.band_check.setChecked(True)
+    assert dlg.band_low_spin.value() == 0 and dlg.band_high_spin.value() == 0
+    with pytest.raises(ValueError, match="both"):
+        dlg.style()
+    assert not dlg.apply() and "both" in dlg.message.text()
+    dlg.band_low_spin.setValue(60.0)
+    dlg.band_high_spin.setValue(10.0)
+    with pytest.raises(ValueError, match="below"):
+        dlg.style()
+    dlg.band_low_spin.setValue(10.0)
+    dlg.band_high_spin.setValue(60.0)
+    g = dlg.style().gain
+    assert (g.band_low, g.band_high) == (10.0, 60.0)
+
+
+def test_a_depth_section_offers_no_band_pass(qgis_app, make_trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, make_trace_layer(domain="depth"))
+    assert not dlg.band_check.isEnabled() and "depth" in dlg.band_check.toolTip()
+
+
 def test_a_model_has_no_filters(qgis_app, store_with_model):
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, _layer(store_with_model)[1])
@@ -483,6 +540,9 @@ def test_a_model_has_no_filters(qgis_app, store_with_model):
     ({"dewow_window": 0.002}, "clip 98 % · dewow"),
     ({"dewow_window": 0.002, "background": "all", "agc_window": 0.02},
      "clip 98 % · dewow · background · AGC"),
+    ({"band_low": 5.0e7, "band_high": 2.0e8, "background": "all", "agc_window": 0.02},
+     "clip 98 % · band-pass · background · AGC"),
+    ({"dewow_window": 0.002, "band_low": 10.0}, "clip 98 % · dewow · band-pass"),
     ({"background": "window", "background_traces": 5, "time_power": 1.0},
      "clip 98 % · background · gain")])
 def test_a_trace_row_names_its_filters(qgis_app, make_trace_layer, gain, text):

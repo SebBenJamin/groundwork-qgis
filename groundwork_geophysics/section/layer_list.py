@@ -74,16 +74,18 @@ def gain_word(gain) -> str:
 
 
 def filter_words(gain) -> list[str]:
-    """The display filters that are on, in processing order: "dewow", "background"."""
+    """The display filters that are on, in processing order: "dewow", "band-pass",
+    "background"."""
     if gain is None:
         return []
     out = ["dewow"] if gain.dewow_window is not None and gain.dewow_window > 0 else []
+    out += ["band-pass"] if gain.band_on() else []
     return out + (["background"] if gain.background in ("all", "window") else [])
 
 
 def trace_look_text(clip_percent, gain, scale=None) -> str:
     """A trace section's look in a few words, what is on in processing order: "clip 98 %",
-    "clip 98 % · dewow · background · AGC", or the typed limits ("-500–500 · gain")."""
+    "clip 98 % · band-pass · background · AGC", or the typed limits ("-500–500 · gain")."""
     if clip_percent is not None or scale is None:
         text = clip_text(98.0 if clip_percent is None else clip_percent)
     else:

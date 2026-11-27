@@ -20,6 +20,14 @@ AGC_MAX_MS = 200        # the AGC window starts at a quarter of the record, at m
 DEWOW_TEXT = "Remove drift (dewow)"
 DEWOW_TIP = ("Subtract a running mean along each trace over this window: the slow drift at "
              "the top of a radar trace goes, the reflections stay")
+BAND_TEXT = "Band-pass"
+BAND_TIP = ("Keep the frequencies from one corner to the other: noise far below or above "
+            "them goes, the reflections stay. For a radargram, half to twice the antenna's "
+            "frequency is usual.")
+BAND_DEPTH_TIP = "A depth section has no frequencies: the band-pass works on time sections"
+BAND_UNSET = "Not set"
+BAND_BOTH = "Type both corners of the band-pass (From and To)."
+BAND_ORDER = "The band-pass's From must lie below its To."
 BACKGROUND_TEXT = "Remove background"
 BACKGROUND_TIP = ("Subtract the mean trace: banding and ringing that run flat along the line "
                   "go, and so do flat layers. Whole line: one mean trace; moving window: the "
@@ -519,6 +527,8 @@ class DisplayDialog(ColorScaleDialog):
             self.polarity_check.setToolTip("Positive and negative amplitudes swap colours")
         form.addRow(self.dewow_check)
         form.addRow("Window", self.dewow_spin)
+        form.addRow(self.band_check)
+        form.addRow("From", self.band_row)
         form.addRow(self.background_check)
         form.addRow("", self.background_combo)
         form.addRow("Traces", self.background_spin)
@@ -546,10 +556,12 @@ class DisplayDialog(ColorScaleDialog):
 
         self.agc_check.toggled.connect(self._gain_changed)
         self.time_power_check.toggled.connect(self._gain_changed)
+        self.band_check.toggled.connect(self._band_toggled)
         for w in (self.dewow_check, self.background_check):
             w.toggled.connect(self._gain_changed)
         self.background_combo.currentIndexChanged.connect(self._gain_changed)
-        for spin in (self.dewow_spin, self.background_spin):
+        for spin in (self.dewow_spin, self.background_spin, self.band_low_spin,
+                     self.band_high_spin):
             spin.valueChanged.connect(self._gain_changed)
         self.background_spin.valueChanged.connect(self._background_traces_changed)
         self.background_m_spin.valueChanged.connect(self._background_metres_changed)
@@ -606,6 +618,7 @@ class DisplayDialog(ColorScaleDialog):
         on = gain.dewow_window is not None and gain.dewow_window > 0
         self.dewow_spin.setValue(gain.dewow_window * scale if on else default)
         self.dewow_check.setChecked(on)
+        self._build_band(gain, depth=unit == "m")
         self.background_check = QCheckBox(BACKGROUND_TEXT)
         self.background_check.setObjectName("background_check")
         self.background_check.setToolTip(BACKGROUND_TIP)
@@ -647,6 +660,93 @@ class DisplayDialog(ColorScaleDialog):
         self.background_check.setChecked(gain.background in ("all", "window"))
         self.background_combo.setCurrentIndex(1 if gain.background == "window" else 0)
 
+    def _antenna_hz(self) -> float | None:
+        """A radargram's antenna frequency (Hz) when the file gives one; else None."""
+        if not self._is_radar():
+            return None
+        try:
+            f = float((self._layer.dataset.provenance or {}).get("frequency_mhz"))
+        except (TypeError, ValueError):
+            return None
+        return f * 1e6 if np.isfinite(f) and f > 0 else None
+
+    def _build_band(self, gain, depth: bool) -> None:
+        """"Band-pass" with its "From" and "To" corners: MHz for a radargram, Hz otherwise
+        (stored in Hz); off on a depth section. Empty corners show "Not set"."""
+        from qgis.gui import QgsDoubleSpinBox
+        radar = self._is_radar()
+        unit, self._band_scale = ("MHz", 1e-6) if radar else ("Hz", 1.0)
+        self.band_check = QCheckBox(BAND_TEXT)
+        self.band_check.setObjectName("band_check")
+        self.band_check.setToolTip(BAND_TIP)
+        spins = []
+        for name, given in (("band_low_spin", gain.band_low), ("band_high_spin", gain.band_high)):
+            spin = QgsDoubleSpinBox()
+            spin.setObjectName(name)
+            spin.setDecimals(1)
+            spin.setRange(0.0, 1e5)
+            spin.setSuffix(f" {unit}")
+            spin.setSpecialValueText(BAND_UNSET)
+            spin.setClearValue(0.0)
+            spin.setToolTip(BAND_TIP)
+            spin.setValue(given * self._band_scale if given and given > 0 else 0.0)
+            spins.append(spin)
+        self.band_low_spin, self.band_high_spin = spins
+        self.band_row = QWidget()
+        self.band_row.setObjectName("band_row")
+        row = QHBoxLayout(self.band_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.band_low_spin, 1)
+        row.addWidget(QLabel("To"))
+        row.addWidget(self.band_high_spin, 1)
+        self.band_check.setChecked(gain.band_on())
+        if depth:
+            self.band_check.setEnabled(False)
+            self.band_check.setToolTip(BAND_DEPTH_TIP)
+
+    def _band_toggled(self, on: bool) -> None:
+        """Ticked with empty corners on a radargram of a known antenna: half and twice its
+        frequency."""
+        f = self._antenna_hz()
+        if on and f is not None and not self.band_low_spin.value() \
+                and not self.band_high_spin.value():
+            for spin, share in ((self.band_low_spin, 0.5), (self.band_high_spin, 2.0)):
+                spin.blockSignals(True)
+                spin.setValue(round(share * f * self._band_scale, 1))
+                spin.blockSignals(False)
+        self._gain_changed()
+
+    def _band_corner(self, spin, given) -> float | None:
+        """A corner in Hz (the stored ``given`` while the spin still shows it); None for an
+        empty one."""
+        if not spin.value() > 0:
+            return None
+        if given is not None and round(given * self._band_scale, spin.decimals()) == spin.value():
+            return given
+        return spin.value() / self._band_scale
+
+    def _band(self) -> tuple:
+        """(low, high) in Hz as the dialog sets them; (None, None) when the band-pass is off
+        or not complete."""
+        if not self.band_check.isChecked():
+            return None, None
+        old = self._style.gain
+        low = self._band_corner(self.band_low_spin, old.band_low)
+        high = self._band_corner(self.band_high_spin, old.band_high)
+        if low is None or high is None or low >= high:
+            return None, None
+        return low, high
+
+    def _check_band(self) -> None:
+        """ValueError when the band-pass is ticked without both corners, or turned round."""
+        if not (self.band_check.isChecked() and self.band_check.isEnabled()):
+            return
+        low, high = self.band_low_spin.value(), self.band_high_spin.value()
+        if not (low > 0 and high > 0):
+            raise ValueError(BAND_BOTH)
+        if low >= high:
+            raise ValueError(BAND_ORDER)
+
     def _show_count(self) -> None:
         from ..core.numbers import fmt_count
         n = self.background_spin.value()
@@ -681,6 +781,8 @@ class DisplayDialog(ColorScaleDialog):
         old = self._style.gain
         background = self.background_combo.currentData() if self.background_check.isChecked() \
             else ""
+        if self.band_check.isEnabled():
+            old = replace(old, **dict(zip(("band_low", "band_high"), self._band())))
         return replace(
             old,
             dewow_window=self._window(self.dewow_spin, old.dewow_window)
@@ -698,6 +800,7 @@ class DisplayDialog(ColorScaleDialog):
 
     def _sync_gain_widgets(self) -> None:
         self.dewow_spin.setEnabled(self.dewow_check.isChecked())
+        self.band_row.setEnabled(self.band_check.isChecked() and self.band_check.isEnabled())
         self.background_combo.setEnabled(self.background_check.isChecked())
         self.background_spin.setEnabled(self.background_check.isChecked() and
                                         self.background_combo.currentData() == "window")
@@ -790,6 +893,7 @@ class DisplayDialog(ColorScaleDialog):
 
     def _trace_style(self):
         from dataclasses import replace
+        self._check_band()
         clip = self.clip_spin.value() if self.clip_check.isChecked() else None
         scale = self.scale()
         if clip is not None:                        # the exact limits, not the rounded spins

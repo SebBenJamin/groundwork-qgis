@@ -563,6 +563,15 @@ class DisplayGain:
     #: "window" subtract the mean of the ``background_traces`` traces centred on each trace
     background: str = ""
     background_traces: int = 0        # odd; an even or smaller number is read as the next odd >= 3
+    #: a band-pass along each trace (time sections only): its low and high corner, Hz; None
+    #: or 0 = that corner off (one corner alone is a high-pass or a low-pass)
+    band_low: float | None = None
+    band_high: float | None = None
+
+    def band_on(self) -> bool:
+        """True when a corner of the band-pass is set (it may still be unusable for a
+        section: ``band_weights``)."""
+        return _corner(self.band_low) > 0 or _corner(self.band_high) > 0
 
     def active(self) -> bool:
         """True when the values shown differ from the file's (a gained copy is needed);
@@ -571,7 +580,7 @@ class DisplayGain:
                     or (self.time_power is not None and self.time_power != 0)
                     or self.balance_traces or self.reverse_polarity
                     or (self.dewow_window is not None and self.dewow_window > 0)
-                    or self.background in ("all", "window"))
+                    or self.background in ("all", "window") or self.band_on())
 
     def to_dict(self) -> dict:
         """The options as plain data; ``show_muted`` and the filters only when they are set
@@ -586,6 +595,10 @@ class DisplayGain:
             out["background"] = self.background
         if self.background_traces:
             out["background_traces"] = self.background_traces
+        if self.band_low is not None:
+            out["band_low"] = self.band_low
+        if self.band_high is not None:
+            out["band_high"] = self.band_high
         return out
 
     @classmethod
@@ -607,7 +620,8 @@ class DisplayGain:
         background = d.get("background") or ""
         return cls(number("agc_window"), number("time_power"), bool(d.get("balance_traces", False)),
                    bool(d.get("reverse_polarity", False)), bool(d.get("show_muted", False)),
-                   number("dewow_window"), background if background in BACKGROUNDS else "", traces)
+                   number("dewow_window"), background if background in BACKGROUNDS else "", traces,
+                   number("band_low"), number("band_high"))
 
 
 def muted_mask(amplitudes: np.ndarray, live_from: np.ndarray | None = None) -> np.ndarray:
@@ -716,11 +730,101 @@ def _background_window_into(out: np.ndarray, width: int) -> None:
         out[r0:r1] = a[r0 - lo:r1 - lo] - mean
 
 
+#: a band-pass corner is tapered with half a cosine: up from this share of the low corner to
+#: the low corner, down from the high corner to this share of it
+BAND_TAPER = (0.6, 1.4)
+
+
+def _corner(v) -> float:
+    """A band-pass corner as a usable number of Hz; 0.0 for off (None, 0, negative, NaN)."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if math.isfinite(v) and v > 0 else 0.0
+
+
+def _rise(f: np.ndarray, a: float, b: float) -> np.ndarray:
+    """0 below ``a``, 1 above ``b``, half a cosine between."""
+    return 0.5 - 0.5 * np.cos(np.pi * np.clip((f - a) / (b - a), 0.0, 1.0))
+
+
+def band_weights(n: int, step: float, low, high) -> np.ndarray | None:
+    """The weights of the ``np.fft.rfftfreq(n, step)`` frequencies for a band-pass from
+    ``low`` to ``high`` (Hz), the corners tapered as ``BAND_TAPER`` says; None when there is
+    nothing to do: no corner set, ``low`` at or above Nyquist, or ``low`` at or above
+    ``high``. A ``high`` at or above Nyquist is left out (only the low corner works)."""
+    low, high = _corner(low), _corner(high)
+    nyquist = 0.5 / float(step)
+    if high >= nyquist:
+        high = 0.0
+    if low >= nyquist or (low and high and low >= high) or not (low or high):
+        return None
+    f = np.fft.rfftfreq(int(n), float(step))
+    w = np.ones(f.size)
+    if low:
+        w *= _rise(f, BAND_TAPER[0] * low, low)
+    if high:
+        w *= 1.0 - _rise(f, high, BAND_TAPER[1] * high)
+    return w
+
+
+def _fft_size(n: int) -> int:
+    """The smallest product of 2, 3 and 5 not below ``n`` (fast for the FFT)."""
+    best = 1 << max(0, (int(n) - 1).bit_length())
+    p5 = 1
+    while p5 < best:
+        p35 = p5
+        while p35 < best:
+            p = p35
+            while p < n:
+                p *= 2
+            best = min(best, p)
+            p35 *= 3
+        p5 *= 5
+    return best
+
+
+def _band_pass_into(out: np.ndarray, step: float, low, high) -> None:
+    """A zero-phase band-pass along each trace of ``out`` (float32, in place), block by block
+    of traces. Each trace is continued past its end by a straight line back to its first
+    value (so the FFT sees no jump where it wraps round) over at least as many samples as it
+    has; NaN samples count as zero and are kept."""
+    n = out.shape[1]
+    nfft = _fft_size(2 * n)
+    w = band_weights(nfft, step, low, high)
+    if w is None or n < 2:
+        return
+    pad = nfft - n
+    ramp = (np.arange(1, pad + 1) / (pad + 1))[None, :]
+    for r0, r1 in _row_blocks(out.shape[0], nfft):
+        a = out[r0:r1].astype(np.float64)
+        bad = ~np.isfinite(a)
+        if bad.any():
+            a[bad] = 0.0
+        buf = np.empty((a.shape[0], nfft))
+        buf[:, :n] = a
+        last, first = a[:, -1:], a[:, :1]
+        buf[:, n:] = last + (first - last) * ramp
+        del a
+        spec = np.fft.rfft(buf, axis=1)
+        del buf
+        spec *= w
+        got = np.fft.irfft(spec, n=nfft, axis=1)[:, :n]
+        del spec
+        if bad.any():
+            got[bad] = np.nan
+        out[r0:r1] = got
+
+
 def display_values(section: TraceSection, gain: DisplayGain, *, time_zero: float = 0.0,
                    skip: int = 0) -> np.ndarray:
     """The values to draw: the section's own array when ``gain`` is not active, else one
-    float32 copy with, in this order, dewow, background removal, time power, AGC, trace
-    balance and polarity applied (each worked through in blocks of traces).
+    float32 copy with, in this order, dewow, band-pass (a time section only), background
+    removal, time power, AGC, trace balance and polarity applied (each worked through in
+    blocks of traces). Dewow and band-pass are both filters along the trace and would give
+    the same in either order; dewow goes first so that the band-pass starts from traces
+    without their slow drift.
 
     ``skip``: the leading samples of every trace that are not data; in the copy they are NaN
     and no filter sees them. ``time_zero`` (s): the time power counts from it (``t -
@@ -733,16 +837,19 @@ def display_values(section: TraceSection, gain: DisplayGain, *, time_zero: float
         copy[:, :skip] = np.nan
     out = copy[:, skip:]                        # the data samples (a view of the copy)
     if out.shape[1]:
-        _gain_into(out, section.sample_axis()[skip:], section.step, gain, float(time_zero))
+        _gain_into(out, section.sample_axis()[skip:], section.step, gain, float(time_zero),
+                   section.domain == "time")
     return copy
 
 
 def _gain_into(out: np.ndarray, axis: np.ndarray, step: float, gain: DisplayGain,
-               time_zero: float) -> None:
+               time_zero: float, time: bool = True) -> None:
     """``display_values``' options applied to ``out`` (float32, in place); ``axis`` the time
-    (or depth) of each of its samples."""
+    (or depth) of each of its samples; ``time`` False for a depth section (no band-pass)."""
     if gain.dewow_window is not None and gain.dewow_window > 0:
         _dewow_into(out, _odd(gain.dewow_window / step))
+    if time and gain.band_on():
+        _band_pass_into(out, step, gain.band_low, gain.band_high)
     if gain.background == "all":
         _background_all_into(out)
     elif gain.background == "window":

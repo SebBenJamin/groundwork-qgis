@@ -416,6 +416,24 @@ def test_a_new_replacement_velocity_is_a_new_level_file(make, tmp_path):
     assert before is not None and after is not None and before != after
 
 
+def test_a_band_pass_is_a_new_picture_and_a_new_level_file(make):
+    from dataclasses import replace
+
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section import display_render
+    provider, _store, pid = make(_on_ground(6000.0), heights=LEVEL)
+    layer = provider.layers(pid)[0]
+
+    def with_gain(**kw):
+        return replace(layer, style=replace(layer.style, gain=DisplayGain(agc_window=0.05, **kw)))
+
+    plain, banded = with_gain(), with_gain(band_low=10.0, band_high=60.0)
+    other = with_gain(band_low=10.0, band_high=80.0)
+    assert display_render._values_key(plain) != display_render._values_key(banded)
+    paths = {display_render._level_path(x) for x in (plain, banded, other)}
+    assert None not in paths and len(paths) == 3
+
+
 def test_a_depth_section_is_not_corrected_to_the_ground(make):
     provider, _store, pid = make(_on_ground(2000.0, velocity=None, domain="depth", sample_step=2.0),
                                  heights=FALLING)

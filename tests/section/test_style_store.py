@@ -179,6 +179,27 @@ def test_painting_the_muted_zones_survives_the_round_trip():
     assert style.gain == DisplayGain(agc_window=0.2) and not style.gain.show_muted
 
 
+def test_the_band_pass_survives_the_round_trip_and_goes_to_the_other_sections():
+    import json
+
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import (applied, look_of, styled,
+                                                           styles_from_json, styles_to_json)
+    gain = DisplayGain(band_low=50e6, band_high=200e6, background="all", agc_window=5e-8)
+    style = LayerStyle(gain=gain)
+    assert styles_from_json(styles_to_json({"s1": style}))["s1"].gain == gain
+    assert styled(LayerStyle(), look_of("s1", style)).gain == gain        # plates
+    assert applied(style, LayerStyle(visible=False)).gain == gain        # to all sections
+    # a look stored before the band-pass: it stays off
+    old = json.dumps([{"dataset_id": "s1", "visible": True, "opacity": 1.0, "mode": "cells",
+                       "gain": {"agc_window": 5e-8, "time_power": None, "balance_traces": False,
+                                "reverse_polarity": False, "dewow_window": 2e-8}}])
+    (back,) = styles_from_json(old).values()
+    assert back.gain.band_low is None and back.gain.band_high is None
+    assert not back.gain.band_on()
+
+
 def test_a_frame_look_carries_the_clip_and_the_gain():
     from groundwork_geophysics.core.trace_section import DisplayGain
     from groundwork_geophysics.section.data import LayerStyle

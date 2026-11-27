@@ -490,6 +490,78 @@ def test_background_window_matches_a_plain_moving_mean_across_blocks(monkeypatch
     assert np.isnan(got[4, 2]) and np.allclose(got[~np.isnan(a)], want[~np.isnan(a)], atol=1e-5)
 
 
+def _two_tones(n_traces=3, n=1024, step=0.25e-9):
+    """Traces of a 20 MHz and a 100 MHz sine of amplitude 1 each, with a constant offset."""
+    t = np.arange(n) * step
+    slow, fast = np.sin(2 * np.pi * 20e6 * t), np.sin(2 * np.pi * 100e6 * t)
+    a = np.tile(slow + fast + 3.0, (n_traces, 1))
+    return _section(a, step=step), slow, fast
+
+
+def test_band_pass_keeps_the_band_and_takes_out_what_lies_below_it():
+    s, slow, fast = _two_tones()
+    d = display_values(s, DisplayGain(band_low=50e6, band_high=200e6))
+    mid = slice(200, -200)                              # away from the ends of the trace
+    rest = d[0, mid] - fast[mid]
+    assert np.abs(rest).max() < 0.05                    # the 100 MHz part within 5 %
+    # what is left of the 20 MHz part: its share in the output, by projection on it
+    share = abs(np.dot(d[0, mid], slow[mid]) / np.dot(slow[mid], slow[mid]))
+    assert share < 0.02 and d.dtype == np.float32
+    assert s.amplitudes[0, 0] == pytest.approx(3.0)                 # the data are untouched
+
+
+def test_band_pass_off_leaves_the_values_as_they_are():
+    s, _slow, _fast = _two_tones()
+    assert display_values(s, DisplayGain()) is s.amplitudes
+    assert display_values(s, DisplayGain(band_low=0.0, band_high=None)) is s.amplitudes
+    assert not DisplayGain(band_low=0.0, band_high=0.0).active()
+    assert DisplayGain(band_low=50e6, band_high=200e6).active()
+
+
+def test_band_pass_in_blocks_equals_the_whole_at_once(monkeypatch):
+    import groundwork_geophysics.core.trace_section as ts
+    a = np.random.default_rng(3).normal(0, 1, (23, 300)).astype(np.float32)
+    a[5, 40] = np.nan
+    g = DisplayGain(band_low=50e6, band_high=200e6)
+    whole = display_values(_section(a, step=0.25e-9), g)
+    monkeypatch.setattr(ts, "_BLOCK", 300 * 4)          # blocks of a few traces
+    blocks = display_values(_section(a, step=0.25e-9), g)
+    assert np.isnan(blocks[5, 40]) and np.isnan(whole[5, 40])
+    ok = ~np.isnan(a)
+    assert np.allclose(blocks[ok], whole[ok], atol=1e-6)
+
+
+def test_band_pass_corners_that_cannot_be_used_do_no_harm():
+    s, _slow, fast = _two_tones()                       # Nyquist 2 GHz
+    plain = s.amplitudes
+    # low at or above high, or low at or above Nyquist: the option is ignored
+    for low, high in ((200e6, 50e6), (100e6, 100e6), (3e9, None), (float("nan"), None)):
+        d = display_values(s, DisplayGain(band_low=low, band_high=high))
+        assert np.allclose(d, plain, atol=1e-5), (low, high)
+    # a high corner above Nyquist: only the low corner works (a high-pass)
+    d = display_values(s, DisplayGain(band_low=50e6, band_high=5e9))
+    assert np.abs(d[0, 200:-200] - fast[200:-200]).max() < 0.05
+    # one corner alone: a high-pass or a low-pass
+    lp = display_values(s, DisplayGain(band_high=40e6))
+    assert np.abs(lp[0, 200:-200] - 3.0 - _slow[200:-200]).max() < 0.05
+
+
+def test_band_pass_is_ignored_on_a_depth_section():
+    a = np.random.default_rng(4).normal(0, 1, (3, 64)).astype(np.float32)
+    s = _section(a, step=0.05, domain="depth")
+    d = display_values(s, DisplayGain(band_low=1.0, band_high=4.0))
+    assert np.allclose(d, a)
+
+
+def test_band_pass_comes_through_the_dict_and_old_dicts_have_none():
+    g = DisplayGain(band_low=50e6, band_high=200e6, agc_window=5e-8, background="all")
+    assert DisplayGain.from_dict(g.to_dict()) == g
+    old = DisplayGain.from_dict({"agc_window": 5e-8, "dewow_window": 2e-8})
+    assert old.band_low is None and old.band_high is None
+    assert "band_low" not in DisplayGain(agc_window=0.2).to_dict()        # stored as before
+    assert DisplayGain.from_dict({"band_low": "x", "band_high": 2e8}).band_low is None
+
+
 def test_filters_survive_the_dict_round_trip_and_old_dicts_load():
     g = DisplayGain(dewow_window=20e-9, background="window", background_traces=11)
     assert DisplayGain.from_dict(g.to_dict()) == g and g.active()
