@@ -146,6 +146,34 @@ def test_one_file_chosen_is_the_single_file_dialog(qgis_app, make_dialog, projec
     assert dlg.file_edit.text() == path
 
 
+def test_files_without_a_cells_choice_show_no_box(qgis_app, tmp_path):
+    """A row with nothing to offer (a radargram, a SEG-Y file, a fine-enough model) shows no
+    check box, also after the table has laid out its cell widgets."""
+    from qgis.PyQt.QtWidgets import QCheckBox
+
+    from groundwork_geophysics.ui.add_data_files import FilesBox
+    box = FilesBox()
+    box.resize(700, 300)
+    box.show()
+    box.set_files([str(tmp_path / "a.DZT"), str(tmp_path / "b.DZT")], [("p1", "Line 1")],
+                  False)
+    qgis_app.processEvents()
+    for row in range(2):
+        box.set_cells(row, "")
+    box.table.resize(690, 250)                             # lays the cell widgets out again
+    box.table.viewport().update()
+    qgis_app.processEvents()
+    shown = [c for c in box.table.findChildren(QCheckBox) if c.isVisible()]
+    assert shown == [] and box.cells_text(0) == "" and not box.cells_checked(1)
+    box.set_cells(1, "0.5 × 0.2 m")                         # an offer still shows, ticked
+    qgis_app.processEvents()
+    assert box.cells_text(1) == "0.5 × 0.2 m" and box.cells_checked(1)
+    assert [c.text() for c in box.table.findChildren(QCheckBox) if c.isVisible()] \
+        == ["0.5 × 0.2 m"]
+    box.close()
+    box.deleteLater()
+
+
 def _fine_export(path, nx=404, nz=250):
     x, z = np.meshgrid(np.arange(nx) * 0.25, np.arange(nz) * 0.1 + 0.05)
     rho = 10 ** (1 + x / 100)

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QGroupBox,
-                                 QHeaderView, QLabel, QTableWidget, QTableWidgetItem,
-                                 QVBoxLayout)
+                                 QHBoxLayout, QHeaderView, QLabel, QTableWidget,
+                                 QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..core.file_profiles import guess_profile
 
@@ -70,14 +70,27 @@ class FilesBox(QGroupBox):
             self._fill_combo(combo, guess_profile(Path(path).stem, self._profiles))
             combo.currentIndexChanged.connect(lambda *_a: self.changed.emit())
             self.table.setCellWidget(row, 1, combo)
-            check = QCheckBox()
-            check.setChecked(True)
-            check.toggled.connect(lambda *_a: self.changed.emit())
-            check.hide()
-            self.table.setCellWidget(row, 2, check)
+            self.table.setCellWidget(row, 2, self._cells_cell())
             self.table.setItem(row, self.TIME_ZERO, QTableWidgetItem(""))
             self.table.setItem(row, self.STATUS, QTableWidgetItem(""))
         self._fit()
+
+    def _cells_cell(self) -> QWidget:
+        """The "Read as cells of" cell: a ticked check box, hidden until a size is offered.
+        The table shows its cell widgets again whenever it lays them out, so the box sits in
+        a plain holder and only the box itself is hidden."""
+        holder = QWidget()
+        layout = QHBoxLayout(holder)
+        layout.setContentsMargins(4, 0, 4, 0)
+        check = QCheckBox()
+        check.setChecked(True)
+        check.toggled.connect(lambda *_a: self.changed.emit())
+        check.hide()
+        layout.addWidget(check)
+        return holder
+
+    def _check(self, row: int) -> QCheckBox:
+        return self.table.cellWidget(row, 2).findChild(QCheckBox)
 
     def _fit(self) -> None:
         """Columns wide enough for their combo boxes and check boxes; the table as tall as
@@ -87,6 +100,8 @@ class FilesBox(QGroupBox):
             widths = [header.sectionSizeHint(column)]
             for row in range(self.table.rowCount()):
                 w = self.table.cellWidget(row, column)
+                if w is not None and column == 2:
+                    w = self._check(row)
                 if w is not None and not w.isHidden():
                     widths.append(w.sizeHint().width() + 8)
             self.table.setColumnWidth(column, max(widths))
@@ -156,7 +171,7 @@ class FilesBox(QGroupBox):
 
     def set_cells(self, row: int, text: str) -> None:
         """The coarser cells offered for the file ("" when none): a ticked box with the size."""
-        check = self.table.cellWidget(row, 2)
+        check = self._check(row)
         if (check.text(), not check.isHidden()) == (text, bool(text)):
             return
         check.setText(text)
@@ -166,9 +181,9 @@ class FilesBox(QGroupBox):
         self._fit()
 
     def cells_text(self, row: int) -> str:
-        check = self.table.cellWidget(row, 2)
-        return check.text() if check.isVisibleTo(self.table) else ""
+        check = self._check(row)
+        return "" if check.isHidden() else check.text()
 
     def cells_checked(self, row: int) -> bool:
-        check = self.table.cellWidget(row, 2)
-        return check.isVisibleTo(self.table) and check.isChecked()
+        check = self._check(row)
+        return not check.isHidden() and check.isChecked()
