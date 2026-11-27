@@ -29,6 +29,7 @@ sections and ground-penetrating radar (GPR).
 | Gülpe | Real: ERT, sediment cores and state survey data from Lake Gülpe (Havel, Brandenburg) | `guelpe_project.qgz` |
 | Erfurt | Real: seven ERT lines and 56 cores from Erfurt (Thuringia) | `erfurt_project.qgz` |
 | Calhoun | Real: four crossing seismic refraction lines (Vp) from the Calhoun Critical Zone Observatory (South Carolina, USA) | `calhoun_project.qgz` |
+| Vaud | Real: two crossing seismic reflection lines (stacks) from swisstopo, canton of Vaud (Switzerland) | `vaud_project.qgz` |
 | Synthetic | Made up: three ERT formats, boreholes and geology | `demo_project.qgz` |
 
 The background maps and the Gülpe geology maps load from the internet. Opening a demo writes
