@@ -20,9 +20,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-# arguments after `python -m pip`; {dir} and {name} are filled in by _pip_args.
+# arguments after `python -m pip`; {dir} and {name} are filled in by _pip_args ({name} with
+# the tested range of versions, ``VERSIONS``).
 # --no-deps: segyio needs NumPy, and QGIS's own NumPy must not get a second copy beside it
 PIP_ARGS = ["install", "--target", "{dir}", "--only-binary=:all:", "--no-deps", "--upgrade", "{name}"]
+#: the versions of each library the plugin was tested with (pip's requirement syntax)
+VERSIONS = {"segyio": ">=1.9,<2"}
+#: said when there is no Python to run pip with (QGIS's own was not found)
+NO_PYTHON_TEXT = ("{name} cannot be installed from here: QGIS's own Python was not found. "
+                  "Install {name} for the Python that QGIS uses (for example with your "
+                  "system's package manager), then restart QGIS.")
 
 #: where a library's files can be downloaded by hand, for a computer without internet
 FILES_URL = "https://pypi.org/project/{name}/#files"
@@ -83,26 +90,52 @@ def version(name: str) -> str:
         return ""
 
 
-def _python() -> str:
-    # inside QGIS sys.executable is the QGIS program; Python itself sits in exec_prefix
-    if os.name == "nt":
-        return str(Path(sys.exec_prefix) / "python.exe")
-    return sys.executable
+def _on_windows() -> bool:
+    return os.name == "nt"
+
+
+def _is_python(path) -> bool:
+    p = Path(path)
+    return p.name.lower().startswith("python") and p.is_file()
+
+
+def _python() -> str | None:
+    """QGIS's own Python program, or None when none is found. Inside QGIS ``sys.executable``
+    can be the QGIS program itself (always on Windows, and in some macOS and Linux builds),
+    so it is used only when it is a Python; else the Python in ``sys.exec_prefix``."""
+    prefix = Path(sys.exec_prefix)
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if _on_windows():
+        candidates = [prefix / "python.exe", sys.executable]
+    else:
+        candidates = [sys.executable, prefix / "bin" / f"python{v}", prefix / "bin" / "python3"]
+    for c in candidates:
+        if c and _is_python(c):
+            return str(c)
+    return None
+
+
+def _python_args() -> list:
+    """The Python program and the options before ``-m pip``: ``-P`` (Python 3.11 and newer)
+    keeps the working directory off ``sys.path``, so a ``pip`` folder there never runs."""
+    return [_python() or "python", *(["-P"] if sys.version_info >= (3, 11) else [])]
 
 
 def _pip_args(name: str) -> list:
-    return [a.format(dir=libs_dir(), name=name) for a in PIP_ARGS]
+    return [a.format(dir=libs_dir(), name=name + VERSIONS.get(name, "")) for a in PIP_ARGS]
 
 
 def _run(args: list, timeout: float | None = None) -> tuple:
-    """Run `python -m pip <args>`; returns (exit code, pip's output). A pip that has not
-    finished after ``timeout`` seconds (default ``PIP_TIMEOUT``) is stopped and counts as
-    failed."""
+    """Run `python -m pip <args>` in the libraries folder (never in QGIS's working
+    directory), with QGIS's environment (pip needs it for https); returns (exit code, pip's
+    output). A pip that has not finished after ``timeout`` seconds (default ``PIP_TIMEOUT``)
+    is stopped and counts as failed."""
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0  # no console window popping up
     timeout = PIP_TIMEOUT if timeout is None else timeout
     try:
-        done = subprocess.run([_python(), "-m", "pip", *args], capture_output=True, text=True,
-                              creationflags=flags, timeout=timeout)
+        done = subprocess.run([*_python_args(), "-m", "pip", *args], capture_output=True,
+                              text=True, creationflags=flags, timeout=timeout,
+                              cwd=str(libs_dir()))
     except subprocess.TimeoutExpired:
         return 1, f"pip did not finish within {round(timeout)} seconds."
     except OSError as exc:
@@ -110,8 +143,12 @@ def _run(args: list, timeout: float | None = None) -> tuple:
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
+def _quoted(a: str) -> str:
+    return f'"{a}"' if any(c in a for c in ' <>|&') else a
+
+
 def _command(args: list) -> str:
-    return " ".join(f'"{a}"' if " " in a else a for a in [_python(), "-m", "pip", *args])
+    return " ".join(_quoted(str(a)) for a in [*_python_args(), "-m", "pip", *args])
 
 
 def manual_command(name: str) -> str:
@@ -135,10 +172,24 @@ def failure_message(name: str, output: str) -> str:
             f"{offline_command(name)}\n\nThen restart QGIS.")
 
 
-def install(name: str, run=None) -> tuple:
-    """Install the library into libs_dir() and make it importable right away.
+def _installed_version(folder: Path, name: str) -> str:
+    """The version of ``name`` installed in ``folder`` (read from its files, without
+    touching ``sys.path``), "" when unknown."""
+    for dist in importlib.metadata.distributions(path=[str(folder)]):
+        if (dist.metadata["Name"] or "").lower() == name.lower():
+            return dist.version or ""
+    return ""
+
+
+def install(name: str, run=None, put_on_path: bool = True) -> tuple:
+    """Install the library into libs_dir() and, with ``put_on_path``, make it importable
+    right away (a worker thread passes False and calls ``ensure_on_path`` on the main
+    thread afterwards: ``sys.path`` is changed on the main thread only).
     Returns (ok, message). `run` replaces the pip runner (tests)."""
-    run = run or _run
+    if run is None:
+        if _python() is None:
+            return False, NO_PYTHON_TEXT.format(name=name)
+        run = _run
     folder = libs_dir()
     try:
         folder.mkdir(parents=True, exist_ok=True)
@@ -147,7 +198,8 @@ def install(name: str, run=None) -> tuple:
     code, output = run(_pip_args(name))
     if code != 0:
         return False, failure_message(name, output)
-    ensure_on_path()
-    importlib.invalidate_caches()
-    found = version(name)
+    if put_on_path:
+        ensure_on_path()
+        importlib.invalidate_caches()
+    found = _installed_version(folder, name)
     return True, f"{name} {found} is installed." if found else f"{name} is installed."

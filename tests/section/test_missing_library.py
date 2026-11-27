@@ -141,7 +141,7 @@ def test_after_the_install_the_section_is_read(qgis_app, world, no_segyio, monke
     provider, ll, pid = world
     seen = []
 
-    def install(name, run=None):
+    def install(name, run=None, put_on_path=True):
         seen.append(name)
         no_segyio["installed"] = True
         return True, "segyio 1.9.15 is installed."
@@ -165,7 +165,7 @@ def test_saying_no_installs_nothing(qgis_app, world, no_segyio, monkeypatch):
     provider, ll, pid = world
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a: QMessageBox.StandardButton.No))
-    monkeypatch.setattr(libs, "install", lambda name, run=None: pytest.fail("installed"))
+    monkeypatch.setattr(libs, "install", lambda name, run=None, put_on_path=True: pytest.fail("installed"))
     ll.set_layers(provider, provider.layers(pid))
     ll.install_library("segyio")
     for _ in range(10):
@@ -181,7 +181,7 @@ def test_a_failed_install_shows_the_manual_command_and_keeps_the_error(
     provider, ll, pid = world
     message = ("Installing segyio failed:\nno network\n\nWith internet, you can also install it "
                f"by hand with:\n{libs.manual_command('segyio')}")
-    monkeypatch.setattr(libs, "install", lambda name, run=None: (False, message))
+    monkeypatch.setattr(libs, "install", lambda name, run=None, put_on_path=True: (False, message))
     shown = []
 
     def exec_(box):

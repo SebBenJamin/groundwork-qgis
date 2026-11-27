@@ -4,6 +4,8 @@ through ``done(ok, message)``; a caller that is gone by then (a closed dialog) d
 first, and the install still completes."""
 from __future__ import annotations
 
+import importlib
+
 from qgis.core import QgsApplication, QgsTask
 from qgis.PyQt.QtCore import pyqtSignal
 
@@ -34,7 +36,8 @@ class InstallTask(QgsTask):
 
     def run(self) -> bool:
         try:
-            self.ok, self.message = libs.install(self.name)
+            # sys.path is changed in finished(), on the main thread
+            self.ok, self.message = libs.install(self.name, put_on_path=False)
         except Exception as exc:                # noqa: BLE001 - said to the user, never raised
             self.ok = False
             self.message = libs.failure_message(self.name, str(exc))
@@ -44,6 +47,9 @@ class InstallTask(QgsTask):
         if not result and not self.message:     # stopped by QGIS before it ran
             self.message = f"Installing {self.name} was stopped."
         try:
+            if self.ok and result:
+                libs.ensure_on_path()
+                importlib.invalidate_caches()
             self.done.emit(bool(self.ok and result), self.message)
         finally:
             _RUNNING.discard(self)

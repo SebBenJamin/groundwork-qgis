@@ -319,7 +319,7 @@ def test_a_failed_install_shows_the_message(qgis_app, make_dialog, project_store
                                             no_segyio, monkeypatch):
     from groundwork_geophysics import libs
     path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
-    monkeypatch.setattr(libs, "install", lambda name, run=None: (False, "no network\n<command>"))
+    monkeypatch.setattr(libs, "install", lambda name, run=None, put_on_path=True: (False, "no network\n<command>"))
     st, prj = project_store
     dlg = make_dialog(st, project=prj)
     dlg.set_file(path)
@@ -338,7 +338,7 @@ def test_after_the_install_the_file_is_read(qgis_app, make_dialog, project_store
     path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
     seen = []
 
-    def install(name, run=None):
+    def install(name, run=None, put_on_path=True):
         seen.append(name)
         no_segyio["installed"] = True
         return True, "segyio 1.9.15 is installed."
@@ -359,7 +359,7 @@ def test_closing_the_dialog_while_installing_is_safe(qgis_app, make_dialog, proj
     path = write_segy(tmp_path / "line1.sgy", _amplitudes(), dt_us=2000)
     finished = []
 
-    def install(name, run=None):
+    def install(name, run=None, put_on_path=True):
         time.sleep(0.3)
         finished.append(name)
         return True, "segyio is installed."
