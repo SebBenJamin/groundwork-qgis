@@ -4,7 +4,9 @@ import sys
 import numpy as np
 import pytest
 
-pytest.importorskip("segyio")
+from segy_files import require_segyio
+
+require_segyio()
 
 from groundwork_geophysics import readers  # noqa: E402
 from groundwork_geophysics.libs import MissingLibrary  # noqa: E402

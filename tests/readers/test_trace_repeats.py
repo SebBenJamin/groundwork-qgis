@@ -1,7 +1,6 @@
 """Traces that share a position or run back along the line (a shot record, several passes)
 are flagged, not refused; GPS-style repeated fixes along a line walked once are not."""
 import numpy as np
-import pytest
 
 
 def _pingo():
@@ -52,11 +51,9 @@ def test_too_few_positions_say_nothing():
     assert repeats(np.zeros((10, 2))) is False      # no position change: nothing to judge
 
 
-segyio = pytest.importorskip("segyio")
-
-
 def _write(tmp_path, name, xy):
-    from segy_files import write_segy
+    from segy_files import require_segyio, write_segy
+    require_segyio()
     return write_segy(tmp_path / name, np.zeros((len(xy), 4), np.float32),
                       xy=np.round(np.asarray(xy) * 100).astype(int) + [50000000, 600000000],
                       scalar=-100, cdp=np.arange(1, len(xy) + 1))

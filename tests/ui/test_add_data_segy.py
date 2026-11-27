@@ -6,7 +6,9 @@ import time
 import numpy as np
 import pytest
 
-pytest.importorskip("segyio")
+from segy_files import require_segyio
+
+require_segyio()
 
 from segy_files import write_segy  # noqa: E402
 

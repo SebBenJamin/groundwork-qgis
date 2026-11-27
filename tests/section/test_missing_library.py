@@ -5,12 +5,9 @@ import time
 import numpy as np
 import pytest
 
-pytest.importorskip("segyio")
-
-from groundwork_geophysics.core.model import (Dataset, file_fingerprint,  # noqa: E402
-                                              profile_from_polyline)
-from groundwork_geophysics.store.gpkg_store import ProjectStore  # noqa: E402
-from segy_files import write_segy  # noqa: E402
+from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_polyline
+from groundwork_geophysics.store.gpkg_store import ProjectStore
+from segy_files import require_segyio, write_segy
 
 INSTALL = "Install segyio…"
 
@@ -50,7 +47,12 @@ def world(qgis_app, tmp_path):
     store = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
     p = profile_from_polyline("P1", "EPSG:25832", np.array([[0.0, 0.0], [100.0, 0.0]]))
     store.save_profile(p)
-    path = write_segy(tmp_path / "line.sgy", np.ones((11, 20), np.float32), dt_us=1000)
+    try:                        # the file is read only after the install, which needs segyio
+        import segyio  # noqa: F401
+        path = write_segy(tmp_path / "line.sgy", np.ones((11, 20), np.float32), dt_us=1000)
+    except ImportError:
+        path = tmp_path / "line.sgy"
+        path.write_bytes(b"\0" * 3600)
     mt, sha = file_fingerprint(path)
     store.save_dataset(Dataset("s1", p.id, "", "refl_section", str(path), mt, sha, "segy",
                                {"position": "spacing", "spacing": 10.0, "velocity": 2000.0,
@@ -138,6 +140,7 @@ def test_after_the_install_the_section_is_read(qgis_app, world, no_segyio, monke
                                                answer_yes):
     from groundwork_geophysics import libs
     from qgis.PyQt.QtWidgets import QMessageBox
+    require_segyio()                                    # the section is read in the end
     provider, ll, pid = world
     seen = []
 

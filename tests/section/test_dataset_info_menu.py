@@ -1,6 +1,8 @@
 """The layer row menu offers Dataset info…."""
 import pytest
 
+from segy_files import require_segyio
+
 
 def test_layer_menu_has_dataset_info(qgis_app, store_with_model, make_dock):
     st, p, _ = store_with_model
@@ -54,7 +56,7 @@ def _draw_line(st, pid):
 
 def test_a_section_row_opens_dataset_info(qgis_app, tmp_path, make_dock):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     st, p, _provider = _trace_store(tmp_path)
     dock = make_dock(st)
     dock.open_profile(p.id)
@@ -64,7 +66,7 @@ def test_a_section_row_opens_dataset_info(qgis_app, tmp_path, make_dock):
 
 def test_dataset_info_of_a_section_moves_it_with_a_new_velocity(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     before = _bottom(provider, p.id)
@@ -81,7 +83,7 @@ def test_dataset_info_of_a_section_moves_it_with_a_new_velocity(qgis_app, tmp_pa
 
 def test_unchanged_vertical_settings_keep_the_stored_options(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     stored = dict(st.datasets(p.id)[0].reader_options)
@@ -94,7 +96,7 @@ def test_unchanged_vertical_settings_keep_the_stored_options(qgis_app, tmp_path)
 
 def test_moving_a_section_under_drawings_asks_first(qgis_app, tmp_path, monkeypatch):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from qgis.PyQt.QtWidgets import QMessageBox
 
     from groundwork_geophysics.ui.dataset_info_dialog import MOVE_TEXT, DatasetInfoDialog
@@ -128,7 +130,7 @@ def test_moving_a_section_under_drawings_asks_first(qgis_app, tmp_path, monkeypa
 
 def test_no_question_without_drawings_or_without_a_move(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     dlg = DatasetInfoDialog(st, "s1", provider=provider)       # no drawings: no question
@@ -143,7 +145,7 @@ def test_no_question_without_drawings_or_without_a_move(qgis_app, tmp_path):
 
 def test_without_the_file_the_stored_values_are_shown_and_edited(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     (tmp_path / "line.sgy").unlink()
@@ -157,7 +159,7 @@ def test_without_the_file_the_stored_values_are_shown_and_edited(qgis_app, tmp_p
 
 def test_the_text_header_window_names_the_file(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     dlg = DatasetInfoDialog(st, "s1", provider=provider)
@@ -168,7 +170,7 @@ def test_the_text_header_window_names_the_file(qgis_app, tmp_path):
 
 def test_an_unusual_velocity_is_warned_about_but_allowed(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     dlg = DatasetInfoDialog(st, "s1", provider=provider)
@@ -179,7 +181,7 @@ def test_an_unusual_velocity_is_warned_about_but_allowed(qgis_app, tmp_path):
 
 def test_the_text_header_button_says_why_it_is_off(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
     st, p, provider = _trace_store(tmp_path)
     d = st.datasets(p.id)[0]
@@ -199,7 +201,7 @@ def test_a_model_has_no_section_group(qgis_app, store_with_model):
 
 def test_a_section_speaks_of_processing_and_trace_spacing(qgis_app, tmp_path):
     import pytest
-    pytest.importorskip("segyio")
+    require_segyio()
     from qgis.PyQt.QtWidgets import QFormLayout, QLabel
 
     from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
@@ -353,7 +355,7 @@ def test_rms_velocities_dix_cannot_convert_are_explained_in_dataset_info(qgis_ap
                                                                           file_kept):
     """The section says the RMS table gives no real interval velocity; Dataset Info says it
     too, beside the velocity rows, with what to do."""
-    pytest.importorskip("segyio")
+    require_segyio()
     from dataclasses import replace
 
     from groundwork_geophysics.core.trace_section import RMS_ADVICE

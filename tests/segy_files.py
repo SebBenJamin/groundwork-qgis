@@ -4,9 +4,28 @@ Only the ASCII text header is patched in afterwards: segyio always writes the te
 EBCDIC, and some real files (Innomar exports) carry it in ASCII."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
+
+#: set (by scripts/test.ps1) when a missing segyio must fail the run instead of skipping
+REQUIRE_SEGYIO = "GW_REQUIRE_SEGYIO"
+
+
+def require_segyio():
+    """The segyio module. Without it: a skip, or, when ``GW_REQUIRE_SEGYIO`` is set, a
+    failure (so that the SEG-Y tests never pass as skipped). Works at module level and in a
+    test."""
+    import pytest
+    try:
+        import segyio
+    except ImportError as exc:
+        if os.environ.get(REQUIRE_SEGYIO):
+            pytest.fail(f"segyio is needed for these tests ({exc}); install it into .testlibs "
+                        "as scripts/test.ps1 says.", pytrace=False)
+        pytest.skip("segyio is not installed", allow_module_level=True)
+    return segyio
 
 _FIELDS = {"cdp": ("CDP_X", "CDP_Y"), "source": ("SourceX", "SourceY"),
            "group": ("GroupX", "GroupY")}

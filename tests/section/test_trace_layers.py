@@ -7,16 +7,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-pytest.importorskip("segyio")
-
-from groundwork_geophysics.core.model import (Dataset, file_fingerprint,  # noqa: E402
+from groundwork_geophysics.core.model import (Dataset, file_fingerprint,
                                               profile_from_polyline, profile_from_stations)
-from groundwork_geophysics.section.data import (LayerStyle, SectionDataProvider,  # noqa: E402
+from groundwork_geophysics.core.trace_section import TraceSection
+from groundwork_geophysics.readers.base import Reader, ReaderResult
+from groundwork_geophysics.section.data import (LayerStyle, SectionDataProvider,
                                                 is_map_dataset, layer_bounds, read_options,
                                                 trace_limits)
-from groundwork_geophysics.section.readout import format_readout  # noqa: E402
-from groundwork_geophysics.store.gpkg_store import ProjectStore  # noqa: E402
-from segy_files import write_segy  # noqa: E402
+from groundwork_geophysics.section.readout import format_readout
+from groundwork_geophysics.store.gpkg_store import ProjectStore
+from segy_files import require_segyio, write_segy
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 #: 11 traces x 50 samples at 1 ms, signed
@@ -24,7 +24,38 @@ AMPLITUDES = np.sin(np.arange(11 * 50, dtype=np.float32) / 3.0).reshape(11, 50)
 
 
 def _segy(tmp_path, amplitudes=AMPLITUDES):
+    require_segyio()
     return write_segy(tmp_path / "line.sgy", amplitudes, dt_us=1000, fmt=5)
+
+
+class _MemoryTraces(Reader):
+    """The test section without SEG-Y: samples kept as a ``.npy`` file, read as the SEG-Y
+    reader reads a file of 1 ms samples placed by a trace spacing (``spacing``, ``domain``,
+    ``sample_step``), traces numbered from 1."""
+    name = "memory_traces"
+    label = "Test traces"
+
+    def sniff(self, path):
+        return False
+
+    def read(self, path, **options):
+        a = np.load(path)
+        domain = options.get("domain") or "time"
+        step = float(options.get("sample_step") or 0.0) or (0.001 if domain == "time" else 1.0)
+        x = np.arange(a.shape[0], dtype=np.float64) * float(options["spacing"])
+        section = TraceSection(a, x, 0.0, step, domain, numbers=np.arange(1, a.shape[0] + 1))
+        return ReaderResult(None, "depth", {"reader": self.name, "domain": domain,
+                                            "position": "spacing"}, traces=section)
+
+
+def _section_file(folder, amplitudes, kind):
+    """(path, reader) of the test section: a SEG-Y file, or (``kind`` "memory") the same
+    samples for ``_MemoryTraces``, so that hanging is tested without segyio."""
+    if kind == "segy":
+        return _segy(folder, amplitudes), "segy"
+    path = folder / "line.npy"
+    np.save(path, np.asarray(amplitudes, np.float32))
+    return path, _MemoryTraces.name
 
 
 def _add(store, pid, set_id, path, options, did="s1", kind="refl_section", reader="segy"):
@@ -34,12 +65,18 @@ def _add(store, pid, set_id, path, options, did="s1", kind="refl_section", reade
     return d
 
 
-@pytest.fixture
-def make(tmp_path):
+@pytest.fixture(params=["memory", "segy"])
+def make(tmp_path, request, monkeypatch):
     """``make(options, heights=True) -> (provider, store, profile id)``: a profile 100 m long
     (stations at 0, 50 and 100 m, heights 500, 505, 510 when ``heights``, else a bare line)
     holding the test section with ``options`` (spacing 10 m and velocity 2000 m/s unless
-    given). ``heights`` may also be the three station heights."""
+    given). ``heights`` may also be the three station heights. Each test runs with the
+    section held in memory (never needs segyio) and read from a SEG-Y file."""
+    from groundwork_geophysics import readers
+    if request.param == "segy":
+        require_segyio()
+    monkeypatch.setitem(readers._REGISTRY, _MemoryTraces.name, _MemoryTraces())
+
     def factory(options, heights=True, amplitudes=AMPLITUDES):
         folder = tmp_path / f"store{len(list(tmp_path.iterdir()))}"
         folder.mkdir()
@@ -57,7 +94,8 @@ def make(tmp_path):
             set_id = ""
         opts = {"position": "spacing", "spacing": 10.0, "velocity": 2000.0, **options}
         opts = {k: v for k, v in opts.items() if v is not None}
-        _add(store, p.id, set_id, _segy(folder, amplitudes), opts)
+        path, reader = _section_file(folder, amplitudes, request.param)
+        _add(store, p.id, set_id, path, opts, reader=reader)
         return SectionDataProvider(store), store, p.id
     return factory
 

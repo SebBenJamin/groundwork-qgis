@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("segyio")
+from segy_files import require_segyio
+
+require_segyio()
 
 REPO = Path(__file__).resolve().parent.parent.parent
 VAUD = REPO / "demo_vaud"

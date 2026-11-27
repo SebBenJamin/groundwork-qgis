@@ -6,7 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-pytest.importorskip("segyio")
+from segy_files import require_segyio
+
+require_segyio()
 
 from groundwork_geophysics.core.context import ContextItems  # noqa: E402
 from groundwork_geophysics.core.model import (Dataset, file_fingerprint,  # noqa: E402
