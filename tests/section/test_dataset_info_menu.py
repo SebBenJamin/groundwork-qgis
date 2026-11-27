@@ -346,3 +346,40 @@ def test_an_impossible_radar_velocity_blocks_ok(qgis_app, tmp_path):
     dlg.radar_box.velocity_edit.editingFinished.emit()
     assert not dlg.ok_button.isEnabled()
     assert "speed of light" in dlg.problems.text()
+
+
+@pytest.mark.parametrize("file_kept", [True, False])
+def test_rms_velocities_dix_cannot_convert_are_explained_in_dataset_info(qgis_app, tmp_path,
+                                                                          file_kept):
+    """The section says the RMS table gives no real interval velocity; Dataset Info says it
+    too, beside the velocity rows, with what to do."""
+    pytest.importorskip("segyio")
+    from dataclasses import replace
+
+    from groundwork_geophysics.core.trace_section import RMS_ADVICE
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _trace_store(tmp_path)
+    d = st.datasets(p.id)[0]
+    options = dict(d.reader_options)
+    options.pop("velocity")
+    options.update(velocity_table=[[0.01, 3000.0], [0.02, 2000.0]], velocity_kind="rms")
+    st.save_dataset(replace(d, reader_options=options))
+    [layer] = provider.layers(p.id)
+    assert "no real interval velocity" in layer.error and RMS_ADVICE in layer.error
+    if not file_kept:
+        (tmp_path / "line.sgy").unlink()
+    dlg = DatasetInfoDialog(st, "s1", provider=provider)
+    try:
+        dlg.show()
+        qgis_app.processEvents()
+        text = dlg.problems.text()
+        assert "no real interval velocity between 10 ms and 20 ms" in text
+        assert RMS_ADVICE in text
+        assert dlg.problems.isVisible() and not dlg.ok_button.isEnabled()
+        # read as interval velocities: fine
+        dlg.segy_box.kind_combo.setCurrentIndex(dlg.segy_box.kind_combo.findData("interval"))
+        assert "no real interval velocity" not in dlg.problems.text()
+        assert dlg.ok_button.isEnabled()
+    finally:
+        dlg.close()
+        dlg.deleteLater()

@@ -62,7 +62,7 @@ def test_rms_velocities_become_interval_velocities_by_dix():
 def test_rms_velocities_without_a_real_interval_velocity_are_refused():
     s = _section(np.zeros((1, 3)), first=0.0, step=1.0)
     with pytest.raises(ValueError, match="^The RMS velocities give no real interval velocity "
-                                         "between 1000 ms and 2000 ms.$"):
+                                         "between 1000 ms and 2000 ms. Set "):
         sample_depths(s, V(table=((1.0, 3000.0), (2.0, 2000.0)), kind="rms"))
 
 

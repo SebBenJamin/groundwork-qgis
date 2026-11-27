@@ -22,6 +22,9 @@ _BLOCK = 1 << 20
 NO_VELOCITY = "The velocity must be greater than 0 m/s."
 TURNS_BACK = "The velocity function gives depths that do not increase with time."
 TIMES_DO_NOT_INCREASE = "The times of the velocity function must increase."
+#: what to do when Dix's formula finds no real interval velocity in an RMS table
+RMS_ADVICE = ("Set \"Velocities are\" to Average or Interval if the table holds those, or "
+              "correct the table.")
 #: how the rows of a velocity function are read (an unknown kind reads as "average")
 KINDS = ("average", "interval", "rms")
 #: the speed of light in m/ns: radar velocities are often given in m/ns (code works in m/s)
@@ -294,7 +297,8 @@ def _time_depths(axis: np.ndarray, velocity: Velocity | None) -> np.ndarray:
         if bad.size:
             i = int(bad[0])
             raise ValueError(f"The RMS velocities give no real interval velocity between "
-                             f"{tt[i] * 1000:.0f} ms and {tt[i + 1] * 1000:.0f} ms.")
+                             f"{tt[i] * 1000:.0f} ms and {tt[i + 1] * 1000:.0f} ms. "
+                             + RMS_ADVICE)
         between = np.sqrt(radicand)                 # from row i down to row i + 1
         below = np.append(between, between[-1] if between.size else vv[0])
         at_rows = np.empty(tt.size)
