@@ -12,7 +12,7 @@ Today it works with **resistivity (ERT)**, **seismic refraction** (P-wave veloci
 models), processed **seismic reflection sections** from SEG-Y and **ground-penetrating radar
 (GPR)** from GSSI and pulseEKKO files, on the same profiles, next to the same context.
 
-[![Version 0.16.0](https://img.shields.io/badge/version-0.16.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
+[![Version 0.17.0](https://img.shields.io/badge/version-0.17.0-2b7bb9)](https://github.com/SebBenJamin/groundwork-qgis/releases/latest)
 [![QGIS 4.2+](https://img.shields.io/badge/QGIS-4.2%2B-589632?logo=qgis&logoColor=white)](https://qgis.org)
 [![Licence GPL-2.0-or-later](https://img.shields.io/badge/licence-GPL--2.0--or--later-lightgrey)](LICENSE)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
@@ -45,7 +45,7 @@ columns. Aerial image: © GDI-Th, dl-de/by-2-0.*
 ## Get started
 
 1. **Install** QGIS 4.2 or newer.
-2. **Download** `groundwork_geophysics-0.16.0.zip` from the
+2. **Download** `groundwork_geophysics-0.17.0.zip` from the
    [latest release](https://github.com/SebBenJamin/groundwork-qgis/releases/latest).
 3. In QGIS choose **Plugins → Manage and Install Plugins… → Install from ZIP**, pick the zip
    and click **Install Plugin**. A **Groundwork** menu appears.
@@ -111,7 +111,7 @@ The same pages, in the repository:
   [Borehole tables](docs/user/formats/borehole-tables.md) ·
   [Plate templates](docs/user/formats/plate-templates.md)
 - [Troubleshooting](docs/user/troubleshooting.md)
-- [What changed in each release](docs/releases/), latest: [0.16.0](docs/releases/0.16.0.md)
+- [What changed in each release](docs/releases/), latest: [0.17.0](docs/releases/0.17.0.md)
 
 Your work is kept in one GeoPackage next to the QGIS project (`<project>_groundwork.gpkg`).
 

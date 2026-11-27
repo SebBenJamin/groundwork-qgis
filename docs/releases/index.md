@@ -2,6 +2,7 @@
 
 The changes in each release, newest first. Versions before 0.10.0 were called Geophysics Workbench.
 
+- [0.17.0](0.17.0.md): seismic reflection sections and ground-penetrating radar
 - [0.16.0](0.16.0.md): nothing waits for the reading, and well logs from LAS
 - [0.15.0](0.15.0.md): big models, interpolation and one style for all lines
 - [0.14.2](0.14.2.md): -9999 map coordinates left out

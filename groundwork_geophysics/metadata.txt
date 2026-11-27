@@ -3,18 +3,19 @@ name=Groundwork
 qgisMinimumVersion=4.2
 supportsQt6=True
 description=Groundwork: geophysical profiles in QGIS. Sections under the map with boreholes, geology and interpretation, also in 3D
-about=Load, display and interpret georeferenced geophysical profiles and sections (ERT and seismic refraction today; GPR and seismic reflection planned) in QGIS.
-version=0.16.0
+about=Load, display and interpret georeferenced geophysical profiles and sections (ERT, seismic refraction, seismic reflection and GPR) in QGIS.
+version=0.17.0
 author=Sebastian Benjamin
 email=8215349+SebBenJamin@users.noreply.github.com
 license=GPL-2.0-or-later
 homepage=https://sebbenjamin.github.io/groundwork-qgis/
 tracker=https://github.com/SebBenJamin/groundwork-qgis/issues
 repository=https://github.com/SebBenJamin/groundwork-qgis
-tags=geophysics,ERT,resistivity,seismic,refraction,section,profile,borehole,geology,interpretation,3D
+tags=geophysics,ERT,resistivity,seismic,refraction,reflection,SEG-Y,GPR,radar,section,profile,borehole,geology,interpretation,3D
 experimental=True
 icon=icons/workbench.svg
-changelog=0.16.0: models are read in the background and remembered beside the project, so the section panel does not freeze; Show in 3D… reads, grids and paints its section pictures in a task, and the 3D button opens a saved 3D view again; strips from web layers fetched once and remembered (Refresh Web Layers); well logs from LAS 1.2/2.0 files (Import LAS… in Context Layers), log curves with their own colours, rounded scales and no empty tracks; Gülpe demo: measured lab curves on the cores, Transect 4 the right way round
+changelog=0.17.0: seismic reflection sections from SEG-Y (read through segyio, installed on request into the QGIS profile), shown in depth with one velocity or a velocity function (average, interval or RMS), hung from a datum or the ground, placed by the file's positions, a trace spacing or a coordinate file; ground-penetrating radar from GSSI .DZT and pulseEKKO .DT1/.HD, with a velocity or dielectric constant, time zero per file, a start look that removes antenna ringing, and fitting a file between two points; picture-only display options (clip, AGC, gain with time, trace balance, polarity, band-pass, dewow, background removal); Show down to (m) per section; layers of a section reordered by dragging; contour colour and width; one marker where profiles run along each other; smoother ground from an elevation model; smooth models drawn smoothly when zoomed in, and the grid cell actually used shown in Display; Vaud demo: two swisstopo reflection lines
+    0.16.0: models are read in the background and remembered beside the project, so the section panel does not freeze; Show in 3D… reads, grids and paints its section pictures in a task, and the 3D button opens a saved 3D view again; strips from web layers fetched once and remembered (Refresh Web Layers); well logs from LAS 1.2/2.0 files (Import LAS… in Context Layers), log curves with their own colours, rounded scales and no empty tracks; Gülpe demo: measured lab curves on the cores, Transect 4 the right way round
     0.15.0: big models open fast (sections, contours, 3D, loading); Add Data offers coarser cells for over-fine exports and takes several files at once; Interpolation in Display… (linear, nearest, inverse distance, spline, kriging), also in 3D and on plates; section styles saved with the project and Apply Style to All Sections (same method only); Zoom Map to Profile, previous/next profile, copy or save the section as a picture; plates: new template remakes the layout, no empty legend blocks; interpretation layers back on opening; 3D clouds stay in colour from afar
     0.14.2: text tables with map coordinates: rows whose easting or northing is -9999 (cells past the surveyed line in some exports) are left out and counted in Add Data; they no longer stretch the profile line to (-9999, -9999)
     0.14.1: Calhoun demo: Line 6 stands where it was measured (it was 23 m too early along its line, so its surface missed the elevation model); its elevation model represents an elevation surface
