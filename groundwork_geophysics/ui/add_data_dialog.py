@@ -156,6 +156,18 @@ def guess_response(path) -> str:
     return str(found.pop()) if len(found) == 1 else ""
 
 
+def depth_reached(depth: float, whole_from: float | None = 10.0) -> str:
+    """The depth of Add Data's summary rounded half up (4.5 -> "4.5", 12.5 -> "13"), not half
+    to even as ``round`` does: one decimal below ``whole_from`` m, whole metres (grouped like
+    counts) from there; ``whole_from=None`` keeps one decimal throughout (radar)."""
+    d = float(depth)
+    sign = -1.0 if d < 0 else 1.0
+    if whole_from is not None and abs(d) >= whole_from - 0.05:
+        return fmt_count(sign * math.floor(abs(d) + 0.5 + 1e-9))
+    tenths = math.floor(abs(d) * 10.0 + 0.5 + 1e-9) / 10.0   # 1e-9: 4.45 is 4.4499… in binary
+    return fmt_trim(sign * tenths, 1)
+
+
 def describe_traces(section, options: dict | None = None) -> str:
     """'1970 traces × 1125 samples · 4 ms · 0 – 4.5 s', with a usable velocity in
     ``options`` ' · to 6744 m depth' (below time zero, at the last sample; the times are the
@@ -175,7 +187,7 @@ def describe_traces(section, options: dict | None = None) -> str:
                                np.array([last]))[0])
     except ValueError:
         return text                             # no usable velocity yet: the box says so
-    return text + f" · to {fmt_count(depth)} m depth" if np.isfinite(depth) else text
+    return text + f" · to {depth_reached(depth)} m depth" if np.isfinite(depth) else text
 
 
 def describe(result: readers.ReaderResult, z_kind: str | None, sample: int = 0,
@@ -275,7 +287,9 @@ def describe_radar(section, options: dict | None = None) -> str:
                                time_zero=float(o.get("time_zero") or 0.0))[0])
     except (TypeError, ValueError):
         return text                             # no usable velocity yet: the box says so
-    return text + f" · to {fmt_trim(depth, 1)} m depth" if np.isfinite(depth) else text
+    if not np.isfinite(depth):
+        return text
+    return text + f" · to {depth_reached(depth, None)} m depth"
 
 
 def _guarded(method):

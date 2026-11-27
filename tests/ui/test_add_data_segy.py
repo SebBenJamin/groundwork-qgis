@@ -167,8 +167,8 @@ def test_the_summary_line(qgis_app, make_dialog, project_store, selected_line, t
     assert dlg.missing_label.text() == "Enter the velocity in m/s."
     assert dlg.missing_label.styleSheet() == WARNING_STYLE and dlg.missing_label.isVisible()
     _type(dlg.segy_box.velocity_edit, "1500")
-    # the last sample, 6 ms, at 1500 m/s: 4.5 m, shown as whole metres
-    assert dlg.summary_label.text() == text + " · to 4 m depth"
+    # the last sample, 6 ms, at 1500 m/s: 4.5 m; below 10 m with one decimal, as the times
+    assert dlg.summary_label.text() == text + " · to 4.5 m depth"
     assert dlg.missing_label.text() == "" and not dlg.missing_label.isVisible()
     dlg.segy_box.set_domain("depth")
     assert dlg.summary_label.text() == "3 traces × 4 samples · 2 m · 0 – 8 m"
