@@ -391,3 +391,95 @@ def test_the_help_button_opens_the_page_for_the_layer(qgis_app, store_with_model
     (box,) = dlg.findChildren(QDialogButtonBox)
     box.button(QDialogButtonBox.StandardButton.Help).click()
     assert opened == [help_url("trace_display" if kind == "section" else "display")]
+
+
+# -- radar filters (dewow, background) and every trace layer ---------------------------------
+def _radar_layer(make_trace_layer, **style):
+    """The 11 x 50 section as a radargram: 1 ns samples, its dataset a GPR section."""
+    from groundwork_geophysics.core.trace_section import place, Velocity
+    layer = make_trace_layer(**style)
+    sec = replace(layer.traces.section, step=1e-9)
+    placed = place(sec, 500.0, Velocity(1.0e8))
+    ds = replace(layer.dataset, kind="gpr_section", reader="gssi_dzt", source_path="a.dzt")
+    return replace(layer, dataset=ds, traces=placed)
+
+
+def test_the_two_filters_come_first_in_processing_order(qgis_app, trace_layer):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, trace_layer)
+    form = dlg.amplitudes_group.layout()
+    widgets = [form.itemAt(i).widget() for i in range(form.count())]
+    order = [dlg.dewow_check, dlg.dewow_spin, dlg.background_check, dlg.background_combo,
+             dlg.background_spin, dlg.agc_check]
+    assert [widgets.index(w) for w in order] == sorted(widgets.index(w) for w in order)
+    assert dlg.dewow_check.text() == "Remove drift (dewow)"
+    assert dlg.background_check.text() == "Remove background"
+    assert [dlg.background_combo.itemText(i) for i in range(dlg.background_combo.count())] == [
+        "Whole line", "Moving window"]
+    assert form.labelForField(dlg.dewow_spin).text() == "Window"
+    assert form.labelForField(dlg.background_spin).text() == "Traces"
+    assert not dlg.dewow_check.isChecked() and not dlg.dewow_spin.isEnabled()
+    assert not dlg.background_check.isChecked() and not dlg.background_combo.isEnabled()
+    assert dlg.style().gain == trace_layer.style.gain
+
+
+@pytest.mark.parametrize("which, unit", [("seismic", " ms"), ("depth", " m"), ("radar", " ns")])
+def test_the_windows_speak_the_layers_unit(qgis_app, make_trace_layer, which, unit):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    layer = (_radar_layer(make_trace_layer) if which == "radar" else
+             make_trace_layer(domain="depth" if which == "depth" else "time"))
+    dlg = DisplayDialog(None, layer)
+    assert dlg.dewow_spin.suffix() == unit and dlg.agc_spin.suffix() == unit
+
+
+def test_the_filters_round_trip_and_keep_every_field(qgis_app, make_trace_layer):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    layer = _radar_layer(make_trace_layer)
+    dlg = DisplayDialog(None, layer)
+    dlg.dewow_check.setChecked(True)
+    dlg.dewow_spin.setValue(7.5)
+    dlg.background_check.setChecked(True)
+    dlg.background_combo.setCurrentIndex(1)
+    dlg.background_spin.setValue(5)
+    dlg.agc_check.setChecked(True)
+    dlg.agc_spin.setValue(20.0)
+    g = dlg.style().gain
+    assert g.dewow_window == pytest.approx(7.5e-9) and g.agc_window == pytest.approx(20e-9)
+    assert (g.background, g.background_traces) == ("window", 5)
+    again = DisplayDialog(None, replace(layer, style=dlg.style()))
+    assert again.dewow_check.isChecked() and again.dewow_spin.value() == pytest.approx(7.5)
+    assert again.background_combo.currentIndex() == 1 and again.background_spin.value() == 5
+    assert again.style().gain == g
+    whole = DisplayGain(dewow_window=3e-9, background="all", background_traces=9,
+                        time_power=1.0, show_muted=True)
+    kept = DisplayDialog(None, replace(layer, style=replace(layer.style, gain=whole)))
+    assert kept.style().gain == whole                   # nothing it shows is lost
+
+
+def test_a_model_has_no_filters(qgis_app, store_with_model):
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    dlg = DisplayDialog(None, _layer(store_with_model)[1])
+    assert getattr(dlg, "dewow_check", None) is None
+
+
+@pytest.mark.parametrize("gain, text", [
+    ({"dewow_window": 0.002}, "clip 98 % · dewow"),
+    ({"dewow_window": 0.002, "background": "all", "agc_window": 0.02},
+     "clip 98 % · dewow · background · AGC"),
+    ({"background": "window", "background_traces": 5, "time_power": 1.0},
+     "clip 98 % · background · gain")])
+def test_a_trace_row_names_its_filters(qgis_app, make_trace_layer, gain, text):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.layer_list import _scale_text
+    assert _scale_text(make_trace_layer(gain=DisplayGain(**gain))) == text
+
+
+def test_the_filters_are_kept_in_the_project(qgis_app):
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.style_store import styles_from_json, styles_to_json
+    gain = DisplayGain(dewow_window=7e-9, background="window", background_traces=101,
+                       agc_window=2e-8)
+    back = styles_from_json(styles_to_json({"g1": LayerStyle(gain=gain)}))
+    assert back["g1"].gain == gain

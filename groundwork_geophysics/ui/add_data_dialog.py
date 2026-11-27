@@ -31,7 +31,7 @@ from ..core.layout import model_stations
 from ..core.lines import line_from_cloud
 from ..core.model import Dataset
 from ..core.numbers import fmt, fmt_count, fmt_sig, fmt_trim
-from ..core.trace_section import Velocity, depth_at
+from ..core.trace_section import Velocity, depth_at, first_arrival
 from ..section.readout import format_value, unit_label
 from ..core.placement import Placement, fit_report
 from ..core.roles import VERTICAL_KINDS, ModelColumns, guess_model_columns
@@ -45,6 +45,7 @@ from ..section.data import HANG_KEYS
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .lib_install import start_install
+from .radar_box import RadarBox
 from .segy_box import FIELD_WORDS, SegyBox
 from .fit_line import WARNING_STYLE, fit_line, show_fit
 from ..core.dataset_types import METHODS, READINGS_KINDS, station_words
@@ -58,7 +59,7 @@ CHOOSE_OTHER = "Choose another file, or another format above."
 MISSING_FILE = "Check the path, or choose another file."
 Z_ITEMS = [("Choose…", None)] + list(VERTICAL_KINDS)
 FILE_FILTER = ("Model and data files (*.dat *.txt *.csv *.xyz *.vtk *.data *.ohm *.sgy "
-               "*.segy);;All files (*)")
+               "*.segy *.dzt *.dt1 *.hd);;All files (*)")
 #: readers whose files hold readings and take a model-response file
 RESPONSE_READERS = ("bert_data",)
 #: response files looked for next to a data file
@@ -77,6 +78,12 @@ OUTSIDE_CRS = ("These positions lie outside the area where {crs} is used. Check 
                "fields and the CRS.")
 ADD_ANYWAY = " Add it anyway?"
 SEGY = "segy"
+#: readers of radar files (``radar_box.RadarBox``)
+RADAR_READERS = ("gssi_dzt", "pulseekko")
+#: the last radar settings that are not about one file: where time zero lies, how the traces
+#: are placed (never the velocity, time zero or height)
+RADAR_SETTINGS_KEY = f"{LEGACY_ID}/import/radar"
+RADAR_REMEMBERED = ("zero", "position")
 SEGYIO = "segyio"
 SEGYIO_MISSING = ("Reading SEG-Y needs the free library segyio (0.4 MB), which is not "
                   "installed.")
@@ -226,6 +233,40 @@ def _remember_segy(options: dict) -> None:
         {k: options[k] for k in SEGY_REMEMBERED if k in options}))
 
 
+def _remember_radar(options: dict) -> None:
+    QgsSettings().setValue(RADAR_SETTINGS_KEY, json.dumps(
+        {k: options[k] for k in RADAR_REMEMBERED if k in options}))
+
+
+def radar_file(path: str) -> str:
+    """The file a radar dataset is read from: a pulseEKKO header (.hd) stands for the trace
+    file (.dt1) of the same name beside it; any other path as it is."""
+    from ..readers.radar_info import partner
+    p = Path(path)
+    if p.suffix.lower() == ".hd":
+        trace_file = partner(p, ".DT1")
+        if trace_file is not None:
+            return str(trace_file)
+    return str(path)
+
+
+def describe_radar(section, options: dict | None = None) -> str:
+    """'6290 traces × 1024 samples · 0.552 ns · 0 – 565 ns', with a usable velocity and time
+    zero in ``options`` ' · to 25.5 m depth' (below time zero, at the end of the record)."""
+    ns = 1e-9
+    end = section.first + section.n_samples * section.step
+    text = (f"{fmt_count(section.n_traces)} traces × {fmt_count(section.n_samples)} samples · "
+            f"{fmt_trim(section.step / ns, 3)} ns · {fmt_trim(section.first / ns, 1)} – "
+            f"{fmt_trim(end / ns, 1)} ns")
+    o = options or {}
+    try:
+        depth = float(depth_at(section, Velocity.from_options(o), np.array([end]),
+                               time_zero=float(o.get("time_zero") or 0.0))[0])
+    except (TypeError, ValueError):
+        return text                             # no usable velocity yet: the box says so
+    return text + f" · to {fmt_trim(depth, 1)} m depth" if np.isfinite(depth) else text
+
+
 def _guarded(method):
     """A slot that never raises: under PyQt6 an exception leaving a slot aborts QGIS. What
     goes wrong is shown in the preview."""
@@ -281,6 +322,9 @@ class AddDataDialog(QDialog):
         self._install_task = None
         self._install_message = ""                  # why installing segyio failed
         self._segy_ends = None                      # first and last trace position (file CRS)
+        self._radar_key = self._radar_info = None   # (path, mtime, reader) and its header
+        self._radar_remembered = False              # the last radar settings were offered
+        self._estimated_for = None                  # the read whose first arrival was offered
 
         self.file_edit = QLineEdit()
         self.file_edit.editingFinished.connect(self._file_typed)
@@ -337,6 +381,10 @@ class AddDataDialog(QDialog):
                                       QgsCoordinateReferenceSystem(store.crs_authid))
         self.segy_box.set_zero(SEGY_FIRST_ZERO)
         self.segy_box.hide()
+        self.radar_box = RadarBox()
+        self.radar_box.set_default_crs(prj_crs if prj_crs.isValid() else
+                                       QgsCoordinateReferenceSystem(store.crs_authid))
+        self.radar_box.hide()
 
         self._preview_group = preview = QGroupBox("Preview")
         preview.setObjectName("preview_group")
@@ -377,8 +425,8 @@ class AddDataDialog(QDialog):
         self._page = page = QWidget()
         column = QVBoxLayout(page)
         column.addLayout(form)
-        for w in (self.files_box, self.segy_box, self.table_options, self.columns_group,
-                  self.placement, preview):
+        for w in (self.files_box, self.segy_box, self.radar_box, self.table_options,
+                  self.columns_group, self.placement, preview):
             column.addWidget(w)
         column.addStretch(1)
         self._scroll = scroll = QScrollArea()
@@ -405,6 +453,7 @@ class AddDataDialog(QDialog):
         self.table_options.changed.connect(self._refresh)
         self.columns_group.changed.connect(self._refresh)
         self.segy_box.changed.connect(self._refresh)
+        self.radar_box.changed.connect(self._refresh)
         self.placement.changed.connect(self._refresh)
         self.placement.zero_combo.activated.connect(self._zero_activated)
         self._refresh()
@@ -424,7 +473,20 @@ class AddDataDialog(QDialog):
     def _is_segy(self) -> bool:
         return self._reader() == SEGY
 
+    def _is_radar(self) -> bool:
+        return self._reader() in RADAR_READERS
+
+    def _is_traces(self) -> bool:
+        """A file of traces: a SEG-Y section or a radargram (the box says how it hangs)."""
+        return self._is_segy() or self._is_radar()
+
+    def _trace_box(self):
+        """The box of the trace reader chosen: ``SegyBox`` or ``RadarBox``."""
+        return self.radar_box if self._is_radar() else self.segy_box
+
     def _on_map(self) -> bool:
+        if self._is_radar():
+            return self.radar_box.position() == "table"
         if self._is_segy():
             return self.segy_box.position() in ("map", "table")
         return self._is_table() and self.columns_group.columns().position == "map"
@@ -436,6 +498,8 @@ class AddDataDialog(QDialog):
         """The reader options as saved (the placement is added on saving)."""
         if self._is_segy():
             return self.segy_box.options()
+        if self._is_radar():
+            return self._radar_options(self._path())
         if self._is_table():
             options = {"table": self.table_options.options().to_dict(),
                        "columns": self.columns_group.columns().to_dict()}
@@ -449,6 +513,17 @@ class AddDataDialog(QDialog):
             resp, data = Path(response), Path(self._path())   # kept next to the data file
             options["response"] = (resp.name if resp.parent.resolve() ==
                                    data.parent.resolve() else str(resp))
+        return options
+
+    def _radar_options(self, path: str) -> dict:
+        """The radar box's options for ``path`` (the fit is a placement, not an option); a
+        pulseEKKO line names its header file, which is read with it."""
+        from ..readers.radar_info import partner
+        options = {k: v for k, v in self.radar_box.options().items() if k != "fit_length"}
+        if self._reader() == "pulseekko":
+            header = partner(Path(path), ".HD")
+            if header is not None and header.parent == Path(path).parent:
+                options["header_file"] = header.name
         return options
 
     def _sample_options(self) -> dict:
@@ -557,7 +632,7 @@ class AddDataDialog(QDialog):
     def set_files(self, paths) -> None:
         """One file: the dialog as always. Several: the first file's settings for all, and a
         row per file saying which profile it goes to."""
-        paths = [str(p) for p in paths]
+        paths = list(dict.fromkeys(radar_file(str(p)) for p in paths))   # a pair is one line
         self._files = paths if len(paths) > 1 else []
         if self._files:
             self._file_blocks = {}
@@ -576,7 +651,7 @@ class AddDataDialog(QDialog):
             self._refresh()
 
     def _file_typed(self) -> None:
-        if self._path() != self._file:
+        if radar_file(self._path()) != self._file:
             self.set_files([self._path()])         # a typed path: one file
 
     @_guarded
@@ -653,7 +728,7 @@ class AddDataDialog(QDialog):
         the chosen placement. A fixed format's own Z hint presets "Z means" once."""
         path, reader = self._path(), self._reader()
         profile = self._draft()[0] if self._on_map() else None
-        if self._is_segy():                         # the method is set with the headers
+        if self._is_traces():                       # the method is set with the headers
             pass
         elif not self._is_table() and self._z_preset != (path, reader):
             self._read_key = None
@@ -683,7 +758,7 @@ class AddDataDialog(QDialog):
         """What the read depends on; a section's velocity and time zero only hang it."""
         line = None if profile is None else np.asarray(profile.xy, float).tobytes()
         options = {k: v for k, v in self._sample_options().items()
-                   if not (self._is_segy() and k in HANG_KEYS)}
+                   if not (self._is_traces() and k in HANG_KEYS)}
         return (self._path(), self._reader(), json.dumps(options, sort_keys=True), line)
 
     def _draft(self):
@@ -707,15 +782,16 @@ class AddDataDialog(QDialog):
             self._fit_width()
 
     def _update(self) -> None:
-        table, segy_file = self._is_table(), self._is_segy()
+        table, segy_file, radar = self._is_table(), self._is_segy(), self._is_radar()
         for w in (self.table_options, self.columns_group, self._preview_group):
             w.setVisible(table)
         self.segy_box.setVisible(False)             # shown once the headers are read
+        self.radar_box.setVisible(False)
         if self._install_button is not None:
             self._install_button.setVisible(False)
         self._set_addable(True)
         self._form.setRowVisible(self.response_row, self._reader() in RESPONSE_READERS)
-        self._form.setRowVisible(self.z_combo, not table and not segy_file)
+        self._form.setRowVisible(self.z_combo, not table and not segy_file and not radar)
         for label in (self.summary_label, self.missing_label, self.fit_label,
                       self.electrode_label, self.warning_label):
             label.clear()
@@ -732,6 +808,9 @@ class AddDataDialog(QDialog):
             if not self._segy_headers():            # segyio missing, or a 3D volume
                 return
             problems = self.segy_box.read_problems()  # velocity etc. only hang it
+        elif radar and self._path():
+            self._radar_headers()
+            problems = self.radar_box.read_problems()  # velocity, time zero only hang it
         self._sync_placement(not problems)
         self._sync_coarse(table and bool(self._path()) and not problems)
         several = bool(self._files)
@@ -744,7 +823,7 @@ class AddDataDialog(QDialog):
         if not self._path():
             self.summary_label.setText("Choose a data file.")
             return
-        if problems and segy_file:                  # what to enter, said as a warning
+        if problems and (segy_file or radar):       # what to enter, said as a warning
             self.missing_label.setText(" ".join(problems))
             return
         if problems:
@@ -754,7 +833,7 @@ class AddDataDialog(QDialog):
             try:
                 self._draft()
             except ValueError as exc:
-                what = "traces" if segy_file else "cells"
+                what = "traces" if segy_file or radar else "cells"
                 self.summary_label.setText(f"The {what} are placed by their map coordinates "
                                            f"once the line is chosen: {exc}")
                 return
@@ -769,11 +848,15 @@ class AddDataDialog(QDialog):
             return
         z_kind = self.columns_group.columns().vertical_kind if table else \
             self.z_combo.currentData()
-        self.summary_label.setText(describe(result, z_kind,
-                                            SAMPLE_ROWS if table and self._more else 0,
-                                            self._reader_options()))
-        if result.traces is not None and self.segy_box.hang_problems():
-            self.missing_label.setText(" ".join(self.segy_box.hang_problems()))
+        if radar and result.traces is not None:
+            self._offer_time_zero(result)
+            self.summary_label.setText(describe_radar(result.traces, self._reader_options()))
+        else:
+            self.summary_label.setText(describe(result, z_kind,
+                                                SAMPLE_ROWS if table and self._more else 0,
+                                                self._reader_options()))
+        if result.traces is not None and self._trace_box().hang_problems():
+            self.missing_label.setText(" ".join(self._trace_box().hang_problems()))
         if several:                                 # the summary is the first file's
             self.summary_label.setText(f"{Path(self._path()).name}: "
                                        f"{self.summary_label.text()}")
@@ -838,6 +921,86 @@ class AddDataDialog(QDialog):
             return False
         return True
 
+    def _radar_headers(self) -> None:
+        """Read the radar file's header into the box (once per file and change), the method
+        GPR proposed once per file, the last radar settings offered once per dialog. A file
+        that cannot be read raises (the preview says why)."""
+        if self._method_for != (self._path(), "gpr"):
+            self._preset_method({"method": "gpr"}, "amplitude")
+            self._method_for = (self._path(), "gpr")
+        path = Path(self._path())
+        key = (str(path), path.stat().st_mtime if path.is_file() else None, self._reader())
+        if key != self._radar_key:
+            self._radar_key = self._radar_info = None
+            if self._reader() == "pulseekko":
+                from ..readers.pulseekko import inspect
+            else:
+                from ..readers.gssi_dzt import inspect
+            info = inspect(path)
+            self.radar_box.set_info(info, str(path))
+            if not self._radar_remembered:          # the last file's choices, once
+                self._radar_remembered = True
+                last = _remembered(RADAR_SETTINGS_KEY) or {}
+                self.radar_box.set_options({k: last[k] for k in RADAR_REMEMBERED if k in last})
+            self._radar_key, self._radar_info = key, info
+        self.radar_box.setVisible(True)
+
+    def _offer_time_zero(self, result) -> None:
+        """Time zero estimated from the first arrival of the file just read (its leading
+        samples that are not data left out), offered once per read when the file states
+        none; the box keeps a number from the file or the user."""
+        key = (self._radar_key, id(result))
+        if key == self._estimated_for:
+            return
+        self._estimated_for = key
+        if self._radar_info is not None and self._radar_info.time_zero is None:
+            skip = int(result.provenance.get("reserved_samples") or 0)
+            self.radar_box.set_estimate(first_arrival(result.traces, skip=skip))
+
+    def _radar_line(self) -> None:
+        """The line through a radargram's coordinate file, in the store's CRS, for the
+        placement's "file" source."""
+        o = self.radar_box.options()
+        where = {k: o.get(k) for k in ("positions_file", "positions_table",
+                                       "positions_columns", "crs")}
+        key = ("radar", self._path(), json.dumps(where, sort_keys=True))
+        if key != self._line_key:
+            self._line, self._line_error = None, ""
+            try:
+                if not o.get("positions_file") or self._radar_info is None:
+                    raise ValueError("Choose the coordinate file with the trace positions.")
+                table = Path(o["positions_file"])
+                if not table.is_absolute():
+                    table = Path(self._path()).parent / table
+                xy = segy.table_positions(table, o.get("positions_table") or {},
+                                          o.get("positions_columns") or {},
+                                          np.arange(1, self._radar_info.n_traces + 1))
+                self._line = line_from_cloud(xy_to_store(xy, o.get("crs", ""),
+                                                         self.store.crs_authid, self.project))
+            except ValueError as exc:
+                self._line_error = str(exc)
+            self._line_key = key
+            self.placement.set_file_line(*(self._line or (None, 0)))
+
+    def _compare_lengths(self, result, profile) -> None:
+        """The file's length against the line's, for the fit, when the traces are placed
+        by the file's distances on an existing profile or a line (not by positions)."""
+        lengths = (None, None)
+        if self.radar_box.position() == "file" and profile is not None and \
+                self.placement.source() in ("existing", "line", "points"):
+            x = np.asarray(result.traces.x, dtype=float)
+            lengths = (float(x[-1] - x[0]), float(profile.chainage.length))
+        self.radar_box.set_line_length(*lengths)
+
+    def _fitted(self, placement: Placement) -> Placement:
+        """``placement`` pinned at the file's first and last trace when the fit is ticked."""
+        if not self._is_radar() or not self.radar_box.options().get("fit_length") or \
+                self._result is None or self._result.traces is None:
+            return placement
+        x = self._result.traces.x
+        placement.fit = (float(x[0]), float(x[-1]))
+        return placement
+
     def _segy_line(self) -> None:
         """The line through the section's trace positions (headers or coordinate file), in
         the store's CRS, for the placement's "file" source."""
@@ -866,9 +1029,10 @@ class AddDataDialog(QDialog):
         warnings = [UNSTACKED] if result.provenance.get("unstacked") else []
         if result.provenance.get("repeats"):        # a warning, not a block
             warnings.append(REPEATS)
-        warnings += self.segy_box.warnings()        # an unusual velocity: not a block
-        if self.segy_box.position_warning():
-            warnings.append(self.segy_box.position_warning())
+        box = self._trace_box()
+        warnings += box.warnings()                  # an unusual velocity: not a block
+        if box.position_warning():
+            warnings.append(box.position_warning())
         outside = self._outside_crs() if on_map else ""
         if outside:
             warnings.append(outside)
@@ -877,14 +1041,18 @@ class AddDataDialog(QDialog):
             warnings.append(self._line_error)
         try:
             placement = self.placement.placement()
-            self._draft()
+            profile = self._draft()[0]
         except ValueError as exc:
+            if self._is_radar():
+                self.radar_box.set_line_length(None, None)
             self.fit_label.setText(str(exc))
             self._set_warnings(warnings)
             return
+        if self._is_radar():
+            self._compare_lengths(result, profile)
         if on_map and self.placement.source() != "file":
             warnings += self._map_fit(result.provenance, "traces")
-        zero = self.segy_box.zero()
+        zero = box.zero()
         if zero in NO_HEIGHTS and not self._has_heights(placement.profile_id):
             warnings.append(NO_HEIGHTS[zero])
         self._set_warnings(warnings)
@@ -892,8 +1060,8 @@ class AddDataDialog(QDialog):
     def _outside_crs(self) -> str:
         """``OUTSIDE_CRS`` when the first or last trace position lies outside the area of use
         of the chosen CRS, else "" (also when the CRS gives no area to check against)."""
-        crs = self.segy_box.crs_widget.crs()
-        if self._segy_ends is None or not crs.isValid():
+        crs = self._trace_box().crs_widget.crs()
+        if self._segy_ends is None or not self._is_segy() or not crs.isValid():
             return ""
         area = crs.bounds()                         # geographic degrees
         if area is None or area.isNull() or area.isEmpty() or \
@@ -958,8 +1126,9 @@ class AddDataDialog(QDialog):
     def _file_problem(self, path: str, target, names, columns_ok: bool) -> str:
         if not Path(path).is_file():
             return "File not found"
-        if self._is_segy():
-            problem = self._segy_file_problem(path, columns_ok)
+        if self._is_traces():
+            problem = (self._segy_file_problem(path, columns_ok) if self._is_segy() else
+                       self._radar_file_problem(path, columns_ok))
             if problem:
                 return problem
             return "" if target is not None else "Choose a profile"
@@ -1004,6 +1173,26 @@ class AddDataDialog(QDialog):
             return "A coordinate file is for one file: add this file on its own"
         return ""
 
+    def _radar_file_problem(self, path: str, settings_ok: bool) -> str:
+        """Why one of several radar files cannot be added with the box's settings ("" when it
+        can). Every file takes the box's velocity and time zero."""
+        if not settings_ok or self.radar_box.problems():
+            return "Complete the radargram settings first (above)"
+        if self.radar_box.position() == "table" and path != self._path():
+            return "A coordinate file is for one file: add this file on its own"
+        if self.radar_box.position() == "file":
+            try:
+                if self._reader() == "pulseekko":
+                    from ..readers.pulseekko import inspect
+                else:
+                    from ..readers.gssi_dzt import inspect
+                info = inspect(Path(path))
+            except (OSError, ValueError) as exc:
+                return str(exc)
+            if info.length is None and info.trace_step is None:
+                return "Recorded without a distance wheel: add it on its own"
+        return ""
+
     def _cells_offer(self, path: str) -> str:
         """The coarser cells proposed for an over-fine text table ("" for none)."""
         if not self._is_table():
@@ -1044,6 +1233,8 @@ class AddDataDialog(QDialog):
         return Placement(profile_id=target, zero="station1")
 
     def _file_options(self, path: str, coarse: bool) -> dict:
+        if self._is_radar():                        # each line its own header file
+            return self._radar_options(path)
         options = {k: v for k, v in self._reader_options().items()
                    if k not in ("block", "response")}
         block = self._file_blocks.get(path)
@@ -1118,6 +1309,8 @@ class AddDataDialog(QDialog):
                  "columns": self.columns_group.columns().to_dict()}))
         elif self._is_segy():
             _remember_segy(self._reader_options())
+        elif self._is_radar():
+            _remember_radar(self._reader_options())
         super().accept()
 
     def _fit_width(self) -> None:
@@ -1168,6 +1361,9 @@ class AddDataDialog(QDialog):
         placement; remembered per file, layout and coordinate columns."""
         if self._is_segy():
             self._segy_line()
+            return
+        if self._is_radar():
+            self._radar_line()
             return
         cols = self.columns_group.columns()
         key = (self._path(), self.table_options.options(), cols.easting, cols.northing,
@@ -1347,12 +1543,14 @@ class AddDataDialog(QDialog):
             if self._on_map() and self._more and self.placement.source() == "file":
                 self._whole_file_line()
                 placement = self.placement.placement()
+            placement = self._fitted(placement)
             try:
                 self.profile, self.dataset = add_data(
                     self.store, placement, Path(path), self._reader(),
                     self._reader_options(), self._name(), self.method_combo.currentData(),
                     self.project, self.provider,
-                    self.station_set_combo.currentData() if self._sets else None)
+                    self.station_set_combo.currentData() if self._sets else None,
+                    result=self._preview_read())
             except NotRefreshed as exc:             # saved: never reported as a failure
                 self.profile, self.dataset = exc.saved
                 self._warn(str(exc))
@@ -1372,7 +1570,18 @@ class AddDataDialog(QDialog):
                  "columns": self.columns_group.columns().to_dict()}))
         elif self._is_segy():
             _remember_segy(self._reader_options())
+        elif self._is_radar():
+            _remember_radar(self._reader_options())
+        self._result = self._read_key = None        # the dialog keeps no copy of the file
         super().accept()
+
+    def _preview_read(self):
+        """The radargram the preview read, when it was read as it is added (a radar file is
+        read whole for the preview: it is not read again)."""
+        if not self._is_radar() or self._result is None:
+            return None
+        profile = self._draft()[0] if self._on_map() else None
+        return self._result if self._read_key == self._key(profile) else None
 
     def _whole_file_line(self) -> None:
         """The preview drew the line through the sample's positions: the profile gets the
@@ -1395,6 +1604,12 @@ class AddDataDialog(QDialog):
             if self._segy_info.volume:
                 raise ValueError(segy.volume_message(Path(self._path()).name, self._segy_info))
             problems = self.segy_box.problems()
+            if problems:
+                raise ValueError(" ".join(problems))
+        if self._is_radar():
+            if self._radar_info is None:            # the header says what is wrong
+                raise ValueError(self.summary_label.text() or "Choose a radar file.")
+            problems = self.radar_box.problems()
             if problems:
                 raise ValueError(" ".join(problems))
         if self._is_table():

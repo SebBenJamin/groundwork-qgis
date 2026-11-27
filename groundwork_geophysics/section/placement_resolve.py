@@ -10,6 +10,9 @@ The order, strongest first:
    note); a set of known points that cannot pin (a station out of order) is not used either,
    with a note;
 2. the dataset's own ``reader_options["placement"]`` (``{"zero": chainage, "direction": ±1}``);
+
+Before all of them: the dataset's own pins (``placement["pins"]``), a file the user fitted to
+its line's length (source "fitted").
 3. 0.8's station-set rule, ``metre0 + direction * x``;
 4. file distance 0 at chainage 0.
 
@@ -110,6 +113,18 @@ def _not_used(exc: ValueError) -> str:
     return NOT_USED_NOTE.format(reason=reason)
 
 
+def _own_pins(dataset: Dataset) -> DistanceMap | None:
+    """The dataset's own pins (``placement["pins"]``: [[file distance, chainage], …], a
+    file fitted to its line's length in Add Data), or None."""
+    placement = dataset.reader_options.get("placement")
+    pins = placement.get("pins") if isinstance(placement, dict) else None
+    try:
+        d, s = zip(*[(float(a), float(b)) for a, b in pins])
+        return pinned_map(d, s)
+    except (TypeError, ValueError):
+        return None
+
+
 def _own_placement(dataset: Dataset) -> DistanceMap | None:
     placement = dataset.reader_options.get("placement")
     if not isinstance(placement, dict):
@@ -143,6 +158,9 @@ def resolve(profile: Profile, sets: list[StationSet], dataset: Dataset,
         offset = float(dataset.reader_options.get("chainage_offset", 0.0) or 0.0)
     except (TypeError, ValueError):
         offset = 0.0
+    own = _own_pins(dataset)
+    if own is not None:                         # the user fitted the file to its line
+        return Resolution(_with_offset(own, offset), "fitted")
     station_set = _station_set(sets, dataset)
     source, note = "rigid", ""
     pins = None if station_set is None or invented(station_set) else _pins(station_set, layout)

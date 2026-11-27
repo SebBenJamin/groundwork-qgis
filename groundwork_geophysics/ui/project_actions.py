@@ -17,7 +17,8 @@ from qgis.core import (QgsLineSymbol, QgsMarkerSymbol, QgsPalLayerSettings, QgsP
                        QgsVectorLayer, QgsVectorLayerSimpleLabeling)
 
 from .. import readers
-from ..core.dataset_types import READINGS_KINDS, TRACE_KINDS, is_trace_kind, model_kind
+from ..core.dataset_types import (READINGS_KINDS, TRACE_KINDS, is_radar_kind, is_trace_kind,
+                                  model_kind)
 from ..core.model import (Dataset, Profile, StationSet, attach_positions, file_fingerprint,
                           profile_from_polyline, profile_from_positions)
 from ..core.placement import Placement
@@ -475,9 +476,11 @@ def add_model(store: ProjectStore, profile_id: str, station_set_id: str, path: P
     read_kind = result.provenance.get("kind")
     if read_kind not in READINGS_KINDS and kind:
         read_kind = kind
-    if result.traces is not None and not is_trace_kind(read_kind or ""):
-        said = result.provenance.get("kind")    # a trace section is never a cell model
-        read_kind = said if is_trace_kind(said or "") else TRACE_KINDS[0]
+    said = result.provenance.get("kind")
+    if result.traces is not None and is_radar_kind(said or ""):
+        read_kind = said                        # a radargram whatever method was chosen
+    elif result.traces is not None and not is_trace_kind(read_kind or ""):
+        read_kind = said if is_trace_kind(said or "") else TRACE_KINDS[0]   # never a model
     data = result.traces if result.traces is not None else result.mesh
     dataset = Dataset(uuid.uuid4().hex, profile_id, station_set_id,
                       read_kind or "ert_model",
@@ -559,7 +562,14 @@ def dataset_options(placement: Placement, profile: Profile, sets: list[StationSe
     if _on_map(opts):                               # placed by its own coordinates
         return station_set_id, opts
     opts["chainage_offset"] = float(placement.offset or 0.0)
-    if placement.zero == "end":
+    if placement.fit is not None:                   # pinned at the line's two ends
+        length = float(profile.chainage.length)
+        ends = (length, 0.0) if placement.zero == "end" else (0.0, length)
+        opts["chainage_offset"] = 0.0
+        opts["placement"] = {"zero": ends[0], "direction": -1 if placement.zero == "end" else 1,
+                             "pins": [[float(placement.fit[0]), ends[0]],
+                                      [float(placement.fit[1]), ends[1]]]}
+    elif placement.zero == "end":
         opts["placement"] = {"zero": float(profile.chainage.length), "direction": -1}
     elif placement.zero != "station1" or not sets:
         opts["placement"] = {"zero": 0.0, "direction": 1}
@@ -568,7 +578,8 @@ def dataset_options(placement: Placement, profile: Profile, sets: list[StationSe
 
 def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
              options: dict, name: str, method: str, project: QgsProject,
-             provider=None, station_set_id: str | None = None) -> tuple[Profile, Dataset]:
+             provider=None, station_set_id: str | None = None,
+             result: readers.ReaderResult | None = None) -> tuple[Profile, Dataset]:
     """Add the data file ``path`` where ``placement`` says: on an existing profile (with the
     positions given, as a new station set), or on a profile made here from the line or the
     positions. A stated station spacing is stored with the profile (a guessed one never).
@@ -576,7 +587,8 @@ def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
     The whole file is read before anything is saved; the profile, station set and dataset
     are then saved in one transaction, so a failure saves nothing. A failure of what follows
     the save (layers, ``provider``'s listeners) raises ``NotRefreshed`` with
-    ``(profile, dataset)``."""
+    ``(profile, dataset)``. ``result``: the file already read with these options and onto
+    this profile (a preview's read), so it is not read again."""
     path = Path(path)
     created = placement.profile_id is None
     if created:                             # made exactly as New Profile makes it
@@ -588,7 +600,8 @@ def add_data(store: ProjectStore, placement: Placement, path: Path, reader: str,
     if new_set is not None:
         station_set_id = new_set.id
     station_set_id, opts = dataset_options(placement, profile, sets, options, station_set_id)
-    result = read_for(store, profile, path, reader, opts)
+    if result is None:
+        result = read_for(store, profile, path, reader, opts)
     changed = profile if created or placement.spacing is not None else None
     dataset = add_model(store, profile.id, station_set_id, path, reader, opts, name,
                         result=result, profile=changed, station_set=new_set,

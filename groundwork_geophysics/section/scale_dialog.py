@@ -16,6 +16,16 @@ MAX_HEIGHT = 580        # the Display dialog on a laptop screen at 150 % (then i
 MIN_WIDTH = 420         # its groups never squeezed below this
 LOG_MIN = 0.001         # smallest minimum on a log scale (= the spin boxes' 3 decimals)
 AGC_MAX_MS = 200        # the AGC window starts at a quarter of the record, at most this
+#: the display filters before the gain (``DisplayGain``: dewow, background)
+DEWOW_TEXT = "Remove drift (dewow)"
+DEWOW_TIP = ("Subtract a running mean along each trace over this window: the slow drift at "
+             "the top of a radar trace goes, the reflections stay")
+BACKGROUND_TEXT = "Remove background"
+BACKGROUND_TIP = ("Subtract the mean trace: banding and ringing that run flat along the line "
+                  "go, and so do flat layers. Whole line: one mean trace; moving window: the "
+                  "mean of the traces around each trace.")
+BACKGROUND_ITEMS = (("Whole line", "all"), ("Moving window", "window"))
+BACKGROUND_TRACES_TIP = "How many traces around each trace make its background"
 #: the contour lines' colour: from the colour scale (as before), or one the user picks
 FROM_SCALE_TEXT = "From the colour scale"
 PICKED_COLOUR_TEXT = "One colour"
@@ -454,17 +464,24 @@ class DisplayDialog(ColorScaleDialog):
         group.setObjectName("amplitudes_group")
         form = QFormLayout(group)
         gain = style.gain
-        unit = "m" if depth else "ms"
+        unit, scale = self._window_unit(depth)
+        self._window_scale = scale
+        span = max(section.step, (section.n_samples - 1) * section.step)
+        radar = self._is_radar()
+        self._build_filters(form, gain, span, unit, scale)
         self.agc_check = QCheckBox("Balance along the trace (AGC)")
         self.agc_check.setToolTip("Each sample divided by the strength of the samples around "
                                   "it, so weak and strong parts of a trace look alike")
         self.agc_spin = QgsDoubleSpinBox()
         self.agc_spin.setObjectName("agc_spin")
-        span = max(section.step, (section.n_samples - 1) * section.step)
         if depth:
             self.agc_spin.setDecimals(1)
             self.agc_spin.setRange(0.1, 1e5)
             default = round(span / 10, 1)
+        elif radar:                                 # five periods of the antenna
+            self.agc_spin.setDecimals(1)
+            self.agc_spin.setRange(0.1, 1e5)
+            default = round(self._radar_default().agc_window * scale, 1)
         else:                                       # a quarter of the record, at most 200 ms
             self.agc_spin.setDecimals(0)
             self.agc_spin.setRange(1.0, 1e5)
@@ -472,8 +489,7 @@ class DisplayDialog(ColorScaleDialog):
         self.agc_spin.setSuffix(f" {unit}")
         self.agc_spin.setClearValue(default)
         on = gain.agc_window is not None and gain.agc_window > 0
-        self.agc_spin.setValue((gain.agc_window if depth else gain.agc_window * 1000.0)
-                               if on else default)
+        self.agc_spin.setValue(gain.agc_window * scale if on else default)
         self.agc_check.setChecked(on)
         self.time_power_check = QCheckBox("Gain with depth" if depth else "Gain with time")
         self.time_power_check.setToolTip(
@@ -498,6 +514,11 @@ class DisplayDialog(ColorScaleDialog):
             self.polarity_check.setToolTip("The data are never negative")
         else:
             self.polarity_check.setToolTip("Positive and negative amplitudes swap colours")
+        form.addRow(self.dewow_check)
+        form.addRow("Window", self.dewow_spin)
+        form.addRow(self.background_check)
+        form.addRow("", self.background_combo)
+        form.addRow("Traces", self.background_spin)
         form.addRow(self.agc_check)
         form.addRow("Window", self.agc_spin)
         form.addRow(self.time_power_check)
@@ -519,6 +540,11 @@ class DisplayDialog(ColorScaleDialog):
 
         self.agc_check.toggled.connect(self._gain_changed)
         self.time_power_check.toggled.connect(self._gain_changed)
+        for w in (self.dewow_check, self.background_check):
+            w.toggled.connect(self._gain_changed)
+        self.background_combo.currentIndexChanged.connect(self._gain_changed)
+        for spin in (self.dewow_spin, self.background_spin):
+            spin.valueChanged.connect(self._gain_changed)
         for w in (self.balance_check, self.polarity_check):
             w.toggled.connect(self._gain_changed)
         for spin in (self.agc_spin, self.time_power_spin):
@@ -532,13 +558,87 @@ class DisplayDialog(ColorScaleDialog):
             self._recompute()
         return group
 
+    def _is_radar(self) -> bool:
+        from ..core.dataset_types import is_radar_kind
+        return is_radar_kind(getattr(self._layer.dataset, "kind", "") or "")
+
+    def _window_unit(self, depth: bool) -> tuple[str, float]:
+        """The unit of the windows along the trace and its factor from the section's unit:
+        m for a depth section, ns for a radargram, ms for a seismic time section."""
+        if depth:
+            return "m", 1.0
+        return ("ns", 1e9) if self._is_radar() else ("ms", 1000.0)
+
+    def _radar_default(self):
+        from .data import radar_gain
+        section = self._traces.section
+        p = self._layer.dataset.provenance or {}
+        return radar_gain(p.get("frequency_mhz"), section.n_samples * section.step)
+
+    def _build_filters(self, form, gain, span: float, unit: str, scale: float) -> None:
+        """"Remove drift (dewow)" with its window and "Remove background" with whole line or
+        a moving window of traces: the filters that come first, before any gain."""
+        from qgis.gui import QgsDoubleSpinBox, QgsSpinBox
+        self.dewow_check = QCheckBox(DEWOW_TEXT)
+        self.dewow_check.setObjectName("dewow_check")
+        self.dewow_check.setToolTip(DEWOW_TIP)
+        self.dewow_spin = QgsDoubleSpinBox()
+        self.dewow_spin.setObjectName("dewow_spin")
+        self.dewow_spin.setDecimals(2 if unit == "m" else 1)
+        self.dewow_spin.setRange(0.01 if unit == "m" else 0.1, 1e5)
+        self.dewow_spin.setSuffix(f" {unit}")
+        if self._is_radar():                        # two periods of the antenna
+            default = self._radar_default().dewow_window * scale
+        else:
+            default = span * scale / 20
+        default = round(default, self.dewow_spin.decimals())
+        self.dewow_spin.setClearValue(default)
+        on = gain.dewow_window is not None and gain.dewow_window > 0
+        self.dewow_spin.setValue(gain.dewow_window * scale if on else default)
+        self.dewow_check.setChecked(on)
+        self.background_check = QCheckBox(BACKGROUND_TEXT)
+        self.background_check.setObjectName("background_check")
+        self.background_check.setToolTip(BACKGROUND_TIP)
+        self.background_combo = QComboBox()
+        self.background_combo.setObjectName("background_combo")
+        for text, value in BACKGROUND_ITEMS:
+            self.background_combo.addItem(text, value)
+        self.background_combo.setToolTip(BACKGROUND_TIP)
+        self.background_spin = QgsSpinBox()
+        self.background_spin.setObjectName("background_spin")
+        self.background_spin.setToolTip(BACKGROUND_TRACES_TIP)
+        n = self._traces.section.n_traces
+        self.background_spin.setRange(3, max(3, n))
+        start = max(3, (n // 10) | 1)               # a tenth of the line, odd
+        self.background_spin.setClearValue(start)
+        self.background_spin.setValue(gain.background_traces or start)
+        self.background_check.setChecked(gain.background in ("all", "window"))
+        self.background_combo.setCurrentIndex(1 if gain.background == "window" else 0)
+
+    def _window(self, spin, given) -> float:
+        """The window of ``spin`` in the section's unit; the stored ``given`` itself while the
+        spin still shows it (a rounded figure never changes the look)."""
+        if given is not None and round(given * self._window_scale, spin.decimals()) == \
+                spin.value():
+            return given
+        return spin.value() / self._window_scale
+
     def gain(self):
-        """The display options as chosen (a ``DisplayGain``)."""
-        from ..core.trace_section import DisplayGain
-        depth = self._traces.section.domain == "depth"
-        window = self.agc_spin.value() if depth else self.agc_spin.value() / 1000.0
-        return DisplayGain(
-            agc_window=window if self.agc_check.isChecked() else None,
+        """The display options as chosen (a ``DisplayGain``); a field without a widget here
+        keeps what the layer has."""
+        from dataclasses import replace
+        old = self._style.gain
+        background = self.background_combo.currentData() if self.background_check.isChecked() \
+            else ""
+        return replace(
+            old,
+            dewow_window=self._window(self.dewow_spin, old.dewow_window)
+            if self.dewow_check.isChecked() else None,
+            background=background,
+            background_traces=self.background_spin.value() if background
+            else old.background_traces,
+            agc_window=self._window(self.agc_spin, old.agc_window)
+            if self.agc_check.isChecked() else None,
             time_power=self.time_power_spin.value() if self.time_power_check.isChecked()
             else None,
             balance_traces=self.balance_check.isChecked(),
@@ -546,6 +646,10 @@ class DisplayDialog(ColorScaleDialog):
             show_muted=self.show_muted_check.isChecked())
 
     def _sync_gain_widgets(self) -> None:
+        self.dewow_spin.setEnabled(self.dewow_check.isChecked())
+        self.background_combo.setEnabled(self.background_check.isChecked())
+        self.background_spin.setEnabled(self.background_check.isChecked() and
+                                        self.background_combo.currentData() == "window")
         self.agc_spin.setEnabled(self.agc_check.isChecked())
         self.time_power_spin.setEnabled(self.time_power_check.isChecked())
         shown = " (as shown)" if self.gain().active() else ""     # not the file's numbers

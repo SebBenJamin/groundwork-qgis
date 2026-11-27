@@ -553,8 +553,11 @@ class ProjectStore(InterpStoreMixin, FieldNotesMixin, HiddenBoreholesMixin):
             for d in datasets:
                 zero = (d.reader_options.get("placement") or {}).get("zero")
                 if zero is not None:
-                    d.reader_options["placement"]["zero"] = float(
-                        remap(old_ch, new_ch, zero))
+                    placement = d.reader_options["placement"]
+                    placement["zero"] = float(remap(old_ch, new_ch, zero))
+                    if isinstance(placement.get("pins"), list):    # a file fitted to the line
+                        placement["pins"] = [[p[0], float(remap(old_ch, new_ch, p[1]))]
+                                             for p in placement["pins"]]
                     self._write_dataset(ds, d)
             if station_set is not None:
                 self._write_station_set(ds, station_set)

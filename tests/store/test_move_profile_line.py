@@ -184,3 +184,16 @@ def test_a_move_failing_after_the_datasets_leaves_their_placement(populated, tmp
         [(n.s_from, n.s_to) for n in before[2]]
     assert [q.vertices for q in st.pieces(st.current_version().id, p.id)] == \
         [q.vertices for q in before[3]]
+
+
+def test_move_carries_the_pins_of_a_file_fitted_to_the_line(populated):
+    from groundwork_geophysics.core.model import Dataset
+    st, p, _ = populated
+    opts = {"placement": {"zero": 0.0, "direction": 1, "pins": [[0.0, 0.0], [98.0, 100.0]]}}
+    st.save_dataset(Dataset("g1", p.id, "", "gpr_section", "a.dzt", 0.0, "", "gssi_dzt", opts,
+                            {}, name="radar"))
+    st.move_profile_line(p.id, np.array([[-20.0, 0.0], [100.0, 0.0]]))   # starts 20 m earlier
+    [d] = st.datasets(p.id)
+    pins = d.reader_options["placement"]["pins"]
+    assert [a for a, _b in pins] == [0.0, 98.0]
+    assert [b for _a, b in pins] == pytest.approx([20.0, 120.0], abs=0.1)

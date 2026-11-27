@@ -27,7 +27,9 @@ class Positions:
 class Placement:
     """How a dataset is put on a profile: an existing profile, a new line, or positions read
     with it; where the file's zero lies (``zero`` is "start", "end" or "station1") with an
-    ``offset``, and an optional station ``spacing``."""
+    ``offset``, and an optional station ``spacing``. ``fit``: the file distances of its first
+    and last trace, pinned onto the line's start and end (its end and start for ``zero``
+    "end"): the file is stretched to the line's length."""
     profile_id: str | None = None
     line_xy: np.ndarray | None = None
     positions: Positions | None = None
@@ -35,6 +37,7 @@ class Placement:
     offset: float = 0.0
     spacing: float | None = None
     replace_line: bool = False
+    fit: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True, eq=False)

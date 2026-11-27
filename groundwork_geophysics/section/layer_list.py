@@ -73,15 +73,23 @@ def gain_word(gain) -> str:
     return ""
 
 
+def filter_words(gain) -> list[str]:
+    """The display filters that are on, in processing order: "dewow", "background"."""
+    if gain is None:
+        return []
+    out = ["dewow"] if gain.dewow_window is not None and gain.dewow_window > 0 else []
+    return out + (["background"] if gain.background in ("all", "window") else [])
+
+
 def trace_look_text(clip_percent, gain, scale=None) -> str:
-    """A trace section's look in a few words: "clip 98 %", "clip 98 % · AGC", or the typed
-    limits ("-500–500 · gain")."""
+    """A trace section's look in a few words, what is on in processing order: "clip 98 %",
+    "clip 98 % · dewow · background · AGC", or the typed limits ("-500–500 · gain")."""
     if clip_percent is not None or scale is None:
         text = clip_text(98.0 if clip_percent is None else clip_percent)
     else:
         text = f"{format_value(scale.vmin)}–{format_value(scale.vmax)}"
-    word = gain_word(gain)
-    return f"{text} · {word}" if word else text
+    words = filter_words(gain) + ([gain_word(gain)] if gain_word(gain) else [])
+    return " · ".join([text] + words)
 
 
 def error_line(layer: SectionLayer) -> str:

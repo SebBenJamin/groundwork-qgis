@@ -9,32 +9,33 @@ file). ``set_info`` / ``set_options`` are silent; ``changed`` follows every edit
 decimal comma always works."""
 from __future__ import annotations
 
-import math
-import re
 from pathlib import Path
 
 import numpy as np
 from qgis.core import QgsCoordinateReferenceSystem, QgsProject
-from qgis.gui import QgsFileWidget, QgsProjectionSelectionWidget
+from qgis.gui import QgsProjectionSelectionWidget
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QButtonGroup, QComboBox, QDialog,
-                                 QDialogButtonBox, QGridLayout, QGroupBox, QHBoxLayout,
+                                 QDialogButtonBox, QGridLayout, QGroupBox,
                                  QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                  QRadioButton, QSizePolicy, QTableWidget, QTableWidgetItem,
                                  QVBoxLayout, QWidget)
 
-from ..core.numbers import fmt_count, fmt_trim, parse
+from ..core.numbers import fmt_trim
 from ..core.trace_section import TraceSection, Velocity, sample_depths
 from ..readers import segy
-from ..readers.texttable import TableOptions, guess_options, read_table, select_rows
-from .table_widgets import TableOptionsBox
+from .trace_fields import (NO_CRS, NO_DATUM, NO_SPACING, ZERO_ITEMS, CoordinateFile,
+                           split_rows, zero_combo)
+from .trace_fields import note as _note
+from .trace_fields import number as _number
+from .trace_fields import positive as _positive
+from .trace_fields import row as _row
+from .trace_fields import show as _show
 
 TITLE = "SEG-Y Section"
 WGS84 = "EPSG:4326"
 FIELD_WORDS = {"cdp": "CDP", "source": "Source", "group": "Group (receiver)"}
-ZERO_ITEMS = (("On the ground line", "ground"), ("At a fixed height", "datum"),
-              ("At a fixed height, corrected to the ground", "datum_ground"))
 KIND_ITEMS = (("Average", "average"), ("Interval", "interval"), ("RMS (stacking)", "rms"))
 NO_POSITIONS_TIP = "The file has no positions that change along the line"
 LINE_METRES = ("The positions in this file look like distances along the line, not map "
@@ -44,24 +45,16 @@ DEPTH_GROUND_TIP = ("Only a time section can be corrected to the ground; hang a 
 CHECK_STEP = "Check the sample step: the file does not say it is in metres."
 STEP_SAID = "The file says {step} ms."
 STEP_NUMBER = "The file's number is {step}, read as metres."
-LISTED = "{k} of {n} traces listed; the rest are placed between them."
-ALL_LISTED = "All {n} traces listed."
 PASTE_TIP = ("Times in ms and velocities in m/s; paste rows with Ctrl+V (tab, semicolon or "
              "comma between the columns)")
 # problems, in the user's words
 NO_VELOCITY = "Enter the velocity in m/s."
-NO_SPACING = "Enter the trace spacing in metres."
-NO_DATUM = "Enter the height of time zero."
 NO_DEPTH_DATUM = "Enter the height of depth zero."
-NO_CRS = "Choose the CRS of the positions."
 NO_STEP = "The sample step must be greater than 0."
 NO_REPLACEMENT = "Enter the replacement velocity in m/s."
 FEW_ROWS = "Enter at least two rows of time and velocity."
 TIMES_UP = "The times must increase."
 VELOCITIES_UP = "The velocities must be greater than 0."
-NO_TABLE = "Choose the coordinate file with the trace positions."
-NO_COLUMNS = "Choose the trace number, easting and northing columns."
-FEW_LISTED = "Fewer than two of the file's trace numbers are in the coordinate file."
 # warnings, not blocks
 UNUSUAL_VELOCITY = ("A velocity below 300 m/s or above 8000 m/s is unusual for seismic data. "
                     "Check the unit (m/s).")
@@ -69,71 +62,12 @@ SHORT_FUNCTION = ("The velocity function ends at {t} ms; the record is {T} ms lo
                   "the last velocity is used.")
 PLAUSIBLE = (300.0, 8000.0)                     # m/s
 TEXT_TITLE = "Text Header"
-#: column names guessed for a coordinate file (whole name, case ignored)
-GUESS = {"number": r"cdp|trace|tr|shot|sp|fldr|nr|no|num|number|station|ffid|cmp",
-         "easting": r"x|east|easting|e|rechts|rechtswert|lon|longitude|cdp_?x",
-         "northing": r"y|north|northing|n|hoch|hochwert|lat|latitude|cdp_?y"}
-
-
-def _number(text: str) -> float | None:
-    """The finite number typed (either decimal separator), else None."""
-    try:
-        v = parse(text)
-    except ValueError:
-        return None
-    return v if math.isfinite(v) else None
-
-
-def _positive(text: str) -> float | None:
-    v = _number(text)
-    return v if v is not None and v > 0 else None
-
-
-def _show(v: float, decimals: int = 6) -> str:
-    return fmt_trim(v, decimals)
-
-
 def _coord(v: float, geographic: bool) -> str:
     """A position for recognising the field: degrees to 6 decimals, map coordinates to the
     metre (to 0.1 m when small, as in files that give metres along the line)."""
     if geographic:
         return fmt_trim(v, 6)
     return fmt_trim(v, 0 if abs(v) >= 1000 else 1)
-
-
-def _row(*widgets, stretch: int | None = None) -> QWidget:
-    row = QWidget()
-    box = QHBoxLayout(row)
-    box.setContentsMargins(0, 0, 0, 0)
-    for i, w in enumerate(widgets):
-        box.addWidget(w, 1 if i == stretch else 0)
-    if stretch is None:
-        box.addStretch(1)
-    return row
-
-
-def split_rows(text: str) -> list[list[str]]:
-    """Pasted lines split into cells: by tab, else semicolon, else comma, else blanks."""
-    out = []
-    for line in str(text).splitlines():
-        if not line.strip():
-            continue
-        for sep in ("\t", ";", ","):
-            if sep in line:
-                out.append([c.strip() for c in line.split(sep)])
-                break
-        else:
-            out.append(line.split())
-    return out
-
-
-def guess_column(names: list[str], role: str, taken=()) -> int | None:
-    """The column whose name says ``role`` (number, easting, northing), or None."""
-    pattern = re.compile(rf"(?i)^\s*(?:{GUESS[role]})\s*$")
-    for i, name in enumerate(names):
-        if i not in taken and pattern.match(name or ""):
-            return i
-    return None
 
 
 class TextHeaderDialog(QDialog):
@@ -171,9 +105,6 @@ class SegyBox(QGroupBox):
         self.path = ""                              # the SEG-Y file ("" when not known)
         self._busy = False
         self._numbers = self._numbers_for = None    # the file's trace numbers (table use)
-        self._table_names: list[str] = []
-        self._table_error = ""
-        self._listed = None                         # (key, listed count) of the coordinate file
         self._position_chosen = False               # the user (or set_options) chose it
         self._crs_chosen: QgsCoordinateReferenceSystem | None = None
         prj = QgsProject.instance().crs()
@@ -207,7 +138,7 @@ class SegyBox(QGroupBox):
         self.time_radio, self.depth_radio = radios("Time", "Depth")
         self.step_edit = edit("step_edit", "Time (or depth) between two samples; filled in "
                                            "from the file")
-        self.step_note = self._note("step_note")
+        self.step_note = _note("step_note")
         self.step_edit.textChanged.connect(self._sync_step_note)
         self.by_one, self.by_function = radios("One velocity", "Velocity function")
         self.velocity_edit = edit("velocity_edit", "Velocity that turns two-way time into "
@@ -244,12 +175,8 @@ class SegyBox(QGroupBox):
                                    "from each row's time down to the next row's. RMS: "
                                    "stacking velocities, turned into interval velocities.")
         self.kind_combo.currentIndexChanged.connect(lambda *_a: self._edited())
-        self.zero_combo = QComboBox()
-        self.zero_combo.setObjectName("segy_zero_combo")
-        for text, value in ZERO_ITEMS:
-            self.zero_combo.addItem(text, value)
-        self.zero_combo.setToolTip("Where the first sample's time zero lies on the section")
-        self.zero_combo.currentIndexChanged.connect(lambda *_a: self._edited())
+        self.zero_combo = zero_combo("segy_zero_combo", tuple(v for _t, v in ZERO_ITEMS),
+                                     self._edited)
         self.datum_edit = edit("datum_edit", "Height of time zero above sea level (the "
                                              "processing datum), in m")
         self.replacement_edit = edit("replacement_edit",
@@ -272,19 +199,15 @@ class SegyBox(QGroupBox):
         self.crs_widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.crs_widget.crsChanged.connect(self._crs_edited)
         self.spacing_edit = edit("spacing_edit", "Distance between two traces along the line")
-        self.table_file = QgsFileWidget()
-        self.table_file.setObjectName("segy_table_file")
-        self.table_file.setFilter("Text tables (*.csv *.txt *.dat *.xyz);;All files (*)")
-        self.table_file.setToolTip("A text table with each listed trace's number, easting "
-                                   "and northing")
-        self.table_file.fileChanged.connect(self._table_chosen)
-        self.table_options = TableOptionsBox()
-        self.table_options.setObjectName("segy_table_options")
-        self.table_options.changed.connect(self._table_layout_changed)
+        self.coords = CoordinateFile(self, "segy", self._trace_numbers, lambda: self.path,
+                                     lambda: self._busy)
+        self.coords.chosen.connect(self._table_chosen)
+        self.coords.changed.connect(self._edited)
+        self.table_file, self.table_options = self.coords.file, self.coords.options_box
         self.number_combo, self.easting_combo, self.northing_combo = (
-            self._column_combo(n) for n in ("number_combo", "easting_combo", "northing_combo"))
-        self.table_note = self._note("table_note")
-        self.position_note = self._note("position_note")
+            self.coords.number_combo, self.coords.easting_combo, self.coords.northing_combo)
+        self.table_note = self.coords.note
+        self.position_note = _note("position_note")
         self.text_button = QPushButton("Text Header…")
         self.text_button.setToolTip("The 40 lines of text at the start of the file")
         self.text_button.clicked.connect(self.show_text)
@@ -300,9 +223,7 @@ class SegyBox(QGroupBox):
         self._kind_row = _row(self.kind_combo)
         self._datum_row = _row(self.datum_edit)
         self._replacement_row = _row(self.replacement_edit)
-        self._columns_row = _row(QLabel("Trace or CDP number"), self.number_combo,
-                                 QLabel("Easting"), self.easting_combo, QLabel("Northing"),
-                                 self.northing_combo)
+        self._columns_row = self.coords.columns_row
         self._position_row = _row(self.by_positions, self.by_spacing, self.by_table)
         # the text header stays in reach while velocity and height are typed from it
         samples_row = _row(self.time_radio, self.depth_radio)
@@ -344,19 +265,6 @@ class SegyBox(QGroupBox):
         self.step_label = self._rows["step"][0]
         self.zero_label = self._rows["zero"][0]
 
-    def _note(self, name: str) -> QLabel:
-        label = QLabel()
-        label.setObjectName(name)
-        label.setWordWrap(True)
-        return label
-
-    def _column_combo(self, name: str) -> QComboBox:
-        combo = QComboBox()
-        combo.setObjectName(name)
-        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        combo.currentIndexChanged.connect(lambda *_a: self._edited())
-        return combo
-
     # -- in ------------------------------------------------------------------------------------
     def set_default_crs(self, crs: QgsCoordinateReferenceSystem) -> None:
         """The CRS offered for positions that are not degrees (normally the project's)."""
@@ -371,7 +279,7 @@ class SegyBox(QGroupBox):
         new_file = str(path or "") != self.path
         self.info, self.path = info, str(path or "")
         self._numbers = self._numbers_for = None
-        self._listed = None
+        self.coords.forget()
         self._busy = True
         try:
             if new_file:
@@ -399,7 +307,7 @@ class SegyBox(QGroupBox):
                 (self.by_positions if proposed else self.by_spacing).setChecked(True)
             self._preset_crs()
             if self.table_file.filePath():
-                self._read_columns(keep=True)
+                self.coords.read_columns(keep=True)
         finally:
             self._busy = False
         self._sync()
@@ -484,20 +392,7 @@ class SegyBox(QGroupBox):
             self._crs_chosen = QgsCoordinateReferenceSystem(str(o["crs"]))
             self._preset_crs()
         if o.get("positions_file"):
-            path = Path(str(o["positions_file"]))
-            if not path.is_absolute() and self.path:
-                path = Path(self.path).parent / path
-            self.table_file.setFilePath(str(path))
-            if o.get("positions_table"):
-                try:
-                    self.table_options.set_options(TableOptions.from_dict(o["positions_table"]))
-                except (TypeError, ValueError, AttributeError):
-                    pass
-            self._read_columns(keep=False)
-            columns = o.get("positions_columns") or {}
-            for role, combo in self._column_combos().items():
-                if columns.get(role) is not None:
-                    combo.setCurrentIndex(max(0, combo.findData(int(columns[role]))))
+            self.coords.set_options(o)
 
     def set_domain(self, domain: str) -> None:
         (self.depth_radio if domain == "depth" else self.time_radio).setChecked(True)
@@ -605,29 +500,11 @@ class SegyBox(QGroupBox):
             if self.field_combo.currentData():
                 o["xy_field"] = self.field_combo.currentData()
         else:
-            path = self.table_file.filePath().strip()
-            if path:
-                o["positions_file"] = self._stored_path(path)
-                o["positions_table"] = self.table_options.options().to_dict()
-                columns = {role: combo.currentData()
-                           for role, combo in self._column_combos().items()}
-                if all(v is not None for v in columns.values()):
-                    o["positions_columns"] = columns
+            o.update(self.coords.options())
         crs = self._crs_text()
         if crs:
             o["crs"] = crs
         return o
-
-    def _stored_path(self, path: str) -> str:
-        """A coordinate file beside the SEG-Y file is stored by its name."""
-        p = Path(path)
-        if self.path:
-            try:
-                if p.parent.resolve() == Path(self.path).parent.resolve():
-                    return p.name
-            except OSError:
-                pass
-        return str(p)
 
     def problems(self) -> list[str]:
         """What must be entered before the section can be read and hung."""
@@ -696,86 +573,24 @@ class SegyBox(QGroupBox):
             return [] if _positive(self.spacing_edit.text()) is not None else [NO_SPACING]
         out = []
         if position == "table":
-            out += self._table_problems()
+            out += self.coords.problems()
         if not self.crs_widget.crs().isValid():
             out.append(NO_CRS)
         return out
 
-    def _table_problems(self) -> list[str]:
-        path = self.table_file.filePath().strip()
-        if not path:
-            return [NO_TABLE]
-        if not self._table_names:
-            return [self._table_error or NO_TABLE]
-        if any(c.currentData() is None for c in self._column_combos().values()):
-            return [NO_COLUMNS]
-        listed = self._listed_count()
-        if isinstance(listed, str):
-            return [listed]
-        return [FEW_LISTED] if listed is not None and listed < 2 else []
-
     # -- the coordinate file -------------------------------------------------------------------
-    def _column_combos(self) -> dict[str, QComboBox]:
-        return {"number": self.number_combo, "easting": self.easting_combo,
-                "northing": self.northing_combo}
-
     def set_positions_file(self, path: str) -> None:
         """Use the coordinate file ``path`` (as if chosen): its layout and columns guessed."""
-        self.table_file.setFilePath(str(path))
+        self.coords.set_file(path)
 
-    def _table_chosen(self, *_args) -> None:
-        if self._busy:
-            return
-        path = self.table_file.filePath().strip()
+    def _table_chosen(self) -> None:
         self._busy = True
         try:
-            if path:
-                try:
-                    self.table_options.set_options(guess_options(path))
-                except (OSError, ValueError):
-                    pass                            # read_columns says what is wrong
             self.by_table.setChecked(True)
             self._position_chosen = True
-            self._read_columns(keep=False)
         finally:
             self._busy = False
         self._edited()
-
-    def _table_layout_changed(self) -> None:
-        self._busy = True
-        try:
-            self._read_columns(keep=True)
-        finally:
-            self._busy = False
-        self._edited()
-
-    def _read_columns(self, keep: bool) -> None:
-        """Fill the column combos from the coordinate file's names, guessed by name (``keep``:
-        the choices stay when the names are the same)."""
-        self._table_error, self._listed = "", None
-        path = self.table_file.filePath().strip()
-        names: list[str] = []
-        if path:
-            try:
-                table = read_table(path, self.table_options.options(), max_rows=200)
-                names = [n for n in table.names]
-            except (OSError, ValueError) as exc:
-                self._table_error = f"{Path(path).name}: {exc}"
-        same = keep and names == self._table_names
-        self._table_names = names
-        chosen = {role: c.currentData() for role, c in self._column_combos().items()}
-        taken: list[int] = []
-        for role, combo in self._column_combos().items():
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem("Choose…", None)
-            for i, name in enumerate(names):
-                combo.addItem(name or f"Column {i + 1}", i)
-            pick = chosen[role] if same else guess_column(names, role, taken)
-            if pick is not None:
-                taken.append(pick)
-            combo.setCurrentIndex(max(0, combo.findData(pick)))
-            combo.blockSignals(False)
 
     def _trace_numbers(self) -> np.ndarray | None:
         if self.info is None:
@@ -789,24 +604,6 @@ class SegyBox(QGroupBox):
             except (OSError, ValueError):
                 self._numbers = None
         return self._numbers
-
-    def _listed_count(self) -> int | str | None:
-        """How many of the file's traces the coordinate file lists (or what is wrong)."""
-        columns = {r: c.currentData() for r, c in self._column_combos().items()}
-        path = self.table_file.filePath().strip()
-        key = (path, self.table_options.options(), tuple(columns.values()), self.path)
-        if self._listed is not None and self._listed[0] == key:
-            return self._listed[1]
-        numbers = self._trace_numbers()
-        try:
-            table = read_table(path, self.table_options.options())
-            rows, _skipped, _first = select_rows(table, list(columns.values()))
-            count = None if numbers is None else \
-                len({float(v) for v in rows[:, 0]} & {float(v) for v in numbers})
-        except (OSError, ValueError) as exc:
-            count = f"{Path(path).name}: {exc}"
-        self._listed = (key, count)
-        return count
 
     # -- the velocity function -----------------------------------------------------------------
     def _fill_table(self, rows) -> None:
@@ -943,15 +740,7 @@ class SegyBox(QGroupBox):
         return ""
 
     def _table_note(self) -> str:
-        if not self.table_file.filePath().strip() or not self._table_names or \
-                any(c.currentData() is None for c in self._column_combos().values()):
-            return self._table_error if self.table_file.filePath().strip() else ""
-        listed = self._listed_count()
-        if not isinstance(listed, int) or self.info is None:
-            return listed if isinstance(listed, str) else ""
-        n = self.info.n_traces
-        return ALL_LISTED.format(n=fmt_count(n)) if listed >= n else \
-            LISTED.format(k=fmt_count(listed), n=fmt_count(n))
+        return self.coords.note_text(self.info.n_traces if self.info is not None else None)
 
     # -- the text header -----------------------------------------------------------------------
     def show_text(self) -> None:

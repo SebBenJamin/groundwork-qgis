@@ -4,9 +4,11 @@ detected; used for the plates' provenance line.
 
 A reflection section also shows its traces and samples and how it is hung (the vertical
 rows of "SEG-Y Section": samples in time or depth, sample step, velocity, where time zero
-lies and its height), which can be changed here; how its traces are placed cannot. When the
-change moves the section and the profile has drawings in the shown interpretation version,
-the user is asked first (the drawings stay at their heights)."""
+lies and its height), which can be changed here; how its traces are placed cannot. A
+radargram shows the vertical rows of "Radargram" (velocity or dielectric constant, time zero,
+where time zero lies and its height). When the change moves the section and the profile has
+drawings in the shown interpretation version, the user is asked first (the drawings stay at
+their heights)."""
 from __future__ import annotations
 
 import os
@@ -16,7 +18,7 @@ from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout, QGroupB
                                  QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ..core.dataset_info import INFO_FIELDS, dataset_info, traces_text, with_info
-from ..core.dataset_types import is_trace_kind
+from ..core.dataset_types import is_radar_kind, is_trace_kind
 
 LABELS = {"method": "Method", "array": "Array", "spacing": "Electrode / geophone spacing",
           "date": "Acquisition date", "software": "Inversion software and settings",
@@ -67,7 +69,8 @@ def _hanging(options: dict) -> tuple:
     velocity = Velocity.from_options(o) if domain == "time" else None
     return (domain, o.get("sample_step"), velocity, zero,
             o.get("datum") if zero != "ground" else None,
-            o.get("replacement_velocity") if zero == "datum_ground" else None)
+            o.get("replacement_velocity") if zero == "datum_ground" else None,
+            o.get("time_zero"))
 
 
 def _stored_info(d):
@@ -84,6 +87,20 @@ def _stored_info(d):
         return None
 
 
+def _stored_radar_info(d):
+    """A ``RadarInfo`` from what the radar reader recorded when the radargram was added (the
+    file itself is not at hand); None when too little was recorded."""
+    from ..readers.radar_info import RadarInfo
+    p = d.provenance or {}
+    try:
+        return RadarInfo(int(p["n_traces"]), int(p["n_samples"]), float(p["step"]),
+                         float(p.get("window") or 0.0), 0.0, p.get("time_zero_file"), None,
+                         p.get("dielectric"), str(p.get("antenna") or ""),
+                         p.get("frequency_mhz"), p.get("trace_step"), 0.0, None)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 class DatasetInfoDialog(QDialog):
     def __init__(self, store, dataset_id: str, parent=None, provider=None):
         super().__init__(parent)
@@ -93,8 +110,9 @@ class DatasetInfoDialog(QDialog):
                             if d.id == dataset_id)
         #: True after OK saved new vertical settings (the section moved or is read again)
         self.moved = False
-        self.segy_box = self.traces_label = self.text_button = None
+        self.segy_box = self.radar_box = self.traces_label = self.text_button = None
         self._text = ""
+        self._time_zero_shown = None                # a radargram's time zero when not stored
         self.setWindowTitle(f"Dataset info – {self.dataset.name or self.dataset.id}")
         info = dataset_info(self.dataset)
         trace = is_trace_kind(self.dataset.kind)
@@ -166,6 +184,40 @@ class DatasetInfoDialog(QDialog):
                 why = f"{exc}"
         return _stored_info(self.dataset), NO_TEXT_TIP.format(name=name, why=why)
 
+    def _box(self):
+        """The box of the section's vertical rows: ``SegyBox`` or ``RadarBox``."""
+        return self.radar_box if self.radar_box is not None else self.segy_box
+
+    def _radar_rows(self, box_layout) -> None:
+        """A radargram's rows: from its header when the file is there, else from what was
+        recorded; then the stored options. Without a stored time zero the one it hangs at."""
+        from .radar_box import RadarBox
+        self.radar_box = box = RadarBox(vertical_only=True)
+        box.setTitle("")                            # its rows sit in this group, unframed
+        box.setStyleSheet("QGroupBox#radar_box { border: none; margin: 0; padding: 0; }")
+        box.layout().setContentsMargins(0, 0, 0, 0)
+        info, path = None, self._path()
+        if os.path.isfile(path):
+            try:
+                if self.dataset.reader == "pulseekko":
+                    from ..readers.pulseekko import inspect
+                else:
+                    from ..readers.gssi_dzt import inspect
+                info = inspect(path)
+            except (OSError, ValueError):
+                info = None
+        info = info or _stored_radar_info(self.dataset)
+        if info is not None:
+            box.set_info(info, path)
+        options = dict(self.dataset.reader_options or {})
+        if options.get("time_zero") is None:        # as the section hangs it (never estimated)
+            stated = (self.dataset.provenance or {}).get("time_zero_file")
+            self._time_zero_shown = float(stated) if stated is not None else 0.0
+            options["time_zero"] = self._time_zero_shown
+        box.set_options(options)
+        box.changed.connect(self._check)
+        box_layout.addWidget(box)
+
     def _section_group(self) -> QGroupBox:
         from .segy_box import SegyBox
         group = QGroupBox(SECTION_TITLE)
@@ -173,6 +225,13 @@ class DatasetInfoDialog(QDialog):
         self.traces_label = QLabel(traces_text(self.dataset))
         self.traces_label.setWordWrap(True)
         box_layout.addWidget(self.traces_label)
+        if is_radar_kind(self.dataset.kind):
+            self._radar_rows(box_layout)
+            self.problems = QLabel()
+            self.problems.setObjectName("segy_problems")
+            self.problems.setWordWrap(True)
+            box_layout.addWidget(self.problems)
+            return group
         self.segy_box = SegyBox(vertical_only=True)
         self.segy_box.setTitle("")                  # its rows sit in this group, unframed
         self.segy_box.setStyleSheet("QGroupBox#segy_box { border: none; margin: 0; "
@@ -224,8 +283,9 @@ class DatasetInfoDialog(QDialog):
     def _check(self) -> None:
         """OK waits for what the section cannot be hung without (said below the rows); an
         unusual velocity is said there too, without stopping OK."""
-        problems = self.segy_box.problems() if self.segy_box is not None else []
-        warnings = self.segy_box.warnings() if self.segy_box is not None else []
+        box = self._box()
+        problems = box.problems() if box is not None else []
+        warnings = box.warnings() if box is not None else []
         self.problems.setText(" ".join(problems + warnings))
         self.problems.setVisible(bool(problems or warnings))
         self.ok_button.setEnabled(not problems)
@@ -236,7 +296,7 @@ class DatasetInfoDialog(QDialog):
         keys = _edit_keys()
         old = dict(self.dataset.reader_options or {})
         out = {k: v for k, v in old.items() if k not in keys}
-        out.update({k: v for k, v in self.segy_box.options().items() if k in keys})
+        out.update({k: v for k, v in self._box().options().items() if k in keys})
         return out
 
     def _drawings_here(self) -> bool:
@@ -260,10 +320,13 @@ class DatasetInfoDialog(QDialog):
 
     def accept(self):
         d = with_info(self.dataset, self.values())
-        if self.segy_box is not None:
+        if self._box() is not None:
             from dataclasses import replace
             options = self.new_options()
-            moves = _hanging(options) != _hanging(self.dataset.reader_options)
+            old = dict(self.dataset.reader_options or {})
+            if self._time_zero_shown is not None:   # shown, not stored: no move by itself
+                old["time_zero"] = self._time_zero_shown
+            moves = _hanging(options) != _hanging(old)
             if moves and self._drawings_here() and not self._apply_move():
                 return                          # nothing saved; the dialog stays open
             if moves:

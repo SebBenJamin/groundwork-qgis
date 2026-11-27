@@ -1,4 +1,5 @@
 """The layer row menu offers Dataset info…."""
+import pytest
 
 
 def test_layer_menu_has_dataset_info(qgis_app, store_with_model, make_dock):
@@ -234,3 +235,102 @@ def test_a_model_keeps_its_inversion_wording(qgis_app, store_with_model):
     assert form.labelForField(dlg.fields["software"]).text() == "Inversion software and settings"
     assert form.labelForField(dlg.fields["spacing"]).text() == "Electrode / geophone spacing"
     assert not dlg.fields["array"].isHidden()
+
+
+# -- a radargram: velocity (or dielectric constant), time zero, where time zero lies -----------
+def _radar_store(tmp_path, **options):
+    """(store, profile, provider): a 0.2 m profile with heights and an 11-trace GSSI radargram
+    (64 ns, 270 MHz) hung on the ground at 0.1 m/ns with time zero 4 ns (``options`` added)."""
+    import numpy as np
+
+    from gpr_files import write_dzt
+    from groundwork_geophysics import readers
+    from groundwork_geophysics.core.model import Dataset, file_fingerprint, profile_from_stations
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    a = np.zeros((11, 64), np.int16)
+    a[:, 4:7] = [400, -600, 300]
+    path = write_dzt(tmp_path / "AAA_____023.DZT", a, 64.0, dielectric=18.0)
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p, s = profile_from_stations("P1", "EPSG:25832",
+                                 np.array([[0, 0, 500.0], [0.1, 0, 500.5], [0.2, 0, 501.0]]))
+    st.save_profile(p)
+    st.save_station_set(s)
+    prov = readers.read(path, reader="gssi_dzt").provenance
+    mt, sha = file_fingerprint(path)
+    opts = {"position": "file", "velocity": 1.0e8, "time_zero": 4e-9, "zero": "ground",
+            **options}
+    st.save_dataset(Dataset("g1", p.id, s.id, "gpr_section", str(path), mt, sha, "gssi_dzt",
+                            opts, prov, name="Radar"))
+    return st, p, SectionDataProvider(st)
+
+
+def test_dataset_info_of_a_radargram_shows_its_hanging(qgis_app, tmp_path):
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _radar_store(tmp_path)
+    dlg = DatasetInfoDialog(st, "g1", provider=provider)
+    box = dlg.radar_box
+    assert dlg.segy_box is None and box is not None and box.vertical_only
+    assert dlg.text_button is None
+    assert "11 traces × 64 samples" in dlg.traces_label.text()
+    assert box.velocity_edit.text() == "0.1" and box.dielectric_edit.text() != ""
+    assert box.velocity_note.text() == ""               # the stored value, not the header's
+    assert box.time_zero_edit.text() == "4" and box.zero() == "ground"
+    assert dlg.ok_button.isEnabled()
+
+
+def test_a_new_time_zero_and_velocity_are_written_back(qgis_app, tmp_path):
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _radar_store(tmp_path)
+    dlg = DatasetInfoDialog(st, "g1", provider=provider)
+    box = dlg.radar_box
+    box.dielectric_edit.setText("9")
+    box.dielectric_edit.editingFinished.emit()
+    box.time_zero_edit.setText("5")
+    box.time_zero_edit.editingFinished.emit()
+    box.set_zero("datum")
+    box.datum_edit.setText("300")
+    box.datum_edit.editingFinished.emit()
+    dlg.accept()
+    o = st.datasets(p.id)[0].reader_options
+    assert o["velocity"] == pytest.approx(0.299792458e9 / 3)
+    assert o["time_zero"] == pytest.approx(5e-9)
+    assert (o["zero"], o["datum"], o["position"]) == ("datum", 300.0, "file")
+    placed = provider.layers(p.id)[0].traces
+    assert placed.time_zero == pytest.approx(5e-9) and placed.z_top.max() == 300.0
+
+
+def test_a_radargram_left_as_it_is_keeps_its_options(qgis_app, tmp_path):
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _radar_store(tmp_path)
+    stored = dict(st.datasets(p.id)[0].reader_options)
+    dlg = DatasetInfoDialog(st, "g1", provider=provider)
+    dlg.fields["note"].setPlainText("wet")
+    dlg.accept()
+    assert st.datasets(p.id)[0].reader_options == stored
+
+
+def test_moving_a_radargram_under_drawings_asks_first(qgis_app, tmp_path, monkeypatch):
+    from qgis.PyQt.QtWidgets import QMessageBox
+
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _radar_store(tmp_path)
+    _draw_line(st, p.id)
+    asked = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: asked.append(box.text()) or 0)
+    dlg = DatasetInfoDialog(st, "g1", provider=provider)
+    dlg.radar_box.time_zero_edit.setText("6")
+    dlg.radar_box.time_zero_edit.editingFinished.emit()
+    dlg.accept()
+    assert len(asked) == 1
+    assert st.datasets(p.id)[0].reader_options["time_zero"] == pytest.approx(4e-9)
+
+
+def test_an_impossible_radar_velocity_blocks_ok(qgis_app, tmp_path):
+    from groundwork_geophysics.ui.dataset_info_dialog import DatasetInfoDialog
+    st, p, provider = _radar_store(tmp_path)
+    dlg = DatasetInfoDialog(st, "g1", provider=provider)
+    dlg.radar_box.velocity_edit.setText("0,5")
+    dlg.radar_box.velocity_edit.editingFinished.emit()
+    assert not dlg.ok_button.isEnabled()
+    assert "speed of light" in dlg.problems.text()

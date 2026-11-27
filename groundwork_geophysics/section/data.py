@@ -287,6 +287,27 @@ def _trace_scale(placed: PlacedTraces, style: LayerStyle) -> ColorScale:
     return ColorScale("gray" if lo < 0 else "gray_r", lo, hi, False)
 
 
+def radar_gain(frequency_mhz, window: float) -> DisplayGain:
+    """The look a new radargram starts with: dewow over two periods of the antenna's centre
+    frequency and AGC over five (without a known frequency: a twentieth and an eighth of the
+    recorded ``window``, s); no gain with time, no background removal.
+
+    Chosen by looking at real lines (100 and 270 MHz GSSI files recorded with the
+    instrument's own range gain, a 250 MHz pulseEKKO line without one): a further gain with
+    time lifted the deep noise until the clip washed out the upper part; AGC showed layering
+    and diffraction hyperbolas near the top and still the reflectors further down in all
+    three. Background removal took away ringing but also flat layers, so it is left to the
+    user."""
+    try:
+        f = float(frequency_mhz)
+    except (TypeError, ValueError):
+        f = float("nan")
+    if np.isfinite(f) and f > 0:
+        period = 1e-6 / f
+        return DisplayGain(dewow_window=2 * period, agc_window=5 * period)
+    return DisplayGain(dewow_window=window / 20, agc_window=window / 8)
+
+
 def _mirrored_traces(placed: PlacedTraces, length: float) -> PlacedTraces:
     """``placed`` with chainage s -> length - s, traces still in increasing order (views of
     the same samples)."""
@@ -385,10 +406,11 @@ def layer_name(dataset: Dataset) -> str:
 
 def _companion_mtime(path: str, options: dict):
     """Modification time of a file read together with the data file (a model response, a
-    section's coordinate file): re-inverting rewrites a response, and the misfit must follow;
-    -1.0 for a missing one, None without any, a tuple when there are several."""
+    section's coordinate file, the header file of a pulseEKKO line): re-inverting rewrites a
+    response, and the misfit must follow; -1.0 for a missing one, None without any, a tuple
+    when there are several."""
     times = []
-    for key in ("response", "positions_file"):
+    for key in ("response", "positions_file", "header_file"):
         companion = (options or {}).get(key)
         if not companion:
             continue
@@ -1435,7 +1457,14 @@ class SectionDataProvider:
                                 NO_DEPTH_TIME_ZERO):
                     raise _Plain(f"{exc} {SET_IN_INFO}") from None
                 raise
-            if style.scale is None:
+            if style.scale is None:             # the layer's first look
+                if is_radar_kind(d.kind) and not style.gain.active():
+                    prov = self._read_provenance(d)
+                    window = _number_or_nan(prov.get("window"))
+                    if not np.isfinite(window):
+                        window = section.n_samples * section.step
+                    style.gain = replace(radar_gain(prov.get("frequency_mhz"), window),
+                                         show_muted=style.gain.show_muted)
                 style.scale = _trace_scale(placed, style)
         except Exception as exc:                # never raise from layers()
             return SectionLayer(d, None, style, self._error_text(d, exc),
