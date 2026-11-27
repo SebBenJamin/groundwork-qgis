@@ -742,6 +742,22 @@ def _forget_others(kept: Path, dataset_id: str) -> None:
         pass
 
 
+def _forget_files(store, dataset_id: str) -> None:
+    """Delete everything remembered for ``dataset_id`` in the cache folder: its reads
+    (``<id>-<digest>.npz``) and its picture levels (``<id>.<digest>.levels.npz``). A folder
+    that cannot be read or written is left as it is."""
+    try:
+        folder = cache_folder(store)
+        for old in folder.glob(f"{dataset_id}-*.npz"):
+            if "-" not in old.stem[len(dataset_id) + 1:]:
+                old.unlink(missing_ok=True)
+        for old in folder.glob(f"{dataset_id}.*.levels.npz"):
+            if "." not in old.name[len(dataset_id) + 1:-len(".levels.npz")]:
+                old.unlink(missing_ok=True)
+    except (OSError, TypeError, ValueError, AttributeError):
+        pass
+
+
 @dataclass
 class ReadJob:
     """One model read, prepared on the main thread so that any thread can run it."""
@@ -938,9 +954,11 @@ class SectionDataProvider:
         return listed + [d for d in datasets if d.id not in seen]
 
     def remove_dataset(self, dataset_id: str) -> None:
-        """Delete ``dataset_id`` from the store (the model file stays), forget its style
-        and cached read, and tell the listeners."""
+        """Delete ``dataset_id`` from the store (the model file stays), forget its style,
+        its cached read and what is remembered for it in the cache folder (reads, picture
+        levels), and tell the listeners."""
         self.store.delete_dataset(dataset_id)
+        _forget_files(self.store, dataset_id)
         dropped = self._styles.pop(dataset_id, None) is not None
         for ids in self._orders.values():
             if dataset_id in ids:

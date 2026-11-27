@@ -238,6 +238,22 @@ def test_a_new_read_of_a_dataset_replaces_its_kept_picture(make, monkeypatch):
     assert len([k for k in display_render._traces if k[0] == "g1"]) == 1
 
 
+def test_removing_a_dataset_removes_its_remembered_files(make):
+    from groundwork_geophysics.section.data import cache_folder
+    provider, store, pid = make({})
+    provider.layers(pid)
+    folder = cache_folder(store)
+    reads = list(folder.glob("g1-*.npz"))
+    assert reads                                      # the read was remembered
+    (folder / "g1.0123456789abcdef.levels.npz").write_bytes(b"x")
+    other = [folder / "g10-0123456789ab.npz", folder / "g10.0123456789abcdef.levels.npz"]
+    for f in other:
+        f.write_bytes(b"x")
+    provider.remove_dataset("g1")
+    assert not list(folder.glob("g1-*.npz")) and not list(folder.glob("g1.*.levels.npz"))
+    assert all(f.is_file() for f in other)            # another dataset's stay
+
+
 def test_readout_in_nanoseconds_below_the_ground(make, qgis_app):
     provider, _store, pid = make({})
     x = provider.layers(pid)[0].traces.section.x[2]
