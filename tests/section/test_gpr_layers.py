@@ -334,6 +334,45 @@ def test_a_radargram_is_shown_down_to_the_chosen_depth(make, file_reads):
     assert provider.layers(pid)[0].traces.section.amplitudes is whole.traces.section.amplitudes
 
 
+@pytest.mark.parametrize("stored", [None, 8.0])
+def test_show_down_to_typed_in_the_display_dialog_is_drawn(qgis_app, make, monkeypatch, stored):
+    """Display… OK and Apply reach the layer: its style, the Layers-list summary, the bounds
+    and a second opening of the dialog; clearing the field shows the whole record again."""
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
+    from groundwork_geophysics.section.data import layer_bounds
+    from groundwork_geophysics.section.layer_list import LayerList
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    provider, _store, pid = make({})
+    whole = provider.layers(pid)[0]
+    provider.set_style("g1", replace(whole.style, max_depth=stored))
+    low = float(whole.traces.z_top.min())
+    ll = LayerList()
+    typed = {"text": "", "button": QDialogButtonBox.StandardButton.Ok}
+
+    def run(dlg):
+        dlg.depth_edit.setText(typed["text"])
+        dlg.findChild(QDialogButtonBox).button(typed["button"]).click()
+
+    monkeypatch.setattr(DisplayDialog, "exec", run)
+    try:
+        for text, button, depth in (("1", QDialogButtonBox.StandardButton.Ok, 1.0),
+                                    ("0.5", QDialogButtonBox.StandardButton.Apply, 0.5),
+                                    ("", QDialogButtonBox.StandardButton.Ok, None)):
+            ll.set_layers(provider, provider.layers(pid))
+            typed.update(text=text, button=button)
+            ll.edit_scale("g1")
+            assert provider.style("g1").max_depth == depth
+            layer = provider.layers(pid)[0]
+            bottom = low - depth if depth else low - whole.traces.depths[-1]
+            assert layer_bounds(layer)[2] == pytest.approx(bottom)
+            summary = ll._rows["g1"].scale_button._full
+            assert (f"to {text} m" in summary) if depth else ("to " not in summary)
+            assert DisplayDialog(None, layer).depth_edit.text() == text
+    finally:
+        ll.deleteLater()
+
+
 def test_a_plate_frame_shows_the_depth_its_look_says(make):
     from groundwork_geophysics.core.plates import FrameLook, ModelLook
     from groundwork_geophysics.plates.build import snapshot_extent

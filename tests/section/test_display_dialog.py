@@ -611,6 +611,16 @@ def test_a_trace_row_names_its_filters(qgis_app, make_trace_layer, gain, text):
     assert _scale_text(make_trace_layer(gain=DisplayGain(**gain))) == text
 
 
+def test_every_display_setting_reaches_the_layer():
+    """Display… OK copies these fields into the layer's style: a setting left out is shown
+    in the dialog but never drawn. Only the visibility and opacity are set elsewhere."""
+    from dataclasses import fields
+
+    from groundwork_geophysics.section.data import LayerStyle
+    from groundwork_geophysics.section.layer_list import DISPLAY_FIELDS
+    assert set(DISPLAY_FIELDS) == {f.name for f in fields(LayerStyle)} - {"visible", "opacity"}
+
+
 def test_a_trace_row_names_its_depth_limit(qgis_app, make_trace_layer):
     from groundwork_geophysics.core.trace_section import DisplayGain
     from groundwork_geophysics.section.layer_list import _scale_text

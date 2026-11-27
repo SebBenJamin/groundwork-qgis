@@ -33,7 +33,7 @@ NEEDS_LIBRARY_TIP = "Install {name} first"
 DISPLAY_FIELDS = ("scale", "mode", "contour_step", "contour_major", "contour_minor",
                   "grid_cell", "interpolation", "fade_coverage", "coverage_threshold",
                   "fade_mode", "shown", "clip_percent", "gain", "contour_colour",
-                  "contour_width")
+                  "contour_width", "max_depth")
 DISPLAY_TEXT = "Display…"
 MISFIT_TEXT = "Misfit summary…"
 INFO_TEXT = "Dataset info…"
