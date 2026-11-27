@@ -182,8 +182,8 @@ they switch on and off along the line. They look like layers and are not.
 
 ![The same view with the look a new radargram starts with: band-pass, background over the whole line and AGC; reflectors and their dips show](../../images/howto/gpr-look-after.jpg)
 
-*Line GPR9, 100 MHz, the upper 6 to 8 m: above as recorded with AGC only, below with the look
-a new radargram starts with. Data: Grützner et al. 2020, PANGAEA, CC BY 4.0.*
+*Line GPR9, 100 MHz, 15 to 85 m along the line, the top 4 to 5 m: above as recorded with
+AGC only, below with the look a new radargram starts with. Data: Grützner et al. 2020, PANGAEA, CC BY 4.0.*
 
 - **The band-pass** keeps half to twice the antenna's frequency and takes everything else
   away: the slow swings, and the drift dewow was there for. The reflections lie inside that

@@ -57,7 +57,7 @@ VELOCITY = "0.15"
 #: views: from s, to s, top of the view (m above sea level), depth shown (m)
 SECTION_VIEW = (-5.0, 191.0, 349.0, 8.5)
 ANTENNA_VIEW = (40.0, 140.0, 348.5, 12.0)
-LOOK_VIEW = (-12.0, 148.0, 350.5, 8.0)
+LOOK_VIEW = (15.0, 85.0, 349.7, 5.0)
 DIALOG_WIDTH = 760
 DISPLAY_WIDTH = 520
 #: Add Data's parts in marker order: rows of the radar box by their key, or dialog parts by
