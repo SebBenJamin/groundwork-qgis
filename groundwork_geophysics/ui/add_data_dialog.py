@@ -1518,7 +1518,8 @@ class AddDataDialog(QDialog):
             if overhang:
                 warnings.append(overhang)
                 self._confirm.append(overhang)
-        if not readings and z_kind in HANGING_Z and station_line(sets) is None and                 not self._has_heights(placement.profile_id):
+        if not readings and z_kind in HANGING_Z and station_line(sets) is None and \
+                not self._has_heights(placement.profile_id):
             warnings.append(FLAT_MODEL)
         self._set_warnings(warnings)
 
