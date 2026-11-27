@@ -44,15 +44,47 @@ def test_a_profile_crossed_twice_8_m_apart_by_a_wiggly_line_keeps_two_crossings(
     assert all(h.stretch is None for h in hits)
 
 
-def test_crossings_far_apart_along_a_long_profile_are_grouped_by_5_percent_of_it():
-    """On a 1000 m profile crossings up to 50 m apart belong together."""
+def test_crossings_far_apart_along_long_profiles_are_grouped_by_5_percent_of_the_shorter():
+    """Two profiles of 1000 m and more: crossings up to 50 m apart belong together."""
     from groundwork_geophysics.core.context import tie_hits
     a = np.array([[0.0, 0.0], [1000.0, 0.0]])
     x = 380.0 + 40.0 * np.arange(7)                     # crossings 40 m apart: 400 .. 600
     y = np.where(np.arange(7) % 2 == 0, -1.0, 1.0)
-    b = np.vstack([[380.0, -50.0], np.column_stack([x, y]), [620.0, -50.0]])
+    b = np.vstack([[380.0, -500.0], np.column_stack([x, y]), [620.0, -500.0]])
     [hit] = tie_hits(a, b, near_miss=10.0)
     assert hit.stretch == pytest.approx((400.0, 600.0))
+
+
+def _long_and_short():
+    """A 2 km line and a 126 m one zigzagging across it four times, 30 m apart (at x =
+    1000, 1030, 1060, 1090)."""
+    long_ = np.array([[0.0, 0.0], [2000.0, 0.0]])
+    short = np.array([[985.0, -5.0], [1015.0, 5.0], [1045.0, -5.0], [1075.0, 5.0],
+                      [1105.0, -5.0]])
+    return long_, short
+
+
+def test_a_long_and_a_short_profile_show_the_same_ties_on_both():
+    from groundwork_geophysics.core.context import tie_hits
+    long_, short = _long_and_short()
+    from_long = tie_hits(long_, short, near_miss=10.0)
+    from_short = tie_hits(short, long_, near_miss=10.0)
+    assert len(from_long) == len(from_short) == 4
+    assert all(h.stretch is None for h in from_long + from_short)
+    assert sorted(h.s for h in from_long) == pytest.approx(sorted(h.s_other for h in from_short))
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_a_shared_stretch_is_the_same_from_both_profiles(swap):
+    from groundwork_geophysics.core.chainage import Chainage
+    from groundwork_geophysics.core.context import tie_hits
+    a, b = (A, _interleaved()) if not swap else (_interleaved(), A)
+    [ab] = tie_hits(a, b, near_miss=10.0)
+    [ba] = tie_hits(b, a, near_miss=10.0)
+    assert (ab.s, ab.s_other) == pytest.approx((ba.s_other, ba.s))      # one tie point
+    gap = np.hypot(*(Chainage(a).to_xy(ab.s) - Chainage(b).to_xy(ab.s_other)))
+    assert gap < 1.5                                     # the two ends of the tie meet
+    assert ab.stretch is not None and ba.stretch is not None
 
 
 def test_a_mirrored_section_mirrors_the_stretch():

@@ -284,8 +284,8 @@ def polygon_intervals(profile_xy, polygons, labels: list[str]) -> list[BandSegme
     return out
 
 
-#: crossings of the same two profiles closer than this along the profile (metres, or this
-#: share of its length when that is more) follow each other ...
+#: crossings of the same two profiles closer than this along both profiles (metres, or this
+#: share of the shorter profile's length when that is more) follow each other ...
 STRETCH_GAP_M = 10.0
 STRETCH_GAP_SHARE = 0.05
 #: ... and this many of them in a row are one shared stretch
@@ -303,39 +303,65 @@ class TieHit:
     stretch: tuple[float, float] | None = None
 
 
-def _groups(s: list[float], gap: float) -> list[list[int]]:
-    """Indices of ``s`` (ascending) in runs whose neighbours are less than ``gap`` apart."""
-    out: list[list[int]] = []
-    for i, v in enumerate(s):
-        if out and v - s[out[-1][-1]] < gap:
-            out[-1].append(i)
-        else:
-            out.append([i])
-    return out
+def _groups(hits: list[tuple], gap: float) -> list[list[int]]:
+    """Indices of ``hits`` ((s_a, s_b, …)) in groups: two hits less than ``gap`` apart along
+    both profiles belong together, and so do the hits linked through such pairs. The same
+    groups whichever profile is first; each group in the order of ``hits``."""
+    parent = list(range(len(hits)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i in range(len(hits)):
+        for j in range(i + 1, len(hits)):
+            if abs(hits[i][0] - hits[j][0]) < gap and abs(hits[i][1] - hits[j][1]) < gap:
+                parent[root(j)] = root(i)
+    out: dict[int, list[int]] = {}
+    for i in range(len(hits)):
+        out.setdefault(root(i), []).append(i)
+    return sorted(out.values(), key=lambda g: g[0])
+
+
+def _first_of_pair(a, b) -> bool:
+    """True when ``a`` is the profile whose side a shared stretch's tie is worked out from
+    (any fixed choice that does not depend on which profile asks)."""
+    return np.asarray(a, float).tobytes() <= np.asarray(b, float).tobytes()
 
 
 def tie_hits(a_xy, b_xy, near_miss: float) -> list[TieHit]:
     """Ties between two profiles: every true crossing (distance 0), except that crossings
-    following each other closely (``STRETCH_GAP_M`` / ``STRETCH_GAP_SHARE``), at least
-    ``STRETCH_MIN_CROSSINGS`` in a row, are one shared stretch with one tie at its middle (on
-    the other profile: the point there nearest to that middle). Without a crossing, the
-    single closest approach if within ``near_miss``. Every tie between profiles (markers,
-    tie strips, the ties panel, interpretation marks) comes from here."""
+    following each other closely along both profiles (``STRETCH_GAP_M`` /
+    ``STRETCH_GAP_SHARE`` of the shorter one), at least ``STRETCH_MIN_CROSSINGS`` of them,
+    are one shared stretch with one tie at its middle (on the other profile: the point there
+    nearest to that middle). The pair gives the same crossings, stretches and ties whichever
+    profile asks: the tie of a stretch is worked out from the same one of the two. Without a
+    crossing, the single closest approach if within ``near_miss``. Every tie between
+    profiles (markers, tie strips, the ties panel, interpretation marks) comes from here."""
     hits = _intersections(a_xy, b_xy)
     if not hits:
         near = _near_miss(a_xy, b_xy, near_miss)
         return [] if near is None else [TieHit(*near)]
-    gap = max(STRETCH_GAP_M, STRETCH_GAP_SHARE * float(_cum(np.asarray(a_xy, float))[-1]))
+    ca, cb = Chainage(a_xy), Chainage(b_xy)
+    shorter = min(float(_cum(ca.xy)[-1]), float(_cum(cb.xy)[-1]))
+    gap = max(STRETCH_GAP_M, STRETCH_GAP_SHARE * shorter)
+    a_first = _first_of_pair(a_xy, b_xy)
     out = []
-    for group in _groups([h[0] for h in hits], gap):
+    for group in _groups(hits, gap):
         if len(group) < STRETCH_MIN_CROSSINGS:
             out += [TieHit(hits[i][0], hits[i][1], 0.0) for i in group]
             continue
-        s0, s1 = hits[group[0]][0], hits[group[-1]][0]
-        mid = 0.5 * (s0 + s1)
-        s_other = Chainage(b_xy).project(Chainage(a_xy).to_xy(mid)[None, :])[0]
-        out.append(TieHit(mid, float(np.ravel(s_other)[0]), 0.0, (s0, s1)))
-    return out
+        sa = [hits[i][0] for i in group]
+        sb = [hits[i][1] for i in group]
+        if a_first:
+            s = 0.5 * (min(sa) + max(sa))
+            s_other = float(np.ravel(cb.project(ca.to_xy(s)[None, :])[0])[0])
+        else:
+            s_other = 0.5 * (min(sb) + max(sb))
+            s = float(np.ravel(ca.project(cb.to_xy(s_other)[None, :])[0])[0])
+        out.append(TieHit(s, s_other, 0.0, (min(sa), max(sa))))
+    return sorted(out, key=lambda h: h.s)
 
 
 def profile_ties(a_xy, b_xy, near_miss: float) -> list[tuple[float, float, float]]:
