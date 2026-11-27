@@ -43,6 +43,7 @@ from ..readers.text_columns import grid_of_file, map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
 from ..section.data import HANG_KEYS, read_options
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
+from ..section.topography import station_line
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .lib_install import start_install
 from .radar_box import RadarBox
@@ -101,6 +102,12 @@ NO_HEIGHTS = {
     "datum_ground": ("This profile has no heights yet. Choose an elevation model in Context "
                      "Layers first: a section corrected to the ground needs them."),
 }
+#: a depth or local-height model on a profile that will have no heights (a hint, not a block)
+FLAT_MODEL = ("This profile has no heights yet, so the model is drawn in depth below a flat "
+              "surface. For real heights, choose an elevation model in Context Layers, or use "
+              "Reference Height… in the section panel.")
+#: what "Z means" gives a model that hangs from the profile's surface
+HANGING_Z = ("depth", "local")
 COARSE_NOTE ="{n} cells of {dx} × {dz} m: far finer than an inversion resolves."
 COARSE_TEXT = "Read as cells of"
 COARSE_TIP = ("Average the file's points in blocks of this size: faster sections, plates and "
@@ -1511,6 +1518,8 @@ class AddDataDialog(QDialog):
             if overhang:
                 warnings.append(overhang)
                 self._confirm.append(overhang)
+        if not readings and z_kind in HANGING_Z and station_line(sets) is None and                 not self._has_heights(placement.profile_id):
+            warnings.append(FLAT_MODEL)
         self._set_warnings(warnings)
 
     def _station_set_id(self, new_set) -> str | None:
