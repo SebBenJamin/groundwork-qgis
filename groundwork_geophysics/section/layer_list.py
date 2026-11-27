@@ -18,6 +18,9 @@ from .scale_dialog import DisplayDialog, ramp_icon
 MIN_WIDTH = 240
 MAX_HINT_WIDTH = 300            # preferred width: full layer names, up to this (the section gets the room)
 MIN_NAME_WIDTH = 60             # a long name is cut (full name in the tooltip), not the controls
+#: the look summary, cut, keeps at least its colour swatch and this (the full look is in its
+#: tooltip): the layer name gets the room first
+MIN_SUMMARY_TEXT = "…"
 REMOVE_TEXT = "Remove from profile…"
 #: first entry of a layer whose reader needs a library that is not installed
 INSTALL_TEXT = "Install {name}…"
@@ -154,6 +157,54 @@ class _ElidedCheck(QCheckBox):
         super().resizeEvent(event)
 
 
+class _SummaryButton(QToolButton):
+    """The look summary beside a layer name: its text is cut at the end with "…" when the
+    row is short of room (the full text leads its tooltip); the colour swatch always stays."""
+
+    def __init__(self):
+        super().__init__()
+        self._full = ""
+        self._tip = ""
+
+    def full_text(self) -> str:
+        return self._full
+
+    def set_summary(self, text: str, tip: str) -> None:
+        self._full, self._tip = text, tip
+        super().setText(text)
+        self._elide()
+        self.updateGeometry()
+
+    def _overhead(self) -> int:
+        """Width of the button without its text (swatch, margins)."""
+        return super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text())
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        cut = self.fontMetrics().horizontalAdvance(self.text())
+        return QSize(hint.width() - cut + self.fontMetrics().horizontalAdvance(self._full),
+                     hint.height())
+
+    def minimumSizeHint(self):
+        room = self.fontMetrics().horizontalAdvance(MIN_SUMMARY_TEXT)
+        full = self.fontMetrics().horizontalAdvance(self._full)
+        return QSize(self._overhead() + min(room, full), self.sizeHint().height())
+
+    def _elide(self) -> None:
+        if not self._full:
+            self.setToolTip(self._tip)
+            return
+        room = max(10, self.width() - self._overhead())
+        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight, room)
+        if shown != self.text():
+            super().setText(shown)
+        self.setToolTip(self._tip if shown == self._full else f"{self._full}\n{self._tip}")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+
 class _DragHandle(QLabel):
     """The grip at the start of a row: dragging it moves the row (and the layer's drawing
     order)."""
@@ -202,10 +253,10 @@ class _LayerRow(QWidget):
         self.opacity.setToolTip("Opacity")
         self.opacity.valueChanged.connect(self._opacity_changed)
         self.opacity.sliderReleased.connect(self._opacity_changed)
-        self.scale_button = QToolButton()
+        self.scale_button = _SummaryButton()
         self.scale_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.scale_button.setIconSize(QSize(40, 10))
-        self.scale_button.setToolTip(SCALE_TIP if layer.traces is None else SCALE_TRACES_TIP)
+        self._scale_tip = SCALE_TIP if layer.traces is None else SCALE_TRACES_TIP
         self.scale_button.clicked.connect(lambda: owner.edit_scale(self.dataset_id))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(
@@ -231,13 +282,46 @@ class _LayerRow(QWidget):
         ok = layer.error is None
         self.opacity.setEnabled(ok)
         self.scale_button.setEnabled(ok)
-        self.scale_button.setText(_scale_text(layer))
         if style.scale is not None:
             self.scale_button.setIcon(ramp_icon(style.scale, 40, 10))
+        self.scale_button.set_summary(_scale_text(layer), self._scale_tip)
         d = layer.dataset
         tip = f"{layer_name(d)} (version {d.version})\n{type_label(d.kind)}\n{d.source_path}"
         self.check.setToolTip(tip if ok else f"{tip}\n\n{layer.error}")
         self.check.setStyleSheet("" if ok else "color: #c00000;")
+        self._share_room()
+
+    def _others(self) -> int:
+        """Width of the row without the name and the summary: margins, the handle, the
+        opacity slider and the spacing between them."""
+        layout = self.layout()
+        margins = layout.contentsMargins()
+        shown = [w for w in (self.handle, self.check, self.opacity, self.scale_button)
+                 if not w.isHidden()]
+        fixed = sum(w.minimumWidth() for w in shown if w in (self.handle, self.opacity))
+        gaps = max(0, layout.spacing()) * (len(shown) - 1)
+        return margins.left() + margins.right() + fixed + gaps
+
+    def widths(self) -> tuple[int, int]:
+        """(least, full): the row's width with the name and the summary at their least, and
+        with both in full."""
+        button = self.scale_button
+        return (self._others() + MIN_NAME_WIDTH + button.minimumSizeHint().width(),
+                self._others() + self.check.sizeHint().width() + button.sizeHint().width())
+
+    def _share_room(self) -> None:
+        """The name gets the room first: the summary is cut (down to its least) before the
+        name is; only then is the name cut too."""
+        button = self.scale_button
+        room = self.width() - self._others()
+        full, least = button.sizeHint().width(), button.minimumSizeHint().width()
+        width = max(least, min(full, room - max(MIN_NAME_WIDTH, self.check.sizeHint().width())))
+        if button.minimumWidth() != width or button.maximumWidth() != width:
+            button.setFixedWidth(width)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._share_room()
 
     def start_drag(self) -> None:
         """Drag this row (the list's drop moves it; a picture of the row follows the
@@ -340,9 +424,8 @@ class LayerList(QWidget):
         rows = list(self._rows.values())
         extra = (self.layout().contentsMargins().left() + self.layout().contentsMargins().right()
                  + self._scroll.verticalScrollBar().sizeHint().width() + 4)
-        need = max([r.minimumSizeHint().width() for r in rows], default=0) + extra
-        full = max([r.minimumSizeHint().width() - r.check.minimumWidth()
-                    + r.check.sizeHint().width() for r in rows], default=0) + extra
+        need = max([r.widths()[0] for r in rows], default=0) + extra
+        full = max([r.widths()[1] for r in rows], default=0) + extra
         self.setMinimumWidth(max(MIN_WIDTH, need))
         self._hint_width = max(self.minimumWidth(), min(full, MAX_HINT_WIDTH))
         self.updateGeometry()

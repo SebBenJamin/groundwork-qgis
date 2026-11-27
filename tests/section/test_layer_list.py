@@ -30,7 +30,9 @@ def test_layer_rows_fit_without_horizontal_scrolling(qgis_app, store_with_model)
         assert not scroll.horizontalScrollBar().isVisible()
         for widget in (row.scale_button, row.opacity):
             assert widget.visibleRegion().boundingRect() == widget.rect(), widget
-        assert row.scale_button.width() >= row.scale_button.sizeHint().width()
+        # the name gets the room first: the summary may be cut, never below its least
+        # (its colour swatch stays)
+        assert row.scale_button.width() >= row.scale_button.minimumSizeHint().width()
     finally:
         ll.close()
         ll.deleteLater()
@@ -170,4 +172,81 @@ def test_untouched_layer_list_still_grows_to_fit(qgis_app, store_with_model):
     finally:
         splitter.close()
         splitter.deleteLater()
+        qgis_app.processEvents()
+
+
+def _radar_row(qgis_app, store_with_model, width):
+    """A layer list ``width`` wide with one radargram-like row: an antenna in the name and
+    the longest look summary."""
+    from dataclasses import replace
+
+    from qgis.PyQt.QtGui import QFont
+
+    from groundwork_geophysics.core.colors import ColorScale
+    from groundwork_geophysics.core.trace_section import DisplayGain
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.layer_list import LayerList
+
+    st, p, _ = store_with_model
+    prov = SectionDataProvider(st)
+    ds_id = st.datasets(p.id)[0].id
+    prov.set_style(ds_id, replace(
+        prov.style(ds_id), scale=ColorScale("gray", -1.0, 1.0, False), clip_percent=98.0,
+        max_depth=8.0, gain=DisplayGain(agc_window=20e-9, band_low=50e6, band_high=200e6,
+                                        background="all")))
+    layers = prov.layers(p.id)
+    layers[0].dataset = replace(layers[0].dataset, name="GPR11 270 MHz, E to W")
+    layers[0].traces = object()                  # drawn as a trace section: the look summary
+    ll = LayerList()
+    ll.setFont(QFont("Segoe UI", 9))
+    ll.set_layers(prov, layers)
+    ll.resize(width, 200)
+    ll.show()
+    for _ in range(2):                           # the row shares its room, then lays out
+        qgis_app.processEvents()
+    [row] = ll._rows.values()
+    return ll, row
+
+
+def test_the_name_keeps_its_room_beside_a_long_look_summary(qgis_app, store_with_model):
+    from groundwork_geophysics.section.layer_list import MAX_HINT_WIDTH
+    ll, row = _radar_row(qgis_app, store_with_model, MAX_HINT_WIDTH)
+    try:
+        full = row.scale_button.full_text()
+        assert full == "clip 98 % · band-pass · background · AGC · to 8 m"
+        assert row.check.text() == "GPR11 270 MHz, E to W"          # the name in full
+        shown = row.scale_button.text()
+        assert shown != full and shown.endswith("…") and full.startswith(shown[:-1])
+        assert full in row.scale_button.toolTip()                    # the whole look
+        assert row.scale_button.width() >= row.scale_button.minimumSizeHint().width()
+    finally:
+        ll.close()
+        ll.deleteLater()
+        qgis_app.processEvents()
+
+
+def test_a_wide_list_shows_name_and_summary_in_full(qgis_app, store_with_model):
+    ll, row = _radar_row(qgis_app, store_with_model, 700)
+    try:
+        assert row.check.text() == "GPR11 270 MHz, E to W"
+        assert row.scale_button.text() == row.scale_button.full_text()
+        assert row.scale_button.full_text() not in row.scale_button.toolTip()
+    finally:
+        ll.close()
+        ll.deleteLater()
+        qgis_app.processEvents()
+
+
+def test_a_narrow_list_cuts_the_name_in_the_middle_last(qgis_app, store_with_model):
+    ll, row = _radar_row(qgis_app, store_with_model, 100)     # held at its least width
+    try:
+        assert row.scale_button.width() == row.scale_button.minimumSizeHint().width()
+        name = row.check.text()
+        assert "…" in name and name.startswith("GPR") and name.endswith("W")
+        assert "GPR11 270 MHz, E to W" in row.check.toolTip()
+        for widget in (row.scale_button, row.opacity):
+            assert widget.visibleRegion().boundingRect() == widget.rect(), widget
+    finally:
+        ll.close()
+        ll.deleteLater()
         qgis_app.processEvents()
