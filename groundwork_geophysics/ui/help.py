@@ -21,6 +21,8 @@ HELP_PAGES = {
     "add_segy": "user/howto/reflection-sections/#add-a-seg-y-section",
     "display": "user/howto/section-panel/#how-a-model-is-drawn",
     "trace_display": "user/howto/reflection-sections/#display-options",
+    "add_gpr": "user/howto/gpr/#add-a-radargram",
+    "gpr_display": "user/howto/gpr/#display-options",
 }
 
 _METADATA = Path(__file__).resolve().parent.parent / "metadata.txt"

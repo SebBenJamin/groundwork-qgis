@@ -198,6 +198,44 @@ def test_reflection_pictures_are_shown_with_their_legends():
         assert f"\n| {marks[len(parts)]} " not in after, name
 
 
+GPR_PAGE = REPO / "docs" / "user" / "howto" / "gpr.md"
+GPR_CREDIT = "Data: Grützner et al. 2020, PANGAEA, CC BY 4.0"
+
+
+def _gpr_pictures():
+    import render_gpr_pictures as r
+    return (("gpr-add-data.png", r.ADD_DATA_PARTS), ("gpr-display.png", r.DISPLAY_PARTS),
+            ("gpr-section.jpg", ()), ("gpr-look-before.jpg", ()), ("gpr-look-after.jpg", ()),
+            ("gpr-antenna-100.jpg", ()), ("gpr-antenna-270.jpg", ()))
+
+
+def test_gpr_pictures_are_shown_with_their_legends():
+    """The pictures of scripts/render_gpr_pictures.py: each is on the GPR page, small, and the
+    numbered ones are followed by a legend row per marker, and no more."""
+    text = GPR_PAGE.read_text(encoding="utf-8")
+    marks = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"
+    for name, parts in _gpr_pictures():
+        link = f"](../../images/howto/{name})"
+        assert link in text, name
+        picture = REPO / "docs" / "images" / "howto" / name
+        assert picture.is_file() and picture.stat().st_size < 400_000, name
+        after = text[text.index(link):].split("\n## ")[0]
+        for mark in marks[:len(parts)]:
+            assert f"\n| {mark} " in after, (name, mark)
+        assert f"\n| {marks[len(parts)]} " not in after, name
+
+
+def test_gpr_pictures_credit_the_data():
+    """Each picture of the radar data has the dataset's credit right after it (its legend
+    table may come between); the script says the data must be downloaded."""
+    text = GPR_PAGE.read_text(encoding="utf-8")
+    for name, _parts in _gpr_pictures():
+        after = text[text.index(f"](../../images/howto/{name})"):].split("\n## ")[0]
+        assert GPR_CREDIT in after, name
+    script = (REPO / "scripts" / "render_gpr_pictures.py").read_text(encoding="utf-8")
+    assert "10.1594/PANGAEA.922902" in script and "downloaded" in script
+
+
 def test_reflection_pictures_credit_swisstopo():
     """Each picture that shows the demo's data has the swisstopo credit right after it (its
     legend table may come between)."""

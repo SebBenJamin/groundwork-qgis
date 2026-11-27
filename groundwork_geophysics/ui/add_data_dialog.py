@@ -439,8 +439,9 @@ class AddDataDialog(QDialog):
         self.add_button.setText("Add")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        add_help_button(buttons, lambda: "add_segy" if self._is_segy() and self._path()
-                        else "add_data")
+        add_help_button(buttons, lambda: ("add_data" if not self._path() else "add_segy"
+                                          if self._is_segy() else "add_gpr"
+                                          if self._is_radar() else "add_data"))
         layout = QVBoxLayout(self)
         layout.addWidget(scroll, 1)
         layout.addWidget(self.status_block)

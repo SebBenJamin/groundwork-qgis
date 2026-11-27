@@ -6,8 +6,8 @@ Groundwork shows your geophysical profiles where they are: on the map, next to t
 and the geology. Sections open as a panel under the map, with your boreholes, geology and
 crossing lines on them; your interpretation is kept as ordinary QGIS layers, and report plates
 come from the QGIS layout, and all of it can stand in QGIS's 3D view. Today it works with
-resistivity (ERT) and seismic refraction (P-wave velocity models); ground-penetrating radar and
-seismic reflection sections are planned.
+resistivity (ERT), seismic refraction (P-wave velocity models), processed seismic reflection
+sections and ground-penetrating radar (GPR).
 
 ![The Gülpe demo in Groundwork: aerial image with the profile and its cores above, the resistivity section with cores and two geology strips below](images/overview.jpg)
 

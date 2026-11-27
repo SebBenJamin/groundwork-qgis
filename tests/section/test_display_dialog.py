@@ -404,6 +404,22 @@ def _radar_layer(make_trace_layer, **style):
     return replace(layer, dataset=ds, traces=placed)
 
 
+def test_the_help_button_of_a_radargram_opens_the_gpr_page(qgis_app, make_trace_layer,
+                                                           monkeypatch):
+    from qgis.PyQt.QtGui import QDesktopServices
+    from qgis.PyQt.QtWidgets import QDialogButtonBox
+
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    from groundwork_geophysics.ui.help import help_url
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl",
+                        staticmethod(lambda url: opened.append(url.toString()) or True))
+    dlg = DisplayDialog(None, _radar_layer(make_trace_layer))
+    (box,) = dlg.findChildren(QDialogButtonBox)
+    box.button(QDialogButtonBox.StandardButton.Help).click()
+    assert opened == [help_url("gpr_display")]
+
+
 def test_the_two_filters_come_first_in_processing_order(qgis_app, trace_layer):
     from groundwork_geophysics.section.scale_dialog import DisplayDialog
     dlg = DisplayDialog(None, trace_layer)

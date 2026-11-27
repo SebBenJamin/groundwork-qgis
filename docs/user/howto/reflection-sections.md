@@ -233,8 +233,9 @@ To find your QGIS profile folder: **Settings → User Profiles → Open Active P
 - 2D lines only: 3D volumes are not read.
 - Navigation files in fixed formats (UKOOA P1/90, SPS) are not read. A plain table with trace
   or CDP number, easting and northing works (**A coordinate file**).
-- Ground-penetrating radar in its own formats (GSSI, MALÅ, Sensors & Software) is not read
-  yet. Radar exported as SEG-Y loads; correct the sample step if needed.
+- Ground-penetrating radar in GSSI and pulseEKKO files has its own page:
+  [Ground-penetrating radar](gpr.md). Radar in other formats, exported as SEG-Y, loads here;
+  correct the sample step if needed.
 - A file segyio cannot open is refused with segyio's reason. Re-export it as standard SEG-Y.
 
 ## Try it: the Vaud demo

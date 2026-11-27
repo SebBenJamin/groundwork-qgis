@@ -66,6 +66,20 @@ Samples that are exactly zero at the top of a trace (the muted zone) are left tr
 so is everything above the ground line in a section corrected to the ground. To see them, tick
 **Paint muted zones** in the section's **Display…**.
 
+## Radargrams
+
+| What you see | Usual cause | Fix |
+|---|---|---|
+| "Enter the velocity or the dielectric constant." | The file states no velocity, and Groundwork assumes none | Type one in Add Data; see [where a value comes from](howto/gpr.md#velocity-and-dielectric-constant) |
+| Reflectors far too shallow or too deep against a borehole | The velocity does not fit. A GSSI header's dielectric constant is an instrument setting, not a measurement | Change the velocity in [Dataset info](howto/dataset-info.md): every depth moves by the same factor |
+| The whole radargram a little too high or too low | Time zero is off | **Time zero (ns)** in Dataset info: later lifts the picture, earlier lowers it |
+| Flat bands parallel to the ground all along the line | The antenna's ringing | Tick **Remove background** in **Display…**; a moving window of 10 m is the start for a new radargram |
+| A long flat layer fades | The background removal over 10 m takes away what runs flat much longer than that | **Remove background** → **Whole line**, or untick it ([why](howto/gpr.md#why-the-background-is-removed-over-10-m)) |
+| The radargram is longer or shorter than the line | The wheel measures along the ground; the line is straight between its ends | Usually right as it is. Fit it with **From** and **To** only when both points are better than the wheel ([fitting](howto/gpr.md#fitting-a-file-between-two-points)) |
+| Vertical seams in the radargram | Steps of the elevation model under it | **Smooth the ground over (m)** in Dataset info, for example 2 m |
+| "…holds 2 channels; Groundwork reads single-channel files." | A GSSI file of a multi-channel system | Not read yet. One channel exported as SEG-Y from the radar software loads as a reflection section |
+| "…the header file … is missing beside it." | A pulseEKKO `.DT1` without its `.HD`, or the other way round | Put both files with the same name in one folder |
+
 ## Local sections (no heights)
 
 A profile without any heights (no station heights, no DEM, a depth model) is drawn as a local

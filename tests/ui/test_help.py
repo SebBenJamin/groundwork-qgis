@@ -49,6 +49,12 @@ def test_reflection_help_targets():
     assert HELP_PAGES["display"] == "user/howto/section-panel/#how-a-model-is-drawn"
 
 
+def test_radar_help_targets():
+    from groundwork_geophysics.ui.help import HELP_PAGES
+    assert HELP_PAGES["add_gpr"] == "user/howto/gpr/#add-a-radargram"
+    assert HELP_PAGES["gpr_display"] == "user/howto/gpr/#display-options"
+
+
 @pytest.fixture
 def opened(monkeypatch):
     from qgis.PyQt.QtGui import QDesktopServices

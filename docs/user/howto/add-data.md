@@ -1,6 +1,6 @@
 # Add data
 
-**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models, SEG-Y) are recognised; for any other text table you say what the columns are. What each format must contain is in [Methods and formats](../formats/overview.md). A Groundwork project must be open; a profile need not be.
+**Groundwork → Add Data…** is the one dialog for every file. Formats the plugin knows (R2/ResIPy, ZondRes2D, VTK, BERT/pyGIMLi data, Refrapy velocity models, SEG-Y, GSSI, pulseEKKO) are recognised; for any other text table you say what the columns are. What each format must contain is in [Methods and formats](../formats/overview.md). A Groundwork project must be open; a profile need not be.
 
 ![The Add Data dialog with a text table chosen; its parts are numbered 1 to 5](../../images/howto/add-data.png)
 
@@ -57,6 +57,8 @@ Choose several files in **Browse…** (Ctrl or Shift while clicking). The dialog
   coordinates**, named after the file.
 - **Read as cells of**: for a very fine file, the coarser cells proposed for it (see
   [Very fine models](#very-fine-models)); untick to keep every point.
+- **Time zero** (radar files only): each file's own, from its header or estimated from its
+  traces. The velocity in the dialog is used for all.
 - **Status** says whether the file is ready: a file with other columns than the first one, or
   without a profile, is not.
 
@@ -70,6 +72,15 @@ the samples are time or depth, the velocity that turns time into depth, where ti
 and how the traces are placed: by the positions in the file, a coordinate file or a trace
 spacing. Reading SEG-Y needs the free library segyio, which the dialog offers to install. See
 [Reflection sections](reflection-sections.md).
+
+### (e) A radargram (GPR)
+
+Choose the GSSI `.DZT` file, or the `.DT1` or `.HD` file of a pulseEKKO line. Instead of ①
+and ②, a **Radargram** part asks for the radar velocity (or the dielectric constant), time
+zero, where time zero lies, and how the traces are placed: by the distances in the file, a
+trace spacing or a coordinate file. **From (m)** and **To (m)** show where the file's first and
+last trace lie along the profile, and can fit the file between two points. No extra library is
+needed. See [Ground-penetrating radar](gpr.md).
 
 ## The parts in detail
 
@@ -116,7 +127,7 @@ The dialog remembers the last table settings and column roles and offers them ag
 
 Two rows at the top of the dialog belong here:
 
-- **Method**: ERT, Seismic refraction or Seismic reflection. It is preselected from the file (a velocity file proposes Seismic refraction, a SEG-Y file Seismic reflection) and gives the dataset its type, for example *Seismic refraction Vp model*, which the plate's title block, colour bar and layer tooltip show. Stations made by the import are electrodes or geophones. Measured ERT data are always ERT.
+- **Method**: ERT, Seismic refraction, Seismic reflection or GPR. It is preselected from the file (a velocity file proposes Seismic refraction, a SEG-Y file Seismic reflection, a radar file GPR) and gives the dataset its type, for example *Seismic refraction Vp model*, which the plate's title block, colour bar and layer tooltip show. Stations made by the import are electrodes or geophones. Measured ERT data are always ERT.
 - **Station set** appears when the profile has several sets.
 
 The new line and its points are drawn on the map while the dialog is open.

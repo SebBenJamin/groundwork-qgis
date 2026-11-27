@@ -9,9 +9,10 @@ Which methods Groundwork works with, which files it reads, and what it writes.
 | **ERT** (resistivity) | inversion models; measured readings; the misfit of an inversion | resistivity section (Ω·m); readings and misfit as pseudosections |
 | **Seismic refraction** | velocity models, from any program that writes one of the formats below | Vp section (m/s), with its ray coverage if the file has one |
 | **Seismic reflection** | processed sections (stack, migrated or depth section) as SEG-Y | the section in depth, in grey or any colour ramp |
+| **GPR** (ground-penetrating radar) | radargrams in GSSI and pulseEKKO files | the radargram in depth, hung from the ground line |
 | any other method | a model or grid as a text table | a section of the value you name, with its unit |
 
-Ground-penetrating radar in its own formats is planned; radar exported as SEG-Y loads now.
+Radar in other makers' formats loads when exported as SEG-Y, as a reflection section.
 
 Everything is 2D: one section along one profile line. 3D models and 3D electrode layouts are refused with a message.
 
@@ -28,9 +29,11 @@ Everything is 2D: one section along one profile line. 3D models and 3D electrode
 | [pyGIMLi / BERT data](#pygimli-bert-data) | `*.data`, `*.ohm`, `*.dat` | ERT | measured readings; with a response file, the misfit |
 | [R2 / ResIPy misfit](#r2-resipy-misfit) | `f001_err.dat` | ERT | misfit, observed and calculated readings |
 | [SEG-Y](#seg-y) | `*.sgy`, `*.segy` | seismic reflection | processed section, with the trace positions when the file has them |
+| [GSSI radar](#gssi-radar) | `*.DZT` | GPR | radargram, with the distances from the survey wheel |
+| [pulseEKKO radar](#pulseekko-radar) | `*.DT1` with `*.HD` | GPR | radargram, with the positions and time zero from the header |
 | [Any text table](#any-text-table) | `*.csv`, `*.txt`, `*.xyz`, … | any | model, with the columns you assign |
 
-The **Method** row in Add Data is preselected from the file (a velocity file proposes Seismic refraction, a SEG-Y file Seismic reflection); measured readings and misfits are always ERT. How the file is placed on its profile line is in [Add data](../howto/add-data.md#where-the-line-runs).
+The **Method** row in Add Data is preselected from the file (a velocity file proposes Seismic refraction, a SEG-Y file Seismic reflection, a radar file GPR); measured readings and misfits are always ERT. How the file is placed on its profile line is in [Add data](../howto/add-data.md#where-the-line-runs).
 
 ### R2 / ResIPy model
 
@@ -87,6 +90,28 @@ The **Method** row in Add Data is preselected from the file (a velocity file pro
 
 How a section is added, hung in depth and drawn is in
 [Reflection sections](../howto/reflection-sections.md).
+
+### GSSI radar
+
+- Read by Groundwork itself, no library needed. One channel; 8-, 16- or 32-bit samples. The
+  unsigned 8- and 16-bit samples are turned into numbers around zero by subtracting the middle
+  value; nothing else is done to them.
+- Trace distances from the header's scans per metre (the survey wheel). Files recorded by time
+  need a trace spacing or a coordinate file.
+- The header's dielectric constant is offered as the velocity, marked as an instrument
+  setting. Time zero is estimated from the first arrival, for you to check.
+- Not read: files with several channels, GPS files (`.DZG`), marks.
+
+### pulseEKKO radar
+
+- Sensors & Software's pair of files with the same name: the text header `.HD` and the traces
+  `.DT1`. Choose either; the other must lie beside it. 2-byte samples, positions in metres.
+- Time zero from the header (*TIMEZERO AT POINT*); positions from the traces, else from the
+  starting position and step size. No velocity is in the file: you type it.
+- Not read: the GPS fields of the traces, positions in other units than metres.
+
+How a radargram is added, hung and shown is in
+[Ground-penetrating radar](../howto/gpr.md#what-is-covered).
 
 ### Any text table
 
