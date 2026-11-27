@@ -304,6 +304,9 @@ class LayerList(QWidget):
         layout.addWidget(self._empty)
         layout.addWidget(scroll, 1)
         self._hint_width = MIN_WIDTH
+        #: the user dragged the splitter (or a saved width was restored): the list no longer
+        #: widens by itself, so a list narrowed or collapsed by hand stays that way
+        self.sized_by_user = False
         self.setMinimumWidth(MIN_WIDTH)
 
     def dataset_ids(self) -> list[str]:
@@ -347,10 +350,10 @@ class LayerList(QWidget):
 
     def _grow_in_splitter(self) -> None:
         """A splitter reads size hints only when first shown: widen this list to its hint
-        by taking space from the widest neighbour. Never shrinks (the user may have
-        dragged the handle)."""
+        by taking space from the widest neighbour. Never shrinks, and does nothing once the
+        user has sized the list (``sized_by_user``)."""
         splitter = self.parentWidget()
-        if not isinstance(splitter, QSplitter):
+        if self.sized_by_user or not isinstance(splitter, QSplitter):
             return
         sizes = splitter.sizes()
         i = splitter.indexOf(self)

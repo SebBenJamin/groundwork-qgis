@@ -92,3 +92,82 @@ def test_layer_list_widens_in_its_splitter_for_full_names(qgis_app, store_with_m
         splitter.close()
         splitter.deleteLater()
         qgis_app.processEvents()
+
+
+def _list_in_splitter(qgis_app, store_with_model):
+    from qgis.PyQt.QtCore import Qt
+    from qgis.PyQt.QtGui import QFont
+    from qgis.PyQt.QtWidgets import QSplitter, QWidget
+
+    from groundwork_geophysics.section.data import SectionDataProvider
+    from groundwork_geophysics.section.layer_list import LayerList
+
+    st, p, _ = store_with_model
+    prov = SectionDataProvider(st)
+    splitter = QSplitter(Qt.Orientation.Horizontal)
+    splitter.setFont(QFont("Segoe UI", 9))
+    splitter.addWidget(QWidget())
+    ll = LayerList()
+    splitter.addWidget(ll)
+    splitter.setStretchFactor(0, 1)
+    splitter.setCollapsible(0, False)
+    splitter.resize(1400, 300)
+    splitter.show()
+    qgis_app.processEvents()
+    ll.set_layers(prov, prov.layers(p.id))
+    qgis_app.processEvents()
+    return splitter, ll, prov, p
+
+
+def _rebuild(qgis_app, ll, prov, p):
+    """A rebuild of the rows (as after adding a layer or switching profile)."""
+    ll.set_layers(prov, [])
+    qgis_app.processEvents()
+    ll.set_layers(prov, prov.layers(p.id))
+    qgis_app.processEvents()
+
+
+def test_collapsed_layer_list_stays_collapsed_on_rebuild(qgis_app, store_with_model):
+    splitter, ll, prov, p = _list_in_splitter(qgis_app, store_with_model)
+    try:
+        assert splitter.sizes()[1] > 0
+        splitter.setSizes([1400, 0])                 # dragged all the way to the right
+        ll.sized_by_user = True                      # what the panel sets on splitterMoved
+        qgis_app.processEvents()
+        _rebuild(qgis_app, ll, prov, p)
+        assert splitter.sizes()[1] == 0
+    finally:
+        splitter.close()
+        splitter.deleteLater()
+        qgis_app.processEvents()
+
+
+def test_narrowed_layer_list_keeps_its_width_on_rebuild(qgis_app, store_with_model):
+    splitter, ll, prov, p = _list_in_splitter(qgis_app, store_with_model)
+    try:
+        total = sum(splitter.sizes())
+        narrow = ll.minimumWidth()
+        splitter.setSizes([total - narrow, narrow])
+        ll.sized_by_user = True
+        qgis_app.processEvents()
+        before = splitter.sizes()[1]
+        _rebuild(qgis_app, ll, prov, p)
+        assert splitter.sizes()[1] == before
+    finally:
+        splitter.close()
+        splitter.deleteLater()
+        qgis_app.processEvents()
+
+
+def test_untouched_layer_list_still_grows_to_fit(qgis_app, store_with_model):
+    splitter, ll, prov, p = _list_in_splitter(qgis_app, store_with_model)
+    try:
+        total = sum(splitter.sizes())
+        splitter.setSizes([total - ll.minimumWidth(), ll.minimumWidth()])   # not by the user
+        qgis_app.processEvents()
+        _rebuild(qgis_app, ll, prov, p)
+        assert splitter.sizes()[1] >= ll.sizeHint().width()
+    finally:
+        splitter.close()
+        splitter.deleteLater()
+        qgis_app.processEvents()

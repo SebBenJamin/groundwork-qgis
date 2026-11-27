@@ -305,10 +305,9 @@ class SectionDock(QDockWidget):
         splitter.setCollapsible(0, False)
         self.splitter = splitter
         state = QgsSettings().value(SPLITTER_KEY)       # the width the user dragged to
-        if state is not None:
-            splitter.restoreState(state)
-        splitter.splitterMoved.connect(
-            lambda *_a: QgsSettings().setValue(SPLITTER_KEY, splitter.saveState()))
+        if state is not None and splitter.restoreState(state):
+            self.layer_list.sized_by_user = True
+        splitter.splitterMoved.connect(self._splitter_moved)
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -359,6 +358,12 @@ class SectionDock(QDockWidget):
                 self.canvas.setSources([self._source])
         self._fill_combo()
         self._set_hint()
+
+    def _splitter_moved(self, *_args) -> None:
+        """The user dragged the handle beside the Layers list: keep that width (also for
+        the next session), and stop the list widening by itself."""
+        self.layer_list.sized_by_user = True
+        QgsSettings().setValue(SPLITTER_KEY, self.splitter.saveState())
 
     def set_reader(self, reader) -> None:
         """Read models in the background with ``reader`` (a ``ModelReader`` of this panel's
