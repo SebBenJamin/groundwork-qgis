@@ -400,6 +400,11 @@ class RadarBox(QGroupBox):
         """Time zero (s) as typed, None when it is not a number."""
         return self._exact_or(self.time_zero_edit, NS)
 
+    def time_zero_source(self) -> str | None:
+        """Where the time zero shown comes from: "file", "estimate", "stored", "user", or
+        None before there is one."""
+        return self._time_zero_from
+
     def options(self) -> dict:
         """The reader options and the hanging (``velocity`` m/s, ``time_zero`` s, ``zero``,
         ``datum``); ``span`` (From, To in m) when the user typed them and ``fit_length`` when

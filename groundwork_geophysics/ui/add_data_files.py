@@ -1,7 +1,7 @@
 """Add Data with several files: one row per file with the profile it goes to (guessed from
 its name, ``core.file_profiles``, and changeable), the coarser cells offered for an over-fine
-file, and whether the file is ready. The dialog's other settings are the first file's and
-apply to every file."""
+file, a radargram's own time zero, and whether the file is ready. The dialog's other
+settings are the first file's and apply to every file."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +19,7 @@ CHOOSE_PROFILE = "Choose a profile…"
 NEW_PROFILE = "New profile from its coordinates"
 NEW_TIP = "A new profile through the file's own map coordinates, named after the file"
 READY = "Ready"
-COLUMNS = ("File", "Profile", "Read as cells of", "Status")
+COLUMNS = ("File", "Profile", "Read as cells of", "Time zero", "Status")
 MAX_TABLE_HEIGHT = 200
 
 
@@ -27,6 +27,7 @@ class FilesBox(QGroupBox):
     """The files chosen together, each with its target profile (an id, ``NEW`` or None)."""
     changed = pyqtSignal()
     NEW = "__new__"
+    TIME_ZERO, STATUS = 3, 4                # columns
 
     def __init__(self, parent=None):
         super().__init__("Files", parent)
@@ -46,7 +47,9 @@ class FilesBox(QGroupBox):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)   # fitted to
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)   # its widgets
+        header.setSectionResizeMode(self.TIME_ZERO, QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)
+        self.table.setColumnHidden(self.TIME_ZERO, True)    # radargrams only
         layout = QVBoxLayout(self)
         layout.addWidget(hint)
         layout.addWidget(self.table)
@@ -72,7 +75,8 @@ class FilesBox(QGroupBox):
             check.toggled.connect(lambda *_a: self.changed.emit())
             check.hide()
             self.table.setCellWidget(row, 2, check)
-            self.table.setItem(row, 3, QTableWidgetItem(""))
+            self.table.setItem(row, self.TIME_ZERO, QTableWidgetItem(""))
+            self.table.setItem(row, self.STATUS, QTableWidgetItem(""))
         self._fit()
 
     def _fit(self) -> None:
@@ -130,12 +134,25 @@ class FilesBox(QGroupBox):
         combo.setCurrentIndex(max(0, combo.findData(target)))
 
     def set_status(self, row: int, text: str) -> None:
-        item = self.table.item(row, 3)
+        item = self.table.item(row, self.STATUS)
         item.setText(text)
         item.setToolTip(text)
 
     def status(self, row: int) -> str:
-        return self.table.item(row, 3).text()
+        return self.table.item(row, self.STATUS).text()
+
+    def show_time_zero(self, shown: bool) -> None:
+        """The "Time zero" column: for radargrams, each file's own."""
+        self.table.setColumnHidden(self.TIME_ZERO, not shown)
+
+    def set_time_zero(self, row: int, text: str) -> None:
+        item = self.table.item(row, self.TIME_ZERO)
+        if item.text() != text:
+            item.setText(text)
+            item.setToolTip(text)
+
+    def time_zero_text(self, row: int) -> str:
+        return self.table.item(row, self.TIME_ZERO).text()
 
     def set_cells(self, row: int, text: str) -> None:
         """The coarser cells offered for the file ("" when none): a ticked box with the size."""

@@ -342,3 +342,35 @@ def test_hanging_on_a_profile_without_heights_is_warned_about(
     dlg.radar_box.set_zero("ground")
     assert NO_HEIGHTS["ground"] in dlg.warning_label.text()
     assert dlg.add_button.isEnabled()
+
+
+def test_several_radar_files_each_take_their_own_time_zero(
+        qgis_app, make_dialog, project_store, tmp_path, warnings_shown):
+    from groundwork_geophysics.ui.add_data_files import READY
+    st, prj = project_store
+    p1, p2 = _profile(st, name="L1"), _profile(st, name="L2")
+    a = write_dzt(tmp_path / "L1.dzt", _radargram(arrival=10), 64.0, scans_per_metre=10.0)
+    b = write_dzt(tmp_path / "L2.dzt", _radargram(arrival=20), 64.0, scans_per_metre=10.0)
+    dlg = make_dialog(st, project=prj)
+    dlg.set_files([a, b])
+    box = dlg.files_box
+    _type(dlg.radar_box.velocity_edit, "0,1")
+    dlg.radar_box.set_zero("ground")
+    assert [box.status(i) for i in range(2)] == [READY, READY]
+    assert [box.time_zero_text(i) for i in range(2)] == ["10 ns (estimated)",
+                                                          "20 ns (estimated)"]
+    assert not box.table.isColumnHidden(box.TIME_ZERO)
+    dlg.accept()
+    assert dlg.result() == 1, warnings_shown
+    zeros = {d.profile_id: d.reader_options for d in st.datasets(p1.id) + st.datasets(p2.id)}
+    assert zeros[p1.id]["time_zero"] == pytest.approx(10 * NS)
+    assert zeros[p2.id]["time_zero"] == pytest.approx(20 * NS)
+    assert zeros[p1.id]["velocity"] == zeros[p2.id]["velocity"] == pytest.approx(1.0e8)
+
+
+def test_the_time_zero_column_is_only_for_radar(qgis_app):
+    from groundwork_geophysics.ui.add_data_files import FilesBox
+    box = FilesBox()
+    box.set_files(["a.csv", "b.csv"], [], False)
+    assert box.table.isColumnHidden(box.TIME_ZERO)
+    box.deleteLater()

@@ -41,7 +41,7 @@ from ..readers.errors import plain_error
 from ..core.coarsen import proposed_block
 from ..readers.text_columns import grid_of_file, map_points
 from ..readers.texttable import TableOptions, TextTable, guess_options, read_table
-from ..section.data import HANG_KEYS
+from ..section.data import HANG_KEYS, read_options
 from ..section.placement_resolve import NO_STATIONS_NOTE, ProfileLayout, resolve
 from .columns_box import GUESSED_HINT, REMEMBERED_HINT, ModelColumnsBox
 from .lib_install import start_install
@@ -318,6 +318,7 @@ class AddDataDialog(QDialog):
         self.added: list = []                       # (profile, dataset) per file added
         self._segy_key = self._segy_info = None     # (path, mtime) and what its headers say
         self._segy_infos: dict = {}                 # path -> (mtime, info or error), several
+        self._radar_zeros: dict = {}                # path -> (key, (time zero s, how) or error)
         self._segy_remembered = False               # the last SEG-Y settings were offered
         self._install_task = None
         self._install_message = ""                  # why installing segyio failed
@@ -1143,10 +1144,13 @@ class AddDataDialog(QDialog):
         box = self.files_box
         box.set_on_map(self._on_map())
         names = self._table.names if self._is_table() and self._table is not None else None
+        box.show_time_zero(self._is_radar())
         for row, (path, target) in enumerate(box.targets()):
             problem = self._file_problem(path, target, names, columns_ok)
             box.set_cells(row, "" if problem else self._cells_offer(path))
             box.set_status(row, problem or READY)
+            if self._is_radar():
+                box.set_time_zero(row, self._time_zero_text(path))
 
     def _file_problem(self, path: str, target, names, columns_ok: bool) -> str:
         if not Path(path).is_file():
@@ -1200,7 +1204,7 @@ class AddDataDialog(QDialog):
 
     def _radar_file_problem(self, path: str, settings_ok: bool) -> str:
         """Why one of several radar files cannot be added with the box's settings ("" when it
-        can). Every file takes the box's velocity and time zero."""
+        can). Every file takes the box's velocity, and its own time zero."""
         if not settings_ok or self.radar_box.problems():
             return "Complete the radargram settings first (above)"
         if self.radar_box.position() == "table" and path != self._path():
@@ -1216,7 +1220,52 @@ class AddDataDialog(QDialog):
                 return str(exc)
             if info.length is None and info.trace_step is None:
                 return "Recorded without a distance wheel: add it on its own"
-        return ""
+        found = self._radar_time_zero(path)
+        return found if isinstance(found, str) else ""
+
+    def _radar_time_zero(self, path: str):
+        """(time zero in s, how it was found) of one of several radar files, or why there is
+        none: the box's for the file shown above it; for every other file the time zero its
+        header states, else its own first-arrival estimate (the file read once per change).
+        The velocity is the box's for all."""
+        if path == self._path():
+            t = self.radar_box.time_zero()
+            return (t, self.radar_box.time_zero_source()) if t is not None else                 "Enter time zero first (above)"
+        options = {k: v for k, v in self._radar_options(path).items() if k not in HANG_KEYS}
+        key = (Path(path).stat().st_mtime, self._reader(), json.dumps(options, sort_keys=True))
+        cached = self._radar_zeros.get(path)
+        if cached is None or cached[0] != key:
+            try:
+                if self._reader() == "pulseekko":
+                    from ..readers.pulseekko import inspect
+                else:
+                    from ..readers.gssi_dzt import inspect
+                stated = inspect(Path(path)).time_zero
+                if stated is not None:
+                    found = (float(stated), "file")
+                else:
+                    result = readers.read(Path(path), reader=self._reader(),
+                                          **read_options(options))
+                    skip = int(result.provenance.get("reserved_samples") or 0)
+                    found = (first_arrival(result.traces, skip=skip), "estimate")
+                    del result
+            except (OSError, ValueError) as exc:
+                found = str(exc)
+            cached = self._radar_zeros[path] = (key, found)
+        return cached[1]
+
+    def _time_zero_text(self, path: str) -> str:
+        """A radar file's time zero for its row: "55.18 ns (estimated)"."""
+        try:
+            found = self._radar_time_zero(path)
+        except OSError:
+            return ""
+        if isinstance(found, str):
+            return ""
+        t, how = found
+        text = f"{fmt_trim(t * 1e9, 2)} ns"
+        return {"estimate": f"{text} (estimated)", "file": f"{text} (from the file)"}.get(how,
+                                                                                         text)
 
     def _cells_offer(self, path: str) -> str:
         """The coarser cells proposed for an over-fine text table ("" for none)."""
@@ -1258,8 +1307,12 @@ class AddDataDialog(QDialog):
         return Placement(profile_id=target, zero="station1")
 
     def _file_options(self, path: str, coarse: bool) -> dict:
-        if self._is_radar():                        # each line its own header file
-            return self._radar_options(path)
+        if self._is_radar():                        # each line its own header file and
+            options = self._radar_options(path)     # time zero; the velocity is shared
+            found = self._radar_time_zero(path)
+            if not isinstance(found, str):
+                options["time_zero"] = found[0]
+            return options
         options = {k: v for k, v in self._reader_options().items()
                    if k not in ("block", "response")}
         block = self._file_blocks.get(path)
