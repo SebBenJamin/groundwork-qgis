@@ -6,7 +6,7 @@ import weakref
 
 from qgis.PyQt.QtWidgets import QComboBox, QLabel, QToolButton
 
-from .topography import LOCAL_KINDS
+from .topography import LOCAL_KINDS, station_line
 
 #: "Local" is an indicator, never chosen by hand: shown (and the only entry enabled) while
 #: the profile has no heights of its own (a local model's top or the flat line)
@@ -20,6 +20,8 @@ REFERENCE_OFF_TIP = ("Only for a profile without heights; this one has heights f
 NO_PROFILE_TIP = "Open a profile first"
 LOCAL_TIP = ("This profile has no heights yet: the section is drawn in depth below its "
              "surface. Set a reference height, or add stations with heights or a DEM.")
+#: the "Stations" entry, disabled while the profile hangs from the DEM for want of them
+NO_STATIONS_TIP = "This profile has no stations with heights"
 
 
 class TopoSwitch:
@@ -56,28 +58,36 @@ class TopoSwitch:
         """Show the open profile's saved choice; disable DEM when it has no data. A saved
         "dem" without DEM data shows "Stations", the surface actually used (the saved
         choice is kept, so the DEM is used again once it has data). A profile without
-        heights shows "Local", the only entry enabled, and enables "Reference Height…"."""
+        stations with heights that hangs from the DEM (a line from the map) shows "DEM",
+        "Stations" disabled. A profile without heights shows "Local", the only entry enabled,
+        and enables "Reference Height…"."""
         try:
             provider, profile = self.dock.provider, self.dock._profile
         except ReferenceError:                  # the dock is gone
             return
         have_dem = False
         choice = "stations"
-        local = False
+        local = no_stations = False
         if provider is not None and profile is not None:
             have_dem = provider.has_dem(profile.id)
             try:                                # fresh: the dock's copy may predate a switch
                 choice = provider.store.profile(profile.id).metadata.get("topography", "stations")
+                no_stations = station_line(provider.store.station_sets(profile.id)) is None
             except KeyError:
                 pass
-            local = self._surface_kind(provider, profile) in LOCAL_KINDS
+            kind = self._surface_kind(provider, profile)
+            local = kind in LOCAL_KINDS
+            no_stations = no_stations and kind == "dem"   # on the DEM for want of stations
         if choice == "dem" and not have_dem:
             choice = "stations"
+        if no_stations:
+            choice = "dem"
         if local:
             choice = "local"
         model = self.combo.model()
         self.combo.blockSignals(True)
-        model.item(0).setEnabled(not local)
+        model.item(0).setEnabled(not local and not no_stations)
+        model.item(0).setToolTip(NO_STATIONS_TIP if no_stations else "")
         model.item(1).setEnabled(have_dem and not local)
         model.item(LOCAL_INDEX).setEnabled(local)
         self.combo.view().setRowHidden(LOCAL_INDEX, not local)

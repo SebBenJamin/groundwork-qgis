@@ -55,6 +55,29 @@ def test_topo_combo_reflects_saved_choice_and_disables_missing_dem(store_with_mo
     assert _topo_texts(dock)[1] == ("DEM", "dem", True)
 
 
+def test_a_profile_without_stations_shows_the_dem_it_hangs_from(tmp_path, make_dock):
+    """A line from the map (Add Data on a selected line) has no stations: the section hangs
+    from the DEM by itself, and the combo says so instead of "Stations"."""
+    from groundwork_geophysics.core.model import profile_from_polyline
+    from groundwork_geophysics.section.topo_switch import NO_STATIONS_TIP
+    from groundwork_geophysics.store.gpkg_store import ProjectStore
+    st = ProjectStore.create(tmp_path / "p.gpkg", "EPSG:25832")
+    p = profile_from_polyline("Line", "EPSG:25832", np.array([[0.0, 0.0], [50.0, 0.0]]))
+    st.save_profile(p)
+    dock = make_dock(st)
+    dock.provider.context_source = lambda profile: _items()
+    dock.open_profile(p.id)
+    assert dock.provider.surface(p.id).kind == "dem"
+    assert dock.topo_combo.currentData() == "dem"
+    assert _topo_texts(dock)[:2] == [("Stations", "stations", False), ("DEM", "dem", True)]
+    assert dock.topo_combo.model().item(0).toolTip() == NO_STATIONS_TIP
+    assert "topography" not in st.profile(p.id).metadata     # shown, never saved
+    # without a DEM the profile has no heights: "Local", as before
+    dock.provider.context_source = lambda profile: _items(with_dem=False)
+    dock.topo.sync()
+    assert dock.topo_combo.currentData() == "local"
+
+
 def test_readout_lists_context_lines(store_with_model, make_dock):
     st, p, _ = store_with_model
     dock = make_dock(st)
