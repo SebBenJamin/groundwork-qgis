@@ -183,3 +183,25 @@ def test_the_smooth_field_uses_the_layers_method():
     linear_image, _rect = _gridded(layer, None, None)[0]
     near_image, _rect = _gridded(near, None, None)[0]
     assert linear_image != near_image
+
+
+def test_smooth_field_reaches_the_ground_line_without_a_gap(qgis_app):
+    # drawn smoothly, the nodes above the ground fade the field out below it: the field takes
+    # the colour of its top node up to the ground, where the clip cuts it
+    for cell in (0.5, 0.3):
+        for ground in (0.5, 0.0, 0.2):
+            res = _results(_layer("smooth", grid_cell=cell),
+                           topo=(np.array([0.0, 200.0]), np.array([ground, ground])))
+            img = _img(res)
+            below = _rgb(img, _x(60.5), _y(ground) + 2)                     # 4 cm below
+            assert np.abs(below - _expected(60.5)).max() <= 12, (cell, ground, below)
+            assert (_rgb(img, _x(60.5), _y(ground) - 2) == 255).all()      # above: empty
+
+
+def test_a_blanked_top_is_not_filled_up_to_the_ground(qgis_app):
+    cov = lambda m: np.where(m.vertices[m.cells[:, 0], 1] >= -1.0, -5.0, 0.0)   # noqa: E731
+    res = _results(_layer("smooth", coverage=cov, fade_coverage=True, coverage_threshold=-2.0,
+                          fade_mode="blank", grid_cell=0.3))
+    img = _img(res)
+    assert (_rgb(img, _x(60.5), _y(-0.3)) == 255).all()             # low coverage: blank
+    assert (_rgb(img, _x(60.5), _y(0.3)) == 255).all()              # and nothing above it

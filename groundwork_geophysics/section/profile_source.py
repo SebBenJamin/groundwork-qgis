@@ -211,6 +211,10 @@ class WorkbenchProfileResults(QgsAbstractProfileResults):
                 painter.save()
                 if drawing.clip is not None:
                     painter.setClipPath(drawing.clip, Qt.ClipOperation.IntersectClip)
+                # zoomed in, the colours run between the grid nodes, as the contours do,
+                # instead of standing as squares; the image is premultiplied, so the
+                # transparent nodes beyond the model's edge add no fringe
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
                 painter.drawImage(rect, image)
                 painter.restore()
             if drawing.contours:

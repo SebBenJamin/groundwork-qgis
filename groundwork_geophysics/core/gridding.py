@@ -88,19 +88,41 @@ def _longest_edges(mesh) -> np.ndarray:
     return longest
 
 
-def grid_shape(mesh, cell: float | None, max_nodes: int = 250_000) -> tuple[int, int]:
-    """(nx, nz) of a grid over the mesh. The automatic cell is a quarter of the median
-    longest edge of the 5 % smallest mesh cells, at least 1/1500 of the mesh width; the node
-    count is capped by enlarging the cell."""
+#: the most nodes a smooth field is gridded with; a finer typed cell is enlarged to fit
+MAX_GRID_NODES = 250_000
+
+
+def _shape_and_cap(mesh, cell: float | None, max_nodes: int) -> tuple[int, int, bool]:
     smin, smax, zmin, zmax = mesh.bounds()
     width, height = max(smax - smin, 1e-9), max(zmax - zmin, 1e-9)
     if cell is None or cell <= 0:
         cell = _auto_cell(mesh, width)
     nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
+    capped = False
     while nx * nz > max_nodes:
+        capped = True
         cell *= np.sqrt(nx * nz / max_nodes) * 1.01
         nx, nz = int(np.ceil(width / cell)) + 1, int(np.ceil(height / cell)) + 1
-    return max(nx, 2), max(nz, 2)
+    return max(nx, 2), max(nz, 2), capped
+
+
+def grid_shape(mesh, cell: float | None, max_nodes: int = MAX_GRID_NODES) -> tuple[int, int]:
+    """(nx, nz) of a grid over the mesh. The automatic cell is a quarter of the median
+    longest edge of the 5 % smallest mesh cells, at least 1/1500 of the mesh width; the node
+    count is capped by enlarging the cell."""
+    nx, nz, _capped = _shape_and_cap(mesh, cell, max_nodes)
+    return nx, nz
+
+
+def grid_cell_used(mesh, cell: float, max_nodes: int = MAX_GRID_NODES) -> float:
+    """The grid cell a smooth field of ``mesh`` is drawn with for a typed ``cell`` (m): the
+    typed one, or the node spacing of the capped grid when the typed one needs more than
+    ``max_nodes`` nodes."""
+    nx, nz, capped = _shape_and_cap(mesh, cell, max_nodes)
+    if not capped:
+        return float(cell)
+    smin, smax, zmin, zmax = mesh.bounds()
+    return float(max((smax - smin) / (nx - 1), (zmax - zmin) / (nz - 1)))
 
 
 def _auto_cell(mesh, width: float) -> float:

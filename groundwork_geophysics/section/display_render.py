@@ -95,10 +95,42 @@ def _key(layer, topo, shape):
 _next_to_empty = next_to_empty            # the section and the 3D view share it
 
 
+def _up_to_the_ground(rgba: np.ndarray, grid, topo, open_: np.ndarray) -> np.ndarray:
+    """``rgba`` (nz, nx, 4, row 0 lowest) with each column's top drawn node copied into the
+    ``open_`` nodes (no value, or left out next to empty space) above it, up to one node above
+    the ground, when that top node lies within two nodes of the ground. Drawn with smooth
+    scaling, the field would otherwise fade out over the last node below the ground (and stop
+    short of it where the node next to the empty space above is left out); the clip cuts it
+    at the ground. Nodes blanked by the coverage fade have values and are never filled."""
+    nz, nx = rgba.shape[:2]
+    drawn = rgba[..., 3] > 0
+    has = drawn.any(axis=0)
+    if nz < 2 or not has.any():
+        return rgba
+    top = nz - 1 - np.argmax(drawn[::-1], axis=0)               # per column
+    ts, tz = (np.asarray(a, float) for a in topo)
+    ground = np.interp(np.asarray(grid.s, float), ts, tz)
+    z = np.asarray(grid.z, float)
+    dz = abs(z[-1] - z[0]) / (nz - 1)
+    rows = np.arange(nz)[:, None]
+    near_ground = has & (ground - z[top] <= 2.0 * dz + 1e-9)
+    fill = (near_ground[None, :] & (rows > top[None, :]) & open_
+            & (z[:, None] <= ground[None, :] + dz))
+    if not fill.any():
+        return rgba
+    out = rgba.copy()
+    source = rgba[top, np.arange(nx)]                            # (nx, 4)
+    out[fill] = np.broadcast_to(source[None, :, :], rgba.shape)[fill]
+    return out
+
+
 def _field_image(grid, rgba) -> tuple[QImage, QRectF]:
     nz, nx = grid.values.shape
+    # premultiplied, as the section pictures are: drawn with smooth scaling, the transparent
+    # nodes beyond the model's edge then add no colour of their own
     img = QImage(np.ascontiguousarray(rgba).tobytes(), nx, nz, nx * 4,
-                 QImage.Format.Format_RGBA8888).copy()
+                 QImage.Format.Format_RGBA8888).convertToFormat(
+                     QImage.Format.Format_RGBA8888_Premultiplied)
     ds = (grid.s[-1] - grid.s[0]) / max(nx - 1, 1)
     dz = (grid.z[-1] - grid.z[0]) / max(nz - 1, 1)
     # image row 0 is the lowest z: under the section's world transform (z up) it lands
@@ -175,7 +207,10 @@ def _gridded(layer, topo, threshold):
         rgba = scale.rgba(grid.values.ravel()).reshape(nz, nx, 4).copy()
         if alpha is not None:
             rgba[..., 3] = np.round(rgba[..., 3] * alpha).astype(np.uint8)
-        rgba[..., 3] = np.where(_next_to_empty(grid, mesh), 0, rgba[..., 3])
+        near = _next_to_empty(grid, mesh)
+        rgba[..., 3] = np.where(near, 0, rgba[..., 3])
+        if topo is not None and len(topo[0]) >= 2:
+            rgba = _up_to_the_ground(rgba, grid, topo, ~np.isfinite(grid.values) | near)
         image = _field_image(grid, rgba)
     contours = []
     if st.mode in ("contours", "smooth+contours"):

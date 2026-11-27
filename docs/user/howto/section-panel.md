@@ -118,7 +118,9 @@ the panel takes it back in one step.
      model;
    - **Contours**, with labels on the lines;
    - **Smooth field + contours**.
-- **Grid cell** of the smooth field: automatic, or your own size in metres.
+- **Grid cell** of the smooth field: automatic, or your own size in metres. The grid has at
+  most 250 000 points: on a long model a smaller cell is drawn coarser, and the line under
+  Grid cell says at which size. Zoomed in, the colours run smoothly between the points.
 - **Interpolation**: how the smooth field and the contours are made from the model's cells
   (see [Interpolation](#interpolation) below).
 - ③ **Contours**: automatic steps (1-2-5 per decade on a logarithmic scale), your own

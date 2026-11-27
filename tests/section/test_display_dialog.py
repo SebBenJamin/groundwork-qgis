@@ -659,3 +659,23 @@ def test_without_a_trace_spacing_the_window_is_in_traces(qgis_app, make_trace_la
     dlg.show()
     assert dlg.background_spin.isVisibleTo(dlg) and not dlg.background_m_spin.isVisibleTo(dlg)
     dlg.close()
+
+
+def test_grid_cell_note_says_when_a_coarser_cell_is_used(qgis_app, store_with_model):
+    from groundwork_geophysics.core.gridding import grid_cell_used
+    from groundwork_geophysics.section.scale_dialog import DisplayDialog
+    _prov, layer = _layer(store_with_model)
+    dlg = DisplayDialog(None, layer)
+    dlg.mode_combo.setCurrentIndex(dlg.mode_combo.findData("smooth"))
+    dlg.auto_cell.setChecked(False)
+    dlg.cell_spin.setValue(10.0)
+    assert dlg.cell_note.text() == "" and dlg.cell_note.isHidden()
+    dlg.cell_spin.setValue(0.01)                    # as the user types: no Apply needed
+    used = grid_cell_used(layer.mesh, 0.01)
+    assert used > 0.01
+    from groundwork_geophysics.core.numbers import fmt_trim
+    assert dlg.cell_note.text() == (f"Drawn at {fmt_trim(used, 2)} m: the grid is limited "
+                                    "to 250 000 points.")
+    assert not dlg.cell_note.isHidden()
+    dlg.auto_cell.setChecked(True)                  # the automatic cell: no note
+    assert dlg.cell_note.isHidden()

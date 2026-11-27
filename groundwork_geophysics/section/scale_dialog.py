@@ -281,6 +281,14 @@ class DisplayDialog(ColorScaleDialog):
         row.addWidget(self.auto_cell)
         form.addRow("Grid cell", row)
         self._mesh = mesh
+        # a typed cell finer than the grid allows is drawn coarser: say so, as the user types
+        self.cell_note = QLabel()
+        self.cell_note.setObjectName("cell_note")
+        self.cell_note.setWordWrap(True)
+        form.addRow("", self.cell_note)
+        self.cell_spin.valueChanged.connect(lambda _v: self._cell_used())
+        self.auto_cell.toggled.connect(lambda _on: self._cell_used())
+        self._cell_used()
         self._build_interpolation(form, getattr(style, "interpolation", None))
 
         contours = QGroupBox("Contours")
@@ -955,6 +963,21 @@ class DisplayDialog(ColorScaleDialog):
         return value
 
     # -- interpolation of the smooth field -------------------------------------------------
+    def _cell_used(self) -> None:
+        """The note under Grid cell: the cell the field is really drawn with, when the typed
+        one would need more grid points than allowed; empty and hidden otherwise."""
+        from ..core.gridding import MAX_GRID_NODES, grid_cell_used
+        from ..core.numbers import fmt_count, fmt_trim
+        text = ""
+        if self._mesh is not None and not self.auto_cell.isChecked():
+            typed = self.cell_spin.value()
+            used = grid_cell_used(self._mesh, typed)
+            if used > typed * 1.001:
+                text = (f"Drawn at {fmt_trim(used, 2)} m: the grid is limited to "
+                        f"{fmt_count(MAX_GRID_NODES)} points.")
+        self.cell_note.setText(text)
+        self.cell_note.setVisible(bool(text))
+
     def _build_interpolation(self, form, interp) -> None:
         """Interpolation, the chosen method's few settings and the anisotropy, under the
         grid cell (``core.interpolators``)."""
